@@ -232,6 +232,28 @@ export default function NewConsultationPage() {
     setSaving(true)
     setError('')
 
+    // Check if an encounter already exists for this patient today
+    const today = new Date().toISOString().split('T')[0]
+    const { data: existing } = await supabase
+      .from('encounters')
+      .select('id')
+      .eq('patient_id', patientId)
+      .eq('encounter_date', today)
+      .limit(1)
+      .maybeSingle()
+
+    if (existing?.id) {
+      // Encounter already exists — update it instead of creating a duplicate
+      setSaving(false)
+      const confirmUpdate = window.confirm(
+        'An OPD encounter for this patient already exists today.\n\nClick OK to update the existing encounter, or Cancel to go back.'
+      )
+      if (!confirmUpdate) return
+      // Redirect to edit the existing encounter
+      router.push(`/opd/${existing.id}/edit`)
+      return
+    }
+
     const obPayload: OBData = { ...ob }
     if (ob.lmp) { obPayload.edd = edd; obPayload.gestational_age = ga }
 

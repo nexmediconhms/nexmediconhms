@@ -21,6 +21,7 @@ interface QueueItem {
   hasPrescription: boolean
   status:          'waiting' | 'in_progress' | 'done'
   time:            string
+  isDuplicate?:    boolean
 }
 
 const STATUS_CFG = {
@@ -100,7 +101,14 @@ export default function QueuePage() {
       }
     })
 
-    setQueue(items)
+    // Flag duplicate patients (same patientId appearing more than once today)
+    const patientCount: Record<string, number> = {}
+    items.forEach(i => { patientCount[i.patientId] = (patientCount[i.patientId] || 0) + 1 })
+    const flagged = items.map(i => ({
+      ...i,
+      isDuplicate: patientCount[i.patientId] > 1,
+    }))
+    setQueue(flagged)
     setLoading(false)
   }
 
@@ -217,6 +225,11 @@ export default function QueuePage() {
                         {q.age && <span className="text-xs text-gray-400">{q.age}y · {q.gender}</span>}
                       </div>
                       <div className="text-sm text-gray-500 mt-0.5 truncate">{q.chief_complaint}</div>
+                    {q.isDuplicate && (
+                      <div className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                        ⚠ Multiple encounters today — check for accidental duplicates
+                      </div>
+                    )}
                     </div>
 
                     {/* Status badge + actions */}

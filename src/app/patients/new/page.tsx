@@ -27,13 +27,14 @@ interface FormData {
   mediclaim:               string   // 'Yes'|'No'
   cashless:                string   // 'Yes'|'No'
   reference_source:        string   // referral source
+  reference_detail:        string   // specific name (doctor name, etc.)
 }
 
 const EMPTY: FormData = {
   full_name: '', age: '', date_of_birth: '', gender: 'Female',
   mobile: '', blood_group: '', address: '', abha_id: '',
   emergency_contact_name: '', emergency_contact_phone: '',
-  mediclaim: 'No', cashless: 'No', reference_source: '',
+  mediclaim: 'No', cashless: 'No', reference_source: '', reference_detail: '',
 }
 
 // ─── Tracks which fields were filled by OCR so we can highlight them ──
@@ -206,7 +207,11 @@ export default function NewPatientPage() {
         emergency_contact_phone: form.emergency_contact_phone.trim()         || null,
         mediclaim:               form.mediclaim === 'Yes',
         cashless:                form.cashless  === 'Yes',
-        reference_source:        form.reference_source.trim()               || null,
+        reference_source:        form.reference_source
+                                   ? (form.reference_detail.trim()
+                                       ? `${form.reference_source} — ${form.reference_detail.trim()}`
+                                       : form.reference_source)
+                                   : null,
       })
       .select('id, mrn, full_name')
       .single()
@@ -508,9 +513,9 @@ export default function NewPatientPage() {
                 </select>
                 {(form.reference_source === 'Doctor Referral' || form.reference_source === 'Patient Referral') && (
                   <input className="input mt-2 text-sm"
-                    placeholder={form.reference_source === 'Doctor Referral' ? 'Referring doctor name…' : 'Referred by patient name…'}
-                    value={(form as any).reference_detail || ''}
-                    onChange={e => set('reference_source' as any, form.reference_source + ' — ' + e.target.value)}/>
+                    placeholder={form.reference_source === 'Doctor Referral' ? 'Enter referring doctor name…' : 'Enter referred by patient name…'}
+                    value={form.reference_detail}
+                    onChange={e => set('reference_detail', e.target.value)}/>
                 )}
               </div>
             </div>
