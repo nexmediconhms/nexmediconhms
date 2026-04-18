@@ -44,7 +44,7 @@ const DEFAULTS: HospitalSettings = {
 }
 
 // Module-level accessor so prescription/discharge pages can read live settings
-export function loadSettings(): HospitalSettings {
+function loadSettings(): HospitalSettings {
   if (typeof window === 'undefined') return DEFAULTS
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
