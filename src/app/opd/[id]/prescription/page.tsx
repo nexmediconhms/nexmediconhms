@@ -182,7 +182,15 @@ export default function PrescriptionPage() {
       {/* SCREEN */}
       <div className="no-print p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-4 mb-5">
-          <button onClick={()=>router.back()} className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5"/></button>
+          <div className="flex items-center gap-2">
+            <button onClick={()=>router.back()} className="text-gray-400 hover:text-gray-700" title="Back">
+              <ArrowLeft className="w-5 h-5"/>
+            </button>
+            <a href={`/opd/${encounterId}/edit`}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1 border border-blue-200 rounded-lg px-2 py-1 bg-blue-50">
+              ✏️ Edit Vitals / Diagnosis
+            </a>
+          </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-gray-900">Prescription</h1>
             <p className="text-sm text-gray-500">
@@ -324,8 +332,24 @@ export default function PrescriptionPage() {
             </div>
             <div>
               <label className="label">Follow-up Date</label>
-              <input className="input" type="date" min={new Date().toISOString().split('T')[0]}
-                value={followUpDate} onChange={e=>setFollowUpDate(e.target.value)} />
+              <input className="input" type="date" min={minFollowUpDate()}
+                value={followUpDate}
+                onChange={e => {
+                  const val = e.target.value
+                  if (!val) { setFollowUpDate(''); return }
+                  // Never allow Sunday — move to the next Monday
+                  if (isSunday(val)) {
+                    const d = new Date(val)
+                    d.setDate(d.getDate() + 1)
+                    setFollowUpDate(d.toISOString().split('T')[0])
+                  } else {
+                    setFollowUpDate(val)
+                  }
+                }}/>
+              {followUpDate && isSunday(followUpDate) === false && new Date(followUpDate).getDay() !== 0
+                ? null
+                : followUpDate && <p className="text-xs text-orange-500 mt-1">Sundays excluded — date moved to Monday</p>
+              }
               <div className="flex gap-2 mt-2">
                 {[{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30},{l:'+3 months',d:90}].map(({l,d})=>(
                   <button key={l} type="button" onClick={()=>{

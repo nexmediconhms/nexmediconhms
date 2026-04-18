@@ -116,6 +116,7 @@ export default function BillingPage() {
   // Filter
   const [filterStatus,   setFilterStatus]   = useState<'all'|'paid'|'pending'>('all')
   const [filterMode,     setFilterMode]     = useState<'all'|'cash'|'upi'|'card'>('all')
+  const [cashSuccess,    setCashSuccess]     = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
 
   const searchParams = useSearchParams()
@@ -228,7 +229,7 @@ export default function BillingPage() {
       setPaying(false)
       if (!bill) { setPayError('Failed to save bill. Check Supabase connection.'); return }
       await loadBills()
-      setSelectedBill(bill); setView('receipt'); resetForm()
+      setSelectedBill(bill); setCashSuccess(true); setView('receipt'); resetForm()
       return
     }
 
@@ -302,7 +303,7 @@ export default function BillingPage() {
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
           <div className="no-print flex items-center gap-3 mb-5">
-            <button onClick={() => { setView('list'); setSelectedBill(null) }}
+            <button onClick={() => { setView('list'); setSelectedBill(null); setCashSuccess(false) }}
               className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5"/></button>
             <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
             <div className="ml-auto flex gap-2">
@@ -316,6 +317,21 @@ export default function BillingPage() {
                 className="btn-primary text-xs">New Bill</button>
             </div>
           </div>
+          {cashSuccess && (
+            <div className="no-print mb-4 bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl">💵</span>
+              </div>
+              <div>
+                <p className="font-bold text-green-800 text-sm">Cash Payment Received ✓</p>
+                <p className="text-xs text-green-700">
+                  ₹{selectedBill.net_amount.toLocaleString('en-IN')} collected in cash.
+                  Bill #{selectedBill.id.slice(-6).toUpperCase()} marked as Paid.
+                  Print and hand the receipt to the patient.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="no-print"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
         </div>
         <div className="print-only p-8"><ReceiptDoc bill={selectedBill} hs={hs} /></div>

@@ -8,10 +8,11 @@ import {
 } from 'lucide-react'
 
 interface FormScannerProps {
-  formType: OCRFormType
-  onExtracted: (result: OCRResult) => void
-  label?: string
+  formType:   OCRFormType
+  onExtracted:(result: OCRResult) => void
+  label?:     string
   className?: string
+  defaultMode?: 'free' | 'ai'  // 'free' = Tesseract (no key), 'ai' = Claude/GPT
 }
 
 type ScanState = 'idle' | 'camera' | 'uploading' | 'processing' | 'done' | 'error'
@@ -29,6 +30,7 @@ export default function FormScanner({
   const [showRaw,     setShowRaw]    = useState(false)
   const [showPanel,   setShowPanel]  = useState(false)
   const [camError,    setCamError]   = useState('')
+  const [ocrMode,     setOcrMode]    = useState<'free'|'ai'>('free')
 
   // Camera refs
   const videoRef  = useRef<HTMLVideoElement>(null)
@@ -123,11 +125,13 @@ export default function FormScanner({
     const fd = new FormData()
     fd.append('image', file)
     fd.append('form_type', formType)
+    fd.append('lang', 'eng')  // 'eng+guj' for Gujarati support
 
     setState('processing')
 
     try {
-      const res  = await fetch('/api/ocr', { method: 'POST', body: fd })
+      const endpoint = ocrMode === 'free' ? '/api/ocr-free' : '/api/ocr'
+      const res  = await fetch(endpoint, { method: 'POST', body: fd })
       const data = await res.json()
       // Always check for error in body (API returns 200 even on errors to avoid browser noise)
       if (data.error) throw new Error(data.error)
@@ -452,7 +456,7 @@ export default function FormScanner({
               </button>
             </div>
             {/* If it's an API key issue, show setup instructions */}
-            {(error.includes('ANTHROPIC') || error.includes('API key') || error.includes('500')) && (
+            {(error.includes('AI key') || error.includes('ANTHROPIC') || error.includes('OpenAI') || error.includes('configured') || error.includes('setup')) && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
                 <strong>Setup required:</strong> Add your Anthropic API key to <code className="bg-amber-100 px-1 rounded">.env.local</code>:{' '}
                 <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY=sk-ant-your-real-key</code>{' '}

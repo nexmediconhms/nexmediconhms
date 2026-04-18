@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Patient Registration Form — NexMedicon</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; }
+  @page { size: A4; margin: 12mm; }
+  @media print { body { margin:0; } }
+  .header { text-align:center; border-bottom:2.5px solid #000; padding-bottom:6px; margin-bottom:8px; }
+  .header h1 { font-size:18px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; }
+  .header h2 { font-size:13px; font-weight:bold; margin-top:3px; color:#1a56db; }
+  .header .sub { font-size:9px; color:#555; margin-top:2px; }
+  .section { margin-bottom:9px; }
+  .section-title { font-size:10px; font-weight:bold; background:#dbeafe; border-left:3px solid #1a56db;
+    padding:3px 6px; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+  .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+  .field { display:flex; flex-direction:column; gap:1px; }
+  .field label { font-size:8.5px; color:#444; font-weight:bold; text-transform:uppercase; }
+  .field .box { border:1.5px solid #000; height:22px; background:#fffef0; padding:2px 4px; }
+  .field .line { border-bottom:1.5px solid #000; height:22px; background:#fffef0; }
+  .checkbox-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:3px; }
+  .checkbox-item { display:flex; align-items:center; gap:3px; font-size:10px; }
+  .checkbox-item .cb { width:13px; height:13px; border:1.5px solid #000; display:inline-block; background:#fffef0; }
+  .textarea-field { border:1.5px solid #000; background:#fffef0; width:100%; min-height:32px; margin-top:1px; }
+  .info-row { display:flex; align-items:center; gap:4px; margin-bottom:5px; }
+  .info-row label { font-size:8.5px; font-weight:bold; white-space:nowrap; }
+  .info-row .line { flex:1; border-bottom:1.5px solid #000; height:22px; background:#fffef0; }
+  .mrn-area { border:2px solid #1a56db; background:#eff6ff; padding:5px 10px; text-align:center;
+    border-radius:4px; display:inline-block; min-width:120px; }
+  .mrn-area .label { font-size:8px; color:#1e40af; font-weight:bold; text-transform:uppercase; }
+  .mrn-area .value { font-size:18px; font-weight:bold; color:#1e40af; letter-spacing:3px;
+    border-bottom:1px solid #93c5fd; min-width:100px; text-align:center; height:24px; }
+  .consent-box { border:1.5px solid #999; padding:6px 8px; background:#fafafa; font-size:9px; }
+  .sig-line { border-bottom:1px solid #000; height:28px; background:#fffef0; margin-top:3px; }
+  .form-id { font-size:9px; color:#999; text-align:right; margin-bottom:3px; }
+  .important { font-size:9px; color:#b45309; font-weight:bold; background:#fef3c7;
+    border:1px solid #fcd34d; padding:3px 6px; margin-bottom:5px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="form-id">FORM-REG · v1 · NexMedicon HMS</div>
+
+<div class="header">
+  <h1 id="hospital-name">NexMedicon Hospital</h1>
+  <div id="hospital-address" class="sub">Hospital Address · Phone: +91 XXXXX XXXXX</div>
+  <h2>NEW PATIENT REGISTRATION FORM</h2>
+  <div class="sub">Please fill ALL fields in CAPITAL LETTERS clearly · Use BLOCK LETTERS only · Do not use cursive</div>
+</div>
+
+<div class="important">
+  ⚠ WRITE IN CAPITAL / BLOCK LETTERS ONLY — Example: RAVI PATEL, not ravi patel or राxxx Patel
+</div>
+
+<!-- MRN (to be filled by staff) -->
+<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+  <div class="mrn-area">
+    <div class="label">MRN (Staff Use Only)</div>
+    <div class="value">&nbsp;</div>
+  </div>
+  <div style="flex:1; margin-left:15px;">
+    <div class="info-row"><label>Registration Date:</label><div class="line"></div></div>
+    <div class="info-row"><label>Registered By:</label><div class="line"></div></div>
+  </div>
+</div>
+
+<!-- PERSONAL INFORMATION -->
+<div class="section">
+  <div class="section-title">Personal Information</div>
+  <div class="info-row"><label>Full Name (as on ID):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
+  <div class="grid-3" style="gap:5px; margin-bottom:5px;">
+    <div>
+      <div class="info-row"><label>Date of Birth (DD/MM/YYYY):</label><div class="line"></div></div>
+    </div>
+    <div>
+      <div class="info-row"><label>Age:</label><div style="width:50px;" class="line"></div>
+        <label style="margin-left:6px;">Gender:</label></div>
+      <div class="checkbox-row" style="margin-top:2px;">
+        <div class="checkbox-item"><div class="cb"></div> Female</div>
+        <div class="checkbox-item"><div class="cb"></div> Male</div>
+        <div class="checkbox-item"><div class="cb"></div> Other</div>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:8.5px;font-weight:bold;display:block;margin-bottom:2px;">BLOOD GROUP</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> A+</div>
+        <div class="checkbox-item"><div class="cb"></div> A-</div>
+        <div class="checkbox-item"><div class="cb"></div> B+</div>
+        <div class="checkbox-item"><div class="cb"></div> B-</div>
+        <div class="checkbox-item"><div class="cb"></div> O+</div>
+        <div class="checkbox-item"><div class="cb"></div> O-</div>
+        <div class="checkbox-item"><div class="cb"></div> AB+</div>
+        <div class="checkbox-item"><div class="cb"></div> AB-</div>
+        <div class="checkbox-item"><div class="cb"></div> Unknown</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTACT -->
+<div class="section">
+  <div class="section-title">Contact Details</div>
+  <div class="grid-2">
+    <div class="info-row"><label>Mobile Number (10 digits):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
+    <div class="info-row"><label>WhatsApp (if different):</label><div class="line"></div></div>
+  </div>
+  <div class="info-row" style="margin-top:5px;"><label>Address (House No, Street, Area):</label><div class="line"></div></div>
+  <div class="grid-3" style="gap:5px; margin-top:5px;">
+    <div class="info-row"><label>City:</label><div class="line"></div></div>
+    <div class="info-row"><label>District:</label><div class="line"></div></div>
+    <div class="info-row"><label>PIN Code:</label><div class="line"></div></div>
+  </div>
+</div>
+
+<!-- ID DOCUMENTS -->
+<div class="section">
+  <div class="section-title">Identity Documents</div>
+  <div class="grid-2">
+    <div class="info-row"><label>Aadhaar Number:</label><div class="line"></div></div>
+    <div class="info-row"><label>ABHA Health ID:</label><div class="line"></div></div>
+  </div>
+</div>
+
+<!-- EMERGENCY CONTACT -->
+<div class="section">
+  <div class="section-title">Emergency Contact</div>
+  <div class="grid-2">
+    <div class="info-row"><label>Name:</label><div class="line"></div></div>
+    <div class="info-row"><label>Mobile:</label><div class="line"></div></div>
+  </div>
+  <div class="info-row" style="margin-top:5px;">
+    <label>Relation:</label>
+    <div class="checkbox-row" style="margin:0 0 0 6px;">
+      <div class="checkbox-item"><div class="cb"></div> Husband</div>
+      <div class="checkbox-item"><div class="cb"></div> Father</div>
+      <div class="checkbox-item"><div class="cb"></div> Mother</div>
+      <div class="checkbox-item"><div class="cb"></div> Sibling</div>
+      <div class="checkbox-item"><div class="cb"></div> Other</div>
+    </div>
+  </div>
+</div>
+
+<!-- INSURANCE -->
+<div class="section">
+  <div class="section-title">Insurance / Mediclaim</div>
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:5px;">
+    <div>
+      <label style="font-size:8.5px;font-weight:bold;">Mediclaim / Health Insurance:</label>
+      <div class="checkbox-row" style="margin-top:2px;">
+        <div class="checkbox-item"><div class="cb"></div> Yes</div>
+        <div class="checkbox-item"><div class="cb"></div> No</div>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:8.5px;font-weight:bold;">Cashless Facility:</label>
+      <div class="checkbox-row" style="margin-top:2px;">
+        <div class="checkbox-item"><div class="cb"></div> Yes</div>
+        <div class="checkbox-item"><div class="cb"></div> No</div>
+      </div>
+    </div>
+    <div style="flex:1;">
+      <div class="info-row"><label>Policy / TPA Name:</label><div class="line"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- HOW DID YOU FIND US -->
+<div class="section">
+  <div class="section-title">How Did You Find Us?</div>
+  <div class="checkbox-row">
+    <div class="checkbox-item"><div class="cb"></div> Doctor Referral</div>
+    <div class="checkbox-item"><div class="cb"></div> Patient Referral</div>
+    <div class="checkbox-item"><div class="cb"></div> Advertisement</div>
+    <div class="checkbox-item"><div class="cb"></div> Google / Internet</div>
+    <div class="checkbox-item"><div class="cb"></div> Social Media</div>
+    <div class="checkbox-item"><div class="cb"></div> Walk-in</div>
+    <div class="checkbox-item"><div class="cb"></div> Camp / Outreach</div>
+    <div class="checkbox-item"><div class="cb"></div> Other: ___________________</div>
+  </div>
+</div>
+
+<!-- CONSENT -->
+<div class="section">
+  <div class="consent-box">
+    <div style="font-weight:bold; margin-bottom:3px;">Patient Consent</div>
+    I hereby give my consent to <span id="hospital-name-consent">NexMedicon Hospital</span> for recording and storing my personal and medical information in their digital system for the purpose of providing healthcare services. I understand this information is confidential and will not be shared without my consent except as required by law.
+  </div>
+  <div class="grid-2" style="gap:10px; margin-top:6px;">
+    <div>
+      <div style="font-size:9px;font-weight:bold;">Patient / Guardian Signature</div>
+      <div class="sig-line"></div>
+      <div class="info-row" style="margin-top:3px;"><label>Date:</label><div class="line"></div></div>
+    </div>
+    <div>
+      <div style="font-size:9px;font-weight:bold;">Relationship to patient (if Guardian)</div>
+      <div class="sig-line"></div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:5px; font-size:8px; color:#666; text-align:center; border-top:1px dashed #ccc; padding-top:4px;">
+  FORM-REG · NexMedicon Hospital Management System · Scan this form to auto-populate the digital registration record
+</div>
+
+<script>
+  try {
+    const s = JSON.parse(localStorage.getItem('nexmedicon_settings') || '{}')
+    if (s.hospitalName) {
+      document.getElementById('hospital-name').textContent = s.hospitalName
+      document.getElementById('hospital-name-consent').textContent = s.hospitalName
+    }
+    if (s.address) document.getElementById('hospital-address').textContent =
+      s.address + (s.phone ? ' · Phone: ' + s.phone : '')
+  } catch(e) {}
+</script>
+</body>
+</html>

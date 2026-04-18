@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Gynecology & OB Examination — NexMedicon</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #fff; }
+  @page { size: A4; margin: 10mm; }
+  .header { text-align:center; border-bottom:2px solid #000; padding-bottom:5px; margin-bottom:7px; }
+  .header h1 { font-size:17px; font-weight:bold; letter-spacing:1px; }
+  .header h2 { font-size:12px; font-weight:bold; margin-top:2px; }
+  .header .sub { font-size:9px; color:#444; margin-top:2px; }
+  .section { margin-bottom:8px; }
+  .section-title { font-size:10px; font-weight:bold; background:#f0f4ff; border:1px solid #99c;
+    padding:2px 5px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+  .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+  .grid-4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; }
+  .field { display:flex; flex-direction:column; }
+  .field label { font-size:8px; color:#444; font-weight:bold; text-transform:uppercase; margin-bottom:1px; }
+  .field .box { border:1.5px solid #000; height:20px; background:#fffef0; padding:1px 3px; }
+  .field .line { border-bottom:1px solid #000; height:20px; background:#fffef0; }
+  .info-row { display:flex; align-items:center; gap:3px; margin-bottom:4px; }
+  .info-row label { font-size:8px; font-weight:bold; white-space:nowrap; }
+  .info-row .line { flex:1; border-bottom:1px solid #000; height:18px; background:#fffef0; }
+  .checkbox-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:2px; }
+  .checkbox-item { display:flex; align-items:center; gap:2px; font-size:9px; }
+  .checkbox-item .cb { width:11px; height:11px; border:1.5px solid #000; display:inline-block; }
+  .textarea-field { border:1.5px solid #000; background:#fffef0; width:100%; min-height:30px; margin-top:2px; }
+  .textarea-lg { min-height:45px; }
+  .g-p-row { display:flex; gap:8px; }
+  .g-p-box { display:flex; flex-direction:column; align-items:center; }
+  .g-p-box label { font-size:8px; font-weight:bold; }
+  .g-p-box .num { width:35px; height:28px; border:2px solid #000; background:#fffef0;
+    font-size:16px; text-align:center; display:flex; align-items:center; justify-content:center; }
+  .sub-section { border:1px solid #ccd; border-radius:2px; padding:4px 5px; margin-bottom:4px; }
+  .sub-section-title { font-size:9px; font-weight:bold; color:#336; margin-bottom:3px; }
+  .footer { margin-top:8px; border-top:1px dashed #999; padding-top:4px; font-size:9px; color:#666; }
+  .form-id { font-size:9px; color:#999; text-align:right; margin-bottom:2px; }
+</style>
+</head>
+<body>
+<div class="form-id">FORM-GYN · v1</div>
+
+<div class="header">
+  <h1 id="hospital-name">NexMedicon Hospital</h1>
+  <div id="hospital-address" class="sub">Hospital Address · Phone: +91 XXXXX XXXXX</div>
+  <h2>GYNECOLOGY &amp; OBSTETRIC EXAMINATION FORM</h2>
+  <div class="sub">To be filled by Doctor · Fill clearly in BLOCK LETTERS</div>
+</div>
+
+<!-- PATIENT ID -->
+<div class="section">
+  <div class="grid-2">
+    <div>
+      <div class="info-row"><label>Patient Name:</label><div class="line"></div></div>
+      <div class="info-row"><label>MRN:</label>
+        <div style="width:70px;border:1.5px solid #000;height:22px;background:#e8f0fe;margin-left:4px;"></div>
+        <label style="margin-left:6px;">Date:</label><div class="line"></div></div>
+    </div>
+    <div>
+      <div class="info-row"><label>Age:</label>
+        <div style="width:40px;" class="line"></div>
+        <label style="margin-left:6px;">Doctor:</label><div class="line"></div></div>
+      <div class="info-row"><label>Visit Type:</label>
+        <div class="checkbox-row" style="margin:0 0 0 4px;">
+          <div class="checkbox-item"><div class="cb"></div> ANC</div>
+          <div class="checkbox-item"><div class="cb"></div> GYN OPD</div>
+          <div class="checkbox-item"><div class="cb"></div> Follow-up</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OBSTETRIC HISTORY -->
+<div class="section">
+  <div class="section-title">Obstetric History</div>
+  <div style="display:flex; gap:12px; align-items:flex-end; margin-bottom:5px;">
+    <div class="g-p-box"><label>Gravida (G)</label><div class="num">__</div></div>
+    <div class="g-p-box"><label>Para (P)</label><div class="num">__</div></div>
+    <div class="g-p-box"><label>Abortion (A)</label><div class="num">__</div></div>
+    <div class="g-p-box"><label>Living (L)</label><div class="num">__</div></div>
+    <div style="flex:1;">
+      <div class="info-row"><label>LMP:</label><div class="line"></div></div>
+      <div class="info-row"><label>EDD:</label><div class="line"></div></div>
+    </div>
+    <div style="flex:1;">
+      <div class="info-row"><label>GA (weeks):</label><div class="line"></div></div>
+      <div class="info-row"><label>Cycle:</label>
+        <div class="checkbox-row" style="margin:0 0 0 3px;">
+          <div class="checkbox-item"><div class="cb"></div> Regular</div>
+          <div class="checkbox-item"><div class="cb"></div> Irregular</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ABDOMINAL EXAMINATION -->
+<div class="section">
+  <div class="section-title">Per Abdomen Examination</div>
+  <div class="grid-3" style="gap:5px; margin-bottom:5px;">
+    <div class="field"><label>Fundal Height (cm/wks)</label><div class="box"></div></div>
+    <div class="field">
+      <label>Presentation</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Cephalic</div>
+        <div class="checkbox-item"><div class="cb"></div> Breech</div>
+        <div class="checkbox-item"><div class="cb"></div> Transverse</div>
+        <div class="checkbox-item"><div class="cb"></div> Oblique</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Engagement</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Engaged</div>
+        <div class="checkbox-item"><div class="cb"></div> 2/5</div>
+        <div class="checkbox-item"><div class="cb"></div> 3/5</div>
+        <div class="checkbox-item"><div class="cb"></div> 4/5</div>
+        <div class="checkbox-item"><div class="cb"></div> 5/5 (free)</div>
+      </div>
+    </div>
+    <div class="field"><label>FHS (bpm)</label><div class="box"></div></div>
+    <div class="field">
+      <label>Fetal Movement</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Present</div>
+        <div class="checkbox-item"><div class="cb"></div> Absent</div>
+        <div class="checkbox-item"><div class="cb"></div> Not assessed</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Liquor</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Normal</div>
+        <div class="checkbox-item"><div class="cb"></div> Reduced</div>
+        <div class="checkbox-item"><div class="cb"></div> Increased</div>
+        <div class="checkbox-item"><div class="cb"></div> Absent</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Scar Tenderness</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Present</div>
+        <div class="checkbox-item"><div class="cb"></div> Absent</div>
+        <div class="checkbox-item"><div class="cb"></div> N/A</div>
+      </div>
+    </div>
+    <div class="field"><label>Uterine Size</label><div class="box"></div></div>
+  </div>
+  <div class="field"><label>Per Abdomen Notes</label><div class="textarea-field"></div></div>
+</div>
+
+<!-- SPECULUM EXAMINATION -->
+<div class="section">
+  <div class="section-title">Per Speculum Examination</div>
+  <div class="grid-3" style="gap:5px; margin-bottom:5px;">
+    <div class="field">
+      <label>Cervix</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Healthy</div>
+        <div class="checkbox-item"><div class="cb"></div> Congested</div>
+        <div class="checkbox-item"><div class="cb"></div> Erosion</div>
+        <div class="checkbox-item"><div class="cb"></div> Growth</div>
+        <div class="checkbox-item"><div class="cb"></div> Not examined</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Discharge</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Nil</div>
+        <div class="checkbox-item"><div class="cb"></div> Mucopurulent</div>
+        <div class="checkbox-item"><div class="cb"></div> Bloody</div>
+        <div class="checkbox-item"><div class="cb"></div> Watery</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Bleeding P/S</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Present</div>
+        <div class="checkbox-item"><div class="cb"></div> Absent</div>
+        <div class="checkbox-item"><div class="cb"></div> Not examined</div>
+      </div>
+    </div>
+  </div>
+  <div class="field"><label>Per Speculum Notes</label><div class="textarea-field"></div></div>
+</div>
+
+<!-- PV EXAMINATION -->
+<div class="section">
+  <div class="section-title">Per Vaginum Examination</div>
+  <div class="grid-3" style="gap:5px; margin-bottom:5px;">
+    <div class="field">
+      <label>Cervix Feel</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Firm</div>
+        <div class="checkbox-item"><div class="cb"></div> Soft</div>
+        <div class="checkbox-item"><div class="cb"></div> Not examined</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>OS (dilation)</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Closed</div>
+        <div class="checkbox-item"><div class="cb"></div> Fingertip</div>
+        <div class="checkbox-item"><div class="cb"></div> 1cm</div>
+        <div class="checkbox-item"><div class="cb"></div> 2cm</div>
+        <div class="checkbox-item"><div class="cb"></div> 3cm</div>
+        <div class="checkbox-item"><div class="cb"></div> Fully dilated</div>
+        <div class="checkbox-item"><div class="cb"></div> Not examined</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Uterus Position</label>
+      <div class="checkbox-row">
+        <div class="checkbox-item"><div class="cb"></div> Anteverted</div>
+        <div class="checkbox-item"><div class="cb"></div> Retroverted</div>
+        <div class="checkbox-item"><div class="cb"></div> Mid-position</div>
+      </div>
+    </div>
+    <div class="field"><label>Right Ovary</label><div class="box"></div></div>
+    <div class="field"><label>Left Ovary</label><div class="box"></div></div>
+    <div class="field"><label>Adnexa</label><div class="box"></div></div>
+  </div>
+  <div class="field"><label>Per Vaginum Notes</label><div class="textarea-field"></div></div>
+</div>
+
+<!-- SUMMARY -->
+<div class="section">
+  <div class="field"><label>Clinical Impression / Additional Notes</label>
+    <div class="textarea-field textarea-lg"></div></div>
+</div>
+
+<div class="footer">
+  <div style="display:flex;justify-content:space-between;">
+    <span>Doctor Signature: ________________________________ &nbsp; Time: ___________</span>
+    <span>FORM-GYN · NexMedicon HMS</span>
+  </div>
+</div>
+
+<script>
+  try {
+    const s = JSON.parse(localStorage.getItem('nexmedicon_settings') || '{}')
+    if (s.hospitalName) document.getElementById('hospital-name').textContent = s.hospitalName
+    if (s.address) document.getElementById('hospital-address').textContent = s.address + (s.phone ? ' · Phone: ' + s.phone : '')
+  } catch(e) {}
+</script>
+</body>
+</html>

@@ -141,7 +141,7 @@ export default function ANCPage() {
 
   return (
     <AppShell>
-      <div className="p-6">
+      <div className="p-6 no-print">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -308,7 +308,7 @@ export default function ANCPage() {
         )}
       </div>
       {/* Print-only ANC Registry */}
-      <div className="print-only p-8">
+      <div className="print-only" style={{padding:"20mm 15mm"}}>
         {(() => {
           const hs2 = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
           return (

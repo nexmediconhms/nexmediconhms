@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -51,6 +51,36 @@ export default function NewPatientPage() {
   const [payLink,       setPayLink]       = useState<{url?:string;whatsappText:string;type:string}|null>(null)
   const [payLinkLoading,setPayLinkLoading]= useState(false)
   const [highlighted,   setHighlighted]   = useState<HighlightedFields>({})
+
+  // ── Load OCR prefill from forms page scanner ─────────────────
+  useEffect(() => {
+    try {
+      const prefillParam = new URLSearchParams(window.location.search).get('prefill')
+      const key    = 'ocr_prefill_generic'
+      const stored = sessionStorage.getItem(key)
+      if (!stored || !prefillParam) return
+      const ocr    = JSON.parse(stored)
+      const p      = ocr.patient ?? {}
+      const hl: HighlightedFields = {}
+      const apply = (field: keyof typeof EMPTY, val: string | undefined) => {
+        if (!val) return
+        setForm(prev => ({ ...prev, [field]: val }))
+        hl[field] = true
+      }
+      apply('full_name',               p.full_name)
+      apply('mobile',                  p.mobile)
+      apply('age',                     p.age)
+      apply('date_of_birth',           p.date_of_birth)
+      apply('gender',                  p.gender)
+      apply('blood_group',             p.blood_group)
+      apply('address',                 p.address)
+      apply('abha_id',                 p.abha_id)
+      apply('emergency_contact_name',  p.emergency_contact_name)
+      apply('emergency_contact_phone', p.emergency_contact_phone)
+      if (Object.keys(hl).length > 0) setHighlighted(hl)
+      sessionStorage.removeItem(key)
+    } catch { /* ignore */ }
+  }, [])
 
   // ── Field setter ──────────────────────────────────────────────
   function set(field: keyof FormData, value: string) {
@@ -476,8 +506,46 @@ export default function NewPatientPage() {
                   <option>Camp / Outreach</option>
                   <option>Other</option>
                 </select>
+                {(form.reference_source === 'Doctor Referral' || form.reference_source === 'Patient Referral') && (
+                  <input className="input mt-2 text-sm"
+                    placeholder={form.reference_source === 'Doctor Referral' ? 'Referring doctor name…' : 'Referred by patient name…'}
+                    value={(form as any).reference_detail || ''}
+                    onChange={e => set('reference_source' as any, form.reference_source + ' — ' + e.target.value)}/>
+                )}
               </div>
             </div>
+            {/* Mediclaim action guidance */}
+            {form.mediclaim === 'Yes' && (
+              <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs font-bold text-blue-800 mb-1.5">
+                  📋 Mediclaim Patient — Required Steps
+                </p>
+                <div className="space-y-1 text-xs text-blue-700">
+                  <p>✓ Collect insurance card / policy document</p>
+                  <p>✓ Note Policy Number and TPA name in consultation notes</p>
+                  <p>✓ Get pre-authorisation letter if IPD admission</p>
+                  {form.cashless === 'Yes' ? (
+                    <>
+                      <p className="font-semibold text-blue-900 mt-2">💳 Cashless Process:</p>
+                      <p>1. Contact TPA/insurance company for pre-auth approval</p>
+                      <p>2. Fill TPA cashless request form (from insurance company)</p>
+                      <p>3. Attach patient's ID proof + insurance card</p>
+                      <p>4. Submit to hospital billing — patient pays only non-covered amount</p>
+                      <p>5. Mark billing as "Cashless" — do NOT collect full amount from patient</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-blue-900 mt-2">🧾 Reimbursement Process:</p>
+                      <p>1. Collect full payment from patient at discharge</p>
+                      <p>2. Provide detailed itemised bill + all receipts</p>
+                      <p>3. Give originals of all lab reports, prescriptions</p>
+                      <p>4. Doctor's discharge summary on letterhead (for IPD)</p>
+                      <p>5. Patient submits to insurance for reimbursement</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Emergency Contact ───────────────────────────────── */}
