@@ -1,0 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors text-sm;
+  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-semibold px-4 py-2 rounded-lg border border-gray-300 transition-colors text-sm;
+  }
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors text-sm;
+  }
+  .card {
+    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+  }
+  .input {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  }
+  .label {
+    @apply block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide;
+  }
+  .badge-green  { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800; }
+  .badge-red    { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800; }
+  .badge-yellow { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800; }
+  .badge-blue   { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800; }
+  .badge-gray   { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700; }
+  .section-title { @apply text-base font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-100; }
+}
+
+/* Scanner animation — used by FormScanner progress bar */
+@keyframes scanner {
+  0%   { width: 0%; margin-left: 0; }
+  50%  { width: 60%; margin-left: 20%; }
+  100% { width: 0%; margin-left: 100%; }
+}
+.animate-scanner {
+  animation: scanner 1.6s ease-in-out infinite;
+}
+
+/* Highlight effect when OCR fills a field */
+@keyframes ocr-fill {
+  0%   { background-color: #fef9c3; }
+  100% { background-color: transparent; }
+}
+.ocr-filled {
+  animation: ocr-fill 1.5s ease-out forwards;
+}
+
+/* Print styles */
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  body { background: white; font-size: 12px; }
+  .print-container { padding: 0; margin: 0; }
+  /* Remove sidebar — it's position:fixed so needs both display:none and position reset */
+  main { margin-left: 0 !important; width: 100% !important; }
+  aside { display: none !important; position: static !important; }
+  /* Ensure cards and content fill the full print width */
+  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+}
+.print-only { display: none; }
+
+/* Sidebar active state */
+.nav-active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-right: 3px solid #2563eb;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* OCR Scanner progress animation */
+@keyframes scanner {
+  0%   { width: 0%;  opacity: 1; }
+  70%  { width: 90%; opacity: 1; }
+  85%  { width: 95%; opacity: 0.8; }
+  100% { width: 98%; opacity: 0.6; }
+}
+.animate-scanner {
+  animation: scanner 4s ease-out forwards;
+}
+
+/* ── PWA / Mobile Optimizations ─────────────────────────────── */
+
+/* Safe area insets for notched phones (iPhone X+) */
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Prevent text size adjustment on orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Touch-friendly tap targets — min 44px */
+button, a, [role="button"] {
+  min-height: 36px;
+}
+
+/* Remove 300ms tap delay on mobile */
+* {
+  touch-action: manipulation;
+}
+
+/* Smooth scrolling on iOS */
+.overflow-y-auto, .overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Bottom navigation for mobile (shown on small screens) */
+@media (max-width: 768px) {
+  /* Sidebar hidden on mobile — show bottom nav instead */
+  aside {
+    display: none;
+  }
+  
+  main.ml-60 {
+    margin-left: 0 !important;
+  }
+  
+  /* Add bottom padding so content doesn't hide behind bottom nav */
+  .mobile-content {
+    padding-bottom: 80px;
+  }
+}
