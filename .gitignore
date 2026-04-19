@@ -20,6 +20,7 @@ node_modules/
 .env.local
 .env.development.local
 .env.test.local
+.env.production
 .env.production.local
 .env.production.example
 
@@ -33,4 +34,7 @@ yarn-error.log*
 .env.local
 
 .vercel
+.env.production.example
+.env.local
+.env*.local
 .env.production.example
