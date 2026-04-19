@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -92,7 +92,7 @@ const PAY_MODES: { mode: PayMode; icon: any; label: string; desc: string;
   },
 ]
 
-export default function BillingPage() {
+function BillingContent() {
   const [view,         setView]         = useState<'list'|'new'|'receipt'>('list')
   const [bills,        setBills]        = useState<Bill[]>([])
   const [loadingBills, setLoadingBills] = useState(true)
@@ -790,5 +790,13 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
         Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
       </div>
     </div>
+  )
+}
+
+export default function BillingPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-gray-400">Loading...</div>}>
+      <BillingContent />
+    </Suspense>
   )
 }

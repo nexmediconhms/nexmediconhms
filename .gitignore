@@ -38,3 +38,9 @@ yarn-error.log*
 .env.local
 .env*.local
 .env.production.example
+
+# next-pwa generated files
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
@@ -45,7 +45,7 @@ const FORMS = [
   },
 ]
 
-export default function FormsPage() {
+function FormsContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const patientId    = searchParams.get('patient') || ''
@@ -224,5 +224,13 @@ export default function FormsPage() {
         </div>
       </div>
     </AppShell>
+  )
+}
+
+export default function FormsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-gray-400">Loading...</div>}>
+      <FormsContent />
+    </Suspense>
   )
 }
