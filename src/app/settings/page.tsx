@@ -2,56 +2,8 @@
 import { useState, useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { Settings, Save, CheckCircle, Building2, User, Printer, Info } from 'lucide-react'
+import { loadSettings, DEFAULTS, SETTINGS_STORAGE_KEY, type HospitalSettings } from '@/lib/settings'
 
-// Settings are stored in localStorage so they persist across sessions
-// without needing a database table. In production you'd store in DB.
-const STORAGE_KEY = 'nexmedicon_settings'
-
-interface HospitalSettings {
-  hospitalName: string
-  address: string
-  phone: string
-  regNo: string
-  gstin: string
-  doctorName: string
-  doctorQual: string
-  doctorReg: string
-  footerNote: string
-  upiId: string
-  feeOPD: string
-  feeANC: string
-  feeFollowUp: string
-  feeIPD: string
-  feeEmergency: string
-}
-
-const DEFAULTS: HospitalSettings = {
-  hospitalName: 'NexMedicon Hospital',
-  address: 'Your Hospital Address, City, PIN',
-  phone: '+91 98765 43210',
-  regNo: 'Your Reg. No.',
-  gstin: '',
-  doctorName: 'Dr. Your Name',
-  doctorQual: 'MBBS, MD (OBG)',
-  doctorReg: 'Your Medical Council Reg. No.',
-  footerNote: 'Thank you for visiting. Please follow the advice given above. Report any emergency immediately.',
-  upiId: '',
-  feeOPD: '500',
-  feeANC: '400',
-  feeFollowUp: '300',
-  feeIPD: '1500',
-  feeEmergency: '800',
-}
-
-// Module-level accessor so prescription/discharge pages can read live settings
-function loadSettings(): HospitalSettings {
-  if (typeof window === 'undefined') return DEFAULTS
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return { ...DEFAULTS, ...JSON.parse(stored) }
-  } catch { }
-  return DEFAULTS
-}
 
 function Field({ label, value, onChange, placeholder, hint }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string
@@ -79,14 +31,14 @@ export default function SettingsPage() {
   }
 
   function handleSave() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(form))
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(form))
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
   function handleReset() {
     if (confirm('Reset all settings to defaults?')) {
-      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(SETTINGS_STORAGE_KEY)
       setForm(DEFAULTS)
     }
   }
