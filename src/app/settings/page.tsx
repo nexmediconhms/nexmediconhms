@@ -2,7 +2,17 @@
 import { useState, useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { Settings, Save, CheckCircle, Building2, User, Printer, Info } from 'lucide-react'
-import { loadSettings, DEFAULTS, SETTINGS_STORAGE_KEY, type HospitalSettings } from '@/lib/settings'
+import { DEFAULTS, SETTINGS_STORAGE_KEY, type HospitalSettings } from '@/lib/settings'
+
+// Inline loadSettings to avoid Next.js page export validation issue
+function loadSettingsFromStorage(): HospitalSettings {
+  if (typeof window === 'undefined') return DEFAULTS
+  try {
+    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (stored) return { ...DEFAULTS, ...JSON.parse(stored) }
+  } catch {}
+  return DEFAULTS
+}
 
 
 function Field({ label, value, onChange, placeholder, hint }: {
@@ -22,7 +32,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    const s = loadSettings()
+    const s = loadSettingsFromStorage()
     setForm(s)
   }, [])
 
