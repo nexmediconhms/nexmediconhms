@@ -134,16 +134,18 @@ export async function analyzePDF(opts: {
 }): Promise<{ text: string; provider: string }> {
   const { base64, prompt, system = '', maxTokens = 2048 } = opts
 
-  // Step 1 — free text extraction
+  // Step 1 — free text extraction using pdf-parse
+  // Using dynamic import — works on Vercel serverless and local dev
   let pdfText = ''
   try {
-    const { createRequire } = await import('module')
-    const req      = createRequire(import.meta.url)
-    const pdfParse = req('pdf-parse')
-    const data     = await pdfParse(Buffer.from(base64, 'base64'))
+    // pdf-parse v1 exports the function directly (not as .default)
+    // Must use require() — dynamic import gives wrong module shape
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require('pdf-parse')
+    const data = await pdfParse(Buffer.from(base64, 'base64'))
     pdfText = (data.text ?? '').trim()
   } catch (err: any) {
-    console.warn('[PDF] pdf-parse:', err?.message?.slice(0, 80))
+    console.warn('[PDF] pdf-parse failed:', err?.message?.slice(0, 100))
   }
 
   if (!pdfText) {

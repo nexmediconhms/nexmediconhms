@@ -113,7 +113,7 @@ export default function FormScanner({
   }
 
   // ── Process image file → OCR API ─────────────────────────
-  async function processFile(file: File) {
+  async function processFile(file: File, forceEndpoint?: string) {
     setState('uploading')
     setError('')
     setResult(null)
@@ -130,7 +130,8 @@ export default function FormScanner({
     setState('processing')
 
     try {
-      const endpoint = ocrMode === 'free' ? '/api/ocr-free' : '/api/ocr'
+      // Use explicit endpoint if provided (avoids React state async race condition)
+      const endpoint = forceEndpoint ?? (ocrMode === 'free' ? '/api/ocr-free' : '/api/ocr')
       const res  = await fetch(endpoint, { method: 'POST', body: fd })
       const data = await res.json()
       // Always check for error in body (API returns 200 even on errors to avoid browser noise)
@@ -149,14 +150,24 @@ export default function FormScanner({
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (file) processFile(file)
+    if (file) {
+      // PDFs must use /api/ocr (AI endpoint) — Tesseract cannot process PDFs
+      // Pass endpoint explicitly to avoid React state async race condition
+      const ep = file.type === 'application/pdf' ? '/api/ocr' : undefined
+      if (file.type === 'application/pdf') setOcrMode('ai')  // sync UI toggle
+      processFile(file, ep)
+    }
     e.target.value = ''
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
-    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) processFile(file)
+    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) {
+      const ep = file.type === 'application/pdf' ? '/api/ocr' : undefined
+      if (file.type === 'application/pdf') setOcrMode('ai')
+      processFile(file, ep)
+    }
   }, [])
 
   function reset() {

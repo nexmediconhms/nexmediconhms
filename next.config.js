@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
+
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  // Only enable PWA in production — dev mode causes issues with HMR
   disable: process.env.NODE_ENV === 'development',
   runtimeCaching: [
     {
@@ -25,5 +25,13 @@ const withPWA = require('next-pwa')({
   ],
 })
 
-const nextConfig = {}
+const nextConfig = {
+  // Tell Next.js to bundle these as server-only modules
+  // (not transpiled for the browser). Required for pdf-parse on Vercel.
+  serverExternalPackages: ['pdf-parse', 'tesseract.js', 'canvas'],
+
+  // Increase max body size for file uploads (PDFs can be several MB)
+  experimental: {},
+}
+
 module.exports = withPWA(nextConfig)

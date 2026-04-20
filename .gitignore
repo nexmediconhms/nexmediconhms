@@ -21,7 +21,6 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
-.env.production.example
 
 # debug
 npm-debug.log*
@@ -31,13 +30,7 @@ yarn-error.log*
 # vercel
 .vercel
 
-# Ignore service worker files
+.env.production.example
+.env.production
 public/sw.js
-public/workbox-f52fd911.js
-
-# Ignore generated API directories
-src/app/api/generate-pdf/
-src/app/api/generate-qr/
-
-# Ignore intake directory
-src/app/intake/
+public/workbox-f52fd911.js".env.production" 

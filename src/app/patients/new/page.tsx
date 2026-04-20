@@ -350,13 +350,23 @@ export default function NewPatientPage() {
 
         {/* ══ OCR SCANNER ═════════════════════════════════════════ */}
         <div className="mb-5">
+          {/* Quick access to all intake methods */}
+          <div className="flex items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <span className="text-sm">💡</span>
+            <p className="text-xs text-blue-800 flex-1">
+              <strong>Better ways to collect this data:</strong> Use digital form, fillable PDF, or QR code for zero errors.
+            </p>
+            <a href="/forms" className="text-xs font-semibold text-blue-600 hover:underline whitespace-nowrap">
+              Open Intake Forms →
+            </a>
+          </div>
           <FormScanner
             formType="patient_registration"
             onExtracted={handleOCRResult}
-            label="Scan Registration Paper Form"
+            label="Scan Registration Paper Form (Photo or PDF)"
           />
           <p className="text-xs text-gray-400 mt-2 ml-1">
-            📷 Upload a photo of the patient's existing paper registration form (Gujarati or English).
+            📷 Upload a photo or PDF of the patient's existing paper registration form (Gujarati or English).
             The app will read it and fill the fields below automatically.
           </p>
         </div>
