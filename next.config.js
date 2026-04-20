@@ -26,10 +26,14 @@ const withPWA = require('next-pwa')({
 })
 
 const nextConfig = {
-  // Server-only CJS modules that must NOT be bundled for the browser.
-  // NOTE: pdfjs-dist is intentionally excluded — it runs in the BROWSER
-  // via dynamic import in pdf-to-image.ts.  Adding it here breaks client rendering.
-  serverExternalPackages: ['pdf-parse', 'pdf-lib', 'tesseract.js', 'canvas'],
+  experimental: {
+    // Server-only CJS modules that must NOT be bundled for the browser.
+    // NOTE: pdfjs-dist is intentionally excluded — it runs in the BROWSER
+    // via dynamic import in pdf-to-image.ts.  Adding it here breaks client rendering.
+    serverComponentsExternalPackages: ['pdf-parse', 'pdf-lib', 'tesseract.js', 'canvas'],
+    // Allow useSearchParams() in client pages without requiring a Suspense boundary
+    missingSuspenseWithCSRBailout: false,
+  },
 }
 
 module.exports = withPWA(nextConfig)
