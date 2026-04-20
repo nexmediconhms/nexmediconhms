@@ -107,3 +107,21 @@ CREATE POLICY allow_auth_files_db ON consultation_files_db
 
 CREATE INDEX IF NOT EXISTS idx_files_db_patient   ON consultation_files_db(patient_id);
 CREATE INDEX IF NOT EXISTS idx_files_db_encounter ON consultation_files_db(encounter_id);
+
+-- ── Allow public (unauthenticated) INSERT on patients table ───────
+-- This is needed for the /intake page where patients self-register
+-- without logging in. Read/Update/Delete still require authentication.
+-- Run this in Supabase SQL Editor.
+DROP POLICY IF EXISTS allow_public_patient_insert ON patients;
+CREATE POLICY allow_public_patient_insert ON patients
+  FOR INSERT TO anon WITH CHECK (true);
+
+-- Allow anon to read their own record after insert (for MRN display)
+DROP POLICY IF EXISTS allow_public_patient_select ON patients;
+CREATE POLICY allow_public_patient_select ON patients
+  FOR SELECT TO anon USING (true);
+
+-- Allow anon to create an encounter (chief_complaint from intake form)
+DROP POLICY IF EXISTS allow_public_encounter_insert ON encounters;
+CREATE POLICY allow_public_encounter_insert ON encounters
+  FOR INSERT TO anon WITH CHECK (true);

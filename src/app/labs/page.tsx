@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -136,7 +136,7 @@ function determineStatus(value: string, low: number, high: number): 'normal' | '
   return 'normal'
 }
 
-function LabsContent() {
+export default function LabsPage() {
   const [view,       setView]       = useState<'list'|'new'|'detail'>('list')
   const [listSearch, setListSearch]  = useState('')
   const [labs,       setLabs]       = useState<LabReport[]>([])
@@ -555,13 +555,5 @@ function LabsContent() {
         )}
       </div>
     </AppShell>
-  )
-}
-
-export default function LabsPage() {
-  return (
-    <Suspense fallback={<div className="p-6 text-center text-gray-400">Loading...</div>}>
-      <LabsContent />
-    </Suspense>
   )
 }

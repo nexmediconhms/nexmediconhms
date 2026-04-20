@@ -20,7 +20,6 @@ node_modules/
 .env.local
 .env.development.local
 .env.test.local
-.env.production
 .env.production.local
 .env.production.example
 
@@ -31,16 +30,14 @@ yarn-error.log*
 
 # vercel
 .vercel
-.env.local
 
-.vercel
-.env.production.example
-.env.local
-.env*.local
-.env.production.example
-
-# next-pwa generated files
+# Ignore service worker files
 public/sw.js
-public/sw.js.map
-public/workbox-*.js
-public/workbox-*.js.map
+public/workbox-f52fd911.js
+
+# Ignore generated API directories
+src/app/api/generate-pdf/
+src/app/api/generate-qr/
+
+# Ignore intake directory
+src/app/intake/

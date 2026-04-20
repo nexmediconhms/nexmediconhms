@@ -156,7 +156,7 @@ export default function FormScanner({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
-    if (file && file.type.startsWith('image/')) processFile(file)
+    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) processFile(file)
   }, [])
 
   function reset() {
@@ -280,7 +280,7 @@ export default function FormScanner({
       <input
         id={fileId}
         type="file"
-        accept="image/jpeg,image/jpg,image/png,image/webp"
+        accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
         onChange={handleFileChange}
         style={{ position:'absolute', width:1, height:1, opacity:0, pointerEvents:'none' }}
       />
@@ -296,7 +296,7 @@ export default function FormScanner({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-blue-800">{label}</p>
               <p className="text-xs text-blue-500 mt-0.5">
-                Tap <strong>Camera</strong> to use your webcam/phone camera, or <strong>Upload</strong> to choose a file
+                Tap <strong>Camera</strong> for live webcam, or <strong>Upload</strong> to choose a JPG, PNG, or <strong>PDF</strong> file
               </p>
             </div>
             <div className="flex gap-2 flex-shrink-0">

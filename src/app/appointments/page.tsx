@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -62,7 +62,7 @@ function loadAppts(): Appointment[] {
 }
 function saveAppts(a: Appointment[]) { localStorage.setItem(APPTS_KEY, JSON.stringify(a)) }
 
-function AppointmentsContent() {
+export default function AppointmentsPage() {
   const [appts,       setAppts]       = useState<Appointment[]>([])
   const [view,        setView]        = useState<'list'|'new'|'reminder'>('list')
   const [dateFilter,  setDateFilter]  = useState(new Date().toISOString().split('T')[0])
@@ -489,13 +489,5 @@ function AppointmentsContent() {
         )}
       </div>
     </AppShell>
-  )
-}
-
-export default function AppointmentsPage() {
-  return (
-    <Suspense fallback={<div className="p-6 text-center text-gray-400">Loading...</div>}>
-      <AppointmentsContent />
-    </Suspense>
   )
 }

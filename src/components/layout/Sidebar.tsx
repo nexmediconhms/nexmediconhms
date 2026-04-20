@@ -25,7 +25,7 @@ const NAV_GROUPS = [
       { href: '/beds',            icon: BedDouble,       label: 'Bed Management'   },
       { href: '/anc',             icon: Baby,            label: 'ANC Registry'     },
       { href: '/labs',            icon: FlaskConical,    label: 'Lab Results'      },
-      { href: '/forms',           icon: ClipboardList,   label: 'Paper Forms'      },
+      { href: '/forms',           icon: ClipboardList,   label: 'Patient Intake'   },
     ],
   },
   {
