@@ -26,12 +26,10 @@ const withPWA = require('next-pwa')({
 })
 
 const nextConfig = {
-  // Tell Next.js to bundle these as server-only modules
-  // (not transpiled for the browser). Required for pdf-parse on Vercel.
-  serverExternalPackages: ['pdf-parse', 'tesseract.js', 'canvas'],
-
-  // Increase max body size for file uploads (PDFs can be several MB)
-  experimental: {},
+  // Server-only CJS modules that must NOT be bundled for the browser.
+  // NOTE: pdfjs-dist is intentionally excluded — it runs in the BROWSER
+  // via dynamic import in pdf-to-image.ts.  Adding it here breaks client rendering.
+  serverExternalPackages: ['pdf-parse', 'pdf-lib', 'tesseract.js', 'canvas'],
 }
 
 module.exports = withPWA(nextConfig)

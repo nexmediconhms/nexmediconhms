@@ -6,6 +6,7 @@ import {
   Eye, RefreshCw, Camera, Loader2,
   ChevronDown, ChevronUp, X, ZoomIn
 } from 'lucide-react'
+import { pdfToPngFile } from '@/lib/pdf-to-image'
 
 interface FormScannerProps {
   formType:   OCRFormType
@@ -31,6 +32,7 @@ export default function FormScanner({
   const [showPanel,   setShowPanel]  = useState(false)
   const [camError,    setCamError]   = useState('')
   const [ocrMode,     setOcrMode]    = useState<'free'|'ai'>('free')
+  const [isPDF,       setIsPDF]      = useState(false)
 
   // Camera refs
   const videoRef  = useRef<HTMLVideoElement>(null)
@@ -122,16 +124,53 @@ export default function FormScanner({
     reader.onload = e => setPreview(e.target?.result as string)
     reader.readAsDataURL(file)
 
+    setState('processing')
+
+    // ── Scanned PDF handling ──────────────────────────────
+    // If a PDF is uploaded, we try two strategies:
+    // 1. Send directly to /api/ocr → /api/parse-pdf tries AcroForm fields + text extraction
+    // 2. If that fails with "no text layer", render the PDF page to PNG in the
+    //    browser (pdfjs-dist + canvas) and send the PNG to /api/ocr for vision OCR.
+    setIsPDF(file.type === 'application/pdf')
+    let fileToSend = file
+    if (file.type === 'application/pdf') {
+      // Render PDF page to PNG in browser (works for scanned + typed PDFs)
+      try {
+        const pngFile = await pdfToPngFile(file)
+        if (pngFile) {
+          fileToSend = pngFile
+          const previewUrl = URL.createObjectURL(pngFile)
+          setPreview(previewUrl)
+        } else {
+          // pdfToPngFile returned null — PDF could not be rendered
+          // This happens with encrypted PDFs or corrupted files
+          // Show clear actionable error instead of sending unusable PDF to server
+          setState('error')
+          setError(
+            'Could not render this PDF. ' +
+            'Please photograph the paper form with your camera (use the Camera button) ' +
+            'or open the PDF on your phone and take a screenshot, then upload the image.'
+          )
+          return
+        }
+      } catch (renderErr: any) {
+        setState('error')
+        setError(
+          'PDF rendering failed: ' + (renderErr?.message || 'Unknown error') +
+          '. Please photograph the form and upload as JPG.'
+        )
+        return
+      }
+    }
+
     const fd = new FormData()
-    fd.append('image', file)
+    fd.append('image', fileToSend)
     fd.append('form_type', formType)
     fd.append('lang', 'eng')  // 'eng+guj' for Gujarati support
 
-    setState('processing')
-
     try {
-      // Use explicit endpoint if provided (avoids React state async race condition)
-      const endpoint = forceEndpoint ?? (ocrMode === 'free' ? '/api/ocr-free' : '/api/ocr')
+      // Use /api/ocr for all files — scanned PDFs are now pre-rendered to PNG
+      const endpoint = forceEndpoint ?? (ocrMode === 'free' && fileToSend.type !== 'application/pdf' ? '/api/ocr-free' : '/api/ocr')
       const res  = await fetch(endpoint, { method: 'POST', body: fd })
       const data = await res.json()
       // Always check for error in body (API returns 200 even on errors to avoid browser noise)
@@ -179,6 +218,7 @@ export default function FormScanner({
     setShowPanel(false)
     setShowRaw(false)
     setCamError('')
+    setIsPDF(false)
   }
 
   function ConfBadge({ c }: { c: string }) {
@@ -351,7 +391,7 @@ export default function FormScanner({
               </div>
               <p className="text-xs text-blue-500 mt-1">
                 {state === 'processing'
-                  ? 'Claude Vision is detecting Gujarati and English text...'
+                  ? (isPDF ? 'Rendering PDF page, then reading with AI...' : 'Claude Vision is detecting Gujarati and English text...')
                   : 'Loading image...'}
               </p>
             </div>
@@ -467,12 +507,17 @@ export default function FormScanner({
               </button>
             </div>
             {/* If it's an API key issue, show setup instructions */}
-            {(error.includes('AI key') || error.includes('ANTHROPIC') || error.includes('OpenAI') || error.includes('configured') || error.includes('setup')) && (
+            {(error.includes('SCANNED_PDF') || error.includes('photograph') || error.includes('camera')) && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                <p className="font-semibold mb-1">📸 Use Camera instead</p>
+                <p>This PDF is a scanned image with no text layer. Click the <strong>Camera</strong> button above to photograph the paper form directly.</p>
+              </div>
+            )}
+            {(error.includes('AI key') || error.includes('ANTHROPIC') || error.includes('OpenAI') || error.includes('configured') || error.includes('OPENAI')) && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                <strong>Setup required:</strong> Add your Anthropic API key to <code className="bg-amber-100 px-1 rounded">.env.local</code>:{' '}
-                <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY=sk-ant-your-real-key</code>{' '}
-                then restart the dev server. Get your key from{' '}
-                <strong>console.anthropic.com → API Keys</strong>.
+                <p className="font-semibold mb-1">Setup required: AI key not configured</p>
+                <p>Go to <strong>Vercel → Project → Settings → Environment Variables</strong> and add <code className="bg-amber-100 px-1 rounded">OPENAI_API_KEY</code> or <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code>, then redeploy.</p>
+                <a href="/ai-setup" className="underline font-semibold">Check AI Status →</a>
               </div>
             )}
           </div>

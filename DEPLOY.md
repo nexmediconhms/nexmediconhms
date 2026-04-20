@@ -1,113 +1,192 @@
-# NexMedicon HMS — Deployment Guide
+# NexMedicon HMS — Complete Deployment Guide
+# Deploy from localhost to Vercel production (shareable URL for doctors)
 
-## 🚀 Deploy to Vercel (Recommended — Free)
+---
 
-### Step 1: Push to GitHub
+## PREREQUISITES (do these once)
+
+1. Create accounts (free):
+   - https://github.com       — stores your code
+   - https://vercel.com       — hosts your app
+   - https://supabase.com     — your database
+
+2. Install on your computer:
+   - Node.js 20+ → https://nodejs.org (click "LTS" download)
+   - Git → https://git-scm.com/downloads
+   - Verify: open Terminal/Command Prompt and run:
+     node --version    # should show v20.x.x
+     git --version     # should show git version 2.x.x
+
+---
+
+## STEP 1 — SET UP SUPABASE (your database)
+
+1. Go to https://supabase.com → Sign up → New Project
+2. Give it a name (e.g. "nexmedicon"), choose a region close to India (Singapore)
+3. Wait ~2 minutes for it to start
+
+4. Go to SQL Editor (left sidebar) and run these files IN ORDER:
+   - Paste contents of `supabase_setup.sql` → Run
+   - Paste contents of `supabase_add_discharge.sql` → Run
+   - Paste contents of `supabase_add_billing.sql` → Run
+   - Paste contents of `supabase_v5_updates.sql` → Run
+   - Paste contents of `supabase_v6_updates.sql` → Run
+
+5. Get your Supabase credentials:
+   - Go to Project Settings → API
+   - Copy "Project URL" → this is your SUPABASE_URL
+   - Copy "anon public" key → this is your SUPABASE_ANON_KEY
+
+---
+
+## STEP 2 — GET AI API KEY (for PDF/photo scanning)
+
+You only need ONE of these:
+
+**Option A: OpenAI (easiest, $5 credit lasts months)**
+1. Go to https://platform.openai.com → Sign up
+2. Go to API Keys → Create new secret key
+3. Copy the key (starts with sk-)
+
+**Option B: Anthropic Claude**
+1. Go to https://console.anthropic.com → Sign up
+2. Go to API Keys → Create Key
+3. Copy the key (starts with sk-ant-)
+
+---
+
+## STEP 3 — SET UP YOUR CODE ON GITHUB
+
+Open Terminal in the `hms-mvp` folder:
+
 ```bash
-cd hms-mvp
+# Install dependencies
+npm install
+
+# Initialise git (if not already done)
 git init
 git add .
-git commit -m "NexMedicon HMS v18"
-# Create repo at github.com/new, then:
+git commit -m "NexMedicon HMS v1"
+
+# Create a new repo on GitHub (go to github.com → New Repository)
+# Then connect:
 git remote add origin https://github.com/YOUR_USERNAME/nexmedicon-hms.git
+git branch -M main
 git push -u origin main
 ```
 
-### Step 2: Connect to Vercel
-1. Go to **vercel.com** → Sign up free with GitHub
-2. Click **"Add New Project"** → Import your GitHub repo
-3. Framework: **Next.js** (auto-detected)
-4. Click **"Environment Variables"** and add ALL of these:
+---
 
-| Variable | Value |
+## STEP 4 — DEPLOY TO VERCEL
+
+1. Go to https://vercel.com → Sign up with GitHub → click "Import"
+2. Find your `nexmedicon-hms` repo → Import
+3. Framework: Next.js (auto-detected)
+4. Click **Environment Variables** and add EACH of these:
+
+| Variable Name | Value |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | From Supabase → Project → Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase → Project → Settings → API |
-| `ANTHROPIC_API_KEY` | From console.anthropic.com → API Keys |
-| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | From Razorpay dashboard (rzp_live_...) |
-| `RAZORPAY_KEY_ID` | Same as above |
-| `RAZORPAY_KEY_SECRET` | From Razorpay dashboard |
-| `NEXT_PUBLIC_UPI_ID` | Your hospital UPI (yourhospital@bank) |
-| `NEXT_PUBLIC_HOSPITAL_NAME` | Your hospital name |
-| `NEXT_PUBLIC_SITE_URL` | Your Vercel URL (e.g. https://nexmedicon.vercel.app) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
+| `OPENAI_API_KEY` | Your OpenAI key (sk-...) |
+| `NEXT_PUBLIC_HOSPITAL_NAME` | e.g. Dr. Patel Gynecology Clinic |
+| `NEXT_PUBLIC_SITE_URL` | Leave blank for now (fill after deploy) |
 
-5. Click **Deploy** — takes 2-3 minutes
-6. Your URL: `https://your-project.vercel.app`
+Optional (for payments):
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | rzp_live_... |
+| `RAZORPAY_KEY_ID` | rzp_live_... |
+| `RAZORPAY_KEY_SECRET` | Your Razorpay secret |
+| `NEXT_PUBLIC_UPI_ID` | yourname@bankname |
 
-### Step 3: Set up Supabase for Production
-- In Supabase → Settings → API → Allowed URLs: add your Vercel URL
-- Run all SQL migrations in order (see below)
+5. Click **Deploy** → wait 3-4 minutes
 
----
-
-## 📱 Mobile App (PWA — Install from Browser)
-
-NexMedicon HMS is a **Progressive Web App**. No app store needed.
-
-### On Android (Chrome):
-1. Open your deployed URL in Chrome
-2. Tap the **⋮ menu** → **"Add to Home screen"**
-3. Tap **Add** — icon appears on home screen like a native app
-
-### On iPhone (Safari):
-1. Open your deployed URL in Safari
-2. Tap the **Share button** (box with arrow)
-3. Scroll down → **"Add to Home Screen"**
-4. Tap **Add** — icon appears on home screen
-
-### What the PWA gives you:
-- ✅ Opens full-screen (no browser bar)
-- ✅ Works offline for navigation
-- ✅ Camera access (for OCR scanning)
-- ✅ Home screen icon with NexMedicon logo
-- ✅ Fast load times (cached)
-- ✅ Works on Android + iPhone + iPad + Desktop
+6. After deploy: copy your production URL (e.g. https://nexmedicon.vercel.app)
+   Go back to Vercel → Settings → Environment Variables
+   Update `NEXT_PUBLIC_SITE_URL` = `https://nexmedicon.vercel.app`
+   Then redeploy: Deployments → three dots → Redeploy
 
 ---
 
-## 🗄️ SQL Migrations (Run in Order in Supabase → SQL Editor)
+## STEP 5 — CREATE YOUR FIRST LOGIN
 
-1. `supabase_setup.sql` — patients, encounters, prescriptions, beds
-2. `supabase_add_discharge.sql` — discharge summaries
-3. `supabase_add_billing.sql` — bills table
-4. `supabase_v5_updates.sql` — performance indexes
-5. `supabase_v6_updates.sql` — mediclaim, attachments, IPD nursing, baby_birth_time
+Supabase handles authentication.
 
-### Supabase Storage Bucket (required for file uploads):
-Storage → New Bucket → Name: `consultation-files` → **Private** → Save
+1. Go to Supabase → Authentication → Users → Add User
+2. Enter the doctor/admin email and password
+3. They can now log in at your production URL
 
 ---
 
-## ⚙️ Supabase Auth Settings
-Authentication → URL Configuration:
-- Site URL: `https://your-project.vercel.app`
-- Redirect URLs: `https://your-project.vercel.app/**`
+## STEP 6 — CONFIGURE THE APP
+
+1. Open your production URL → log in
+2. Go to **Settings** (sidebar) → fill in:
+   - Hospital Name
+   - Doctor Name
+   - Address, Phone
+   - Consultation fees
+3. Click Save
 
 ---
 
-## 🔑 Getting Your API Keys
+## EVERY TIME YOU MAKE CHANGES
 
-| Key | Where to get |
-|---|---|
-| Supabase URL + Anon Key | supabase.com → Project → Settings → API |
-| Anthropic API Key | console.anthropic.com → API Keys → Create Key |
-| Razorpay Keys | dashboard.razorpay.com → Settings → API Keys |
+```bash
+# In your hms-mvp folder:
+git add .
+git commit -m "describe what you changed"
+git push
+```
+
+Vercel automatically redeploys in ~2 minutes after every push. 
+No manual action needed — just push to GitHub.
 
 ---
 
-## 🐛 Troubleshooting
+## TROUBLESHOOTING
 
-**OCR / AI features showing errors:**
-→ Check ANTHROPIC_API_KEY is set in Vercel env vars and doesn't contain "YOUR"
-→ Restart deployment after adding env vars
+**"Invalid API key"** → Check Vercel env vars, make sure no extra spaces, redeploy
 
-**Patient data not saving:**
-→ Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
-→ Make sure SQL migrations were run
+**"Cannot connect to database"** → Check SUPABASE_URL and SUPABASE_ANON_KEY in Vercel env vars
 
-**File uploads failing:**
-→ Create "consultation-files" bucket in Supabase Storage
-→ Set bucket to Private
+**"PDF upload fails"** → 
+  - Scanned image PDFs: use the Camera button to photograph instead
+  - Fillable PDFs: should work without AI key
+  - Check AI Status page in the app (/ai-setup)
 
-**Login not working on deployed URL:**
-→ Add your Vercel URL to Supabase Auth → URL Configuration → Redirect URLs
+**"Page not found" after changes** → Vercel may still be deploying, wait 2 min
+
+**WhatsApp links not working** → Set NEXT_PUBLIC_SITE_URL to your full production URL
+
+**Patient self-registration QR not working** → Same as above — NEXT_PUBLIC_SITE_URL must be set
+
+---
+
+## SHARE WITH DOCTORS
+
+Once deployed, share:
+- **Doctor login URL**: https://your-app.vercel.app (they use their email/password)
+- **Patient self-registration**: https://your-app.vercel.app/intake?h=HospitalName
+  (shown as QR in app → Patient Intake → Digital Form tab)
+
+---
+
+## ENVIRONMENT VARIABLES REFERENCE
+
+```
+# Required
+NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+NEXT_PUBLIC_HOSPITAL_NAME=Your Hospital Name
+NEXT_PUBLIC_SITE_URL=https://your-app.vercel.app
+
+# Required for PDF/photo scanning (add at least one)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional — payments
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_...
+RAZORPAY_KEY_ID=rzp_live_...
+RAZORPAY_KEY_SECRET=...
+NEXT_PUBLIC_UPI_ID=hospital@bankname
+```

@@ -150,9 +150,9 @@ export async function POST(req: NextRequest) {
         error: 'No AI key configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env.local.',
       })
     }
-    if (err?.message?.includes('no extractable text')) {
+    if (err?.message?.includes('PDF_NO_TEXT') || err?.message?.includes('no readable text') || err?.message?.includes('no text layer')) {
       return NextResponse.json({
-        error: 'This PDF appears to be a scanned image. Please photograph it and upload as JPG instead, or use an AI key (Anthropic) which can read scanned PDFs natively.',
+        error: 'SCANNED_PDF: This PDF is a scanned image with no text layer. The app tried to render it as an image but failed. Please photograph the paper form with your camera instead, then upload the photo (JPG/PNG).',
       })
     }
     if (err?.message?.includes('401') || err?.message?.includes('authentication')) {
