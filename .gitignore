@@ -29,8 +29,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+".env.production" 
 
-.env.production.example
 .env.production
-public/sw.js
-public/workbox-f52fd911.js".env.production" 
+.env.production.example
