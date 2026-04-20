@@ -4,13 +4,8 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "env": {
-    "ANTHROPIC_API_KEY":            "@anthropic_api_key",
-    "OPENAI_API_KEY":               "@openai_api_key",
-    "NEXT_PUBLIC_SUPABASE_URL":     "@supabase_url",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY":"@supabase_anon_key",
-    "RAZORPAY_KEY_ID":              "@razorpay_key_id",
-    "RAZORPAY_KEY_SECRET":          "@razorpay_key_secret",
-    "NEXT_PUBLIC_RAZORPAY_KEY_ID":  "@razorpay_key_id",
-    "NEXT_PUBLIC_UPI_ID":           "@upi_id"
+    "ANTHROPIC_API_KEY": "@anthropic_api_key",
+    "RAZORPAY_KEY_ID": "@razorpay_key_id",
+    "RAZORPAY_KEY_SECRET": "@razorpay_key_secret"
   }
 }
