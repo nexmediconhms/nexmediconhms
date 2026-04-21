@@ -7,6 +7,7 @@ import {
   ChevronDown, ChevronUp, X, ZoomIn
 } from 'lucide-react'
 import { pdfToPngFile } from '@/lib/pdf-to-image'
+import { createWorker } from 'tesseract.js'
 
 interface FormScannerProps {
   formType:   OCRFormType
@@ -163,48 +164,49 @@ export default function FormScanner({
       }
     }
 
-    const fd = new FormData()
-    fd.append('image', fileToSend)
-    fd.append('form_type', formType)
-    fd.append('lang', 'eng')  // 'eng+guj' for Gujarati support
-
     try {
-      // Always use free OCR — no AI needed
-      // For PDFs that were pre-rendered to PNG, use /api/ocr-free (Tesseract)
-      // For direct PDF uploads, use /api/parse-pdf (text extraction, no AI)
-      const endpoint = forceEndpoint ?? '/api/ocr-free'
-      const res  = await fetch(endpoint, { method: 'POST', body: fd, credentials: 'include' })
+      // ── Run Tesseract.js OCR in the browser (client-side) ──────
+      // This avoids Vercel serverless timeout issues
+      const imageUrl = URL.createObjectURL(fileToSend)
+      const worker = await createWorker('eng', 1, {
+        logger: () => {},  // suppress progress logs
+      })
+      const { data: tessData } = await worker.recognize(imageUrl)
+      await worker.terminate()
+      URL.revokeObjectURL(imageUrl)
 
-      // Check HTTP status before parsing JSON
-      if (!res.ok) {
-        const contentType = res.headers.get('content-type') || ''
-        if (contentType.includes('text/html')) {
-          // Server returned HTML (e.g. auth page, 404 page) — not JSON
-          throw new Error(
-            res.status === 401
-              ? 'Authentication required. Please refresh the page and log in again.'
-              : `Server returned an error page (HTTP ${res.status}). Please try again or contact support.`
-          )
-        }
-        // Try to parse error from JSON body
-        try {
-          const errData = await res.json()
-          throw new Error(errData.error || `Server error ${res.status}`)
-        } catch {
-          throw new Error(`Server error ${res.status}. Please try again.`)
+      const rawText = tessData.text?.trim() ?? ''
+      const confidence = tessData.confidence ?? 0
+
+      if (!rawText) {
+        throw new Error('Could not extract any text from the image. Please try a clearer photo.')
+      }
+
+      // Send extracted text to server for parsing into structured fields
+      const res = await fetch('/api/ocr-free', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_text: rawText, form_type: formType }),
+        credentials: 'include',
+      })
+
+      let ocrData: OCRResult
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.error) throw new Error(data.error)
+        ocrData = data
+      } else {
+        // Server parsing failed — build a basic result from raw text
+        ocrData = {
+          form_type: (formType || 'patient_registration') as any,
+          confidence: confidence > 70 ? 'high' : confidence > 45 ? 'medium' : 'low',
+          language_detected: 'English',
+          raw_text: rawText,
+          patient: parseRawTextClient(rawText),
         }
       }
 
-      const text = await res.text()
-      let data: any
-      try {
-        data = JSON.parse(text)
-      } catch {
-        throw new Error('Server returned an invalid response. Please try again.')
-      }
-
-      if (data.error) throw new Error(data.error)
-      const ocrData: OCRResult = data
       setResult(ocrData)
       setState('done')
       onExtracted(ocrData)
@@ -548,4 +550,39 @@ export default function FormScanner({
       </div>
     </div>
   )
+}
+
+// ── Client-side text parser (fallback when server is unavailable) ──
+function parseRawTextClient(text: string): Record<string, string> {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const patient: Record<string, string> = {}
+
+  function after(keywords: string[]): string {
+    for (const line of lines) {
+      for (const kw of keywords) {
+        const rx = new RegExp(kw + '[:\\s]+(.+)', 'i')
+        const m = line.match(rx)
+        if (m) return m[1].trim()
+      }
+    }
+    return ''
+  }
+
+  patient.full_name = after(['full name', 'name', 'patient name'])
+  patient.mobile = after(['mobile', 'phone', 'contact', 'mob', 'cell']).replace(/\D/g, '').slice(-10)
+  patient.address = after(['address', 'addr', 'residence'])
+  patient.abha_id = after(['abha', 'health id'])
+  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid']).replace(/\D/g, '').slice(0, 12)
+  patient.age = after(['age']).replace(/\D/g, '')
+  patient.gender = after(['gender', 'sex'])
+  patient.blood_group = after(['blood group', 'blood type', 'bg'])
+  patient.emergency_contact_name = after(['emergency contact', 'emergency name', 'kin'])
+  patient.emergency_contact_phone = after(['emergency phone', 'emergency mobile', 'emergency no']).replace(/\D/g, '').slice(-10)
+
+  // Clean empty values
+  for (const key of Object.keys(patient)) {
+    if (!patient[key]) delete patient[key]
+  }
+
+  return patient
 }

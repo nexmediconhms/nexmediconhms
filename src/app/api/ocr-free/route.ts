@@ -29,6 +29,28 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
+    // ── Check if this is a JSON request (client-side OCR already done) ──
+    const contentType = req.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const body = await req.json()
+      const rawText  = body.raw_text ?? ''
+      const formType = body.form_type ?? ''
+      if (!rawText) {
+        return NextResponse.json({ error: 'No text provided.' })
+      }
+      const parsed = parseFormText(rawText, formType)
+      return NextResponse.json({
+        ok:               true,
+        raw_text:         rawText,
+        confidence:       'medium',
+        language_detected: 'English',
+        form_type:        (formType || 'patient_registration') as any,
+        ...parsed,
+        _provider:        'tesseract.js (browser, free)',
+      })
+    }
+
+    // ── FormData request (server-side OCR with Tesseract) ──
     const fd       = await req.formData()
     const file     = fd.get('image') as File | null
     const lang     = (fd.get('lang') as string | null) ?? 'eng'
