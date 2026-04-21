@@ -191,6 +191,7 @@ export default function NewPatientPage() {
   // ── Generate payment link / WhatsApp message ──────────────────
   async function generatePayLink(patientId: string, name: string, mobile: string) {
     setPayLinkLoading(true)
+    const fallbackMsg = `Hello ${name},\n\nYour registration is complete. Please visit reception to complete payment before your consultation.\n\nThank you!`
     try {
       const res = await fetch('/api/payment-link', {
         method: 'POST',
@@ -200,11 +201,22 @@ export default function NewPatientPage() {
           amount: 50000, description: 'OPD Registration Fee',
           notes: { patient_id: patientId },
         }),
+        credentials: 'include',
       })
+      if (!res.ok) throw new Error('Payment link API error')
       const data = await res.json()
-      setPayLink(data)
+      if (data.error || !data.whatsappText) {
+        // API returned error or missing whatsappText — use fallback
+        setPayLink({
+          type: data.type || 'manual',
+          url: data.url,
+          whatsappText: data.whatsappText || fallbackMsg,
+        })
+      } else {
+        setPayLink(data)
+      }
     } catch {
-      setPayLink({ type:'manual', whatsappText:`Hello ${name},\n\nYour registration is complete. Please visit reception to complete payment before your consultation.\n\nThank you!` })
+      setPayLink({ type:'manual', whatsappText: fallbackMsg })
     }
     setPayLinkLoading(false)
   }

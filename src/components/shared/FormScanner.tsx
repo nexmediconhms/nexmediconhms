@@ -165,11 +165,20 @@ export default function FormScanner({
     }
 
     try {
+      // ── Preprocess image for better OCR accuracy ──────────────
+      // Convert to high-contrast grayscale, sharpen, and increase size
+      const preprocessedBlob = await preprocessImage(fileToSend)
+
       // ── Run Tesseract.js OCR in the browser (client-side) ──────
       // This avoids Vercel serverless timeout issues
-      const imageUrl = URL.createObjectURL(fileToSend)
+      const imageUrl = URL.createObjectURL(preprocessedBlob)
       const worker = await createWorker('eng', 1, {
         logger: () => {},  // suppress progress logs
+      })
+      // Configure Tesseract for better accuracy with forms
+      await worker.setParameters({
+        tessedit_pageseg_mode: '6' as any,  // Assume uniform block of text
+        preserve_interword_spaces: '1',     // Keep spaces between words
       })
       const { data: tessData } = await worker.recognize(imageUrl)
       await worker.terminate()
@@ -416,8 +425,8 @@ export default function FormScanner({
               </div>
               <p className="text-xs text-blue-500 mt-1">
                 {state === 'processing'
-                  ? (isPDF ? 'Rendering PDF page and extracting text...' : 'Extracting text from form image...')
-                  : 'Loading image...'}
+                  ? (isPDF ? 'Rendering PDF page and extracting text...' : 'Enhancing image & reading text (this may take 10-20 seconds)...')
+                  : 'Preparing image...'}
               </p>
             </div>
           </div>
@@ -585,4 +594,77 @@ function parseRawTextClient(text: string): Record<string, string> {
   }
 
   return patient
+}
+
+// ── Image preprocessing for better OCR accuracy ───────────────
+// Converts to grayscale, enhances contrast, sharpens, and upscales
+async function preprocessImage(file: File | Blob): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      // Upscale small images for better OCR (Tesseract works best at 300+ DPI)
+      const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')!
+
+      // Draw original image scaled up
+      ctx.drawImage(img, 0, 0, w, h)
+
+      // Get pixel data
+      const imageData = ctx.getImageData(0, 0, w, h)
+      const data = imageData.data
+
+      // Step 1: Convert to grayscale
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+        data[i] = data[i + 1] = data[i + 2] = gray
+      }
+
+      // Step 2: Auto contrast stretch (histogram equalization lite)
+      let min = 255, max = 0
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] < min) min = data[i]
+        if (data[i] > max) max = data[i]
+      }
+      const range = max - min || 1
+      for (let i = 0; i < data.length; i += 4) {
+        const stretched = ((data[i] - min) / range) * 255
+        data[i] = data[i + 1] = data[i + 2] = stretched
+      }
+
+      // Step 3: Increase contrast (S-curve)
+      const contrast = 1.5  // 1.0 = no change, 2.0 = high contrast
+      const factor = (259 * (contrast * 128 + 255)) / (255 * (259 - contrast * 128))
+      for (let i = 0; i < data.length; i += 4) {
+        let val = factor * (data[i] - 128) + 128
+        val = Math.max(0, Math.min(255, val))
+        data[i] = data[i + 1] = data[i + 2] = val
+      }
+
+      // Step 4: Adaptive thresholding (binarize for cleaner text)
+      // Use a simple threshold based on mean brightness
+      let sum = 0
+      for (let i = 0; i < data.length; i += 4) sum += data[i]
+      const mean = sum / (data.length / 4)
+      const threshold = mean * 0.85  // slightly below mean for better text capture
+      for (let i = 0; i < data.length; i += 4) {
+        const val = data[i] < threshold ? 0 : 255
+        data[i] = data[i + 1] = data[i + 2] = val
+      }
+
+      ctx.putImageData(imageData, 0, 0)
+
+      // Convert to blob
+      canvas.toBlob(blob => {
+        resolve(blob || file)
+      }, 'image/png', 1.0)
+    }
+    img.onerror = () => resolve(file as Blob)  // fallback to original
+    img.src = URL.createObjectURL(file)
+  })
 }

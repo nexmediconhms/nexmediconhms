@@ -119,13 +119,29 @@ function parseFormText(text: string, formType: string) {
   const patient: Record<string, string>  = {}
   const vitals:  Record<string, string>  = {}
 
-  // Helper: find value after a label keyword
+  // Helper: find value after a label keyword (fuzzy — handles OCR typos)
   function after(keywords: string[], inLines: string[] = lines): string {
     for (const line of inLines) {
       for (const kw of keywords) {
-        const rx = new RegExp(kw + '[:\\s]+(.+)', 'i')
+        // Try exact match first
+        const rx = new RegExp(kw + '[:\\s\\-_|]+(.+)', 'i')
         const m  = line.match(rx)
-        if (m) return m[1].trim()
+        if (m) return m[1].trim().replace(/^[:\-_|]+/, '').trim()
+      }
+    }
+    // Fuzzy: try matching with common OCR substitutions
+    for (const line of inLines) {
+      const lower = line.toLowerCase()
+      for (const kw of keywords) {
+        // Check if the line contains most characters of the keyword
+        const kwLower = kw.toLowerCase()
+        if (kwLower.length >= 4 && lower.includes(kwLower.slice(0, Math.ceil(kwLower.length * 0.7)))) {
+          const parts = line.split(/[:\s\-_|]+/)
+          const kwIdx = parts.findIndex(p => p.toLowerCase().includes(kwLower.slice(0, 3)))
+          if (kwIdx >= 0 && kwIdx < parts.length - 1) {
+            return parts.slice(kwIdx + 1).join(' ').trim()
+          }
+        }
       }
     }
     return ''
@@ -137,14 +153,37 @@ function parseFormText(text: string, formType: string) {
     return m ? m[0] : ''
   }
 
+  // Helper: find a 10-digit phone number anywhere in text
+  function findPhone(): string {
+    const allText = lines.join(' ')
+    const m = allText.match(/(?:(?:\+?91[\s\-]?)?([6-9]\d{9}))/g)
+    return m ? m[0].replace(/\D/g, '').slice(-10) : ''
+  }
+
+  // Helper: find a 12-digit Aadhaar number anywhere in text
+  function findAadhaar(): string {
+    const allText = lines.join(' ')
+    const m = allText.match(/\b(\d{4}[\s\-]?\d{4}[\s\-]?\d{4})\b/)
+    return m ? m[1].replace(/\D/g, '') : ''
+  }
+
   // ── Patient fields ────────────────────────────────────────
-  patient.full_name = after(['full name', 'name', 'patient name', 'નામ'])
-  patient.mobile    = after(['mobile', 'phone', 'contact', 'mob', 'cell'])
+  patient.full_name = after(['full name', 'patient name', 'name of patient', 'name', 'નામ', 'patient'])
+  patient.mobile    = after(['mobile', 'phone', 'contact no', 'contact number', 'mob', 'cell', 'tel', 'મોબાઈલ'])
     .replace(/\D/g, '').slice(-10)
-  patient.address   = after(['address', 'addr', 'residence', 'સરનામ'])
-  patient.abha_id    = after(['abha', 'health id'])
-  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid', 'આધાર'])
+  // Fallback: find phone number anywhere in text if label-based search failed
+  if (!patient.mobile || patient.mobile.length < 10) {
+    patient.mobile = findPhone()
+  }
+  patient.address   = after(['address', 'addr', 'residence', 'residential address', 'સરનામ', 'village', 'city'])
+  patient.abha_id    = after(['abha', 'health id', 'abha id', 'health card'])
+  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid', 'આધાર', 'aadhaar no', 'aadhaar card', 'aadhar no'])
     .replace(/\D/g, '').slice(0, 12)
+  // Fallback: find 12-digit Aadhaar number anywhere in text
+  if (!patient.aadhaar_no || patient.aadhaar_no.length < 12) {
+    const found = findAadhaar()
+    if (found.length === 12) patient.aadhaar_no = found
+  }
 
   // Date of birth
   const dobRaw = after(['date of birth', 'dob', 'd.o.b', 'birth date', 'જન્મ'])
