@@ -174,10 +174,36 @@ export default function FormScanner({
       // For direct PDF uploads, use /api/parse-pdf (text extraction, no AI)
       const endpoint = forceEndpoint ?? '/api/ocr-free'
       const res  = await fetch(endpoint, { method: 'POST', body: fd })
-      const data = await res.json()
-      // Always check for error in body (API returns 200 even on errors to avoid browser noise)
+
+      // Check HTTP status before parsing JSON
+      if (!res.ok) {
+        const contentType = res.headers.get('content-type') || ''
+        if (contentType.includes('text/html')) {
+          // Server returned HTML (e.g. auth page, 404 page) — not JSON
+          throw new Error(
+            res.status === 401
+              ? 'Authentication required. Please refresh the page and log in again.'
+              : `Server returned an error page (HTTP ${res.status}). Please try again or contact support.`
+          )
+        }
+        // Try to parse error from JSON body
+        try {
+          const errData = await res.json()
+          throw new Error(errData.error || `Server error ${res.status}`)
+        } catch {
+          throw new Error(`Server error ${res.status}. Please try again.`)
+        }
+      }
+
+      const text = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error('Server returned an invalid response. Please try again.')
+      }
+
       if (data.error) throw new Error(data.error)
-      if (!res.ok)    throw new Error(`Server error ${res.status}`)
       const ocrData: OCRResult = data
       setResult(ocrData)
       setState('done')
