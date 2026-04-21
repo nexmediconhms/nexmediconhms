@@ -60,6 +60,21 @@ function IntakeContent() {
     setSaving(true)
     setApiError('')
 
+    // ── Check for duplicate mobile before inserting ──────────────
+    const mobile = form.mobile.trim().replace(/^(\+91|91)/, '')
+    const { data: existing } = await supabase
+      .from('patients')
+      .select('id, mrn, full_name')
+      .eq('mobile', mobile)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      setSaving(false)
+      setApiError(
+        `A patient with mobile ${mobile} is already registered (${existing[0].full_name}, MRN: ${existing[0].mrn}). Please visit the reception desk if you need to update your details.`
+      )
+      return
+    }
+
     // Use service role to allow public insert (anon key with RLS)
     const payload: Record<string, any> = {
       full_name:               form.full_name.trim(),
