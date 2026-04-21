@@ -13,7 +13,7 @@ const GENDERS      = ['Female','Male','Other']
 
 interface FormData {
   full_name: string; age: string; date_of_birth: string; gender: string
-  mobile: string; blood_group: string; address: string; abha_id: string
+  mobile: string; blood_group: string; address: string; abha_id: string; aadhaar_no: string
   emergency_contact_name: string; emergency_contact_phone: string
   mediclaim: string; cashless: string; reference_source: string
 }
@@ -26,7 +26,7 @@ export default function EditPatientPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
 
-  const [form, setForm]     = useState<FormData>({ full_name:'', age:'', date_of_birth:'', gender:'Female', mobile:'', blood_group:'', address:'', abha_id:'', emergency_contact_name:'', emergency_contact_phone:'', mediclaim:'No', cashless:'No', reference_source:'' })
+  const [form, setForm]     = useState<FormData>({ full_name:'', age:'', date_of_birth:'', gender:'Female', mobile:'', blood_group:'', address:'', abha_id:'', aadhaar_no:'', emergency_contact_name:'', emergency_contact_phone:'', mediclaim:'No', cashless:'No', reference_source:'' })
   const [errors, setErrors] = useState<Partial<FormData>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
@@ -46,6 +46,7 @@ export default function EditPatientPage() {
           blood_group:             data.blood_group || '',
           address:                 data.address || '',
           abha_id:                 data.abha_id || '',
+          aadhaar_no:              data.aadhaar_no || '',
           emergency_contact_name:  data.emergency_contact_name || '',
           emergency_contact_phone: data.emergency_contact_phone || '',
           mediclaim:               data.mediclaim ? 'Yes' : 'No',
@@ -83,6 +84,7 @@ export default function EditPatientPage() {
     if (p.blood_group && BLOOD_GROUPS.includes(p.blood_group)) set('blood_group', p.blood_group, true)
     if (p.address) set('address', p.address, true)
     if (p.abha_id) set('abha_id', p.abha_id, true)
+    if (p.aadhaar_no) set('aadhaar_no', p.aadhaar_no, true)
     if (p.emergency_contact_name) set('emergency_contact_name', p.emergency_contact_name, true)
     if (p.emergency_contact_phone) set('emergency_contact_phone', p.emergency_contact_phone.replace(/\D/g,'').slice(-10), true)
   }
@@ -110,6 +112,7 @@ export default function EditPatientPage() {
       blood_group:             form.blood_group || null,
       address:                 form.address.trim() || null,
       abha_id:                 form.abha_id.trim() || null,
+      aadhaar_no:              form.aadhaar_no.replace(/\s/g, '').trim() || null,
       emergency_contact_name:  form.emergency_contact_name.trim() || null,
       emergency_contact_phone: form.emergency_contact_phone.trim() || null,
       mediclaim:               form.mediclaim === 'Yes',
@@ -195,6 +198,12 @@ export default function EditPatientPage() {
                 <input className={`${inputCls('mobile')} font-mono`} maxLength={10} value={form.mobile}
                   onChange={e => set('mobile', e.target.value.replace(/\D/g,''))} />
                 {errors.mobile && <Err msg={errors.mobile} />}
+              </div>
+              <div>
+                <label className="label">Aadhaar Card No</label>
+                <input className={`${inputCls('aadhaar_no')} font-mono`} maxLength={14}
+                  placeholder="e.g. 1234 5678 9012"
+                  value={form.aadhaar_no} onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))} />
               </div>
               <div>
                 <label className="label">ABHA ID</label>

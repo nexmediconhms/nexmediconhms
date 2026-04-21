@@ -97,7 +97,8 @@ export async function POST(req: NextRequest) {
         if (raw.mobile)                  patient.mobile                  = raw.mobile.replace(/\D/g,'').slice(-10)
         if (raw.blood_group)             patient.blood_group             = raw.blood_group
         if (raw.address)                 patient.address                 = raw.address
-        if (raw.aadhaar || raw.abha_id)  patient.abha_id                 = raw.aadhaar || raw.abha_id
+        if (raw.abha_id)                 patient.abha_id                 = raw.abha_id
+        if (raw.aadhaar || raw.aadhaar_no) patient.aadhaar_no            = (raw.aadhaar || raw.aadhaar_no).replace(/\D/g, '').slice(0, 12)
         if (raw.emergency_contact_name)  patient.emergency_contact_name  = raw.emergency_contact_name
         if (raw.emergency_contact_phone) patient.emergency_contact_phone = raw.emergency_contact_phone.replace(/\D/g,'').slice(-10)
 

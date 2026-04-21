@@ -9,6 +9,7 @@ export interface Patient {
   blood_group?: string
   address?: string
   abha_id?: string
+  aadhaar_no?: string
   emergency_contact_name?: string
   emergency_contact_phone?: string
   mediclaim?: boolean

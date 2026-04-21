@@ -22,6 +22,7 @@ interface FormData {
   blood_group:             string
   address:                 string
   abha_id:                 string
+  aadhaar_no:              string
   emergency_contact_name:  string
   emergency_contact_phone: string
   mediclaim:               string   // 'Yes'|'No'
@@ -32,7 +33,7 @@ interface FormData {
 
 const EMPTY: FormData = {
   full_name: '', age: '', date_of_birth: '', gender: 'Female',
-  mobile: '', blood_group: '', address: '', abha_id: '',
+  mobile: '', blood_group: '', address: '', abha_id: '', aadhaar_no: '',
   emergency_contact_name: '', emergency_contact_phone: '',
   mediclaim: 'No', cashless: 'No', reference_source: '', reference_detail: '',
 }
@@ -76,8 +77,23 @@ export default function NewPatientPage() {
       apply('blood_group',             p.blood_group)
       apply('address',                 p.address)
       apply('abha_id',                 p.abha_id)
+      apply('aadhaar_no',              p.aadhaar_no)
       apply('emergency_contact_name',  p.emergency_contact_name)
       apply('emergency_contact_phone', p.emergency_contact_phone)
+      // Mediclaim / Cashless
+      if (p.mediclaim) {
+        const v = p.mediclaim.trim().toLowerCase()
+        if (v === 'yes' || v === 'true') apply('mediclaim', 'Yes')
+        else if (v === 'no' || v === 'false') apply('mediclaim', 'No')
+      }
+      if (p.cashless) {
+        const v = p.cashless.trim().toLowerCase()
+        if (v === 'yes' || v === 'true') apply('cashless', 'Yes')
+        else if (v === 'no' || v === 'false') apply('cashless', 'No')
+      }
+      // Reference source
+      apply('reference_source',  p.reference_source)
+      apply('reference_detail',  p.reference_detail)
       if (Object.keys(hl).length > 0) setHighlighted(hl)
       sessionStorage.removeItem(key)
     } catch { /* ignore */ }
@@ -123,6 +139,7 @@ export default function NewPatientPage() {
     maybeSet('mobile',                  p.mobile)
     maybeSet('address',                 p.address)
     maybeSet('abha_id',                 p.abha_id)
+    maybeSet('aadhaar_no',              p.aadhaar_no)
     maybeSet('emergency_contact_name',  p.emergency_contact_name)
     maybeSet('emergency_contact_phone', p.emergency_contact_phone)
 
@@ -137,6 +154,41 @@ export default function NewPatientPage() {
       newFields.blood_group    = p.blood_group
       newHighlight.blood_group = true
     }
+
+    // Mediclaim: normalise to "Yes" or "No"
+    if (p.mediclaim) {
+      const val = p.mediclaim.trim().toLowerCase()
+      if (val === 'yes' || val === 'true' || val === '1') {
+        newFields.mediclaim    = 'Yes'
+        newHighlight.mediclaim = true
+      } else if (val === 'no' || val === 'false' || val === '0') {
+        newFields.mediclaim    = 'No'
+        newHighlight.mediclaim = true
+      }
+    }
+
+    // Cashless: normalise to "Yes" or "No"
+    if (p.cashless) {
+      const val = p.cashless.trim().toLowerCase()
+      if (val === 'yes' || val === 'true' || val === '1') {
+        newFields.cashless    = 'Yes'
+        newHighlight.cashless = true
+      } else if (val === 'no' || val === 'false' || val === '0') {
+        newFields.cashless    = 'No'
+        newHighlight.cashless = true
+      }
+    }
+
+    // Reference source
+    const REF_OPTIONS = ['Doctor Referral', 'Patient Referral', 'Advertisement', 'Google / Internet', 'Social Media', 'Walk-in', 'Camp / Outreach', 'Other']
+    if (p.reference_source) {
+      const matched = REF_OPTIONS.find(opt => opt.toLowerCase() === p.reference_source!.trim().toLowerCase())
+      if (matched) {
+        newFields.reference_source    = matched
+        newHighlight.reference_source = true
+      }
+    }
+    maybeSet('reference_detail', p.reference_detail)
 
     // Apply to form state
     setForm(prev => ({ ...prev, ...newFields }))
@@ -159,6 +211,8 @@ export default function NewPatientPage() {
       e.mobile = 'Enter a valid 10-digit mobile number'
     if (form.abha_id && !/^\d{14}$/.test(form.abha_id.replace(/-/g, '')))
       e.abha_id = 'ABHA ID must be 14 digits'
+    if (form.aadhaar_no && !/^\d{12}$/.test(form.aadhaar_no.replace(/\s/g, '')))
+      e.aadhaar_no = 'Aadhaar number must be 12 digits'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -203,6 +257,7 @@ export default function NewPatientPage() {
         blood_group:             form.blood_group                             || null,
         address:                 form.address.trim()                         || null,
         abha_id:                 form.abha_id.trim()                         || null,
+        aadhaar_no:              form.aadhaar_no.replace(/\s/g, '').trim()   || null,
         emergency_contact_name:  form.emergency_contact_name.trim()          || null,
         emergency_contact_phone: form.emergency_contact_phone.trim()         || null,
         mediclaim:               form.mediclaim === 'Yes',
@@ -450,6 +505,25 @@ export default function NewPatientPage() {
                 {errors.mobile && (
                   <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />{errors.mobile}
+                  </p>
+                )}
+              </div>
+
+              {/* Aadhaar Card No */}
+              <div>
+                <label className="label">
+                  Aadhaar Card No
+                  <span className="text-gray-400 font-normal normal-case ml-1">(optional, 12 digits)</span>
+                </label>
+                <input className={inputClass('aadhaar_no', 'font-mono')}
+                  placeholder="e.g. 1234 5678 9012"
+                  maxLength={14}
+                  value={form.aadhaar_no}
+                  onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))}
+                />
+                {errors.aadhaar_no && (
+                  <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />{errors.aadhaar_no}
                   </p>
                 )}
               </div>

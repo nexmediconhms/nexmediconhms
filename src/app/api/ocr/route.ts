@@ -22,6 +22,10 @@ ABSOLUTE RULES:
 6. Mobile: 10 digits only
 7. Omit blank/illegible fields — never invent values
 8. Numeric values stored as strings
+9. CHECKBOX DETECTION: Look for filled/ticked/marked checkboxes (✓, ✗, X, filled square, or any mark inside the checkbox box). A checkbox with any mark = selected. Empty checkbox = not selected.
+10. Mediclaim: "Yes" if the Yes checkbox next to "Mediclaim / Health Insurance" is marked, "No" if the No checkbox is marked or neither is marked
+11. Cashless: "Yes" if the Yes checkbox next to "Cashless Facility" is marked, "No" if the No checkbox is marked or neither is marked
+12. Reference source: Match to one of: "Doctor Referral"|"Patient Referral"|"Advertisement"|"Google / Internet"|"Social Media"|"Walk-in"|"Camp / Outreach"|"Other"
 
 JSON SCHEMA:
 {
@@ -31,8 +35,11 @@ JSON SCHEMA:
   "raw_text": "<full text from form>",
   "patient": {
     "full_name":"","age":"","date_of_birth":"YYYY-MM-DD","gender":"",
-    "mobile":"","blood_group":"","address":"","abha_id":"",
-    "emergency_contact_name":"","emergency_contact_phone":""
+    "mobile":"","blood_group":"","address":"","abha_id":"","aadhaar_no":"",
+    "emergency_contact_name":"","emergency_contact_phone":"",
+    "mediclaim":"Yes|No","cashless":"Yes|No","policy_tpa_name":"",
+    "reference_source":"Doctor Referral|Patient Referral|Advertisement|Google / Internet|Social Media|Walk-in|Camp / Outreach|Other",
+    "reference_detail":""
   },
   "vitals": {
     "pulse":"","bp_systolic":"","bp_diastolic":"","temperature":"",

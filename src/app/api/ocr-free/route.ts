@@ -114,7 +114,9 @@ function parseFormText(text: string, formType: string) {
   patient.mobile    = after(['mobile', 'phone', 'contact', 'mob', 'cell'])
     .replace(/\D/g, '').slice(-10)
   patient.address   = after(['address', 'addr', 'residence', 'સરનામ'])
-  patient.abha_id   = after(['abha', 'health id', 'aadhaar'])
+  patient.abha_id    = after(['abha', 'health id'])
+  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid', 'આધાર'])
+    .replace(/\D/g, '').slice(0, 12)
 
   // Date of birth
   const dobRaw = after(['date of birth', 'dob', 'd.o.b', 'birth date', 'જન્મ'])
@@ -145,6 +147,40 @@ function parseFormText(text: string, formType: string) {
   patient.emergency_contact_name  = after(['emergency contact', 'emergency name', 'contact name'])
   patient.emergency_contact_phone = after(['emergency.*mobile', 'emergency.*phone', 'emergency.*number'])
     .replace(/\D/g, '').slice(-10)
+
+  // Mediclaim / Insurance — look for checkbox marks near keywords
+  const fullText = lines.join(' ')
+  const mediclaimSection = fullText.match(/mediclaim[^]*?cashless/i)?.[0] ?? fullText
+  if (/mediclaim[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?yes/i.test(mediclaimSection) ||
+      /yes[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?mediclaim/i.test(mediclaimSection) ||
+      /mediclaim[:\s]*yes/i.test(fullText)) {
+    patient.mediclaim = 'Yes'
+  } else {
+    patient.mediclaim = 'No'
+  }
+
+  // Cashless
+  const cashlessSection = fullText.match(/cashless[^]*?(?:policy|tpa|how did)/i)?.[0] ?? fullText
+  if (/cashless[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?yes/i.test(cashlessSection) ||
+      /yes[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?cashless/i.test(cashlessSection) ||
+      /cashless[:\s]*yes/i.test(fullText)) {
+    patient.cashless = 'Yes'
+  } else {
+    patient.cashless = 'No'
+  }
+
+  // Policy / TPA name
+  patient.policy_tpa_name = after(['policy', 'tpa', 'insurance company', 'insurer'])
+
+  // Reference source — look for checked options
+  const refOptions = ['Doctor Referral', 'Patient Referral', 'Advertisement', 'Google / Internet', 'Social Media', 'Walk-in', 'Camp / Outreach']
+  for (const opt of refOptions) {
+    const pattern = new RegExp(`(?:✓|✗|x|\\[x\\]|☑)[^\\n]*?${opt.replace(/[\/]/g, '\\/')}|${opt.replace(/[\/]/g, '\\/')}[^\\n]*?(?:✓|✗|x|\\[x\\]|☑)`, 'i')
+    if (pattern.test(fullText)) {
+      patient.reference_source = opt
+      break
+    }
+  }
 
   // ── Vitals fields (for consultation form) ──────────────────
   if (formType === 'opd_consultation' || formType === 'vitals_complaints') {

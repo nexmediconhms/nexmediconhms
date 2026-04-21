@@ -13,8 +13,14 @@ export interface OCRPatientData {
   blood_group?: string        // A+ | A- | B+ | B- | O+ | O- | AB+ | AB-
   address?: string
   abha_id?: string
+  aadhaar_no?: string
   emergency_contact_name?: string
   emergency_contact_phone?: string
+  mediclaim?: string          // "Yes" | "No"
+  cashless?: string           // "Yes" | "No"
+  policy_tpa_name?: string    // Insurance company / TPA name
+  reference_source?: string   // How patient found us: "Doctor Referral" | "Patient Referral" | "Advertisement" | "Google / Internet" | "Social Media" | "Walk-in" | "Camp / Outreach" | "Other"
+  reference_detail?: string   // Specific referral name (e.g. doctor name)
 }
 
 export interface OCRVitalsData {

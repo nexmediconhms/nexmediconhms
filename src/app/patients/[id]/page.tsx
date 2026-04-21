@@ -292,6 +292,12 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                 )}
+                {(patient as any).aadhaar_no && (
+                  <div>
+                    <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Aadhaar No</div>
+                    <div className="text-sm font-mono font-medium text-gray-700">{(patient as any).aadhaar_no}</div>
+                  </div>
+                )}
                 {patient.abha_id && (
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">ABHA ID</div>
