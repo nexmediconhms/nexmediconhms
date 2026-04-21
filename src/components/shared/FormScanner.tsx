@@ -173,7 +173,7 @@ export default function FormScanner({
       // For PDFs that were pre-rendered to PNG, use /api/ocr-free (Tesseract)
       // For direct PDF uploads, use /api/parse-pdf (text extraction, no AI)
       const endpoint = forceEndpoint ?? '/api/ocr-free'
-      const res  = await fetch(endpoint, { method: 'POST', body: fd })
+      const res  = await fetch(endpoint, { method: 'POST', body: fd, credentials: 'include' })
 
       // Check HTTP status before parsing JSON
       if (!res.ok) {

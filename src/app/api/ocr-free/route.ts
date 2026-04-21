@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createWorker } from 'tesseract.js'
 
+// Vercel serverless function config — Tesseract needs more time and memory
+export const maxDuration = 60  // seconds (default is 10s on Hobby plan)
+export const dynamic = 'force-dynamic'
+
 /**
  * Free OCR endpoint using Tesseract.js
  *
@@ -48,8 +52,10 @@ export async function POST(req: NextRequest) {
 
     // Create Tesseract worker
     // Note: language data is auto-downloaded on first use (~4 MB for 'eng')
+    // On Vercel serverless, use /tmp for cache (only writable directory)
     const worker = await createWorker(lang, 1, {
       logger: () => {},  // suppress progress logs
+      cachePath: '/tmp',
     })
 
     try {
