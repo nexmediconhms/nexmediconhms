@@ -169,8 +169,10 @@ export default function FormScanner({
     fd.append('lang', 'eng')  // 'eng+guj' for Gujarati support
 
     try {
-      // Use /api/ocr for all files — scanned PDFs are now pre-rendered to PNG
-      const endpoint = forceEndpoint ?? (ocrMode === 'free' && fileToSend.type !== 'application/pdf' ? '/api/ocr-free' : '/api/ocr')
+      // Always use free OCR — no AI needed
+      // For PDFs that were pre-rendered to PNG, use /api/ocr-free (Tesseract)
+      // For direct PDF uploads, use /api/parse-pdf (text extraction, no AI)
+      const endpoint = forceEndpoint ?? '/api/ocr-free'
       const res  = await fetch(endpoint, { method: 'POST', body: fd })
       const data = await res.json()
       // Always check for error in body (API returns 200 even on errors to avoid browser noise)
@@ -190,11 +192,8 @@ export default function FormScanner({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) {
-      // PDFs must use /api/ocr (AI endpoint) — Tesseract cannot process PDFs
-      // Pass endpoint explicitly to avoid React state async race condition
-      const ep = file.type === 'application/pdf' ? '/api/ocr' : undefined
-      if (file.type === 'application/pdf') setOcrMode('ai')  // sync UI toggle
-      processFile(file, ep)
+      // PDFs are pre-rendered to PNG in processFile, then sent to /api/ocr-free
+      processFile(file)
     }
     e.target.value = ''
   }
@@ -203,9 +202,7 @@ export default function FormScanner({
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
     if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) {
-      const ep = file.type === 'application/pdf' ? '/api/ocr' : undefined
-      if (file.type === 'application/pdf') setOcrMode('ai')
-      processFile(file, ep)
+      processFile(file)
     }
   }, [])
 
@@ -383,7 +380,7 @@ export default function FormScanner({
               <div className="flex items-center gap-2 mb-2">
                 <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
                 <span className="text-sm font-semibold text-blue-800">
-                  {state === 'uploading' ? 'Preparing image...' : 'Reading form with AI...'}
+                  {state === 'uploading' ? 'Preparing image...' : 'Reading form...'}
                 </span>
               </div>
               <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
@@ -391,7 +388,7 @@ export default function FormScanner({
               </div>
               <p className="text-xs text-blue-500 mt-1">
                 {state === 'processing'
-                  ? (isPDF ? 'Rendering PDF page, then reading with AI...' : 'Claude Vision is detecting Gujarati and English text...')
+                  ? (isPDF ? 'Rendering PDF page and extracting text...' : 'Extracting text from form image...')
                   : 'Loading image...'}
               </p>
             </div>

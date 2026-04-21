@@ -1,9 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
+import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
+import type { OCRResult } from '@/lib/ocr'
 import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
@@ -119,6 +121,53 @@ export default function NewPatientPage() {
       if (age >= 0 && age < 150) set('age', String(age))
     }
   }
+
+  // ── OCR callback (auto-fill form from scanned image) ──────────
+  const handleOCRResult = useCallback((result: OCRResult) => {
+    const p = result.patient
+    if (!p) return
+
+    const newFields: Partial<FormData> = {}
+
+    function maybeSet(field: keyof FormData, value: string | undefined) {
+      if (value && value.trim()) {
+        newFields[field] = value.trim()
+      }
+    }
+
+    maybeSet('full_name',               p.full_name)
+    maybeSet('age',                     p.age)
+    maybeSet('date_of_birth',           p.date_of_birth)
+    maybeSet('mobile',                  p.mobile)
+    maybeSet('address',                 p.address)
+    maybeSet('abha_id',                 p.abha_id)
+    maybeSet('aadhaar_no',              p.aadhaar_no)
+    maybeSet('emergency_contact_name',  p.emergency_contact_name)
+    maybeSet('emergency_contact_phone', p.emergency_contact_phone)
+
+    if (p.gender && GENDERS.includes(p.gender)) newFields.gender = p.gender
+    if (p.blood_group && BLOOD_GROUPS.includes(p.blood_group)) newFields.blood_group = p.blood_group
+
+    if (p.mediclaim) {
+      const val = p.mediclaim.trim().toLowerCase()
+      if (val === 'yes' || val === 'true' || val === '1') newFields.mediclaim = 'Yes'
+      else if (val === 'no' || val === 'false' || val === '0') newFields.mediclaim = 'No'
+    }
+    if (p.cashless) {
+      const val = p.cashless.trim().toLowerCase()
+      if (val === 'yes' || val === 'true' || val === '1') newFields.cashless = 'Yes'
+      else if (val === 'no' || val === 'false' || val === '0') newFields.cashless = 'No'
+    }
+
+    const REF_OPTIONS = ['Doctor Referral', 'Patient Referral', 'Advertisement', 'Google / Internet', 'Social Media', 'Walk-in', 'Camp / Outreach', 'Other']
+    if (p.reference_source) {
+      const matched = REF_OPTIONS.find(opt => opt.toLowerCase() === p.reference_source!.trim().toLowerCase())
+      if (matched) newFields.reference_source = matched
+    }
+    maybeSet('reference_detail', p.reference_detail)
+
+    setForm(prev => ({ ...prev, ...newFields }))
+  }, [])
 
   // ── Validation ────────────────────────────────────────────────
   function validate(): boolean {
@@ -413,7 +462,7 @@ export default function NewPatientPage() {
         <div className="mb-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Registration Methods</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Link href="/intake"
+            <a href="/intake" target="_blank" rel="noopener noreferrer"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center transition-colors">
                 <Globe className="w-5 h-5 text-indigo-600" />
@@ -422,9 +471,9 @@ export default function NewPatientPage() {
                 <div className="text-sm font-semibold text-gray-800">Digital Form</div>
                 <div className="text-xs text-gray-400">Patient self-fills on tablet</div>
               </div>
-            </Link>
+            </a>
 
-            <Link href="/forms"
+            <a href="/forms" target="_blank" rel="noopener noreferrer"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-purple-300 hover:bg-purple-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-purple-100 group-hover:bg-purple-200 flex items-center justify-center transition-colors">
                 <FileText className="w-5 h-5 text-purple-600" />
@@ -433,9 +482,9 @@ export default function NewPatientPage() {
                 <div className="text-sm font-semibold text-gray-800">Fillable PDF</div>
                 <div className="text-xs text-gray-400">Print & fill, upload back</div>
               </div>
-            </Link>
+            </a>
 
-            <Link href="/forms"
+            <a href="/forms" target="_blank" rel="noopener noreferrer"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-green-300 hover:bg-green-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-green-100 group-hover:bg-green-200 flex items-center justify-center transition-colors">
                 <QrCode className="w-5 h-5 text-green-600" />
@@ -444,9 +493,9 @@ export default function NewPatientPage() {
                 <div className="text-sm font-semibold text-gray-800">QR Code</div>
                 <div className="text-xs text-gray-400">Patient scans & fills on phone</div>
               </div>
-            </Link>
+            </a>
 
-            <Link href="/forms"
+            <a href="/forms" target="_blank" rel="noopener noreferrer"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-amber-300 hover:bg-amber-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center transition-colors">
                 <ScanLine className="w-5 h-5 text-amber-600" />
@@ -455,8 +504,24 @@ export default function NewPatientPage() {
                 <div className="text-sm font-semibold text-gray-800">Paper Form</div>
                 <div className="text-xs text-gray-400">Scan handwritten form</div>
               </div>
-            </Link>
+            </a>
           </div>
+        </div>
+
+        {/* ═══ PHOTO UPLOAD / FORM SCANNER ═══════════════════════ */}
+        <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <ScanLine className="w-4 h-4 text-blue-500" />
+            Upload Photo of Registration Form
+          </h3>
+          <FormScanner
+            formType="patient_registration"
+            onExtracted={handleOCRResult}
+            label="Upload photo or PDF of paper form"
+          />
+          <p className="text-xs text-gray-400 mt-2">
+            📷 Upload a photo or PDF of the patient's paper registration form. The app will read it and auto-fill the fields below.
+          </p>
         </div>
 
         {/* Divider */}
