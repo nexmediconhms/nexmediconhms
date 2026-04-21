@@ -281,6 +281,19 @@ export default function NewConsultationPage() {
 
     setSaving(false)
     if (encErr || !enc) { setError(`Failed to save: ${encErr?.message}`); return }
+
+    // Link any files uploaded before save (encounter_id was null) to the new encounter
+    try {
+      await supabase.from('consultation_attachments')
+        .update({ encounter_id: enc.id })
+        .eq('patient_id', patientId)
+        .is('encounter_id', null)
+      await supabase.from('consultation_files_db')
+        .update({ encounter_id: enc.id })
+        .eq('patient_id', patientId)
+        .is('encounter_id', null)
+    } catch { /* tables may not exist yet — ignore */ }
+
     // Clear draft after successful save
     if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch {} }
     router.push(`/opd/${enc.id}/prescription`)
