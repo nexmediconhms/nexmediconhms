@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
-  Heart, Shield, Stethoscope
+  Heart, Shield, Stethoscope, FileText, QrCode, Globe, ScanLine
 } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────
@@ -64,8 +64,6 @@ export default function NewPatientPage() {
   const [showDuplicateWarn,setShowDuplicateWarn] = useState(false)
   const [checkingDups,     setCheckingDups]      = useState(false)
 
-  // Current step for visual stepper (1=Personal, 2=Contact & ID, 3=Insurance)
-  const [activeSection, setActiveSection] = useState(1)
 
   // ── Load prefill from URL params (from forms page) ──────────
   useEffect(() => {
@@ -138,9 +136,6 @@ export default function NewPatientPage() {
     if (form.aadhaar_no && !/^\d{12}$/.test(form.aadhaar_no.replace(/\s/g, '')))
       e.aadhaar_no = 'Aadhaar number must be 12 digits'
     setErrors(e)
-    // Scroll to first error section
-    if (e.full_name || e.mobile) setActiveSection(1)
-    else if (e.aadhaar_no || e.abha_id) setActiveSection(2)
     return Object.keys(e).length === 0
   }
 
@@ -301,13 +296,6 @@ export default function NewPatientPage() {
     )
   }
 
-  // ── Section stepper ────────────────────────────────────────────
-  const sections = [
-    { num: 1, label: 'Personal Details', icon: User },
-    { num: 2, label: 'Contact & ID', icon: Phone },
-    { num: 3, label: 'Insurance & Referral', icon: Shield },
-  ]
-
   // ══════════════════════════════════════════════════════════════
   // SUCCESS SCREEN
   // ══════════════════════════════════════════════════════════════
@@ -421,31 +409,67 @@ export default function NewPatientPage() {
           </div>
         </div>
 
-        {/* Section Stepper */}
-        <div className="flex items-center gap-2 mb-6 bg-white rounded-2xl border border-gray-100 p-2 shadow-sm">
-          {sections.map((s, i) => {
-            const Icon = s.icon
-            const isActive = activeSection === s.num
-            return (
-              <button key={s.num} type="button"
-                onClick={() => setActiveSection(s.num)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                }`}>
-                <Icon className="w-4 h-4" />
-                <span className="hidden sm:inline">{s.label}</span>
-                <span className="sm:hidden">{s.num}</span>
-              </button>
-            )
-          })}
+        {/* ═══ 4 INTAKE METHODS ═══════════════════════════════════ */}
+        <div className="mb-6">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Registration Methods</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Link href="/intake"
+              className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all duration-200 shadow-sm hover:shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center transition-colors">
+                <Globe className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-semibold text-gray-800">Digital Form</div>
+                <div className="text-xs text-gray-400">Patient self-fills on tablet</div>
+              </div>
+            </Link>
+
+            <Link href="/forms"
+              className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-purple-300 hover:bg-purple-50 transition-all duration-200 shadow-sm hover:shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 group-hover:bg-purple-200 flex items-center justify-center transition-colors">
+                <FileText className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-semibold text-gray-800">Fillable PDF</div>
+                <div className="text-xs text-gray-400">Print & fill, upload back</div>
+              </div>
+            </Link>
+
+            <Link href="/forms"
+              className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-green-300 hover:bg-green-50 transition-all duration-200 shadow-sm hover:shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-green-100 group-hover:bg-green-200 flex items-center justify-center transition-colors">
+                <QrCode className="w-5 h-5 text-green-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-semibold text-gray-800">QR Code</div>
+                <div className="text-xs text-gray-400">Patient scans & fills on phone</div>
+              </div>
+            </Link>
+
+            <Link href="/forms"
+              className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-amber-300 hover:bg-amber-50 transition-all duration-200 shadow-sm hover:shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center transition-colors">
+                <ScanLine className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-semibold text-gray-800">Paper Form</div>
+                <div className="text-xs text-gray-400">Scan handwritten form</div>
+              </div>
+            </Link>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex-1 h-px bg-gray-200"></div>
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Or fill manually below</span>
+          <div className="flex-1 h-px bg-gray-200"></div>
         </div>
 
         <form onSubmit={handleSubmit} noValidate>
 
           {/* ═══ SECTION 1: Personal Details ═══════════════════════ */}
-          <div className={activeSection === 1 ? 'block' : 'hidden'}>
+          <div>
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-5">
                 <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -529,18 +553,11 @@ export default function NewPatientPage() {
                 </div>
               </div>
 
-              {/* Next button */}
-              <div className="flex justify-end mt-6">
-                <button type="button" onClick={() => setActiveSection(2)}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm">
-                  Next: Contact & ID →
-                </button>
-              </div>
             </div>
           </div>
 
           {/* ═══ SECTION 2: Contact & ID ══════════════════════════ */}
-          <div className={activeSection === 2 ? 'block' : 'hidden'}>
+          <div>
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-5">
                 <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
@@ -636,22 +653,11 @@ export default function NewPatientPage() {
                 </div>
               </div>
 
-              {/* Navigation */}
-              <div className="flex justify-between mt-6">
-                <button type="button" onClick={() => setActiveSection(1)}
-                  className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm font-medium px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-                  ← Personal Details
-                </button>
-                <button type="button" onClick={() => setActiveSection(3)}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm">
-                  Next: Insurance →
-                </button>
-              </div>
             </div>
           </div>
 
           {/* ═══ SECTION 3: Insurance & Referral ══════════════════ */}
-          <div className={activeSection === 3 ? 'block' : 'hidden'}>
+          <div>
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-5">
                 <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
@@ -758,13 +764,6 @@ export default function NewPatientPage() {
                 </div>
               )}
 
-              {/* Back button */}
-              <div className="flex justify-start mt-6">
-                <button type="button" onClick={() => setActiveSection(2)}
-                  className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm font-medium px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-                  ← Contact & ID
-                </button>
-              </div>
             </div>
           </div>
 
