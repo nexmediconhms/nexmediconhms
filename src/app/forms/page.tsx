@@ -4,11 +4,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
-import { getHospitalSettings } from '@/lib/utils'
+import { getHospitalSettings, normalizePhone } from '@/lib/utils'
 import {
   Printer, ScanLine, FileText, ExternalLink, CheckCircle,
   Download, Copy, Globe, Star, ChevronRight, ArrowRight,
-  AlertCircle, Loader2, Upload, RefreshCw
+  AlertCircle, Loader2, Upload, RefreshCw, Send, Phone, MessageSquare
 } from 'lucide-react'
 
 // ── Paper form definitions ───────────────────────────────────
@@ -152,6 +152,10 @@ function FormsContent() {
   const [siteUrl,   setSiteUrl]  = useState('')
   const [hs,        setHs]       = useState<Record<string, string>>({})
 
+  // Send-to-patient state
+  const [sendPhone,   setSendPhone]   = useState('')
+  const [sendSent,    setSendSent]    = useState(false)
+
   useEffect(() => {
     setSiteUrl(window.location.origin)
     setHs(getHospitalSettings())
@@ -253,6 +257,77 @@ function FormsContent() {
 
             {intakeUrl ? (
               <div className="space-y-3">
+
+                {/* ── Send to Patient via WhatsApp (PRIMARY ACTION) ── */}
+                <div className="bg-white border-2 border-green-400 rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                      <Send className="w-4 h-4 text-green-600"/>
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">Send Registration Link to Patient</p>
+                      <p className="text-xs text-gray-500">Enter patient's mobile → send via WhatsApp instantly</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">
+                        <Phone className="w-3 h-3 inline mr-1"/>Patient's Mobile Number
+                      </label>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={14}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500 focus:outline-none"
+                        placeholder="Enter 10-digit mobile number"
+                        value={sendPhone}
+                        onChange={e => {
+                          setSendPhone(normalizePhone(e.target.value))
+                          setSendSent(false)
+                        }}
+                      />
+                    </div>
+                    <a
+                      href={sendPhone.length === 10
+                        ? `https://wa.me/91${sendPhone}?text=${encodeURIComponent(
+                            `Dear Patient,\n\nPlease fill your registration form before your visit to *${name}*:\n\n👉 ${intakeUrl}\n\nAfter filling, show your Patient ID at reception.\n\nThank you!\n${name}`
+                          )}`
+                        : '#'
+                      }
+                      target={sendPhone.length === 10 ? '_blank' : undefined}
+                      rel="noreferrer"
+                      onClick={e => {
+                        if (sendPhone.length !== 10) {
+                          e.preventDefault()
+                          return
+                        }
+                        setSendSent(true)
+                      }}
+                      className={`flex items-center gap-2 font-semibold px-5 py-2.5 rounded-lg text-sm transition-all whitespace-nowrap ${
+                        sendPhone.length === 10
+                          ? 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <MessageSquare className="w-4 h-4"/>
+                      Send via WhatsApp
+                    </a>
+                  </div>
+
+                  {sendSent && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <CheckCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                      <span>WhatsApp opened for <strong>+91 {sendPhone}</strong>. Click send in WhatsApp to deliver the link.</span>
+                    </div>
+                  )}
+
+                  {sendPhone.length > 0 && sendPhone.length < 10 && (
+                    <p className="mt-1 text-xs text-amber-600">Enter a valid 10-digit mobile number</p>
+                  )}
+                </div>
+
+                {/* ── Registration Link (for copy/share) ── */}
                 <div className="bg-white border border-green-200 rounded-xl p-4">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Registration Link</p>
                   <code className="block text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2 mb-3 break-all">{intakeUrl}</code>
@@ -269,10 +344,12 @@ function FormsContent() {
                     <a href={`https://wa.me/?text=${encodeURIComponent(`Dear Patient,\n\nPlease fill your registration form before your visit to ${name}:\n${intakeUrl}\n\nShow your Patient ID at reception. Thank you!`)}`}
                       target="_blank" rel="noreferrer"
                       className="flex items-center gap-1.5 text-xs font-semibold bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
-                      📲 WhatsApp
+                      📲 WhatsApp (pick contact)
                     </a>
                   </div>
                 </div>
+
+                {/* ── QR Code ── */}
                 <div className="bg-white border border-green-200 rounded-xl p-4 flex items-center gap-4">
                   <img src={qrUrl} alt="QR Code" className="w-28 h-28 flex-shrink-0 rounded-lg"/>
                   <div>
