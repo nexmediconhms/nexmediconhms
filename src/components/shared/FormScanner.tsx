@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { pdfToPngFile } from '@/lib/pdf-to-image'
 import { createWorker } from 'tesseract.js'
+import { containsGujarati, containsHindi, detectLanguage, indicDigitsToAscii, normalizePhone, GUJARATI_FIELD_LABELS, GUJARATI_GENDER_MAP } from '@/lib/utils'
 
 interface FormScannerProps {
   formType:   OCRFormType
@@ -171,8 +172,9 @@ export default function FormScanner({
 
       // ── Run Tesseract.js OCR in the browser (client-side) ──────
       // This avoids Vercel serverless timeout issues
+      // Use eng+guj (English + Gujarati) to support bilingual forms
       const imageUrl = URL.createObjectURL(preprocessedBlob)
-      const worker = await createWorker('eng', 1, {
+      const worker = await createWorker('eng+guj', 1, {
         logger: () => {},  // suppress progress logs
       })
       // Configure Tesseract for better accuracy with forms
@@ -186,6 +188,7 @@ export default function FormScanner({
 
       const rawText = tessData.text?.trim() ?? ''
       const confidence = tessData.confidence ?? 0
+      const detectedLang = detectLanguage(rawText)
 
       if (!rawText) {
         throw new Error('Could not extract any text from the image. Please try a clearer photo.')
@@ -204,13 +207,17 @@ export default function FormScanner({
       if (res.ok) {
         const data = await res.json()
         if (data.error) throw new Error(data.error)
+        // Override language_detected with our client-side detection if server says English but text has Gujarati
+        if (data.language_detected === 'English' && detectedLang !== 'English') {
+          data.language_detected = detectedLang
+        }
         ocrData = data
       } else {
         // Server parsing failed — build a basic result from raw text
         ocrData = {
           form_type: (formType || 'patient_registration') as any,
           confidence: confidence > 70 ? 'high' : confidence > 45 ? 'medium' : 'low',
-          language_detected: 'English',
+          language_detected: detectedLang,
           raw_text: rawText,
           patient: parseRawTextClient(rawText),
         }
@@ -562,6 +569,7 @@ export default function FormScanner({
 }
 
 // ── Client-side text parser (fallback when server is unavailable) ──
+// Supports both English and Gujarati field labels
 function parseRawTextClient(text: string): Record<string, string> {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const patient: Record<string, string> = {}
@@ -569,24 +577,63 @@ function parseRawTextClient(text: string): Record<string, string> {
   function after(keywords: string[]): string {
     for (const line of lines) {
       for (const kw of keywords) {
-        const rx = new RegExp(kw + '[:\\s]+(.+)', 'i')
+        const rx = new RegExp(kw + '[:\\s\\-_|]+(.+)', 'i')
         const m = line.match(rx)
-        if (m) return m[1].trim()
+        if (m) return m[1].trim().replace(/^[:\-_|]+/, '').trim()
+      }
+    }
+    // Fuzzy: try matching with common OCR substitutions
+    for (const line of lines) {
+      const lower = line.toLowerCase()
+      for (const kw of keywords) {
+        const kwLower = kw.toLowerCase()
+        if (kwLower.length >= 4 && lower.includes(kwLower.slice(0, Math.ceil(kwLower.length * 0.7)))) {
+          const parts = line.split(/[:\s\-_|]+/)
+          const kwIdx = parts.findIndex(p => p.toLowerCase().includes(kwLower.slice(0, 3)))
+          if (kwIdx >= 0 && kwIdx < parts.length - 1) {
+            return parts.slice(kwIdx + 1).join(' ').trim()
+          }
+        }
       }
     }
     return ''
   }
 
-  patient.full_name = after(['full name', 'name', 'patient name'])
-  patient.mobile = after(['mobile', 'phone', 'contact', 'mob', 'cell']).replace(/\D/g, '').slice(-10)
-  patient.address = after(['address', 'addr', 'residence'])
-  patient.abha_id = after(['abha', 'health id'])
-  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid']).replace(/\D/g, '').slice(0, 12)
-  patient.age = after(['age']).replace(/\D/g, '')
-  patient.gender = after(['gender', 'sex'])
-  patient.blood_group = after(['blood group', 'blood type', 'bg'])
-  patient.emergency_contact_name = after(['emergency contact', 'emergency name', 'kin'])
-  patient.emergency_contact_phone = after(['emergency phone', 'emergency mobile', 'emergency no']).replace(/\D/g, '').slice(-10)
+  // English + Gujarati keywords for each field
+  patient.full_name = after(['full name', 'name', 'patient name', 'નામ', 'દર્દીનું નામ', 'પૂરું નામ'])
+  const mobileRaw = after(['mobile', 'phone', 'contact', 'mob', 'cell', 'મોબાઈલ', 'ફોન', 'સંપર્ક'])
+  patient.mobile = indicDigitsToAscii(mobileRaw).replace(/\D/g, '').slice(-10)
+  patient.address = after(['address', 'addr', 'residence', 'સરનામું', 'સરનામુ', 'ઠેકાણું', 'રહેઠાણ'])
+  patient.abha_id = after(['abha', 'health id', 'આભા', 'હેલ્થ આઈડી'])
+  const aadhaarRaw = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid', 'આધાર', 'આધાર નંબર'])
+  patient.aadhaar_no = indicDigitsToAscii(aadhaarRaw).replace(/\D/g, '').slice(0, 12)
+  const ageRaw = after(['age', 'ઉંમર', 'વય'])
+  patient.age = indicDigitsToAscii(ageRaw).replace(/\D/g, '')
+
+  // Gender — check Gujarati terms too
+  const genderRaw = after(['gender', 'sex', 'લિંગ', 'જાતિ'])
+  if (genderRaw) {
+    const gLower = genderRaw.trim().toLowerCase()
+    patient.gender = GUJARATI_GENDER_MAP[genderRaw.trim()] || GUJARATI_GENDER_MAP[gLower] || genderRaw
+  }
+  // Also check for gender keywords in full text
+  if (!patient.gender) {
+    const genderText = lines.join(' ').toLowerCase()
+    if (/\bસ્ત્રી\b|\bfemale\b|\bf\b/i.test(genderText))     patient.gender = 'Female'
+    else if (/\bપુરૂષ\b|\bપુરુષ\b|\bmale\b|\bm\b/i.test(genderText)) patient.gender = 'Male'
+    else if (/\bઅન્ય\b|\bother\b/i.test(genderText))          patient.gender = 'Other'
+  }
+
+  patient.blood_group = after(['blood group', 'blood type', 'bg', 'લોહી જૂથ', 'બ્લડ ગ્રુપ', 'રક્ત જૂથ'])
+  // Normalize blood group format
+  if (!patient.blood_group) {
+    const bgMatch = lines.join(' ').match(/\b(A|B|AB|O)[+\-]\b/)
+    if (bgMatch) patient.blood_group = bgMatch[0].toUpperCase()
+  }
+
+  patient.emergency_contact_name = after(['emergency contact', 'emergency name', 'kin', 'ઈમરજન્સી સંપર્ક', 'કટોકટી સંપર્ક', 'સંબંધી નામ'])
+  const emergPhoneRaw = after(['emergency phone', 'emergency mobile', 'emergency no', 'ઈમરજન્સી ફોન', 'કટોકટી ફોન', 'સંબંધી ફોન'])
+  patient.emergency_contact_phone = indicDigitsToAscii(emergPhoneRaw).replace(/\D/g, '').slice(-10)
 
   // Clean empty values
   for (const key of Object.keys(patient)) {

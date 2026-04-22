@@ -102,10 +102,27 @@ export async function POST(req: NextRequest) {
         if (raw.emergency_contact_name)  patient.emergency_contact_name  = raw.emergency_contact_name
         if (raw.emergency_contact_phone) patient.emergency_contact_phone = raw.emergency_contact_phone.replace(/\D/g,'').slice(-10)
 
+        // Detect language from field values
+        const allValues = Object.values(raw).join(' ')
+        const hasGujarati = /[\u0A80-\u0AFF]/.test(allValues)
+        const hasHindi    = /[\u0900-\u097F]/.test(allValues)
+        const hasLatin    = /[a-zA-Z]/.test(allValues)
+        let detectedLang = 'English'
+        if (hasGujarati && hasLatin) detectedLang = 'Mixed Gujarati-English'
+        else if (hasGujarati)        detectedLang = 'Gujarati'
+        else if (hasHindi && hasLatin) detectedLang = 'Mixed Hindi-English'
+        else if (hasHindi)           detectedLang = 'Hindi'
+
+        // Normalize Gujarati/Hindi digits in numeric fields
+        if (patient.mobile) patient.mobile = normIndicDigits(patient.mobile).replace(/\D/g, '').slice(-10)
+        if (patient.age) patient.age = normIndicDigits(patient.age).replace(/\D/g, '')
+        if (patient.aadhaar_no) patient.aadhaar_no = normIndicDigits(patient.aadhaar_no).replace(/\D/g, '').slice(0, 12)
+        if (patient.emergency_contact_phone) patient.emergency_contact_phone = normIndicDigits(patient.emergency_contact_phone).replace(/\D/g, '').slice(-10)
+
         const result: any = {
           form_type:          formType,
           confidence:         'high',
-          language_detected:  'English',
+          language_detected:  detectedLang,
           raw_text:           JSON.stringify(raw),
           _provider:          'pdf-lib/acroform-fields',
           patient,
@@ -176,10 +193,22 @@ export async function POST(req: NextRequest) {
 }
 
 function normDate(raw: string): string {
-  // Convert DD/MM/YYYY or DD-MM-YYYY to YYYY-MM-DD
-  const m = raw.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+  // Normalize Indic digits first, then convert DD/MM/YYYY or DD-MM-YYYY to YYYY-MM-DD
+  const normalized = normIndicDigits(raw)
+  const m = normalized.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
   if (!m) return raw
   const [, d, mo, y] = m
   const year = y.length === 2 ? '20' + y : y
   return `${year}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`
+}
+
+// Convert Gujarati/Hindi digits to ASCII digits
+const GUJ_DIGITS: Record<string, string> = {
+  '૦':'0','૧':'1','૨':'2','૩':'3','૪':'4','૫':'5','૬':'6','૭':'7','૮':'8','૯':'9',
+}
+const HIN_DIGITS: Record<string, string> = {
+  '०':'0','१':'1','२':'2','३':'3','४':'4','५':'5','६':'6','७':'7','८':'8','९':'9',
+}
+function normIndicDigits(str: string): string {
+  return str.replace(/[૦-૯०-९]/g, ch => GUJ_DIGITS[ch] || HIN_DIGITS[ch] || ch)
 }

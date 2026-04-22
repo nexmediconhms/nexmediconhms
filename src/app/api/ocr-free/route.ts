@@ -17,15 +17,52 @@ export const dynamic = 'force-dynamic'
  *
  * Limitations vs AI OCR:
  *   - Cannot read cursive handwriting
- *   - Gujarati script support requires gu.traineddata (auto-downloaded on first use)
+ *   - Gujarati script support requires guj.traineddata (auto-downloaded on first use)
  *   - Does not interpret or structure data — returns raw text only
  *   - The caller must parse the raw text into fields
  *
  * POST body: multipart/form-data
  *   image: File (JPG, PNG, WebP)
- *   lang:  string (optional) — 'eng' | 'guj' | 'eng+guj' (default: 'eng')
+ *   lang:  string (optional) — 'eng' | 'guj' | 'eng+guj' (default: 'eng+guj')
  *   form_type: string (optional)
  */
+
+// ── Gujarati / Indic digit conversion (server-side) ──────────
+const GUJARATI_DIGIT_MAP: Record<string, string> = {
+  '૦': '0', '૧': '1', '૨': '2', '૩': '3', '૪': '4',
+  '૫': '5', '૬': '6', '૭': '7', '૮': '8', '૯': '9',
+}
+const HINDI_DIGIT_MAP: Record<string, string> = {
+  '०': '0', '१': '1', '२': '2', '३': '3', '४': '4',
+  '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
+}
+function indicDigitsToAscii(str: string): string {
+  return str.replace(/[૦-૯०-९]/g, ch =>
+    GUJARATI_DIGIT_MAP[ch] || HINDI_DIGIT_MAP[ch] || ch
+  )
+}
+function containsGujarati(str: string): boolean {
+  return /[\u0A80-\u0AFF]/.test(str)
+}
+function containsHindi(str: string): boolean {
+  return /[\u0900-\u097F]/.test(str)
+}
+function detectLang(text: string): string {
+  const hasGuj  = containsGujarati(text)
+  const hasHin  = containsHindi(text)
+  const hasLatin = /[a-zA-Z]/.test(text)
+  if (hasGuj && hasLatin) return 'Mixed Gujarati-English'
+  if (hasGuj)             return 'Gujarati'
+  if (hasHin && hasLatin) return 'Mixed Hindi-English'
+  if (hasHin)             return 'Hindi'
+  return 'English'
+}
+
+// Gujarati gender mappings
+const GUJARATI_GENDER_MAP: Record<string, string> = {
+  'સ્ત્રી': 'Female', 'પુરૂષ': 'Male', 'પુરુષ': 'Male',
+  'મહિલા': 'Female', 'અન્ય': 'Other',
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,11 +76,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'No text provided.' })
       }
       const parsed = parseFormText(rawText, formType)
+      const detectedLanguage = detectLang(rawText)
       return NextResponse.json({
         ok:               true,
         raw_text:         rawText,
         confidence:       'medium',
-        language_detected: 'English',
+        language_detected: detectedLanguage,
         form_type:        (formType || 'patient_registration') as any,
         ...parsed,
         _provider:        'tesseract.js (browser, free)',
@@ -53,7 +91,8 @@ export async function POST(req: NextRequest) {
     // ── FormData request (server-side OCR with Tesseract) ──
     const fd       = await req.formData()
     const file     = fd.get('image') as File | null
-    const lang     = (fd.get('lang') as string | null) ?? 'eng'
+    // Default to eng+guj for bilingual support
+    const lang     = (fd.get('lang') as string | null) ?? 'eng+guj'
     const formType = (fd.get('form_type') as string | null) ?? ''
 
     if (!file) {
@@ -72,8 +111,8 @@ export async function POST(req: NextRequest) {
     const bytes  = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // Create Tesseract worker
-    // Note: language data is auto-downloaded on first use (~4 MB for 'eng')
+    // Create Tesseract worker with eng+guj for bilingual support
+    // Note: language data is auto-downloaded on first use (~4 MB for 'eng', ~6 MB for 'guj')
     // On Vercel serverless, use /tmp for cache (only writable directory)
     const worker = await createWorker(lang, 1, {
       logger: () => {},  // suppress progress logs
@@ -87,6 +126,9 @@ export async function POST(req: NextRequest) {
       const rawText = data.text?.trim() ?? ''
       const confidence = data.confidence ?? 0
 
+      // Detect language from the extracted text
+      const detectedLanguage = detectLang(rawText)
+
       // Parse the raw text into structured fields
       const parsed = parseFormText(rawText, formType)
 
@@ -95,7 +137,7 @@ export async function POST(req: NextRequest) {
         raw_text:         rawText,
         confidence_pct:   Math.round(confidence),
         confidence:       confidence > 70 ? 'high' : confidence > 45 ? 'medium' : 'low',
-        language_detected: lang.includes('guj') ? 'Gujarati' : 'English',
+        language_detected: detectedLanguage,
         form_type:        (formType || 'patient_registration') as any,
         ...parsed,
         _provider:        'tesseract.js (free, local)',
@@ -114,6 +156,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ── Parse raw Tesseract text into structured fields ───────────
+// Supports both English and Gujarati field labels
 function parseFormText(text: string, formType: string) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const patient: Record<string, string>  = {}
@@ -147,38 +190,54 @@ function parseFormText(text: string, formType: string) {
     return ''
   }
 
-  // Helper: extract number from text
+  // Helper: extract number from text (supports Gujarati digits)
   function num(str: string): string {
-    const m = str.match(/\d+\.?\d*/)
+    const ascii = indicDigitsToAscii(str)
+    const m = ascii.match(/\d+\.?\d*/)
     return m ? m[0] : ''
   }
 
-  // Helper: find a 10-digit phone number anywhere in text
+  // Helper: find a 10-digit phone number anywhere in text (supports Gujarati digits)
   function findPhone(): string {
-    const allText = lines.join(' ')
+    const allText = indicDigitsToAscii(lines.join(' '))
     const m = allText.match(/(?:(?:\+?91[\s\-]?)?([6-9]\d{9}))/g)
     return m ? m[0].replace(/\D/g, '').slice(-10) : ''
   }
 
-  // Helper: find a 12-digit Aadhaar number anywhere in text
+  // Helper: find a 12-digit Aadhaar number anywhere in text (supports Gujarati digits)
   function findAadhaar(): string {
-    const allText = lines.join(' ')
+    const allText = indicDigitsToAscii(lines.join(' '))
     const m = allText.match(/\b(\d{4}[\s\-]?\d{4}[\s\-]?\d{4})\b/)
     return m ? m[1].replace(/\D/g, '') : ''
   }
 
-  // ── Patient fields ────────────────────────────────────────
-  patient.full_name = after(['full name', 'patient name', 'name of patient', 'name', 'નામ', 'patient'])
-  patient.mobile    = after(['mobile', 'phone', 'contact no', 'contact number', 'mob', 'cell', 'tel', 'મોબાઈલ'])
-    .replace(/\D/g, '').slice(-10)
+  // ── Patient fields (English + Gujarati keywords) ────────────
+  patient.full_name = after([
+    'full name', 'patient name', 'name of patient', 'name',
+    'નામ', 'દર્દીનું નામ', 'પૂરું નામ', 'પેશન્ટનું નામ',
+    'patient'
+  ])
+  const mobileRaw = after([
+    'mobile', 'phone', 'contact no', 'contact number', 'mob', 'cell', 'tel',
+    'મોબાઈલ', 'ફોન', 'મોબાઈલ નંબર', 'ફોન નંબર', 'સંપર્ક'
+  ])
+  patient.mobile = indicDigitsToAscii(mobileRaw).replace(/\D/g, '').slice(-10)
   // Fallback: find phone number anywhere in text if label-based search failed
   if (!patient.mobile || patient.mobile.length < 10) {
     patient.mobile = findPhone()
   }
-  patient.address   = after(['address', 'addr', 'residence', 'residential address', 'સરનામ', 'village', 'city'])
-  patient.abha_id    = after(['abha', 'health id', 'abha id', 'health card'])
-  patient.aadhaar_no = after(['aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid', 'આધાર', 'aadhaar no', 'aadhaar card', 'aadhar no'])
-    .replace(/\D/g, '').slice(0, 12)
+  patient.address = after([
+    'address', 'addr', 'residence', 'residential address',
+    'સરનામું', 'સરનામુ', 'ઠેકાણું', 'રહેઠાણ', 'ગામ', 'શહેર',
+    'village', 'city'
+  ])
+  patient.abha_id = after(['abha', 'health id', 'abha id', 'health card', 'આભા', 'હેલ્થ આઈડી'])
+  const aadhaarRaw = after([
+    'aadhaar', 'aadhar', 'adhar', 'adhaar', 'uid',
+    'આધાર', 'આધાર નંબર', 'આધાર કાર્ડ',
+    'aadhaar no', 'aadhaar card', 'aadhar no'
+  ])
+  patient.aadhaar_no = indicDigitsToAscii(aadhaarRaw).replace(/\D/g, '').slice(0, 12)
   // Fallback: find 12-digit Aadhaar number anywhere in text
   if (!patient.aadhaar_no || patient.aadhaar_no.length < 12) {
     const found = findAadhaar()
@@ -186,10 +245,14 @@ function parseFormText(text: string, formType: string) {
   }
 
   // Date of birth
-  const dobRaw = after(['date of birth', 'dob', 'd.o.b', 'birth date', 'જન્મ'])
+  const dobRaw = after([
+    'date of birth', 'dob', 'd.o.b', 'birth date',
+    'જન્મ તારીખ', 'જન્મ', 'જન્મતારીખ'
+  ])
   if (dobRaw) {
-    // Convert DD/MM/YYYY → YYYY-MM-DD
-    const m = dobRaw.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/)
+    // Convert DD/MM/YYYY → YYYY-MM-DD (normalize Gujarati digits first)
+    const normalized = indicDigitsToAscii(dobRaw)
+    const m = normalized.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/)
     if (m) {
       const [, d, mo, y] = m
       const year = y.length === 2 ? '20' + y : y
@@ -197,47 +260,71 @@ function parseFormText(text: string, formType: string) {
     }
   }
 
-  // Age
-  const ageRaw = after(['age', 'ઉંમર'])
+  // Age (supports Gujarati digits)
+  const ageRaw = after(['age', 'ઉંમર', 'વય'])
   patient.age  = num(ageRaw)
 
-  // Gender — look for checkboxes or keywords
-  const genderText = lines.join(' ').toLowerCase()
-  if (/\bfemale\b|\bf\b|✓.*female|female.*✓/.test(genderText))     patient.gender = 'Female'
-  else if (/\bmale\b|\bm\b|✓.*male|male.*✓/.test(genderText))       patient.gender = 'Male'
+  // Gender — look for checkboxes or keywords (English + Gujarati)
+  const genderText = lines.join(' ')
+  const genderLower = genderText.toLowerCase()
+  // Check Gujarati gender terms first
+  if (/સ્ત્રી|મહિલા/.test(genderText))                                    patient.gender = 'Female'
+  else if (/પુરૂષ|પુરુષ/.test(genderText))                                patient.gender = 'Male'
+  else if (/અન્ય/.test(genderText))                                        patient.gender = 'Other'
+  else if (/\bfemale\b|\bf\b|✓.*female|female.*✓/.test(genderLower))       patient.gender = 'Female'
+  else if (/\bmale\b|\bm\b|✓.*male|male.*✓/.test(genderLower))             patient.gender = 'Male'
+  else if (/\bother\b/.test(genderLower))                                   patient.gender = 'Other'
+
+  // Also try label-based gender extraction
+  if (!patient.gender) {
+    const genderVal = after(['gender', 'sex', 'લિંગ', 'જાતિ'])
+    if (genderVal) {
+      const mapped = GUJARATI_GENDER_MAP[genderVal.trim()] || GUJARATI_GENDER_MAP[genderVal.trim().toLowerCase()]
+      if (mapped) patient.gender = mapped
+      else if (/female/i.test(genderVal)) patient.gender = 'Female'
+      else if (/male/i.test(genderVal))   patient.gender = 'Male'
+      else if (/other/i.test(genderVal))  patient.gender = 'Other'
+    }
+  }
 
   // Blood group
-  const bgMatch = lines.join(' ').match(/\b(A|B|AB|O)[+\-]\b/)
+  const bgMatch = indicDigitsToAscii(lines.join(' ')).match(/\b(A|B|AB|O)[+\-]\b/)
   if (bgMatch) patient.blood_group = bgMatch[0].toUpperCase()
 
-  // Emergency contact
-  patient.emergency_contact_name  = after(['emergency contact', 'emergency name', 'contact name'])
-  patient.emergency_contact_phone = after(['emergency.*mobile', 'emergency.*phone', 'emergency.*number'])
-    .replace(/\D/g, '').slice(-10)
+  // Emergency contact (English + Gujarati)
+  patient.emergency_contact_name = after([
+    'emergency contact', 'emergency name', 'contact name',
+    'ઈમરજન્સી સંપર્ક', 'કટોકટી સંપર્ક', 'સંબંધી નામ'
+  ])
+  const emergPhoneRaw = after([
+    'emergency.*mobile', 'emergency.*phone', 'emergency.*number',
+    'ઈમરજન્સી ફોન', 'કટોકટી ફોન', 'સંબંધી ફોન'
+  ])
+  patient.emergency_contact_phone = indicDigitsToAscii(emergPhoneRaw).replace(/\D/g, '').slice(-10)
 
-  // Mediclaim / Insurance — look for checkbox marks near keywords
+  // Mediclaim / Insurance — look for checkbox marks near keywords (English + Gujarati)
   const fullText = lines.join(' ')
-  const mediclaimSection = fullText.match(/mediclaim[^]*?cashless/i)?.[0] ?? fullText
-  if (/mediclaim[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?yes/i.test(mediclaimSection) ||
-      /yes[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?mediclaim/i.test(mediclaimSection) ||
-      /mediclaim[:\s]*yes/i.test(fullText)) {
+  const mediclaimSection = fullText.match(/(?:mediclaim|મેડિક્લેમ|ઈન્સ્યોરન્સ)[^]*?(?:cashless|કેશલેસ)/i)?.[0] ?? fullText
+  if (/(?:mediclaim|મેડિક્લેમ)[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?(?:yes|હા)/i.test(mediclaimSection) ||
+      /(?:yes|હા)[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?(?:mediclaim|મેડિક્લેમ)/i.test(mediclaimSection) ||
+      /(?:mediclaim|મેડિક્લેમ)[:\s]*(?:yes|હા)/i.test(fullText)) {
     patient.mediclaim = 'Yes'
   } else {
     patient.mediclaim = 'No'
   }
 
   // Cashless
-  const cashlessSection = fullText.match(/cashless[^]*?(?:policy|tpa|how did)/i)?.[0] ?? fullText
-  if (/cashless[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?yes/i.test(cashlessSection) ||
-      /yes[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?cashless/i.test(cashlessSection) ||
-      /cashless[:\s]*yes/i.test(fullText)) {
+  const cashlessSection = fullText.match(/(?:cashless|કેશલેસ)[^]*?(?:policy|tpa|how did|પોલિસી)/i)?.[0] ?? fullText
+  if (/(?:cashless|કેશલેસ)[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?(?:yes|હા)/i.test(cashlessSection) ||
+      /(?:yes|હા)[^]*?(?:✓|✗|x|\[x\]|☑)[^]*?(?:cashless|કેશલેસ)/i.test(cashlessSection) ||
+      /(?:cashless|કેશલેસ)[:\s]*(?:yes|હા)/i.test(fullText)) {
     patient.cashless = 'Yes'
   } else {
     patient.cashless = 'No'
   }
 
   // Policy / TPA name
-  patient.policy_tpa_name = after(['policy', 'tpa', 'insurance company', 'insurer'])
+  patient.policy_tpa_name = after(['policy', 'tpa', 'insurance company', 'insurer', 'પોલિસી', 'વીમા કંપની'])
 
   // Reference source — look for checked options
   const refOptions = ['Doctor Referral', 'Patient Referral', 'Advertisement', 'Google / Internet', 'Social Media', 'Walk-in', 'Camp / Outreach']
@@ -251,14 +338,14 @@ function parseFormText(text: string, formType: string) {
 
   // ── Vitals fields (for consultation form) ──────────────────
   if (formType === 'opd_consultation' || formType === 'vitals_complaints') {
-    const pulseRaw = after(['pulse', 'hr', 'heart rate', 'pr', 'નાડી'])
+    const pulseRaw = after(['pulse', 'hr', 'heart rate', 'pr', 'નાડી', 'પલ્સ'])
     vitals.pulse = num(pulseRaw)
 
-    const bpRaw = after(['bp', 'blood pressure', 'b.p', 'બ્લડ પ્રેશર'])
+    const bpRaw = indicDigitsToAscii(after(['bp', 'blood pressure', 'b.p', 'બ્લડ પ્રેશર', 'બી.પી.', 'રક્તદબાણ']))
     const bpM   = bpRaw.match(/(\d{2,3})\s*[\/]\s*(\d{2,3})/)
     if (bpM) { vitals.bp_systolic = bpM[1]; vitals.bp_diastolic = bpM[2] }
 
-    const tempRaw = after(['temp', 'temperature', 'fever', 'તાવ'])
+    const tempRaw = after(['temp', 'temperature', 'fever', 'તાવ', 'તાપમાન'])
     vitals.temperature = num(tempRaw)
 
     const spo2Raw = after(['spo2', 'spo₂', 'oxygen', 'o2 sat'])
@@ -267,10 +354,13 @@ function parseFormText(text: string, formType: string) {
     const wtRaw = after(['weight', 'wt', 'wgt', 'વજન'])
     vitals.weight = num(wtRaw)
 
-    const htRaw = after(['height', 'ht', 'hgt', 'ઊંચ'])
+    const htRaw = after(['height', 'ht', 'hgt', 'ઊંચાઈ', 'ઊંચ'])
     vitals.height = num(htRaw)
 
-    vitals.chief_complaint = after(['chief complaint', 'complaints', 'presenting complaint', 'cc', 'ફરિયાદ'])
+    vitals.chief_complaint = after([
+      'chief complaint', 'complaints', 'presenting complaint', 'cc',
+      'ફરિયાદ', 'મુખ્ય ફરિયાદ', 'તકલીફ', 'સમસ્યા'
+    ])
   }
 
   // Build result

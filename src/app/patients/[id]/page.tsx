@@ -10,7 +10,8 @@ import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
-  CheckCircle, Sparkles, Loader2, AlertCircle, TrendingUp, FlaskConical, IndianRupee
+  CheckCircle, Sparkles, Loader2, AlertCircle, TrendingUp, FlaskConical, IndianRupee,
+  Shield, Download
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
@@ -135,6 +136,7 @@ export default function PatientDetailPage() {
   const [labReports,    setLabReports]    = useState<any[]>([])
   const [loading,       setLoading]       = useState(true)
   const [activeTab,     setActiveTab]     = useState<Tab>('overview')
+  const [fhirExporting, setFhirExporting] = useState(false)
 
   // AI summary state
   const [summary,       setSummary]       = useState('')
@@ -269,6 +271,30 @@ export default function PatientDetailPage() {
                     className="btn-secondary flex items-center gap-2 text-xs bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">
                     <FileText className="w-3.5 h-3.5" /> Discharge Summary
                   </Link>
+                  <button
+                    onClick={async () => {
+                      setFhirExporting(true)
+                      try {
+                        const res = await fetch(`/api/fhir/patient/${patient.id}`)
+                        const bundle = await res.json()
+                        const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `${patient.mrn}_FHIR_Bundle.json`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      } catch {} finally { setFhirExporting(false) }
+                    }}
+                    disabled={fhirExporting}
+                    className="btn-secondary flex items-center gap-2 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50"
+                    title="Export patient record as HL7 FHIR R4 Bundle"
+                  >
+                    {fhirExporting
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Download className="w-3.5 h-3.5" />}
+                    FHIR Export
+                  </button>
                   <Link href={`/patients/${patient.id}/edit`}
                     className="btn-secondary flex items-center gap-2 text-xs">
                     <Edit className="w-3.5 h-3.5" /> Edit
@@ -300,8 +326,10 @@ export default function PatientDetailPage() {
                 )}
                 {patient.abha_id && (
                   <div>
-                    <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">ABHA ID</div>
-                    <div className="text-sm font-mono font-medium text-gray-700">{patient.abha_id}</div>
+                    <div className="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-green-500" /> ABHA ID
+                    </div>
+                    <div className="text-sm font-mono font-medium text-green-700">{patient.abha_id}</div>
                   </div>
                 )}
                 <div>

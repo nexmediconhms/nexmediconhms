@@ -6,11 +6,15 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
 import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
-  Heart, Shield, Stethoscope, FileText, QrCode, Globe, ScanLine
+  Heart, Shield, Stethoscope, FileText, QrCode, Globe, ScanLine,
+  Loader2
 } from 'lucide-react'
+import { verifyABHANumber, isValidABHANumber, mapABDMGender, buildDOBFromProfile, calculateAgeFromProfile, formatABHANumber, loadABDMConfig } from '@/lib/abdm'
+import type { ABHAProfile } from '@/lib/abdm'
 
 // ─── Constants ────────────────────────────────────────────────
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
@@ -65,6 +69,13 @@ export default function NewPatientPage() {
   const [duplicates,       setDuplicates]       = useState<DuplicateMatch[]>([])
   const [showDuplicateWarn,setShowDuplicateWarn] = useState(false)
   const [checkingDups,     setCheckingDups]      = useState(false)
+
+  // ABHA verification
+  const [abhaVerifying,  setAbhaVerifying]  = useState(false)
+  const [abhaVerified,   setAbhaVerified]   = useState(false)
+  const [abhaProfile,    setAbhaProfile]    = useState<ABHAProfile | null>(null)
+  const [abhaError,      setAbhaError]      = useState('')
+  const abdmConfig = typeof window !== 'undefined' ? loadABDMConfig() : { enabled: false } as any
 
 
   // ── Load prefill from URL params (from forms page) ──────────
@@ -169,20 +180,65 @@ export default function NewPatientPage() {
     setForm(prev => ({ ...prev, ...newFields }))
   }, [])
 
-  // ── Validation ────────────────────────────────────────────────
+  // ── ABHA Verification ─────────────────────────────────────────
+  async function handleVerifyABHA() {
+    const abha = form.abha_id.trim()
+    if (!abha) return
+    if (!isValidABHANumber(abha)) {
+      setAbhaError('Invalid ABHA number format. Must be 14 digits.')
+      return
+    }
+    setAbhaVerifying(true)
+    setAbhaError('')
+    setAbhaVerified(false)
+    setAbhaProfile(null)
+    try {
+      const result = await verifyABHANumber(abha)
+      if (result.success && result.profile) {
+        setAbhaVerified(true)
+        setAbhaProfile(result.profile)
+        // Auto-fill patient details from ABDM profile
+        const p = result.profile
+        if (p.name && !form.full_name.trim()) set('full_name', p.name)
+        if (p.gender) {
+          const mapped = mapABDMGender(p.gender)
+          if (!form.gender || form.gender === 'Female') set('gender', mapped)
+        }
+        if (p.yearOfBirth && !form.date_of_birth) {
+          const dob = buildDOBFromProfile(p)
+          set('date_of_birth', dob)
+          const age = calculateAgeFromProfile(p)
+          if (age >= 0 && age < 150) set('age', String(age))
+        }
+        if (p.mobile && !form.mobile.trim()) set('mobile', p.mobile)
+        if (p.address && !form.address.trim()) set('address', p.address)
+        // Format and set the ABHA number
+        set('abha_id', formatABHANumber(abha))
+      } else {
+        setAbhaError(result.error || 'Verification failed')
+      }
+    } catch (err: any) {
+      setAbhaError(err.message || 'Verification failed')
+    }
+    setAbhaVerifying(false)
+  }
+
+  // ── Validation (supports Gujarati/Hindi digit input) ──────────
   function validate(): boolean {
     const e: Partial<FormData> = {}
     if (!form.full_name.trim())
       e.full_name = 'Patient name is required'
-    if (!form.mobile.trim())
+    // Normalize Gujarati/Hindi digits before validation
+    const normalizedMobile = normalizePhone(form.mobile)
+    if (!normalizedMobile)
       e.mobile = 'Mobile number is required'
-    else if (!/^\d{10}$/.test(form.mobile.trim().replace(/^\+?91/, '')))
+    else if (!/^\d{10}$/.test(normalizedMobile.replace(/^\+?91/, '')))
       e.mobile = 'Enter a valid 10-digit mobile number (without country code)'
-    else if (!/^\d{10}$/.test(form.mobile.trim()))
+    else if (!/^\d{10}$/.test(normalizedMobile))
       e.mobile = 'Enter a valid 10-digit mobile number'
-    if (form.abha_id && !/^\d{14}$/.test(form.abha_id.replace(/-/g, '')))
+    if (form.abha_id && !/^\d{14}$/.test(normalizeDigits(form.abha_id).replace(/-/g, '')))
       e.abha_id = 'ABHA ID must be 14 digits'
-    if (form.aadhaar_no && !/^\d{12}$/.test(form.aadhaar_no.replace(/\s/g, '')))
+    if (form.aadhaar_no && !/^\d{12}$/.test(normalizeDigits(form.aadhaar_no).replace(/\s/g, '')))
       e.aadhaar_no = 'Aadhaar number must be 12 digits'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -223,8 +279,8 @@ export default function NewPatientPage() {
 
   // ── Duplicate check ────────────────────────────────────────────
   async function checkDuplicates(): Promise<DuplicateMatch[]> {
-    const mobile   = form.mobile.trim()
-    const aadhaar  = form.aadhaar_no.replace(/\s/g, '').trim()
+    const mobile   = normalizePhone(form.mobile)
+    const aadhaar  = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
     const name     = form.full_name.trim().toLowerCase()
 
     const orFilters: string[] = []
@@ -298,20 +354,26 @@ export default function NewPatientPage() {
     setDuplicates([])
     setSaving(true)
 
+    // Normalize Gujarati/Hindi digits before saving to database
+    const normalizedMobile = normalizePhone(form.mobile)
+    const normalizedAge = form.age ? parseInt(normalizeDigits(form.age)) : null
+    const normalizedAadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
+    const normalizedEmergPhone = normalizePhone(form.emergency_contact_phone)
+
     const { data, error } = await supabase
       .from('patients')
       .insert({
         full_name:               form.full_name.trim(),
-        age:                     form.age      ? parseInt(form.age)          : null,
+        age:                     normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
         date_of_birth:           form.date_of_birth                          || null,
         gender:                  form.gender                                  || null,
-        mobile:                  form.mobile.trim(),
+        mobile:                  normalizedMobile,
         blood_group:             form.blood_group                             || null,
         address:                 form.address.trim()                         || null,
         abha_id:                 form.abha_id.trim()                         || null,
-        aadhaar_no:              form.aadhaar_no.replace(/\s/g, '').trim()   || null,
+        aadhaar_no:              normalizedAadhaar                            || null,
         emergency_contact_name:  form.emergency_contact_name.trim()          || null,
-        emergency_contact_phone: form.emergency_contact_phone.trim()         || null,
+        emergency_contact_phone: normalizedEmergPhone                        || null,
         mediclaim:               form.mediclaim === 'Yes',
         cashless:                form.cashless  === 'Yes',
         reference_source:        form.reference_source
@@ -655,7 +717,7 @@ export default function NewPatientPage() {
                       placeholder="10-digit number"
                       maxLength={10}
                       value={form.mobile}
-                      onChange={e => set('mobile', e.target.value.replace(/\D/g, ''))}
+                      onChange={e => set('mobile', normalizePhone(e.target.value))}
                     />
                   </div>
                   <FieldError field="mobile" />
@@ -671,23 +733,63 @@ export default function NewPatientPage() {
                     placeholder="e.g. 1234 5678 9012"
                     maxLength={14}
                     value={form.aadhaar_no}
-                    onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))}
+                    onChange={e => set('aadhaar_no', indicDigitsToAscii(e.target.value).replace(/[^\d\s]/g, ''))}
                   />
                   <FieldError field="aadhaar_no" />
                 </div>
 
-                {/* ABHA ID */}
+                {/* ABHA ID with Verification */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <Shield className="w-3.5 h-3.5 inline mr-1 text-green-500" />
                     ABHA Health ID
                     <span className="text-gray-400 font-normal ml-1">(14 digits)</span>
+                    {abhaVerified && <span className="text-green-600 text-xs ml-2">✓ Verified</span>}
                   </label>
-                  <input className={inputClass('abha_id', 'font-mono')}
-                    placeholder="e.g. 12-3456-7890-1234"
-                    value={form.abha_id}
-                    onChange={e => set('abha_id', e.target.value)}
-                  />
+                  <div className="flex gap-2">
+                    <input className={`${inputClass('abha_id', 'font-mono')} flex-1 ${abhaVerified ? 'border-green-300 bg-green-50' : ''}`}
+                      placeholder="e.g. 12-3456-7890-1234"
+                      value={form.abha_id}
+                      onChange={e => { set('abha_id', e.target.value); setAbhaVerified(false); setAbhaProfile(null); setAbhaError('') }}
+                    />
+                    {abdmConfig.enabled && (
+                      <button
+                        type="button"
+                        onClick={handleVerifyABHA}
+                        disabled={abhaVerifying || !form.abha_id.trim() || abhaVerified}
+                        className="px-3 py-2 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0
+                          bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                      >
+                        {abhaVerifying
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : abhaVerified
+                          ? <CheckCircle className="w-3.5 h-3.5" />
+                          : <Shield className="w-3.5 h-3.5" />}
+                        {abhaVerifying ? 'Verifying…' : abhaVerified ? 'Verified' : 'Verify ABHA'}
+                      </button>
+                    )}
+                  </div>
                   <FieldError field="abha_id" />
+                  {abhaError && (
+                    <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> {abhaError}
+                    </p>
+                  )}
+                  {abhaVerified && abhaProfile && (
+                    <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3 text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Shield className="w-3.5 h-3.5 text-green-600" />
+                        <span className="font-semibold text-green-800">ABDM Profile Verified</span>
+                      </div>
+                      <div className="text-green-700 space-y-0.5">
+                        <div>Name: <strong>{abhaProfile.name}</strong></div>
+                        {abhaProfile.healthId && <div>ABHA Address: <strong>{abhaProfile.healthId}</strong></div>}
+                        <div>Status: <strong>{abhaProfile.status}</strong></div>
+                        {abhaProfile.mobile && <div>Mobile: {abhaProfile.mobile}</div>}
+                      </div>
+                      <p className="text-green-600 mt-1 italic">Patient details auto-filled from ABDM profile.</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Address */}
@@ -725,7 +827,7 @@ export default function NewPatientPage() {
                     placeholder="10-digit mobile"
                     maxLength={10}
                     value={form.emergency_contact_phone}
-                    onChange={e => set('emergency_contact_phone', e.target.value.replace(/\D/g, ''))}
+                    onChange={e => set('emergency_contact_phone', normalizePhone(e.target.value))}
                   />
                 </div>
               </div>

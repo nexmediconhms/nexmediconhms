@@ -2,10 +2,59 @@
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { CheckCircle, AlertCircle, User, Phone, Calendar, Droplets } from 'lucide-react'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
+import { CheckCircle, AlertCircle, User, Phone, Calendar, Droplets, Globe } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 const GENDERS      = ['Female','Male','Other']
+
+// Bilingual labels for the intake form
+type Lang = 'en' | 'gu'
+const L: Record<string, Record<Lang, string>> = {
+  title:              { en: 'Patient Registration Form', gu: 'દર્દી નોંધણી ફોર્મ' },
+  subtitle:           { en: 'Please fill this form before your visit. All fields marked * are required.', gu: 'કૃપા કરીને તમારી મુલાકાત પહેલાં આ ફોર્મ ભરો. * ચિહ્નિત ફીલ્ડ ફરજિયાત છે.' },
+  personal:           { en: 'Personal Details', gu: 'વ્યક્તિગત વિગતો' },
+  full_name:          { en: 'Full Name *', gu: 'પૂરું નામ *' },
+  full_name_ph:       { en: 'As on Aadhaar card', gu: 'આધાર કાર્ડ મુજબ' },
+  age:                { en: 'Age', gu: 'ઉંમર' },
+  age_ph:             { en: 'Years', gu: 'વર્ષ' },
+  gender:             { en: 'Gender', gu: 'લિંગ' },
+  gender_female:      { en: 'Female', gu: 'સ્ત્રી' },
+  gender_male:        { en: 'Male', gu: 'પુરૂષ' },
+  gender_other:       { en: 'Other', gu: 'અન્ય' },
+  dob:                { en: 'Date of Birth', gu: 'જન્મ તારીખ' },
+  blood_group:        { en: 'Blood Group', gu: 'લોહી જૂથ' },
+  contact:            { en: 'Contact Details', gu: 'સંપર્ક વિગતો' },
+  mobile:             { en: 'Mobile Number *', gu: 'મોબાઈલ નંબર *' },
+  mobile_ph:          { en: '10-digit mobile number', gu: '૧૦ અંકનો મોબાઈલ નંબર' },
+  address:            { en: 'Address', gu: 'સરનામું' },
+  address_ph:         { en: 'House no, Street, Area, City', gu: 'ઘર નં., શેરી, વિસ્તાર, શહેર' },
+  complaint:          { en: "Today's Problem / Complaint", gu: 'આજની તકલીફ / ફરિયાદ' },
+  complaint_ph:       { en: 'Briefly describe your main complaint or reason for visit…', gu: 'તમારી મુખ્ય ફરિયાદ અથવા મુલાકાતનું કારણ ટૂંકમાં જણાવો…' },
+  emergency:          { en: 'Emergency Contact', gu: 'કટોકટી સંપર્ક' },
+  emergency_name:     { en: 'Contact Name', gu: 'સંપર્ક નામ' },
+  emergency_name_ph:  { en: 'Husband / Father / Relative name', gu: 'પતિ / પિતા / સંબંધીનું નામ' },
+  emergency_phone:    { en: 'Contact Mobile', gu: 'સંપર્ક મોબાઈલ' },
+  emergency_phone_ph: { en: '10-digit mobile', gu: '૧૦ અંકનો મોબાઈલ' },
+  insurance:          { en: 'Do you have Health Insurance / Mediclaim?', gu: 'શું તમારી પાસે હેલ્થ ઈન્સ્યોરન્સ / મેડિક્લેમ છે?' },
+  yes:                { en: 'Yes', gu: 'હા' },
+  no:                 { en: 'No', gu: 'ના' },
+  consent_text:       { en: 'I consent to {hospital} recording and storing my personal and medical information for healthcare purposes. I confirm the information provided is accurate.', gu: 'હું {hospital} ને મારી વ્યક્તિગત અને તબીબી માહિતી આરોગ્ય સેવાના હેતુ માટે રેકોર્ડ કરવા અને સંગ્રહ કરવાની સંમતિ આપું છું. હું ખાતરી આપું છું કે આપેલી માહિતી સચોટ છે.' },
+  submit:             { en: 'Submit Registration', gu: 'નોંધણી સબમિટ કરો' },
+  submitting:         { en: 'Submitting…', gu: 'સબમિટ થઈ રહ્યું છે…' },
+  success_title:      { en: 'Registration Complete!', gu: 'નોંધણી પૂર્ણ!' },
+  success_thanks:     { en: 'Thank you', gu: 'આભાર' },
+  success_id:         { en: 'Your Patient ID', gu: 'તમારો દર્દી આઈડી' },
+  success_show:       { en: 'Please show this to the receptionist', gu: 'કૃપા કરીને આ રિસેપ્શનિસ્ટને બતાવો' },
+  success_proceed:    { en: 'Please proceed to the reception desk. Your information has been registered in our system.', gu: 'કૃપા કરીને રિસેપ્શન ડેસ્ક પર જાઓ. તમારી માહિતી અમારી સિસ્ટમમાં નોંધાઈ ગઈ છે.' },
+  secure_note:        { en: 'Your information is securely stored and will only be used for your medical care.', gu: 'તમારી માહિતી સુરક્ષિત રીતે સંગ્રહિત છે અને ફક્ત તમારી તબીબી સંભાળ માટે જ ઉપયોગ થશે.' },
+  err_name:           { en: 'Name is required', gu: 'નામ જરૂરી છે' },
+  err_mobile:         { en: 'Mobile number is required', gu: 'મોબાઈલ નંબર જરૂરી છે' },
+  err_mobile_invalid: { en: 'Enter a valid 10-digit mobile number', gu: 'માન્ય ૧૦ અંકનો મોબાઈલ નંબર દાખલ કરો' },
+  err_consent:        { en: 'Please give your consent to proceed', gu: 'કૃપા કરીને આગળ વધવા માટે સંમતિ આપો' },
+  err_duplicate:      { en: 'A patient with this mobile number is already registered. Please visit the reception desk.', gu: 'આ મોબાઈલ નંબર સાથે દર્દી પહેલેથી નોંધાયેલ છે. કૃપા કરીને રિસેપ્શન ડેસ્ક પર જાઓ.' },
+  lang_switch:        { en: 'ગુજરાતી', gu: 'English' },
+}
 
 interface IntakeForm {
   full_name:               string
@@ -32,25 +81,52 @@ function IntakeContent() {
   const searchParams = useSearchParams()
   const hospitalName = searchParams.get('h') || 'NexMedicon Hospital'
   const appointmentId = searchParams.get('appt') || ''
+  const langParam = searchParams.get('lang')
 
+  const [lang,    setLang]    = useState<Lang>(langParam === 'gu' ? 'gu' : 'en')
   const [form,    setForm]    = useState<IntakeForm>(EMPTY)
   const [errors,  setErrors]  = useState<Partial<Record<keyof IntakeForm, string>>>({})
   const [saving,  setSaving]  = useState(false)
   const [done,    setDone]    = useState<{ mrn: string; name: string } | null>(null)
   const [apiError, setApiError] = useState('')
 
+  // Bilingual label helper
+  const t = (key: string) => L[key]?.[lang] || L[key]?.en || key
+
   function set(field: keyof IntakeForm, value: string | boolean) {
     setForm(prev => ({ ...prev, [field]: value }))
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }))
   }
 
+  // Handle mobile input: accept Gujarati/Hindi digits, convert to ASCII
+  function handleMobileChange(raw: string) {
+    const normalized = normalizePhone(raw)
+    set('mobile', normalized)
+  }
+
+  // Handle age input: accept Gujarati/Hindi digits
+  function handleAgeChange(raw: string) {
+    const normalized = normalizeDigits(raw)
+    if (normalized.length <= 3) set('age', normalized)
+  }
+
+  // Handle emergency phone: accept Gujarati/Hindi digits
+  function handleEmergencyPhoneChange(raw: string) {
+    const normalized = normalizePhone(raw)
+    set('emergency_contact_phone', normalized)
+  }
+
   function validate(): boolean {
     const e: Partial<Record<keyof IntakeForm, string>> = {}
-    if (!form.full_name.trim())  e.full_name = 'Name is required'
-    if (!form.mobile.trim())     e.mobile    = 'Mobile number is required'
-    else if (!/^\d{10}$/.test(form.mobile.trim().replace(/^(\+91|91)/, '')))
-      e.mobile = 'Enter a valid 10-digit mobile number'
-    if (!form.consent)           e.consent   = 'Please give your consent to proceed'
+    if (!form.full_name.trim())  e.full_name = t('err_name')
+    if (!form.mobile.trim())     e.mobile    = t('err_mobile')
+    else {
+      // Normalize any Gujarati/Hindi digits before validation
+      const normalizedMobile = normalizePhone(form.mobile)
+      if (!/^\d{10}$/.test(normalizedMobile.replace(/^(\+91|91)/, '')))
+        e.mobile = t('err_mobile_invalid')
+    }
+    if (!form.consent)           e.consent   = t('err_consent')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -60,8 +136,10 @@ function IntakeContent() {
     setSaving(true)
     setApiError('')
 
+    // ── Normalize mobile (Gujarati digits → ASCII) before DB operations ──
+    const mobile = normalizePhone(form.mobile).replace(/^(\+91|91)/, '')
+
     // ── Check for duplicate mobile before inserting ──────────────
-    const mobile = form.mobile.trim().replace(/^(\+91|91)/, '')
     const { data: existing } = await supabase
       .from('patients')
       .select('id, mrn, full_name')
@@ -70,22 +148,27 @@ function IntakeContent() {
     if (existing && existing.length > 0) {
       setSaving(false)
       setApiError(
-        `A patient with mobile ${mobile} is already registered (${existing[0].full_name}, MRN: ${existing[0].mrn}). Please visit the reception desk if you need to update your details.`
+        lang === 'gu'
+          ? `મોબાઈલ ${mobile} સાથે દર્દી પહેલેથી નોંધાયેલ છે (${existing[0].full_name}, MRN: ${existing[0].mrn}). કૃપા કરીને રિસેપ્શન ડેસ્ક પર જાઓ.`
+          : `A patient with mobile ${mobile} is already registered (${existing[0].full_name}, MRN: ${existing[0].mrn}). Please visit the reception desk if you need to update your details.`
       )
       return
     }
 
+    // Normalize age (Gujarati digits → ASCII)
+    const ageNormalized = form.age ? parseInt(normalizeDigits(form.age)) : null
+
     // Use service role to allow public insert (anon key with RLS)
     const payload: Record<string, any> = {
       full_name:               form.full_name.trim(),
-      mobile:                  form.mobile.trim().replace(/^(\+91|91)/, ''),
+      mobile:                  mobile,
       gender:                  form.gender || null,
-      age:                     form.age ? parseInt(form.age) : null,
+      age:                     ageNormalized && !isNaN(ageNormalized) ? ageNormalized : null,
       date_of_birth:           form.date_of_birth || null,
       blood_group:             form.blood_group   || null,
       address:                 form.address.trim() || null,
       emergency_contact_name:  form.emergency_contact_name.trim()  || null,
-      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+      emergency_contact_phone: normalizePhone(form.emergency_contact_phone) || null,
       mediclaim:               form.mediclaim === 'Yes',
       reference_source:        appointmentId ? 'Online Self-Registration' : 'Walk-in Self-Registration',
     }
@@ -101,7 +184,7 @@ function IntakeContent() {
     if (error) {
       setApiError(
         error.message.includes('mobile')
-          ? 'A patient with this mobile number may already be registered. Please visit the reception desk.'
+          ? t('err_duplicate')
           : `Could not save your information: ${error.message}`
       )
       return
@@ -120,6 +203,16 @@ function IntakeContent() {
     setDone({ mrn: data.mrn, name: data.full_name })
   }
 
+  // Gender display label based on language
+  const genderLabel = (g: string) => {
+    if (lang === 'gu') {
+      if (g === 'Female') return 'સ્ત્રી (Female)'
+      if (g === 'Male')   return 'પુરૂષ (Male)'
+      if (g === 'Other')  return 'અન્ય (Other)'
+    }
+    return g
+  }
+
   // ── Success screen ─────────────────────────────────────────
   if (done) {
     return (
@@ -128,15 +221,15 @@ function IntakeContent() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-9 h-9 text-green-600"/>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-1">Registration Complete!</h2>
-          <p className="text-gray-500 mb-5">Thank you, {done.name}.</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">{t('success_title')}</h2>
+          <p className="text-gray-500 mb-5">{t('success_thanks')}, {done.name}.</p>
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-6 py-4 mb-6">
-            <div className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Your Patient ID</div>
+            <div className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">{t('success_id')}</div>
             <div className="text-3xl font-black text-blue-700 font-mono tracking-widest">{done.mrn}</div>
-            <p className="text-xs text-blue-500 mt-1">Please show this to the receptionist</p>
+            <p className="text-xs text-blue-500 mt-1">{t('success_show')}</p>
           </div>
           <p className="text-sm text-gray-500">
-            Please proceed to the reception desk. Your information has been registered in our system.
+            {t('success_proceed')}
           </p>
         </div>
       </div>
@@ -147,14 +240,23 @@ function IntakeContent() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       {/* Header */}
-      <div className="bg-blue-600 text-white px-4 py-5 text-center">
+      <div className="bg-blue-600 text-white px-4 py-5 text-center relative">
         <div className="text-xl font-bold">{hospitalName}</div>
-        <div className="text-sm text-blue-200 mt-1">Patient Registration Form</div>
+        <div className="text-sm text-blue-200 mt-1">{t('title')}</div>
+        {/* Language toggle button */}
+        <button
+          type="button"
+          onClick={() => setLang(lang === 'en' ? 'gu' : 'en')}
+          className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+        >
+          <Globe className="w-3.5 h-3.5"/>
+          {t('lang_switch')}
+        </button>
       </div>
 
       <div className="max-w-lg mx-auto p-4 pb-10">
         <p className="text-xs text-gray-500 text-center mt-3 mb-5">
-          Please fill this form before your visit. All fields marked * are required.
+          {t('subtitle')}
         </p>
 
         {apiError && (
@@ -167,46 +269,49 @@ function IntakeContent() {
         {/* Personal Details */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <User className="w-4 h-4 text-blue-600"/> Personal Details
+            <User className="w-4 h-4 text-blue-600"/> {t('personal')}
           </h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('full_name')}</label>
               <input
                 className={`w-full border rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none ${errors.full_name ? 'border-red-400' : 'border-gray-200'}`}
-                placeholder="As on Aadhaar card"
+                placeholder={t('full_name_ph')}
                 value={form.full_name}
                 onChange={e => set('full_name', e.target.value)}
+                autoComplete="name"
+                lang={lang === 'gu' ? 'gu' : undefined}
               />
               {errors.full_name && <p className="text-xs text-red-500 mt-1">{errors.full_name}</p>}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('age')}</label>
                 <input
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  placeholder="Years"
-                  type="number" min="0" max="120"
+                  placeholder={t('age_ph')}
+                  inputMode="numeric"
+                  maxLength={3}
                   value={form.age}
-                  onChange={e => set('age', e.target.value)}
+                  onChange={e => handleAgeChange(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('gender')}</label>
                 <select
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   value={form.gender}
                   onChange={e => set('gender', e.target.value)}
                 >
-                  {GENDERS.map(g => <option key={g}>{g}</option>)}
+                  {GENDERS.map(g => <option key={g} value={g}>{genderLabel(g)}</option>)}
                 </select>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5"/> Date of Birth
+                <Calendar className="w-3.5 h-3.5"/> {t('dob')}
               </label>
               <input
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -225,7 +330,7 @@ function IntakeContent() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                <Droplets className="w-3.5 h-3.5"/> Blood Group
+                <Droplets className="w-3.5 h-3.5"/> {t('blood_group')}
               </label>
               <div className="flex flex-wrap gap-2">
                 {BLOOD_GROUPS.map(bg => (
@@ -249,28 +354,29 @@ function IntakeContent() {
         {/* Contact */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Phone className="w-4 h-4 text-blue-600"/> Contact Details
+            <Phone className="w-4 h-4 text-blue-600"/> {t('contact')}
           </h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('mobile')}</label>
               <input
                 className={`w-full border rounded-xl px-4 py-3 text-base font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none ${errors.mobile ? 'border-red-400' : 'border-gray-200'}`}
-                placeholder="10-digit mobile number"
-                type="tel" maxLength={10}
+                placeholder={t('mobile_ph')}
+                type="tel" inputMode="numeric" maxLength={14}
                 value={form.mobile}
-                onChange={e => set('mobile', e.target.value.replace(/\D/g, ''))}
+                onChange={e => handleMobileChange(e.target.value)}
               />
               {errors.mobile && <p className="text-xs text-red-500 mt-1">{errors.mobile}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label>
               <textarea
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-                placeholder="House no, Street, Area, City"
+                placeholder={t('address_ph')}
                 rows={2}
                 value={form.address}
                 onChange={e => set('address', e.target.value)}
+                lang={lang === 'gu' ? 'gu' : undefined}
               />
             </div>
           </div>
@@ -278,37 +384,39 @@ function IntakeContent() {
 
         {/* Today's complaint */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-          <h2 className="font-bold text-gray-800 mb-4">Today's Problem / Complaint</h2>
+          <h2 className="font-bold text-gray-800 mb-4">{t('complaint')}</h2>
           <textarea
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-            placeholder="Briefly describe your main complaint or reason for visit…"
+            placeholder={t('complaint_ph')}
             rows={3}
             value={form.chief_complaint}
             onChange={e => set('chief_complaint', e.target.value)}
+            lang={lang === 'gu' ? 'gu' : undefined}
           />
         </div>
 
         {/* Emergency contact */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-          <h2 className="font-bold text-gray-800 mb-4">Emergency Contact</h2>
+          <h2 className="font-bold text-gray-800 mb-4">{t('emergency')}</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('emergency_name')}</label>
               <input
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="Husband / Father / Relative name"
+                placeholder={t('emergency_name_ph')}
                 value={form.emergency_contact_name}
                 onChange={e => set('emergency_contact_name', e.target.value)}
+                lang={lang === 'gu' ? 'gu' : undefined}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Mobile</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('emergency_phone')}</label>
               <input
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="10-digit mobile"
-                type="tel" maxLength={10}
+                placeholder={t('emergency_phone_ph')}
+                type="tel" inputMode="numeric" maxLength={14}
                 value={form.emergency_contact_phone}
-                onChange={e => set('emergency_contact_phone', e.target.value.replace(/\D/g, ''))}
+                onChange={e => handleEmergencyPhoneChange(e.target.value)}
               />
             </div>
           </div>
@@ -316,9 +424,9 @@ function IntakeContent() {
 
         {/* Insurance */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-          <h2 className="font-bold text-gray-800 mb-3">Do you have Health Insurance / Mediclaim?</h2>
+          <h2 className="font-bold text-gray-800 mb-3">{t('insurance')}</h2>
           <div className="flex gap-3">
-            {['Yes', 'No'].map(opt => (
+            {(['Yes', 'No'] as const).map(opt => (
               <button
                 key={opt} type="button"
                 onClick={() => set('mediclaim', opt)}
@@ -328,7 +436,7 @@ function IntakeContent() {
                     : 'bg-white text-gray-600 border-gray-300'
                 }`}
               >
-                {opt}
+                {opt === 'Yes' ? t('yes') : t('no')}
               </button>
             ))}
           </div>
@@ -346,8 +454,7 @@ function IntakeContent() {
               />
             </div>
             <span className="text-sm text-gray-600">
-              I consent to {hospitalName} recording and storing my personal and medical information
-              for healthcare purposes. I confirm the information provided is accurate.
+              {t('consent_text').replace('{hospital}', hospitalName)}
             </span>
           </label>
           {errors.consent && <p className="text-xs text-red-500 mt-2">{errors.consent}</p>}
@@ -361,15 +468,15 @@ function IntakeContent() {
           {saving ? (
             <>
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-              Submitting…
+              {t('submitting')}
             </>
           ) : (
-            'Submit Registration'
+            t('submit')
           )}
         </button>
 
         <p className="text-xs text-gray-400 text-center mt-4">
-          Your information is securely stored and will only be used for your medical care.
+          {t('secure_note')}
         </p>
       </div>
     </div>

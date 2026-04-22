@@ -4,59 +4,76 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/lib/constants'
+import { useAuth } from '@/lib/auth'
+import type { Permission } from '@/lib/auth'
 import {
   LayoutDashboard, Users, Stethoscope, BedDouble,
   BarChart2, LogOut, Activity, ChevronDown, ChevronRight,
   Baby, Settings, Clock, IndianRupee, FlaskConical,
   BookOpen, CalendarDays, TrendingUp, BarChart3,
-  Search as SearchIcon, Sparkles, ClipboardList
+  Search as SearchIcon, Sparkles, ClipboardList, Shield
 } from 'lucide-react'
 
-const NAV_GROUPS = [
+interface NavItemDef {
+  href: string
+  icon: any
+  label: string
+  permission?: Permission  // if set, only visible to roles with this permission
+}
+
+interface NavGroupDef {
+  label: string
+  emoji: string
+  items: NavItemDef[]
+}
+
+const NAV_GROUPS: NavGroupDef[] = [
   {
     label: 'Clinical',
     emoji: '🏥',
     items: [
       { href: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard'        },
-      { href: '/patients',        icon: Users,           label: 'Patients'         },
-      { href: '/opd',             icon: Stethoscope,     label: 'OPD Consultation' },
-      { href: '/queue',           icon: Clock,           label: 'OPD Queue'        },
-      { href: '/appointments',    icon: CalendarDays,    label: 'Appointments'     },
-      { href: '/beds',            icon: BedDouble,       label: 'Bed Management'   },
-      { href: '/anc',             icon: Baby,            label: 'ANC Registry'     },
-      { href: '/labs',            icon: FlaskConical,    label: 'Lab Results'      },
-      { href: '/forms',           icon: ClipboardList,   label: 'Patient Intake'   },
+      { href: '/patients',        icon: Users,           label: 'Patients',         permission: 'patients.view'      },
+      { href: '/opd',             icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'    },
+      { href: '/queue',           icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'         },
+      { href: '/appointments',    icon: CalendarDays,    label: 'Appointments'      },
+      { href: '/beds',            icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'          },
+      { href: '/anc',             icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'           },
+      { href: '/labs',            icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'          },
+      { href: '/forms',           icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'         },
     ],
   },
   {
     label: 'Finance',
     emoji: '💰',
     items: [
-      { href: '/billing',         icon: IndianRupee,     label: 'Billing'          },
-      { href: '/reports/daily',   icon: TrendingUp,      label: 'Daily Report'     },
-      { href: '/reports/monthly',  icon: BarChart3,       label: 'Monthly Report'   },
-      { href: '/reports/payments', icon: IndianRupee,     label: 'Payment Report'   },
+      { href: '/billing',         icon: IndianRupee,     label: 'Billing',          permission: 'billing.view'       },
+      { href: '/reports/daily',   icon: TrendingUp,      label: 'Daily Report',     permission: 'reports.view'       },
+      { href: '/reports/monthly', icon: BarChart3,       label: 'Monthly Report',   permission: 'reports.view'       },
+      { href: '/reports/payments',icon: IndianRupee,     label: 'Payment Report',   permission: 'reports.financial'  },
     ],
   },
   {
     label: 'Tools',
     emoji: '🔧',
     items: [
-      { href: '/reports',         icon: BarChart2,       label: 'Reports'          },
-      { href: '/search',          icon: SearchIcon,      label: 'Global Search'    },
+      { href: '/reports',         icon: BarChart2,       label: 'Reports',          permission: 'reports.view'       },
+      { href: '/search',          icon: SearchIcon,      label: 'Global Search'     },
     ],
   },
 ]
 
-const FOOTER_LINKS = [
-  { href: '/ai-setup',  icon: Sparkles, label: 'AI Status'   },
-  { href: '/setup',     icon: BookOpen, label: 'Setup Guide' },
-  { href: '/settings',  icon: Settings, label: 'Settings'    },
+const FOOTER_LINKS: NavItemDef[] = [
+  { href: '/ai-setup',    icon: Sparkles, label: 'AI Status'    },
+  { href: '/abdm-setup',  icon: Shield,   label: 'ABDM / FHIR' },
+  { href: '/setup',       icon: BookOpen, label: 'Setup Guide'  },
+  { href: '/settings',    icon: Settings, label: 'Settings',    permission: 'settings.view' },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
+  const { user, can } = useAuth()
 
   // Track which groups are open — default all open
   const [open, setOpen] = useState<Record<string, boolean>>({
@@ -76,6 +93,14 @@ export default function Sidebar() {
 
   function isActive(href: string) {
     return pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'))
+  }
+
+  // Filter items based on user's role permissions
+  function filterItems(items: NavItemDef[]): NavItemDef[] {
+    return items.filter(item => {
+      if (!item.permission) return true  // no permission = visible to all
+      return can(item.permission)
+    })
   }
 
   function NavLink({ href, icon: Icon, label }: { href: string; icon: any; label: string }) {
@@ -104,7 +129,9 @@ export default function Sidebar() {
           </div>
           <div className="min-w-0">
             <div className="font-bold text-gray-900 text-xs leading-tight truncate">{BRAND.shortName} HMS</div>
-            <div className="text-xs text-gray-400" style={{fontSize:'9px'}}>Hospital Management</div>
+            <div className="text-xs text-gray-400" style={{fontSize:'9px'}}>
+              {user ? `${user.role === 'admin' ? '👑' : user.role === 'doctor' ? '🩺' : '📋'} ${user.full_name}` : 'Hospital Management'}
+            </div>
           </div>
         </div>
       </div>
@@ -112,9 +139,12 @@ export default function Sidebar() {
       {/* Nav — scrollable */}
       <nav className="flex-1 overflow-y-auto px-2 py-2">
         {NAV_GROUPS.map(group => {
+          const filteredItems = filterItems(group.items)
+          // Don't show empty groups
+          if (filteredItems.length === 0) return null
+
           const isOpen  = open[group.label] ?? true
-          // Check if any item in group is active (keep group open if so)
-          const hasActive = group.items.some(i => isActive(i.href))
+          const hasActive = filteredItems.some(i => isActive(i.href))
 
           return (
             <div key={group.label} className="mb-1">
@@ -137,7 +167,7 @@ export default function Sidebar() {
               {/* Group items — collapsible */}
               {isOpen && (
                 <div className="space-y-0.5 ml-1">
-                  {group.items.map(item => (
+                  {filteredItems.map(item => (
                     <NavLink key={item.href} {...item}/>
                   ))}
                 </div>
@@ -150,7 +180,7 @@ export default function Sidebar() {
       {/* Footer — always visible */}
       <div className="px-2 py-2 border-t border-gray-100 flex-shrink-0">
         <div className="space-y-0.5">
-          {FOOTER_LINKS.map(item => (
+          {filterItems(FOOTER_LINKS).map(item => (
             <NavLink key={item.href} {...item}/>
           ))}
           <button onClick={logout}

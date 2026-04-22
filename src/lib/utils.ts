@@ -106,3 +106,116 @@ export function minFollowUpDate(): string {
   if (d.getDay() === 0) d.setDate(d.getDate() + 1)  // skip Sunday
   return d.toISOString().split('T')[0]
 }
+
+// ── Gujarati / Indic script helpers ──────────────────────────
+// Gujarati digits ૦-૯ mapped to ASCII 0-9
+const GUJARATI_DIGIT_MAP: Record<string, string> = {
+  '૦': '0', '૧': '1', '૨': '2', '૩': '3', '૪': '4',
+  '૫': '5', '૬': '6', '૭': '7', '૮': '8', '૯': '9',
+}
+
+// Hindi/Devanagari digits ०-९ mapped to ASCII 0-9
+const HINDI_DIGIT_MAP: Record<string, string> = {
+  '०': '0', '१': '1', '२': '2', '३': '3', '४': '4',
+  '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
+}
+
+/**
+ * Convert Gujarati/Hindi digits to ASCII digits.
+ * "૯૮૭૬૫૪૩૨૧૦" → "9876543210"
+ * Also handles mixed: "98૭૬5૪3210" → "9876543210"
+ */
+export function indicDigitsToAscii(str: string): string {
+  return str.replace(/[૦-૯०-९]/g, ch =>
+    GUJARATI_DIGIT_MAP[ch] || HINDI_DIGIT_MAP[ch] || ch
+  )
+}
+
+/**
+ * Normalize a phone/mobile input that may contain Gujarati or Hindi digits.
+ * Converts Indic digits → ASCII, then strips non-digit characters.
+ */
+export function normalizePhone(raw: string): string {
+  return indicDigitsToAscii(raw).replace(/\D/g, '').slice(-10)
+}
+
+/**
+ * Normalize a numeric-only input (Aadhaar, PIN code, age, etc.)
+ * Converts Indic digits → ASCII, then strips non-digit characters.
+ */
+export function normalizeDigits(raw: string): string {
+  return indicDigitsToAscii(raw).replace(/\D/g, '')
+}
+
+/**
+ * Detect if a string contains Gujarati Unicode characters (U+0A80–U+0AFF).
+ */
+export function containsGujarati(str: string): boolean {
+  return /[\u0A80-\u0AFF]/.test(str)
+}
+
+/**
+ * Detect if a string contains Devanagari/Hindi Unicode characters (U+0900–U+097F).
+ */
+export function containsHindi(str: string): boolean {
+  return /[\u0900-\u097F]/.test(str)
+}
+
+/**
+ * Detect the likely language of a text string.
+ * Returns 'Gujarati', 'Hindi', 'Mixed', or 'English'.
+ */
+export function detectLanguage(text: string): string {
+  const hasGuj  = containsGujarati(text)
+  const hasHin  = containsHindi(text)
+  const hasLatin = /[a-zA-Z]/.test(text)
+
+  if (hasGuj && hasLatin) return 'Mixed Gujarati-English'
+  if (hasGuj)             return 'Gujarati'
+  if (hasHin && hasLatin) return 'Mixed Hindi-English'
+  if (hasHin)             return 'Hindi'
+  return 'English'
+}
+
+// Common Gujarati → English field label mappings for OCR parsing
+export const GUJARATI_FIELD_LABELS: Record<string, string[]> = {
+  full_name:               ['નામ', 'દર્દીનું નામ', 'પૂરું નામ', 'પેશન્ટનું નામ'],
+  age:                     ['ઉંમર', 'વય'],
+  date_of_birth:           ['જન્મ તારીખ', 'જન્મ', 'જન્મતારીખ'],
+  gender:                  ['લિંગ', 'જાતિ'],
+  mobile:                  ['મોબાઈલ', 'ફોન', 'મોબાઈલ નંબર', 'ફોન નંબર', 'સંપર્ક'],
+  blood_group:             ['લોહી જૂથ', 'બ્લડ ગ્રુપ', 'રક્ત જૂથ'],
+  address:                 ['સરનામું', 'સરનામુ', 'ઠેકાણું', 'રહેઠાણ', 'ગામ', 'શહેર'],
+  aadhaar_no:              ['આધાર', 'આધાર નંબર', 'આધાર કાર્ડ'],
+  abha_id:                 ['આભા', 'હેલ્થ આઈડી'],
+  emergency_contact_name:  ['ઈમરજન્સી સંપર્ક', 'કટોકટી સંપર્ક', 'સંબંધી નામ'],
+  emergency_contact_phone: ['ઈમરજન્સી ફોન', 'કટોકટી ફોન', 'સંબંધી ફોન'],
+  chief_complaint:         ['ફરિયાદ', 'મુખ્ય ફરિયાદ', 'તકલીફ', 'સમસ્યા'],
+  diagnosis:               ['નિદાન'],
+  pulse:                   ['નાડી', 'પલ્સ'],
+  temperature:             ['તાવ', 'તાપમાન'],
+  weight:                  ['વજન'],
+  height:                  ['ઊંચાઈ', 'ઊંચ'],
+  bp:                      ['બ્લડ પ્રેશર', 'બી.પી.', 'રક્તદબાણ'],
+}
+
+// Gujarati gender mappings
+export const GUJARATI_GENDER_MAP: Record<string, string> = {
+  'સ્ત્રી': 'Female',
+  'પુરૂષ': 'Male',
+  'પુરુષ': 'Male',
+  'મહિલા': 'Female',
+  'અન્ય': 'Other',
+  'female': 'Female',
+  'male': 'Male',
+  'other': 'Other',
+}
+
+// Gujarati Yes/No mappings
+export const GUJARATI_YESNO_MAP: Record<string, string> = {
+  'હા': 'Yes',
+  'ના': 'No',
+  'નહીં': 'No',
+  'yes': 'Yes',
+  'no': 'No',
+}

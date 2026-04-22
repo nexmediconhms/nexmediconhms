@@ -15,6 +15,7 @@
   .section { margin-bottom:9px; }
   .section-title { font-size:10px; font-weight:bold; background:#dbeafe; border-left:3px solid #1a56db;
     padding:3px 6px; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px; }
+  .gu { font-size:9px; color:#555; font-weight:normal; text-transform:none; letter-spacing:0; margin-left:6px; }
   .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
   .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
   .field { display:flex; flex-direction:column; gap:1px; }
@@ -38,20 +39,27 @@
   .form-id { font-size:9px; color:#999; text-align:right; margin-bottom:3px; }
   .important { font-size:9px; color:#b45309; font-weight:bold; background:#fef3c7;
     border:1px solid #fcd34d; padding:3px 6px; margin-bottom:5px; border-radius:3px; }
+  .lang-note { font-size:8px; color:#1a56db; background:#eff6ff; border:1px solid #93c5fd;
+    padding:3px 6px; margin-bottom:5px; border-radius:3px; }
 </style>
 </head>
 <body>
-<div class="form-id">FORM-REG · v1 · NexMedicon HMS</div>
+<div class="form-id">FORM-REG · v2 · NexMedicon HMS</div>
 
 <div class="header">
   <h1 id="hospital-name">NexMedicon Hospital</h1>
   <div id="hospital-address" class="sub">Hospital Address · Phone: +91 XXXXX XXXXX</div>
-  <h2>NEW PATIENT REGISTRATION FORM</h2>
-  <div class="sub">Please fill ALL fields in CAPITAL LETTERS clearly · Use BLOCK LETTERS only · Do not use cursive</div>
+  <h2>NEW PATIENT REGISTRATION FORM<br/><span style="font-size:11px; color:#555;">નવા દર્દી નોંધણી ફોર્મ</span></h2>
+  <div class="sub">Please fill ALL fields in CAPITAL LETTERS clearly · Use BLOCK LETTERS only · Do not use cursive<br/>
+  કૃપા કરીને બધી વિગતો સ્પષ્ટ રીતે ભરો · બ્લોક અક્ષરો વાપરો · ગુજરાતીમાં ભરી શકો છો</div>
 </div>
 
 <div class="important">
-  ⚠ WRITE IN CAPITAL / BLOCK LETTERS ONLY — Example: RAVI PATEL, not ravi patel or राxxx Patel
+  ⚠ WRITE IN CAPITAL / BLOCK LETTERS ONLY — Example: RAVI PATEL, not ravi patel
+</div>
+
+<div class="lang-note">
+  🌐 You may fill this form in English or Gujarati (ગુજરાતી). Our system reads both languages.
 </div>
 
 <!-- MRN (to be filled by staff) -->
@@ -61,30 +69,30 @@
     <div class="value">&nbsp;</div>
   </div>
   <div style="flex:1; margin-left:15px;">
-    <div class="info-row"><label>Registration Date:</label><div class="line"></div></div>
+    <div class="info-row"><label>Registration Date / નોંધણી તારીખ:</label><div class="line"></div></div>
     <div class="info-row"><label>Registered By:</label><div class="line"></div></div>
   </div>
 </div>
 
 <!-- PERSONAL INFORMATION -->
 <div class="section">
-  <div class="section-title">Personal Information</div>
-  <div class="info-row"><label>Full Name (as on ID):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
+  <div class="section-title">Personal Information <span class="gu">વ્યક્તિગત માહિતી</span></div>
+  <div class="info-row"><label>Full Name (as on ID) / પૂરું નામ (ઓળખપત્ર મુજબ):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
   <div class="grid-3" style="gap:5px; margin-bottom:5px;">
     <div>
-      <div class="info-row"><label>Date of Birth (DD/MM/YYYY):</label><div class="line"></div></div>
+      <div class="info-row"><label>Date of Birth / જન્મ તારીખ (DD/MM/YYYY):</label><div class="line"></div></div>
     </div>
     <div>
-      <div class="info-row"><label>Age:</label><div style="width:50px;" class="line"></div>
-        <label style="margin-left:6px;">Gender:</label></div>
+      <div class="info-row"><label>Age / ઉંમર:</label><div style="width:50px;" class="line"></div>
+        <label style="margin-left:6px;">Gender / લિંગ:</label></div>
       <div class="checkbox-row" style="margin-top:2px;">
-        <div class="checkbox-item"><div class="cb"></div> Female</div>
-        <div class="checkbox-item"><div class="cb"></div> Male</div>
-        <div class="checkbox-item"><div class="cb"></div> Other</div>
+        <div class="checkbox-item"><div class="cb"></div> Female / સ્ત્રી</div>
+        <div class="checkbox-item"><div class="cb"></div> Male / પુરૂષ</div>
+        <div class="checkbox-item"><div class="cb"></div> Other / અન્ય</div>
       </div>
     </div>
     <div>
-      <label style="font-size:8.5px;font-weight:bold;display:block;margin-bottom:2px;">BLOOD GROUP</label>
+      <label style="font-size:8.5px;font-weight:bold;display:block;margin-bottom:2px;">BLOOD GROUP / લોહી જૂથ</label>
       <div class="checkbox-row">
         <div class="checkbox-item"><div class="cb"></div> A+</div>
         <div class="checkbox-item"><div class="cb"></div> A-</div>
@@ -102,74 +110,74 @@
 
 <!-- CONTACT -->
 <div class="section">
-  <div class="section-title">Contact Details</div>
+  <div class="section-title">Contact Details <span class="gu">સંપર્ક વિગતો</span></div>
   <div class="grid-2">
-    <div class="info-row"><label>Mobile Number (10 digits):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
+    <div class="info-row"><label>Mobile Number / મોબાઈલ નંબર (10 digits):</label><div class="line" style="border-bottom:2px solid #000;"></div></div>
     <div class="info-row"><label>WhatsApp (if different):</label><div class="line"></div></div>
   </div>
-  <div class="info-row" style="margin-top:5px;"><label>Address (House No, Street, Area):</label><div class="line"></div></div>
+  <div class="info-row" style="margin-top:5px;"><label>Address / સરનામું (House No, Street, Area):</label><div class="line"></div></div>
   <div class="grid-3" style="gap:5px; margin-top:5px;">
-    <div class="info-row"><label>City:</label><div class="line"></div></div>
-    <div class="info-row"><label>District:</label><div class="line"></div></div>
-    <div class="info-row"><label>PIN Code:</label><div class="line"></div></div>
+    <div class="info-row"><label>City / શહેર:</label><div class="line"></div></div>
+    <div class="info-row"><label>District / જિલ્લો:</label><div class="line"></div></div>
+    <div class="info-row"><label>PIN Code / પિન કોડ:</label><div class="line"></div></div>
   </div>
 </div>
 
 <!-- ID DOCUMENTS -->
 <div class="section">
-  <div class="section-title">Identity Documents</div>
+  <div class="section-title">Identity Documents <span class="gu">ઓળખ દસ્તાવેજો</span></div>
   <div class="grid-2">
-    <div class="info-row"><label>Aadhaar Number:</label><div class="line"></div></div>
-    <div class="info-row"><label>ABHA Health ID:</label><div class="line"></div></div>
+    <div class="info-row"><label>Aadhaar Number / આધાર નંબર:</label><div class="line"></div></div>
+    <div class="info-row"><label>ABHA Health ID / આભા હેલ્થ આઈડી:</label><div class="line"></div></div>
   </div>
 </div>
 
 <!-- EMERGENCY CONTACT -->
 <div class="section">
-  <div class="section-title">Emergency Contact</div>
+  <div class="section-title">Emergency Contact <span class="gu">કટોકટી સંપર્ક</span></div>
   <div class="grid-2">
-    <div class="info-row"><label>Name:</label><div class="line"></div></div>
-    <div class="info-row"><label>Mobile:</label><div class="line"></div></div>
+    <div class="info-row"><label>Name / નામ:</label><div class="line"></div></div>
+    <div class="info-row"><label>Mobile / મોબાઈલ:</label><div class="line"></div></div>
   </div>
   <div class="info-row" style="margin-top:5px;">
-    <label>Relation:</label>
+    <label>Relation / સંબંધ:</label>
     <div class="checkbox-row" style="margin:0 0 0 6px;">
-      <div class="checkbox-item"><div class="cb"></div> Husband</div>
-      <div class="checkbox-item"><div class="cb"></div> Father</div>
-      <div class="checkbox-item"><div class="cb"></div> Mother</div>
-      <div class="checkbox-item"><div class="cb"></div> Sibling</div>
-      <div class="checkbox-item"><div class="cb"></div> Other</div>
+      <div class="checkbox-item"><div class="cb"></div> Husband / પતિ</div>
+      <div class="checkbox-item"><div class="cb"></div> Father / પિતા</div>
+      <div class="checkbox-item"><div class="cb"></div> Mother / માતા</div>
+      <div class="checkbox-item"><div class="cb"></div> Sibling / ભાઈ-બહેન</div>
+      <div class="checkbox-item"><div class="cb"></div> Other / અન્ય</div>
     </div>
   </div>
 </div>
 
 <!-- INSURANCE -->
 <div class="section">
-  <div class="section-title">Insurance / Mediclaim</div>
+  <div class="section-title">Insurance / Mediclaim <span class="gu">વીમો / મેડિક્લેમ</span></div>
   <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:5px;">
     <div>
-      <label style="font-size:8.5px;font-weight:bold;">Mediclaim / Health Insurance:</label>
+      <label style="font-size:8.5px;font-weight:bold;">Mediclaim / Health Insurance / હેલ્થ ઈન્સ્યોરન્સ:</label>
       <div class="checkbox-row" style="margin-top:2px;">
-        <div class="checkbox-item"><div class="cb"></div> Yes</div>
-        <div class="checkbox-item"><div class="cb"></div> No</div>
+        <div class="checkbox-item"><div class="cb"></div> Yes / હા</div>
+        <div class="checkbox-item"><div class="cb"></div> No / ના</div>
       </div>
     </div>
     <div>
-      <label style="font-size:8.5px;font-weight:bold;">Cashless Facility:</label>
+      <label style="font-size:8.5px;font-weight:bold;">Cashless Facility / કેશલેસ:</label>
       <div class="checkbox-row" style="margin-top:2px;">
-        <div class="checkbox-item"><div class="cb"></div> Yes</div>
-        <div class="checkbox-item"><div class="cb"></div> No</div>
+        <div class="checkbox-item"><div class="cb"></div> Yes / હા</div>
+        <div class="checkbox-item"><div class="cb"></div> No / ના</div>
       </div>
     </div>
     <div style="flex:1;">
-      <div class="info-row"><label>Policy / TPA Name:</label><div class="line"></div></div>
+      <div class="info-row"><label>Policy / TPA Name / પોલિસી નામ:</label><div class="line"></div></div>
     </div>
   </div>
 </div>
 
 <!-- HOW DID YOU FIND US -->
 <div class="section">
-  <div class="section-title">How Did You Find Us?</div>
+  <div class="section-title">How Did You Find Us? <span class="gu">તમે અમને કેવી રીતે શોધ્યા?</span></div>
   <div class="checkbox-row">
     <div class="checkbox-item"><div class="cb"></div> Doctor Referral</div>
     <div class="checkbox-item"><div class="cb"></div> Patient Referral</div>
@@ -185,24 +193,28 @@
 <!-- CONSENT -->
 <div class="section">
   <div class="consent-box">
-    <div style="font-weight:bold; margin-bottom:3px;">Patient Consent</div>
+    <div style="font-weight:bold; margin-bottom:3px;">Patient Consent / દર્દીની સંમતિ</div>
     I hereby give my consent to <span id="hospital-name-consent">NexMedicon Hospital</span> for recording and storing my personal and medical information in their digital system for the purpose of providing healthcare services. I understand this information is confidential and will not be shared without my consent except as required by law.
+    <div style="margin-top:3px; color:#555; font-size:8px;">
+      હું <span id="hospital-name-consent-gu">NexMedicon Hospital</span> ને મારી વ્યક્તિગત અને તબીબી માહિતી તેમની ડિજિટલ સિસ્ટમમાં આરોગ્ય સેવાના હેતુ માટે રેકોર્ડ કરવા અને સંગ્રહ કરવાની સંમતિ આપું છું.
+    </div>
   </div>
   <div class="grid-2" style="gap:10px; margin-top:6px;">
     <div>
-      <div style="font-size:9px;font-weight:bold;">Patient / Guardian Signature</div>
+      <div style="font-size:9px;font-weight:bold;">Patient / Guardian Signature / દર્દી/વાલીની સહી</div>
       <div class="sig-line"></div>
-      <div class="info-row" style="margin-top:3px;"><label>Date:</label><div class="line"></div></div>
+      <div class="info-row" style="margin-top:3px;"><label>Date / તારીખ:</label><div class="line"></div></div>
     </div>
     <div>
-      <div style="font-size:9px;font-weight:bold;">Relationship to patient (if Guardian)</div>
+      <div style="font-size:9px;font-weight:bold;">Relationship to patient (if Guardian) / સંબંધ</div>
       <div class="sig-line"></div>
     </div>
   </div>
 </div>
 
 <div style="margin-top:5px; font-size:8px; color:#666; text-align:center; border-top:1px dashed #ccc; padding-top:4px;">
-  FORM-REG · NexMedicon Hospital Management System · Scan this form to auto-populate the digital registration record
+  FORM-REG · NexMedicon Hospital Management System · Scan this form to auto-populate the digital registration record<br/>
+  આ ફોર્મ સ્કેન કરો — ડિજિટલ નોંધણી રેકોર્ડ આપોઆપ ભરાશે
 </div>
 
 <script>
@@ -211,6 +223,7 @@
     if (s.hospitalName) {
       document.getElementById('hospital-name').textContent = s.hospitalName
       document.getElementById('hospital-name-consent').textContent = s.hospitalName
+      document.getElementById('hospital-name-consent-gu').textContent = s.hospitalName
     }
     if (s.address) document.getElementById('hospital-address').textContent =
       s.address + (s.phone ? ' · Phone: ' + s.phone : '')
