@@ -145,7 +145,11 @@ function FormsContent() {
   const searchParams = useSearchParams()
   const patientId    = searchParams.get('patient') || ''
 
-  const [active,    setActive]   = useState<Method>('digital')
+  // Read tab from URL query param (e.g., /forms?tab=digital)
+  const tabParam = searchParams.get('tab') as Method | null
+  const [active,    setActive]   = useState<Method>(
+    tabParam && ['digital', 'fillable', 'qr', 'paper'].includes(tabParam) ? tabParam : 'digital'
+  )
   const [scanning,  setScanning] = useState<string | null>(null)
   const [done,      setDone]     = useState<Record<string, boolean>>({})
   const [copied,    setCopied]   = useState(false)

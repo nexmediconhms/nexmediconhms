@@ -536,18 +536,18 @@ export default function NewPatientPage() {
         <div className="mb-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Registration Methods</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <a href="/intake" target="_blank" rel="noopener noreferrer"
+            <a href="/forms?tab=digital"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center transition-colors">
                 <Globe className="w-5 h-5 text-indigo-600" />
               </div>
               <div className="text-center">
                 <div className="text-sm font-semibold text-gray-800">Digital Form</div>
-                <div className="text-xs text-gray-400">Patient self-fills on tablet</div>
+                <div className="text-xs text-gray-400">Send link via WhatsApp</div>
               </div>
             </a>
 
-            <a href="/forms" target="_blank" rel="noopener noreferrer"
+            <a href="/forms?tab=fillable"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-purple-300 hover:bg-purple-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-purple-100 group-hover:bg-purple-200 flex items-center justify-center transition-colors">
                 <FileText className="w-5 h-5 text-purple-600" />
@@ -558,7 +558,7 @@ export default function NewPatientPage() {
               </div>
             </a>
 
-            <a href="/forms" target="_blank" rel="noopener noreferrer"
+            <a href="/forms?tab=qr"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-green-300 hover:bg-green-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-green-100 group-hover:bg-green-200 flex items-center justify-center transition-colors">
                 <QrCode className="w-5 h-5 text-green-600" />
@@ -569,7 +569,7 @@ export default function NewPatientPage() {
               </div>
             </a>
 
-            <a href="/forms" target="_blank" rel="noopener noreferrer"
+            <a href="/forms?tab=paper"
               className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-amber-300 hover:bg-amber-50 transition-all duration-200 shadow-sm hover:shadow-md">
               <div className="w-10 h-10 rounded-xl bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center transition-colors">
                 <ScanLine className="w-5 h-5 text-amber-600" />
