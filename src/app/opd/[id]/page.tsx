@@ -106,6 +106,12 @@ export default function EncounterDetailPage() {
               {ob.uterus_size && <InfoRow label="Uterus Size"  value={ob.uterus_size} />}
               {ob.scar_tenderness && <InfoRow label="Scar Tenderness" value={ob.scar_tenderness} />}
               {ob.fetal_movement  && <InfoRow label="Fetal Movement"  value={ob.fetal_movement} />}
+              {ob.previous_cs     && <InfoRow label="Previous CS"     value={`${ob.previous_cs} CS`} />}
+              {ob.multiple_pregnancy && <InfoRow label="Multiple Pregnancy" value="Twins / Multiple" />}
+              {ob.gestational_diabetes && <InfoRow label="GDM" value="Yes" />}
+              {ob.haemoglobin     && <InfoRow label="Haemoglobin"     value={`${ob.haemoglobin} g/dL`} />}
+              {ob.blood_sugar_fasting && <InfoRow label="Fasting Sugar" value={`${ob.blood_sugar_fasting} mg/dL`} />}
+              {ob.blood_sugar_pp  && <InfoRow label="PP Sugar"        value={`${ob.blood_sugar_pp} mg/dL`} />}
               {ob.cervix_speculum && <InfoRow label="Cervix (Speculum)" value={ob.cervix_speculum} />}
               {ob.cervix_pv  && <InfoRow label="Cervix (PV)"  value={ob.cervix_pv} />}
               {ob.os_pv      && <InfoRow label="Os"            value={ob.os_pv} />}
@@ -118,6 +124,25 @@ export default function EncounterDetailPage() {
               <div className="mt-2 grid grid-cols-2 gap-4">
                 {ob.right_ovary && <InfoRow label="Right Ovary" value={ob.right_ovary} />}
                 {ob.left_ovary  && <InfoRow label="Left Ovary"  value={ob.left_ovary} />}
+              </div>
+            )}
+
+            {/* USG / Ultrasound Report */}
+            {(ob.bpd || ob.hc || ob.ac || ob.fl || ob.afi || ob.efw || ob.placenta || ob.usg_remarks) && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">📊 USG Report {ob.usg_date ? `(${new Date(ob.usg_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})})` : ''}</h3>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                  {ob.usg_ga   && <InfoRow label="GA at USG"  value={ob.usg_ga} />}
+                  {ob.efw      && <InfoRow label="EFW"        value={`${ob.efw} g (${(ob.efw/1000).toFixed(2)} kg)`} />}
+                  {ob.bpd      && <InfoRow label="BPD"        value={`${ob.bpd} mm`} />}
+                  {ob.hc       && <InfoRow label="HC"         value={`${ob.hc} mm`} />}
+                  {ob.ac       && <InfoRow label="AC"         value={`${ob.ac} mm`} />}
+                  {ob.fl       && <InfoRow label="FL"         value={`${ob.fl} mm`} />}
+                  {ob.afi      && <InfoRow label="AFI"        value={`${ob.afi} cm${ob.afi < 5 ? ' ⚠️ LOW' : ob.afi > 25 ? ' ⚠️ HIGH' : ''}`} highlight={ob.afi < 5 || ob.afi > 25} />}
+                  {ob.placenta && <InfoRow label="Placenta"   value={`${ob.placenta}${ob.placenta_grade ? ` · ${ob.placenta_grade}` : ''}`} highlight={ob.placenta === 'Previa' || ob.placenta === 'Low-lying'} />}
+                  {ob.cord_loops && <InfoRow label="Cord"     value={ob.cord_loops} />}
+                </div>
+                {ob.usg_remarks && <InfoRow label="USG Remarks" value={ob.usg_remarks} />}
               </div>
             )}
           </div>

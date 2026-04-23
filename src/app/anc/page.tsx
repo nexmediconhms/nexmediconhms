@@ -4,6 +4,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, calculateGA, getHospitalSettings } from '@/lib/utils'
+import { assessObstetricRisk } from '@/lib/clinical-risk'
 import { Baby, AlertTriangle, Search, Calendar, Heart, Droplets, RefreshCw, Printer } from 'lucide-react'
 
 interface ANCRecord {
@@ -34,17 +35,22 @@ function riskBadge(r: ANCRecord['risk']) {
   return <span className="badge-green text-xs">Normal</span>
 }
 
-function calcRisk(ob: any, age: number): { risk: ANCRecord['risk']; reasons: string[] } {
-  const reasons: string[] = []
-  if (age >= 35)                                  reasons.push('Advanced maternal age (≥35y)')
-  if (ob.gravida >= 5)                            reasons.push('Grand multigravida (G5+)')
-  if (ob.liquor === 'Reduced')                    reasons.push('Reduced liquor')
-  if (ob.liquor === 'Absent')                     reasons.push('Absent liquor')
-  if (ob.liquor === 'Increased')                  reasons.push('Polyhydramnios')
-  if (ob.presentation === 'Breech')               reasons.push('Breech presentation')
-  if (ob.presentation === 'Transverse')           reasons.push('Transverse lie')
-  if (ob.fhs && (ob.fhs < 110 || ob.fhs > 160))  reasons.push(`Abnormal FHS (${ob.fhs} bpm)`)
-  const risk: ANCRecord['risk'] = reasons.length >= 2 ? 'high' : reasons.length === 1 ? 'watch' : 'normal'
+function calcRisk(ob: any, age: number, bp_systolic?: number, bp_diastolic?: number): { risk: ANCRecord['risk']; reasons: string[] } {
+  // Use the comprehensive clinical risk engine
+  const assessment = assessObstetricRisk({
+    age,
+    bp_systolic,
+    bp_diastolic,
+    ob_data: ob,
+    haemoglobin: ob.haemoglobin,
+  })
+
+  const reasons = assessment.flags.map(f => f.message)
+  // Map the 4-level risk to the 3-level ANC display
+  const risk: ANCRecord['risk'] =
+    assessment.overall === 'critical' || assessment.overall === 'high' ? 'high' :
+    assessment.overall === 'watch' ? 'watch' : 'normal'
+
   return { risk, reasons }
 }
 
@@ -59,10 +65,10 @@ export default function ANCPage() {
   async function load() {
     setLoading(true)
 
-    // Get all encounters that have ob_data with lmp set
+    // Get all encounters that have ob_data with lmp set (include vitals for risk assessment)
     const { data: encs } = await supabase
       .from('encounters')
-      .select('id, patient_id, encounter_date, ob_data, patients(full_name, mrn, age, mobile)')
+      .select('id, patient_id, encounter_date, ob_data, bp_systolic, bp_diastolic, patients(full_name, mrn, age, mobile)')
       .not('ob_data', 'is', null)
       .order('encounter_date', { ascending: false })
 
@@ -83,7 +89,7 @@ export default function ANCPage() {
       const weeksToEDD = edd
         ? Math.round((new Date(edd).getTime() - Date.now()) / (7 * 86400000))
         : 999
-      const { risk, reasons } = calcRisk(ob, pat?.age || 0)
+      const { risk, reasons } = calcRisk(ob, pat?.age || 0, e.bp_systolic, e.bp_diastolic)
 
       rows.push({
         encounterId:   e.id,

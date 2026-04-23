@@ -25,12 +25,16 @@ export default function Dashboard() {
   useEffect(() => {
     loadData()
     const t = setInterval(() => setTime(new Date()), 1000)
-    // Load today's appointments count from localStorage
-    try {
-      const appts = JSON.parse(localStorage.getItem('nexmedicon_appointments') || '[]')
-      const tod = new Date().toISOString().split('T')[0]
-      setTodayAppts(appts.filter((a: any) => a.date === tod && a.status !== 'cancelled').length)
-    } catch {}
+    // Load today's appointments count from Supabase
+    const tod = new Date().toISOString().split('T')[0]
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('date', tod)
+      .neq('status', 'cancelled')
+      .then(({ count, error }) => {
+        if (!error) setTodayAppts(count || 0)
+      })
     return () => clearInterval(t)
   }, [])
 

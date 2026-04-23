@@ -67,6 +67,26 @@ export interface OBData {
   per_vaginum?: string
   right_ovary?: string
   left_ovary?: string
+  // ── Clinical risk fields ──
+  previous_cs?: number          // number of previous caesarean sections
+  multiple_pregnancy?: boolean  // twins / triplets
+  gestational_diabetes?: boolean
+  haemoglobin?: number          // g/dL — latest Hb value
+  blood_sugar_fasting?: number  // mg/dL
+  blood_sugar_pp?: number       // mg/dL (post-prandial)
+  // ── USG / Ultrasound fields ──
+  usg_date?: string             // ISO date of USG
+  usg_ga?: string               // gestational age at USG (e.g. "28w3d")
+  bpd?: number                  // Biparietal Diameter (mm)
+  hc?: number                   // Head Circumference (mm)
+  ac?: number                   // Abdominal Circumference (mm)
+  fl?: number                   // Femur Length (mm)
+  efw?: number                  // Estimated Fetal Weight (grams)
+  afi?: number                  // Amniotic Fluid Index (cm)
+  placenta?: string             // e.g. "Anterior", "Posterior", "Fundal", "Low-lying", "Previa"
+  placenta_grade?: string       // Grade 0, I, II, III
+  cord_loops?: string           // e.g. "None", "1 loop around neck", "2 loops"
+  usg_remarks?: string          // free text for additional findings
 }
 
 export interface Medication {

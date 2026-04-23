@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -8,12 +8,10 @@ import { formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
 import {
   Calendar, Plus, Search, X, Clock, CheckCircle,
   MessageCircle, Phone, ChevronRight, Trash2,
-  AlertCircle, Stethoscope, User, RefreshCw
+  AlertCircle, Stethoscope, User, RefreshCw, Loader2
 } from 'lucide-react'
 
-// ── Appointment stored in localStorage ───────────────────────
-const APPTS_KEY = 'nexmedicon_appointments'
-
+// ── Appointment types ────────────────────────────────────────
 type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
 
 interface Appointment {
@@ -57,13 +55,9 @@ const TIME_SLOTS = Array.from({length:24}, (_,h) =>
   [':00',':15',':30',':45'].map(m => `${String(h).padStart(2,'0')}${m}`)
 ).flat().filter(t => t >= '08:00' && t <= '19:45')
 
-function loadAppts(): Appointment[] {
-  try { return JSON.parse(localStorage.getItem(APPTS_KEY)||'[]') } catch { return [] }
-}
-function saveAppts(a: Appointment[]) { localStorage.setItem(APPTS_KEY, JSON.stringify(a)) }
-
 export default function AppointmentsPage() {
   const [appts,       setAppts]       = useState<Appointment[]>([])
+  const [loading,     setLoading]     = useState(true)
   const [view,        setView]        = useState<'list'|'new'|'reminder'>('list')
   const [dateFilter,  setDateFilter]  = useState(new Date().toISOString().split('T')[0])
   const [statusFilter,setStatusFilter]= useState<ApptStatus|'all'>('all')
@@ -77,6 +71,7 @@ export default function AppointmentsPage() {
   const [apptType,       setApptType]       = useState(APPT_TYPES[0])
   const [apptNotes,      setApptNotes]      = useState('')
   const [saving,         setSaving]         = useState(false)
+  const [saveError,      setSaveError]      = useState('')
 
   // WhatsApp reminder
   const [reminderAppt,   setReminderAppt]   = useState<Appointment|null>(null)
@@ -87,8 +82,62 @@ export default function AppointmentsPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
-  useEffect(() => { setAppts(loadAppts()) }, [])
+  // ── Load appointments from Supabase ────────────────────────
+  const fetchAppts = useCallback(async () => {
+    setLoading(true)
+    let query = supabase
+      .from('appointments')
+      .select('*')
+      .order('date', { ascending: true })
+      .order('time', { ascending: true })
 
+    // Apply date filter if set
+    if (dateFilter) {
+      query = query.eq('date', dateFilter)
+    }
+
+    // Apply status filter if set
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('[Appointments] fetch error:', error.message)
+      setAppts([])
+    } else {
+      setAppts((data || []) as Appointment[])
+    }
+    setLoading(false)
+  }, [dateFilter, statusFilter])
+
+  useEffect(() => { fetchAppts() }, [fetchAppts])
+
+  // ── Load all appointments for counts (unfiltered) ──────────
+  const [todayCount,    setTodayCount]    = useState(0)
+  const [upcomingCount, setUpcomingCount] = useState(0)
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]
+    // Today's count
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('date', today)
+      .neq('status', 'cancelled')
+      .then(({ count }) => setTodayCount(count || 0))
+
+    // Upcoming count
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .gt('date', today)
+      .eq('status', 'scheduled')
+      .then(({ count }) => setUpcomingCount(count || 0))
+  }, [appts]) // re-count when appts change
+
+  // ── Handle URL params (from patient page) ──────────────────
   useEffect(() => {
     const pid   = searchParams.get('patientId')
     const pname = searchParams.get('patientName')
@@ -99,6 +148,7 @@ export default function AppointmentsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
+  // ── Patient search ─────────────────────────────────────────
   function searchPatients(q: string) {
     setPatientQuery(q); setSelPatient(null)
     if (q.trim().length < 2) { setPatientResults([]); return }
@@ -111,41 +161,69 @@ export default function AppointmentsPage() {
     }, 300)
   }
 
-  function bookAppointment() {
+  // ── Book appointment (Supabase insert) ─────────────────────
+  async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
     setSaving(true)
-    const appt: Appointment = {
-      id:           crypto.randomUUID(),
-      patient_id:   selPatient.id,
-      patient_name: selPatient.full_name,
-      mrn:          selPatient.mrn,
-      mobile:       selPatient.mobile,
-      date:         apptDate,
-      time:         apptTime,
-      type:         apptType,
-      notes:        apptNotes.trim(),
-      status:       'scheduled',
-      created_at:   new Date().toISOString(),
-      reminder_sent: false,
+    setSaveError('')
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert({
+        patient_id:   selPatient.id,
+        patient_name: selPatient.full_name,
+        mrn:          selPatient.mrn || '',
+        mobile:       selPatient.mobile || '',
+        date:         apptDate,
+        time:         apptTime,
+        type:         apptType,
+        notes:        apptNotes.trim() || null,
+        status:       'scheduled',
+        reminder_sent: false,
+      })
+      .select()
+      .single()
+
+    setSaving(false)
+
+    if (error) {
+      setSaveError(`Failed to book: ${error.message}`)
+      return
     }
-    const updated = [appt, ...appts].sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time))
-    setAppts(updated); saveAppts(updated)
-    setSaving(false); resetForm(); setView('list')
+
+    resetForm()
+    setView('list')
+    fetchAppts()
     // Generate reminder for the new appointment
-    openReminder(appt)
+    if (data) openReminder(data as Appointment)
   }
 
-  function updateStatus(id: string, status: ApptStatus) {
-    const updated = appts.map(a => a.id === id ? {...a, status} : a)
-    setAppts(updated); saveAppts(updated)
+  // ── Update status (Supabase update) ────────────────────────
+  async function updateStatus(id: string, status: ApptStatus) {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (!error) {
+      setAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a))
+    }
   }
 
-  function deleteAppt(id: string) {
+  // ── Delete appointment (Supabase delete) ───────────────────
+  async function deleteAppt(id: string) {
     if (!confirm('Delete this appointment?')) return
-    const updated = appts.filter(a => a.id !== id)
-    setAppts(updated); saveAppts(updated)
+    const { error } = await supabase
+      .from('appointments')
+      .delete()
+      .eq('id', id)
+
+    if (!error) {
+      setAppts(prev => prev.filter(a => a.id !== id))
+    }
   }
 
+  // ── WhatsApp reminder ──────────────────────────────────────
   function openReminder(appt: Appointment) {
     const dateStr = new Date(appt.date).toLocaleDateString('en-IN', {weekday:'long', day:'numeric', month:'long'})
     const msg = `*${hs.hospitalName || 'NexMedicon Hospital'}*\n\nNamaste ${appt.patient_name} ji 🙏\n\nThis is a reminder for your appointment:\n\n📅 *Date:* ${dateStr}\n🕐 *Time:* ${appt.time}\n🏥 *Visit Type:* ${appt.type}\n📍 *Address:* ${hs.address || 'Hospital address'}\n\nPlease bring any previous reports and arrive 10 minutes early.\n\nFor queries call: ${hs.phone || 'our helpdesk'}\n\n_${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_`
@@ -154,13 +232,17 @@ export default function AppointmentsPage() {
     setView('reminder')
   }
 
-  function copyMsg() {
+  async function copyMsg() {
     navigator.clipboard.writeText(reminderMsg)
     setCopied(true)
     setTimeout(() => setCopied(false), 2500)
     if (reminderAppt) {
-      const updated = appts.map(a => a.id === reminderAppt.id ? {...a, reminder_sent:true} : a)
-      setAppts(updated); saveAppts(updated)
+      // Mark reminder as sent in database
+      await supabase
+        .from('appointments')
+        .update({ reminder_sent: true, updated_at: new Date().toISOString() })
+        .eq('id', reminderAppt.id)
+      setAppts(prev => prev.map(a => a.id === reminderAppt.id ? { ...a, reminder_sent: true } : a))
     }
   }
 
@@ -174,16 +256,10 @@ export default function AppointmentsPage() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
     setApptDate(new Date().toISOString().split('T')[0])
     setApptTime('09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
+    setSaveError('')
   }
 
   const today = new Date().toISOString().split('T')[0]
-  const filtered = appts.filter(a => {
-    const matchDate   = !dateFilter   || a.date === dateFilter
-    const matchStatus = statusFilter === 'all' || a.status === statusFilter
-    return matchDate && matchStatus
-  })
-  const todayCount = appts.filter(a => a.date === today && a.status !== 'cancelled').length
-  const upcomingCount = appts.filter(a => a.date > today && a.status === 'scheduled').length
 
   // ── REMINDER VIEW ──────────────────────────────────────────
   if (view === 'reminder' && reminderAppt) {
@@ -260,6 +336,13 @@ export default function AppointmentsPage() {
             <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
           </div>
 
+          {saveError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+              <span>{saveError}</span>
+            </div>
+          )}
+
           {/* Patient */}
           <div className="card p-5 mb-4">
             <h2 className="section-title">Patient</h2>
@@ -328,7 +411,7 @@ export default function AppointmentsPage() {
             <button onClick={bookAppointment}
               disabled={saving || !selPatient || !apptDate || !apptTime}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              <Calendar className="w-4 h-4"/>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
               {saving ? 'Booking…' : 'Book & Generate Reminder'}
             </button>
           </div>
@@ -350,10 +433,16 @@ export default function AppointmentsPage() {
               {todayCount} today · {upcomingCount} upcoming
             </p>
           </div>
-          <button onClick={() => { resetForm(); setView('new') }}
-            className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4"/> Book Appointment
-          </button>
+          <div className="flex gap-2">
+            <button onClick={fetchAppts}
+              className="btn-secondary flex items-center gap-1.5 text-xs">
+              <RefreshCw className="w-3.5 h-3.5"/> Refresh
+            </button>
+            <button onClick={() => { resetForm(); setView('new') }}
+              className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4"/> Book Appointment
+            </button>
+          </div>
         </div>
 
         {/* Filter bar */}
@@ -385,12 +474,17 @@ export default function AppointmentsPage() {
           </div>
         </div>
 
-        {/* Appointments list */}
-        {filtered.length === 0 ? (
+        {/* Loading state */}
+        {loading ? (
+          <div className="card p-12 text-center text-gray-400">
+            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40"/>
+            <p className="text-sm">Loading appointments...</p>
+          </div>
+        ) : appts.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
             <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
             <p className="font-medium mb-1">
-              {appts.length === 0 ? 'No appointments yet' : 'No appointments match this filter'}
+              {dateFilter || statusFilter !== 'all' ? 'No appointments match this filter' : 'No appointments yet'}
             </p>
             <button onClick={() => { resetForm(); setView('new') }}
               className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
@@ -399,7 +493,7 @@ export default function AppointmentsPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {filtered.map(appt => {
+            {appts.map(appt => {
               const cfg = STATUS_CONFIG[appt.status]
               const isToday = appt.date === today
               const isPast  = appt.date < today

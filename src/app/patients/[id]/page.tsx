@@ -6,11 +6,13 @@ import AppShell from '@/components/layout/AppShell'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime, ageFromDOB, calculateGA, calculateEDD } from '@/lib/utils'
+import { assessObstetricRisk, assessVitalRisk, riskLevelStyle } from '@/lib/clinical-risk'
+import type { RiskAssessment } from '@/lib/clinical-risk'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
-  CheckCircle, Sparkles, Loader2, AlertCircle, TrendingUp, FlaskConical, IndianRupee,
+  CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
   Shield, Download
 } from 'lucide-react'
 
@@ -365,6 +367,91 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
+        {/* ═══ CLINICAL RISK ALERT ═══════════════════════════════ */}
+        {(() => {
+          // Compute risk from latest encounter
+          const latestEnc = encounters[0]
+          if (!latestEnc) return null
+
+          const hasOB = latestEnc.ob_data && Object.keys(latestEnc.ob_data as object).length > 0
+          const ob = (latestEnc.ob_data || {}) as any
+
+          // Run obstetric risk if patient has OB data
+          let riskResult: RiskAssessment | null = null
+          if (hasOB && ob.lmp) {
+            riskResult = assessObstetricRisk({
+              age: patient.age || undefined,
+              bp_systolic: latestEnc.bp_systolic || undefined,
+              bp_diastolic: latestEnc.bp_diastolic || undefined,
+              ob_data: ob,
+              haemoglobin: ob.haemoglobin,
+            })
+          }
+
+          // Also check vital signs for all patients
+          const vitalFlags = assessVitalRisk({
+            bp_systolic: latestEnc.bp_systolic || undefined,
+            bp_diastolic: latestEnc.bp_diastolic || undefined,
+            pulse: latestEnc.pulse || undefined,
+            temperature: latestEnc.temperature ? Number(latestEnc.temperature) : undefined,
+            spo2: latestEnc.spo2 || undefined,
+          })
+
+          // Combine all flags
+          const allFlags = [...(riskResult?.flags || []), ...vitalFlags]
+          // Deduplicate by category (obstetric BP check may overlap with vital BP check)
+          const seen = new Set<string>()
+          const uniqueFlags = allFlags.filter(f => {
+            if (seen.has(f.category)) return false
+            seen.add(f.category)
+            return true
+          })
+
+          if (uniqueFlags.length === 0) return null
+
+          const hasCritical = uniqueFlags.some(f => f.level === 'critical')
+          const hasHigh = uniqueFlags.some(f => f.level === 'high')
+          const overallStyle = hasCritical
+            ? riskLevelStyle('critical')
+            : hasHigh
+            ? riskLevelStyle('high')
+            : riskLevelStyle('watch')
+
+          return (
+            <div className={`mb-5 rounded-xl border-2 ${overallStyle.border} ${overallStyle.bg} p-4`}>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className={`w-5 h-5 ${overallStyle.text}`} />
+                <h3 className={`font-bold text-sm ${overallStyle.text}`}>
+                  {hasCritical ? '🚨 CRITICAL RISK ALERTS' : hasHigh ? '⚠️ HIGH RISK ALERTS' : '👁️ CLINICAL WATCH'}
+                </h3>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${overallStyle.bg} ${overallStyle.text} border ${overallStyle.border}`}>
+                  {uniqueFlags.length} flag{uniqueFlags.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {uniqueFlags.map((flag, i) => {
+                  const style = riskLevelStyle(flag.level)
+                  return (
+                    <div key={i} className={`flex items-start gap-2 text-sm rounded-lg px-3 py-2 ${style.bg} border ${style.border}`}>
+                      <span className="flex-shrink-0 mt-0.5">{style.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className={`font-semibold ${style.text}`}>{flag.category}:</span>{' '}
+                        <span className="text-gray-700">{flag.message}</span>
+                        {flag.action && (
+                          <div className="text-xs text-gray-500 mt-0.5 italic">→ {flag.action}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Based on latest consultation ({formatDate(latestEnc.encounter_date)}). Auto-assessed from vitals and clinical data.
+              </p>
+            </div>
+          )
+        })()}
+
         {/* Stats row */}
         <div className="grid grid-cols-4 gap-4 mb-5">
           {[
@@ -520,6 +607,118 @@ export default function PatientDetailPage() {
                     <VitalsChart encounters={encounters}/>
                   </div>
                 )}
+
+                {/* USG Trend Timeline */}
+                {(() => {
+                  // Collect all encounters with USG data, oldest first
+                  const usgEncs = [...encounters]
+                    .filter(e => {
+                      const ob = (e.ob_data || {}) as any
+                      return ob.bpd || ob.hc || ob.ac || ob.fl || ob.afi || ob.efw
+                    })
+                    .reverse()
+
+                  if (usgEncs.length === 0) return null
+
+                  return (
+                    <div className="card p-5">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        📊 USG Trend Across Visits
+                      </h3>
+                      <p className="text-xs text-gray-400 mb-3">
+                        Structured ultrasound parameters tracked across {usgEncs.length} visit{usgEncs.length > 1 ? 's' : ''}
+                      </p>
+
+                      {/* Trend table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              <th className="text-left py-2 px-2 text-gray-500 font-semibold">Parameter</th>
+                              {usgEncs.map((e, i) => {
+                                const ob = (e.ob_data || {}) as any
+                                return (
+                                  <th key={e.id} className="text-center py-2 px-2 text-gray-500 font-semibold min-w-[80px]">
+                                    <div>{ob.usg_ga || formatDate(e.encounter_date)}</div>
+                                    <div className="text-gray-400 font-normal">{formatDate(e.encounter_date)}</div>
+                                  </th>
+                                )
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { key: 'afi', label: 'AFI (cm)', unit: 'cm', warn: (v: number) => v < 5 ? '🚨' : v < 8 ? '⚠️' : v > 25 ? '⚠️' : '' },
+                              { key: 'efw', label: 'EFW (g)', unit: 'g', warn: (v: number) => v > 4000 ? '⚠️' : '' },
+                              { key: 'bpd', label: 'BPD (mm)', unit: 'mm', warn: () => '' },
+                              { key: 'hc', label: 'HC (mm)', unit: 'mm', warn: () => '' },
+                              { key: 'ac', label: 'AC (mm)', unit: 'mm', warn: () => '' },
+                              { key: 'fl', label: 'FL (mm)', unit: 'mm', warn: () => '' },
+                              { key: 'placenta', label: 'Placenta', unit: '', warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
+                            ].map(param => {
+                              const hasAny = usgEncs.some(e => (e.ob_data as any)?.[param.key])
+                              if (!hasAny) return null
+                              return (
+                                <tr key={param.key} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <td className="py-2 px-2 font-semibold text-gray-700">{param.label}</td>
+                                  {usgEncs.map(e => {
+                                    const val = (e.ob_data as any)?.[param.key]
+                                    const warning = val ? param.warn(val) : ''
+                                    return (
+                                      <td key={e.id} className={`text-center py-2 px-2 font-mono ${warning ? 'font-bold text-red-700' : 'text-gray-800'}`}>
+                                        {val ? `${warning} ${val}` : '—'}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* AFI trend line (if multiple readings) */}
+                      {(() => {
+                        const afiData = usgEncs
+                          .map(e => ({ date: e.encounter_date, ga: (e.ob_data as any)?.usg_ga, afi: (e.ob_data as any)?.afi }))
+                          .filter(d => d.afi)
+                        if (afiData.length < 2) return null
+
+                        return (
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
+                            <div className="flex items-end gap-1 h-20">
+                              {afiData.map((d, i) => {
+                                const maxAfi = Math.max(...afiData.map(x => x.afi))
+                                const height = Math.max(8, (d.afi / Math.max(maxAfi, 25)) * 100)
+                                const isLow = d.afi < 8
+                                const isCritical = d.afi < 5
+                                return (
+                                  <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${d.afi} cm`}>
+                                    <div className="text-xs font-mono font-bold mb-1" style={{ color: isCritical ? '#dc2626' : isLow ? '#ea580c' : '#059669' }}>
+                                      {d.afi}
+                                    </div>
+                                    <div
+                                      className={`w-full max-w-[40px] rounded-t ${isCritical ? 'bg-red-500' : isLow ? 'bg-orange-400' : 'bg-green-500'}`}
+                                      style={{ height: `${height}%` }}
+                                    />
+                                    <div className="text-xs text-gray-400 mt-1 truncate w-full text-center">
+                                      {d.ga || formatDate(d.date).slice(0, 6)}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-400 mt-1">
+                              <span>Normal AFI: 8–25 cm</span>
+                              <span className="text-red-500">{'< 5 cm = Oligohydramnios'}</span>
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 

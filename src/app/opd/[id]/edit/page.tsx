@@ -355,9 +355,51 @@ export default function EditEncounterPage() {
                   <label className="label">Fetal Movement</label>
                   <select className="input" value={ob.fetal_movement||''} onChange={e=>setO('fetal_movement',e.target.value)}>
                     <option value="">Select</option>
-                    {['Present','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
+                    {['Present','Reduced','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
                   </select>
                 </div>
+
+                {/* ── Clinical Risk Fields ── */}
+                <div>
+                  <label className="label">Previous CS</label>
+                  <select className="input" value={ob.previous_cs ?? ''} onChange={e=>setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
+                    <option value="">None</option>
+                    {[1,2,3,4].map(n=><option key={n} value={n}>{n} previous CS</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Multiple Pregnancy</label>
+                  <select className="input" value={ob.multiple_pregnancy ? 'yes' : ''} onChange={e=>setO('multiple_pregnancy', e.target.value === 'yes')}>
+                    <option value="">Singleton</option>
+                    <option value="yes">Twins / Multiple</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Gestational Diabetes</label>
+                  <select className="input" value={ob.gestational_diabetes ? 'yes' : ''} onChange={e=>setO('gestational_diabetes', e.target.value === 'yes')}>
+                    <option value="">No</option>
+                    <option value="yes">Yes — GDM</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Haemoglobin (g/dL)</label>
+                  <input type="number" step="0.1" min="3" max="20" className="input"
+                    placeholder="e.g. 10.5"
+                    value={ob.haemoglobin ?? ''} onChange={e=>setO('haemoglobin', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">Fasting Blood Sugar (mg/dL)</label>
+                  <input type="number" min="30" max="500" className="input"
+                    placeholder="e.g. 92"
+                    value={ob.blood_sugar_fasting ?? ''} onChange={e=>setO('blood_sugar_fasting', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">PP Blood Sugar (mg/dL)</label>
+                  <input type="number" min="30" max="500" className="input"
+                    placeholder="e.g. 130"
+                    value={ob.blood_sugar_pp ?? ''} onChange={e=>setO('blood_sugar_pp', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+
                 <div className="col-span-3">
                   <div className="flex items-center justify-between mb-1">
                     <label className="label">Per Abdomen Findings</label>
@@ -452,6 +494,87 @@ export default function EditEncounterPage() {
                   <label className="label">Left Ovary</label>
                   <textarea className="input resize-none" rows={2} placeholder="Size, texture, tenderness, cysts…"
                     value={ob.left_ovary||''} onChange={e=>setO('left_ovary',e.target.value)}/>
+                </div>
+              </div>
+            </div>
+
+            {/* G — USG / Ultrasound Report */}
+            <div className="card p-5">
+              <h2 className="section-title">G. USG / Ultrasound Report</h2>
+              <p className="text-xs text-gray-400 mb-3">Enter structured USG findings. These are tracked across visits for trend analysis.</p>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="label">USG Date</label>
+                  <input type="date" className="input"
+                    value={ob.usg_date||''} onChange={e=>setO('usg_date',e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">GA at USG</label>
+                  <input className="input" placeholder="e.g. 28w3d"
+                    value={ob.usg_ga||''} onChange={e=>setO('usg_ga',e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">EFW (grams)</label>
+                  <input type="number" min="100" max="6000" className="input"
+                    placeholder="e.g. 1200"
+                    value={ob.efw??''} onChange={e=>setO('efw', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">BPD (mm)</label>
+                  <input type="number" min="10" max="120" className="input"
+                    placeholder="e.g. 72"
+                    value={ob.bpd??''} onChange={e=>setO('bpd', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">HC (mm)</label>
+                  <input type="number" min="50" max="400" className="input"
+                    placeholder="e.g. 260"
+                    value={ob.hc??''} onChange={e=>setO('hc', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">AC (mm)</label>
+                  <input type="number" min="50" max="400" className="input"
+                    placeholder="e.g. 240"
+                    value={ob.ac??''} onChange={e=>setO('ac', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">FL (mm)</label>
+                  <input type="number" min="10" max="90" className="input"
+                    placeholder="e.g. 52"
+                    value={ob.fl??''} onChange={e=>setO('fl', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">AFI (cm)</label>
+                  <input type="number" step="0.1" min="0" max="40" className="input"
+                    placeholder="e.g. 12.5"
+                    value={ob.afi??''} onChange={e=>setO('afi', e.target.value ? Number(e.target.value) : undefined)} />
+                </div>
+                <div>
+                  <label className="label">Placenta Position</label>
+                  <select className="input" value={ob.placenta||''} onChange={e=>setO('placenta',e.target.value)}>
+                    <option value="">Select</option>
+                    {['Anterior','Posterior','Fundal','Lateral','Low-lying','Previa'].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Placenta Grade</label>
+                  <select className="input" value={ob.placenta_grade||''} onChange={e=>setO('placenta_grade',e.target.value)}>
+                    <option value="">Select</option>
+                    {['Grade 0','Grade I','Grade II','Grade III'].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Cord Loops</label>
+                  <select className="input" value={ob.cord_loops||''} onChange={e=>setO('cord_loops',e.target.value)}>
+                    <option value="">None</option>
+                    {['1 loop around neck','2 loops around neck','Body loop','Multiple loops'].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-3">
+                  <label className="label">USG Remarks / Additional Findings</label>
+                  <textarea className="input resize-none" rows={2}
+                    placeholder="e.g. Single live intrauterine fetus, cephalic, adequate liquor..."
+                    value={ob.usg_remarks||''} onChange={e=>setO('usg_remarks',e.target.value)} />
                 </div>
               </div>
             </div>
