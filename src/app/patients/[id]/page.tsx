@@ -158,7 +158,7 @@ export default function PatientDetailPage() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: bills }] = await Promise.all([
+    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }] = await Promise.all([
       supabase.from('patients').select('*').eq('id', id).single(),
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
@@ -169,7 +169,7 @@ export default function PatientDetailPage() {
     setEncounters(enc || [])
     setPrescriptions(rx || [])
     setDischarges(ds || [])
-    setBills((bills as any) || [])
+    setBills(billsData || [])
     setLoading(false)
   }
 
@@ -649,15 +649,15 @@ export default function PatientDetailPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {[
-                              { key: 'afi', label: 'AFI (cm)', unit: 'cm', warn: (v: number) => v < 5 ? '🚨' : v < 8 ? '⚠️' : v > 25 ? '⚠️' : '' },
-                              { key: 'efw', label: 'EFW (g)', unit: 'g', warn: (v: number) => v > 4000 ? '⚠️' : '' },
-                              { key: 'bpd', label: 'BPD (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'hc', label: 'HC (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'ac', label: 'AC (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'fl', label: 'FL (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'placenta', label: 'Placenta', unit: '', warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
-                            ].map(param => {
+                            {([
+                              { key: 'afi',      label: 'AFI (cm)',  unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
+                              { key: 'efw',      label: 'EFW (g)',   unit: 'g',  warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
+                              { key: 'bpd',      label: 'BPD (mm)',  unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'hc',       label: 'HC (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'ac',       label: 'AC (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'fl',       label: 'FL (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'placenta', label: 'Placenta',  unit: '',   warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
+                            ] as Array<{ key: string; label: string; unit: string; warn: (v: any) => string }>).map(param => {
                               const hasAny = usgEncs.some(e => (e.ob_data as any)?.[param.key])
                               if (!hasAny) return null
                               return (
@@ -691,14 +691,15 @@ export default function PatientDetailPage() {
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const maxAfi = Math.max(...afiData.map(x => x.afi))
-                                const height = Math.max(8, (d.afi / Math.max(maxAfi, 25)) * 100)
-                                const isLow = d.afi < 8
-                                const isCritical = d.afi < 5
+                                const afiNum   = Number(d.afi)
+                                const maxAfi   = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height   = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const isLow      = afiNum < 8
+                                const isCritical = afiNum < 5
                                 return (
-                                  <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${d.afi} cm`}>
+                                  <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${afiNum} cm`}>
                                     <div className="text-xs font-mono font-bold mb-1" style={{ color: isCritical ? '#dc2626' : isLow ? '#ea580c' : '#059669' }}>
-                                      {d.afi}
+                                      {afiNum}
                                     </div>
                                     <div
                                       className={`w-full max-w-[40px] rounded-t ${isCritical ? 'bg-red-500' : isLow ? 'bg-orange-400' : 'bg-green-500'}`}
@@ -931,7 +932,7 @@ export default function PatientDetailPage() {
                           <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-purple-600" />
                             <span className="font-semibold text-sm text-gray-900">
-                              Discharge: {ds.discharge_date ? formatDate(ds.discharge_date) : formatDate(ds.created_at)}
+                              Discharge: {ds.discharge_date ? formatDate(ds.discharge_date) : formatDate(ds.updated_at)}
                             </span>
                             {ds.is_final && (
                               <span className="badge-green text-xs flex items-center gap-1">

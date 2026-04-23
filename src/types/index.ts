@@ -50,6 +50,24 @@ export interface Encounter {
   patients?: Patient
 }
 
+// ── Per-pregnancy obstetric history entry ────────────────────────
+export interface ObstetricEntry {
+  pregnancy_no:   number                           // 1, 2, 3, 4 …
+  type:           'Full Term' | 'Preterm' | ''
+  delivery_mode?: 'Normal' | 'CS' | ''
+  outcome?:       'Live' | 'Expired' | ''
+  baby_gender?:   'M' | 'F' | ''
+  age_of_child?:  string                           // e.g. "3 years", "8 months"
+}
+
+// ── Per-abortion detail entry ─────────────────────────────────────
+export interface AbortionEntry {
+  type?:      'Spontaneous' | 'Induced' | ''
+  weeks?:     string                               // gestational age e.g. "8"
+  method?:    'Medicines' | 'Surgery' | ''
+  years_ago?: string                               // how many years back
+}
+
 export interface OBData {
   lmp?: string
   edd?: string
@@ -98,6 +116,30 @@ export interface OBData {
   placenta_grade?: string       // Grade 0, I, II, III
   cord_loops?: string           // e.g. "None", "1 loop around neck", "2 loops"
   usg_remarks?: string          // free text for additional findings
+
+  // ── Menstrual History (NEW) ──────────────────────────────────
+  menstrual_regularity?:     'Regular' | 'Irregular' | ''
+  menstrual_flow?:           'Scanty' | 'Normal' | 'Heavy' | ''
+  post_menstrual_days?:      string    // number of days of post-menstrual bleeding/spotting
+  post_menstrual_pain?:      'Mild' | 'Moderate' | 'Severe' | ''
+  urine_pregnancy_result?:   string    // urine pregnancy test result (~3 months)
+
+  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  obstetric_history?:        ObstetricEntry[]
+
+  // ── Abortion details (NEW) ───────────────────────────────────
+  abortion_entries?:         AbortionEntry[]
+
+  // ── Past Medical & Surgical History (NEW) ────────────────────
+  past_diabetes?:            boolean
+  past_hypertension?:        boolean
+  past_thyroid?:             boolean
+  past_surgery?:             boolean
+  past_surgery_detail?:      string
+
+  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
+  income?:                   string    // monthly household income ₹
+  expenditure?:              string    // monthly household expenditure ₹
 }
 
 export interface Medication {
@@ -161,8 +203,6 @@ export interface DischargeSummary {
   version: number
   is_final: boolean
   signed_by?: string
-  signed_at?: string
-  created_at: string
   updated_at: string
-  patients?: Patient
+  encounter_id?: string
 }

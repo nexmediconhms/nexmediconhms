@@ -61,6 +61,42 @@ export interface OCROBData {
   per_vaginum?: string
   right_ovary?: string
   left_ovary?: string
+
+  // ── Menstrual History (NEW) ──────────────────────────────────
+  menstrual_regularity?:    string   // "Regular" | "Irregular"
+  menstrual_flow?:          string   // "Scanty" | "Normal" | "Heavy"
+  post_menstrual_days?:     string   // number of days as string e.g. "3"
+  post_menstrual_pain?:     string   // "Mild" | "Moderate" | "Severe"
+  urine_pregnancy_result?:  string   // e.g. "Positive", "Negative", "Not done"
+
+  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  obstetric_history?: Array<{
+    pregnancy_no?:  string   // "1", "2", "3", "4"
+    type?:          string   // "Full Term" | "Preterm"
+    delivery_mode?: string   // "Normal" | "CS"
+    outcome?:       string   // "Live" | "Expired"
+    baby_gender?:   string   // "M" | "F"
+    age_of_child?:  string   // e.g. "3 years", "8 months"
+  }>
+
+  // ── Abortion details (NEW) ───────────────────────────────────
+  abortion_entries?: Array<{
+    type?:      string   // "Spontaneous" | "Induced"
+    weeks?:     string   // gestational age e.g. "8"
+    method?:    string   // "Medicines" | "Surgery"
+    years_ago?: string   // how many years back e.g. "2"
+  }>
+
+  // ── Past Medical & Surgical History (NEW) ────────────────────
+  past_diabetes?:        boolean
+  past_hypertension?:    boolean
+  past_thyroid?:         boolean
+  past_surgery?:         boolean
+  past_surgery_detail?:  string
+
+  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
+  income?:      string   // monthly income ₹ as string
+  expenditure?: string   // monthly expenditure ₹ as string
 }
 
 export interface OCRLabData {

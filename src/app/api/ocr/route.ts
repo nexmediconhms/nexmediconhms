@@ -12,6 +12,9 @@ GUJARATI MEDICAL TERMS:
 સ્ત્રી=Female, પુરૂષ=Male, સરનામું=Address, ફોન/મોબાઈલ=Phone
 લોહી જૂથ=Blood Group, નિદાન=Diagnosis, ફરિયાદ=Complaint
 છેલ્લા માસિક=LMP, ગ્રૅવિડ=Gravida, પ્રસૂત=Para, ઈ.ડી.ડી=EDD
+માસિક=Menstrual, નિયમિત=Regular, અનિયમિત=Irregular
+ભૂતકાળ=Past History, ડાયાબિટીસ=Diabetes, બ્લડ પ્રેશર=BP
+ઓપરેશન=Surgery, આવક=Income, ખર્ચ=Expenditure
 
 ABSOLUTE RULES:
 1. Return ONLY valid JSON — no markdown, no explanation
@@ -26,6 +29,10 @@ ABSOLUTE RULES:
 10. Mediclaim: "Yes" if the Yes checkbox next to "Mediclaim / Health Insurance" is marked, "No" if the No checkbox is marked or neither is marked
 11. Cashless: "Yes" if the Yes checkbox next to "Cashless Facility" is marked, "No" if the No checkbox is marked or neither is marked
 12. Reference source: Match to one of: "Doctor Referral"|"Patient Referral"|"Advertisement"|"Google / Internet"|"Social Media"|"Walk-in"|"Camp / Outreach"|"Other"
+13. For obstetric_history: create one entry per pregnancy row found (1st, 2nd, 3rd, 4th). Only include rows that have data.
+14. For abortion_entries: create one entry per distinct abortion event found. Only include if abortion count > 0.
+15. past_diabetes / past_hypertension / past_thyroid / past_surgery: set true only if clearly marked/written as positive. Default omit (not false).
+16. income / expenditure: extract numeric value only (no ₹ symbol), store as string.
 
 JSON SCHEMA:
 {
@@ -48,7 +55,37 @@ JSON SCHEMA:
   "ob_data": {
     "lmp":"YYYY-MM-DD","gravida":"","para":"","abortion":"","living":"",
     "fhs":"","liquor":"","fundal_height":"","presentation":"",
-    "per_abdomen":"","per_speculum":"","per_vaginum":""
+    "per_abdomen":"","per_speculum":"","per_vaginum":"",
+    "menstrual_regularity":"Regular|Irregular",
+    "menstrual_flow":"Scanty|Normal|Heavy",
+    "post_menstrual_days":"",
+    "post_menstrual_pain":"Mild|Moderate|Severe",
+    "urine_pregnancy_result":"",
+    "obstetric_history":[
+      {
+        "pregnancy_no":"1",
+        "type":"Full Term|Preterm",
+        "delivery_mode":"Normal|CS",
+        "outcome":"Live|Expired",
+        "baby_gender":"M|F",
+        "age_of_child":""
+      }
+    ],
+    "abortion_entries":[
+      {
+        "type":"Spontaneous|Induced",
+        "weeks":"",
+        "method":"Medicines|Surgery",
+        "years_ago":""
+      }
+    ],
+    "past_diabetes":false,
+    "past_hypertension":false,
+    "past_thyroid":false,
+    "past_surgery":false,
+    "past_surgery_detail":"",
+    "income":"",
+    "expenditure":""
   },
   "prescription": {
     "medications":[{"drug":"","dose":"","route":"","frequency":"","duration":""}],
@@ -123,9 +160,9 @@ export async function POST(req: NextRequest) {
 
     // Strip markdown fences
     const jsonString = rawResponse
-      .replace(/^```json\s*/im, '')
-      .replace(/^```\s*/im, '')
-      .replace(/\s*```$/im, '')
+      .replace(/^\`\`\`json\s*/im, '')
+      .replace(/^\`\`\`\s*/im, '')
+      .replace(/\s*\`\`\`$/im, '')
       .trim()
 
     let parsed: OCRResult

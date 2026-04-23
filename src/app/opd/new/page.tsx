@@ -8,7 +8,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
-import type { Patient, OBData, Procedure } from '@/types'
+import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine } from 'lucide-react'
 
@@ -29,6 +29,13 @@ const EMPTY_VITALS: Vitals = {
 type VitalsHL  = Partial<Record<keyof Vitals, boolean>>
 type OBHL      = Partial<Record<keyof OBData, boolean>>
 interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean }
+
+// ── Ordinal suffix helper ─────────────────────────────────────
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return String(n) + (s[(v - 20) % 10] || s[v] || s[0])
+}
 
 export default function NewConsultationPage() {
   const router       = useRouter()
@@ -177,7 +184,7 @@ export default function NewConsultationPage() {
       // Helper to set and flag
       const applyOB = (k: keyof OBData, val: any) => {
         if (val !== undefined && val !== null && val !== '') {
-          setO(k, typeof val === 'string' ? val : String(val))
+          setO(k, typeof val === 'string' ? val : val)
           ;(obHL_ as any)[k] = true
         }
       }
@@ -205,6 +212,21 @@ export default function NewConsultationPage() {
       applyOB('per_vaginum',      o.per_vaginum)
       applyOB('right_ovary',      o.right_ovary)
       applyOB('left_ovary',       o.left_ovary)
+      // ── New fields ──────────────────────────────────────────
+      applyOB('menstrual_regularity',   o.menstrual_regularity)
+      applyOB('menstrual_flow',         o.menstrual_flow)
+      applyOB('post_menstrual_days',    o.post_menstrual_days)
+      applyOB('post_menstrual_pain',    o.post_menstrual_pain)
+      applyOB('urine_pregnancy_result', o.urine_pregnancy_result)
+      applyOB('obstetric_history',      o.obstetric_history)
+      applyOB('abortion_entries',       o.abortion_entries)
+      applyOB('past_diabetes',          o.past_diabetes)
+      applyOB('past_hypertension',      o.past_hypertension)
+      applyOB('past_thyroid',           o.past_thyroid)
+      applyOB('past_surgery',           o.past_surgery)
+      applyOB('past_surgery_detail',    o.past_surgery_detail)
+      applyOB('income',                 o.income)
+      applyOB('expenditure',            o.expenditure)
     }
 
     flashHL(setVHL,  vitalsHL)
@@ -645,6 +667,59 @@ export default function NewConsultationPage() {
         {tab === 'obgyn' && (
           <div className="space-y-5">
 
+            {/* ── MENSTRUAL HISTORY (NEW) ──────────────────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Menstrual History</h2>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <label className="label">Cycle Regularity</label>
+                  <select className="input bg-white"
+                    value={ob.menstrual_regularity || ''}
+                    onChange={e => setO('menstrual_regularity', e.target.value)}>
+                    <option value="">Select</option>
+                    <option>Regular</option>
+                    <option>Irregular</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Flow</label>
+                  <select className="input bg-white"
+                    value={ob.menstrual_flow || ''}
+                    onChange={e => setO('menstrual_flow', e.target.value)}>
+                    <option value="">Select</option>
+                    <option>Scanty</option>
+                    <option>Normal</option>
+                    <option>Heavy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Post-Menstrual Spotting (days)</label>
+                  <input className="input" type="number" min="0" max="30"
+                    placeholder="e.g. 2"
+                    value={ob.post_menstrual_days || ''}
+                    onChange={e => setO('post_menstrual_days', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Post-Menstrual Pain</label>
+                  <select className="input bg-white"
+                    value={ob.post_menstrual_pain || ''}
+                    onChange={e => setO('post_menstrual_pain', e.target.value)}>
+                    <option value="">None / Not reported</option>
+                    <option>Mild</option>
+                    <option>Moderate</option>
+                    <option>Severe</option>
+                  </select>
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <label className="label">Urine Pregnancy Test Result (~3 months)</label>
+                  <input className="input"
+                    placeholder="e.g. Positive, Negative, Not done"
+                    value={ob.urine_pregnancy_result || ''}
+                    onChange={e => setO('urine_pregnancy_result', e.target.value)} />
+                </div>
+              </div>
+            </div>
+
             {/* A — Obstetric History */}
             <div className="card p-5">
               <h2 className="section-title">A. Obstetric History</h2>
@@ -674,7 +749,195 @@ export default function NewConsultationPage() {
                   </div>
                 ))}
               </div>
+
+              {/* ── Per-pregnancy details table (NEW) ── */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="label mb-0 text-gray-700">Pregnancy-wise Details</label>
+                  <button type="button"
+                    className="text-xs btn-secondary py-1 px-3"
+                    onClick={() => {
+                      const current = ob.obstetric_history || []
+                      setO('obstetric_history', [
+                        ...current,
+                        { pregnancy_no: current.length + 1, type: '', delivery_mode: '', outcome: '', baby_gender: '', age_of_child: '' } as ObstetricEntry,
+                      ])
+                    }}>
+                    + Add Row
+                  </button>
+                </div>
+
+                {(!ob.obstetric_history || ob.obstetric_history.length === 0) ? (
+                  <p className="text-xs text-gray-400 italic">Click "+ Add Row" to enter details of each past pregnancy.</p>
+                ) : (
+                  <>
+                    {/* Column headers */}
+                    <div className="hidden sm:grid grid-cols-7 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-1">
+                      <span>#</span>
+                      <span>Type</span>
+                      <span>Mode</span>
+                      <span>Outcome</span>
+                      <span>Gender</span>
+                      <span>Child Age</span>
+                      <span></span>
+                    </div>
+                    {(ob.obstetric_history || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-7 gap-2 items-center border border-gray-200 rounded-lg px-3 py-2 mb-2 bg-gray-50 text-sm">
+                        <span className="font-semibold text-gray-600 text-xs">{ordinal(idx + 1)}</span>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.type || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], type: e.target.value as ObstetricEntry['type'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Full Term</option>
+                          <option>Preterm</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.delivery_mode || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], delivery_mode: e.target.value as ObstetricEntry['delivery_mode'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Normal</option>
+                          <option>CS</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.outcome || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], outcome: e.target.value as ObstetricEntry['outcome'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Live</option>
+                          <option>Expired</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.baby_gender || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], baby_gender: e.target.value as ObstetricEntry['baby_gender'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option value="M">Male</option>
+                          <option value="F">Female</option>
+                        </select>
+                        <input className="input text-xs col-span-1"
+                          placeholder="e.g. 3 yrs"
+                          value={entry.age_of_child || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], age_of_child: e.target.value }
+                            setO('obstetric_history', updated)
+                          }} />
+                        <button type="button"
+                          onClick={() => {
+                            const updated = (ob.obstetric_history || []).filter((_, i) => i !== idx)
+                            setO('obstetric_history', updated)
+                          }}
+                          className="text-red-400 hover:text-red-600 text-center text-xs font-bold">
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* ── ABORTION DETAILS (NEW) — shown only when abortion > 0 ── */}
+            {(ob.abortion ?? 0) > 0 && (
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="section-title mb-0">Abortion Details</h2>
+                  <button type="button"
+                    className="text-xs btn-secondary py-1 px-3"
+                    onClick={() => {
+                      setO('abortion_entries', [
+                        ...(ob.abortion_entries || []),
+                        { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
+                      ])
+                    }}>
+                    + Add Entry
+                  </button>
+                </div>
+
+                {(!ob.abortion_entries || ob.abortion_entries.length === 0) ? (
+                  <p className="text-xs text-gray-400 italic">Click "+ Add Entry" to record abortion details.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(ob.abortion_entries || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-4 gap-3 border border-gray-200 rounded-lg p-3 bg-gray-50 relative">
+                        <button type="button"
+                          className="absolute top-2 right-2 text-red-400 hover:text-red-600 text-xs font-bold"
+                          onClick={() => {
+                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
+                            setO('abortion_entries', updated)
+                          }}>✕</button>
+                        <div>
+                          <label className="label">Type</label>
+                          <select className="input bg-white"
+                            value={entry.type || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select</option>
+                            <option>Spontaneous</option>
+                            <option>Induced</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">At Weeks (gestation)</label>
+                          <input className="input" type="number" min="4" max="28"
+                            placeholder="e.g. 8"
+                            value={entry.weeks || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], weeks: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                        </div>
+                        <div>
+                          <label className="label">Method</label>
+                          <select className="input bg-white"
+                            value={entry.method || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select</option>
+                            <option>Medicines</option>
+                            <option>Surgery</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">How Many Years Ago</label>
+                          <input className="input" type="number" min="0" max="50"
+                            placeholder="e.g. 2"
+                            value={entry.years_ago || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* B — ANC */}
             <div className="card p-5">
@@ -740,7 +1003,7 @@ export default function NewConsultationPage() {
                   </select>
                 </div>
 
-                {/* ── New Clinical Risk Fields ── */}
+                {/* ── Clinical Risk Fields ── */}
                 <div>
                   <label className="label">Previous CS</label>
                   <select className={oc('previous_cs')} value={ob.previous_cs ?? ''} onChange={e=>setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
@@ -879,9 +1142,9 @@ export default function NewConsultationPage() {
               </div>
             </div>
 
-            {/* F — USG / Ultrasound Report */}
+            {/* G — USG / Ultrasound Report */}
             <div className="card p-5">
-              <h2 className="section-title">F. USG / Ultrasound Report</h2>
+              <h2 className="section-title">G. USG / Ultrasound Report</h2>
               <p className="text-xs text-gray-400 mb-3">Enter structured USG findings. These are tracked across visits for trend analysis.</p>
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -956,6 +1219,82 @@ export default function NewConsultationPage() {
                   <textarea className={`${oc('usg_remarks')} resize-none`} rows={2}
                     placeholder="e.g. Single live intrauterine fetus, cephalic, adequate liquor..."
                     value={ob.usg_remarks||''} onChange={e=>setO('usg_remarks',e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── PAST MEDICAL & SURGICAL HISTORY (NEW) ──────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Past Medical & Surgical History</h2>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="label mb-3">Conditions (tick all that apply)</label>
+                  <div className="flex flex-col gap-3 mt-1">
+                    {(
+                      [
+                        { key: 'past_diabetes',     label: 'Diabetic'          },
+                        { key: 'past_hypertension', label: 'Hypertension / BP' },
+                        { key: 'past_thyroid',      label: 'Thyroid Disorder'  },
+                      ] as Array<{ key: keyof OBData; label: string }>
+                    ).map(({ key, label }) => (
+                      <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!!(ob as any)[key]}
+                          onChange={e => setO(key, e.target.checked)}
+                          className="w-4 h-4 rounded accent-blue-600"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none mb-2">
+                    <input
+                      type="checkbox"
+                      checked={!!ob.past_surgery}
+                      onChange={e => setO('past_surgery', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                    Previous Surgery
+                  </label>
+                  {ob.past_surgery && (
+                    <textarea
+                      className="input resize-none mt-1"
+                      rows={3}
+                      placeholder="Describe: type of surgery, year, hospital..."
+                      value={ob.past_surgery_detail || ''}
+                      onChange={e => setO('past_surgery_detail', e.target.value)}
+                    />
+                  )}
+                  {!ob.past_surgery && (
+                    <p className="text-xs text-gray-400 mt-1 italic">Tick the checkbox above to add surgery details.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── SOCIOECONOMIC / CA DATA (NEW) ──────────────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Socioeconomic Information</h2>
+              <p className="text-xs text-gray-400 mb-4">
+                Optional — used for BPL / subsidy / insurance eligibility assessment.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Monthly Income (₹)</label>
+                  <input className="input" type="number" min="0"
+                    placeholder="e.g. 8000"
+                    value={ob.income || ''}
+                    onChange={e => setO('income', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Monthly Expenditure (₹)</label>
+                  <input className="input" type="number" min="0"
+                    placeholder="e.g. 6000"
+                    value={ob.expenditure || ''}
+                    onChange={e => setO('expenditure', e.target.value)} />
                 </div>
               </div>
             </div>
