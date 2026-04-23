@@ -148,6 +148,30 @@ export default function EncounterDetailPage() {
           </div>
         )}
 
+        {/* Procedures */}
+        {encounter.procedures && (encounter.procedures as any[]).length > 0 && (
+          <div className="card p-5 mb-4">
+            <h2 className="section-title">🔪 Procedures Performed</h2>
+            <div className="space-y-3">
+              {(encounter.procedures as any[]).map((proc: any, i: number) => (
+                <div key={i} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-bold text-gray-900 text-sm">{proc.name}</span>
+                    {proc.anaesthesia && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{proc.anaesthesia}</span>}
+                    {proc.surgeon && <span className="text-xs text-gray-500">by {proc.surgeon}</span>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    {proc.indication && <InfoRow label="Indication" value={proc.indication} />}
+                    {proc.findings && <InfoRow label="Findings" value={proc.findings} />}
+                    {proc.complications && <InfoRow label="Complications" value={proc.complications} />}
+                    {proc.notes && <InfoRow label="Notes" value={proc.notes} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Files & Attachments */}
         {encounter.patient_id && (
           <ConsultationAttachments

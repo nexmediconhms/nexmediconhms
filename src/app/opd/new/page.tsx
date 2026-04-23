@@ -8,7 +8,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
-import type { Patient, OBData } from '@/types'
+import type { Patient, OBData, Procedure } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine } from 'lucide-react'
 
@@ -44,6 +44,7 @@ export default function NewConsultationPage() {
   const [hpi,            setHpi]           = useState('')
   const [diagnosis,      setDiagnosis]     = useState('')
   const [notes,          setNotes]         = useState('')
+  const [procedures,     setProcedures]    = useState<Procedure[]>([])
   const [saving,         setSaving]        = useState(false)
   const [error,          setError]         = useState('')
   const [lastDiagnosis,  setLastDiagnosis]  = useState('')
@@ -274,6 +275,7 @@ export default function NewConsultationPage() {
         diagnosis:       diagnosis.trim()    || null,
         notes:           (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data:         obPayload,
+        procedures:      procedures.length > 0 ? procedures : null,
         doctor_name:     getHospitalSettings().doctorName,
       })
       .select('id')
@@ -513,6 +515,119 @@ export default function NewConsultationPage() {
 
               </div>
             </div>
+
+            {/* ── Procedure Log ── */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="section-title mb-0">🔪 Procedures Performed</h2>
+                <button
+                  type="button"
+                  onClick={() => setProcedures(prev => [...prev, { name: '', indication: '', findings: '', complications: '', surgeon: getHospitalSettings().doctorName, anaesthesia: '', notes: '' }])}
+                  className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg"
+                >
+                  + Add Procedure
+                </button>
+              </div>
+
+              {procedures.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No procedures recorded. Click "Add Procedure" if a procedure was performed during this visit.</p>
+              ) : (
+                <div className="space-y-4">
+                  {procedures.map((proc, idx) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-4 bg-gray-50 relative">
+                      <button
+                        type="button"
+                        onClick={() => setProcedures(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-2 right-2 text-red-400 hover:text-red-600 text-xs"
+                        title="Remove procedure"
+                      >✕</button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <label className="label">Procedure Name *</label>
+                          <select
+                            className="input"
+                            value={proc.name}
+                            onChange={e => {
+                              const val = e.target.value
+                              setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, name: val } : p))
+                            }}
+                          >
+                            <option value="">Select procedure...</option>
+                            {[
+                              'D&C (Dilatation & Curettage)',
+                              'Colposcopy',
+                              'Cervical Biopsy',
+                              'LEEP / LLETZ',
+                              'Hysteroscopy',
+                              'IUD Insertion',
+                              'IUD Removal',
+                              'MVA (Manual Vacuum Aspiration)',
+                              'Endometrial Biopsy',
+                              'Bartholin Cyst I&D',
+                              'Cervical Cerclage',
+                              'Amniocentesis',
+                              'ECV (External Cephalic Version)',
+                              'Episiotomy Repair',
+                              'Perineal Tear Repair',
+                              'Normal Vaginal Delivery',
+                              'Assisted Vaginal Delivery',
+                              'Caesarean Section (LSCS)',
+                              'Tubal Ligation',
+                              'Laparoscopy (Diagnostic)',
+                              'Laparoscopy (Operative)',
+                              'Hysterectomy',
+                              'Ovarian Cystectomy',
+                              'Pap Smear',
+                              'Other',
+                            ].map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">Indication</label>
+                          <input className="input" placeholder="Why was this done?"
+                            value={proc.indication || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, indication: e.target.value } : p))} />
+                        </div>
+                        <div>
+                          <label className="label">Anaesthesia</label>
+                          <select className="input"
+                            value={proc.anaesthesia || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, anaesthesia: e.target.value } : p))}>
+                            <option value="">Select</option>
+                            {['None','Local','Spinal','Epidural','General','IV Sedation'].map(a => <option key={a}>{a}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">Surgeon / Performed By</label>
+                          <input className="input" placeholder="Doctor name"
+                            value={proc.surgeon || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, surgeon: e.target.value } : p))} />
+                        </div>
+                        <div>
+                          <label className="label">Complications</label>
+                          <input className="input" placeholder="None / describe"
+                            value={proc.complications || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, complications: e.target.value } : p))} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="label">Findings</label>
+                          <textarea className="input resize-none" rows={2} placeholder="Procedure findings..."
+                            value={proc.findings || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, findings: e.target.value } : p))} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="label">Additional Notes</label>
+                          <textarea className="input resize-none" rows={2} placeholder="Post-procedure instructions, follow-up..."
+                            value={proc.notes || ''}
+                            onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, notes: e.target.value } : p))} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-between">
               <button onClick={() => setTab('vitals')} className="btn-secondary flex items-center gap-2">
                 <ArrowLeft className="w-4 h-4" /> Back

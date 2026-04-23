@@ -746,6 +746,15 @@ export default function PatientDetailPage() {
                               </div>
                               {enc.chief_complaint && <p className="text-sm text-gray-600">{enc.chief_complaint}</p>}
                               {enc.diagnosis && <p className="text-xs text-blue-700 font-medium mt-1">Dx: {enc.diagnosis}</p>}
+                              {enc.procedures && (enc.procedures as any[]).length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {(enc.procedures as any[]).map((proc: any, i: number) => (
+                                    <span key={i} className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
+                                      🔪 {proc.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <div className="text-xs text-gray-400 ml-4">{formatDateTime(enc.created_at).split(',')[0]}</div>
                           </div>

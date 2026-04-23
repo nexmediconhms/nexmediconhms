@@ -18,6 +18,16 @@ export interface Patient {
   created_at: string
 }
 
+export interface Procedure {
+  name: string                // e.g., "D&C", "Colposcopy", "IUD Insertion"
+  indication?: string         // why the procedure was done
+  findings?: string           // what was found
+  complications?: string      // any complications
+  surgeon?: string            // who performed it
+  anaesthesia?: string        // type of anaesthesia used
+  notes?: string              // additional notes
+}
+
 export interface Encounter {
   id: string
   patient_id: string
@@ -34,6 +44,7 @@ export interface Encounter {
   diagnosis?: string
   notes?: string
   ob_data?: OBData
+  procedures?: Procedure[]    // structured procedure log
   doctor_name?: string
   created_at: string
   patients?: Patient

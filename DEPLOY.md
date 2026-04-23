@@ -36,6 +36,7 @@
    - Paste contents of `supabase_add_aadhaar.sql` → Run
    - Paste contents of `supabase_v8_roles.sql` → Run ← **NEW: roles & user management**
    - Paste contents of `supabase_v9_appointments.sql` → Run ← **NEW: appointments in database**
+   - Paste contents of `supabase_v10_procedures.sql` → Run ← **NEW: procedure tracking**
 
    ⚠️ Do NOT run `seed_demo_data.sql` on a production database!
 
