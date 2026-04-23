@@ -9,6 +9,8 @@ import { formatDate, formatDateTime, ageFromDOB, calculateGA, calculateEDD } fro
 import { assessObstetricRisk, assessVitalRisk, riskLevelStyle } from '@/lib/clinical-risk'
 import type { RiskAssessment } from '@/lib/clinical-risk'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
+import { TEMPLATES, whatsAppUrl } from '@/lib/whatsapp-templates'
+import type { TemplateParams } from '@/lib/whatsapp-templates'
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
@@ -719,6 +721,57 @@ export default function PatientDetailPage() {
                     </div>
                   )
                 })()}
+
+                {/* ── WhatsApp Clinical Reminders ── */}
+                {patient.mobile && (
+                  <div className="card p-5">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      📲 Send Clinical Reminder via WhatsApp
+                    </h3>
+                    <p className="text-xs text-gray-400 mb-3">
+                      Click a template to open WhatsApp with a pre-filled clinical message for {patient.full_name}.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {TEMPLATES.map(tmpl => {
+                        // Build params from patient + encounter data
+                        const latestEnc = encounters[0]
+                        const ob = (latestEnc?.ob_data || {}) as any
+                        const latestRx = prescriptions[0]
+                        const params: TemplateParams = {
+                          patientName: patient.full_name,
+                          mobile: patient.mobile,
+                          ga: ob.lmp ? undefined : undefined, // will be calculated in template
+                          lmp: ob.lmp,
+                          edd: ob.edd,
+                          followUpDate: latestRx?.follow_up_date || '',
+                          diagnosis: latestEnc?.diagnosis || '',
+                          doctorName: latestEnc?.doctor_name || '',
+                          medications: latestRx?.medications
+                            ? (latestRx.medications as any[]).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''}`).join('\n')
+                            : '',
+                        }
+                        const msg = tmpl.generate(params)
+                        const url = whatsAppUrl(patient.mobile, msg)
+
+                        return (
+                          <a
+                            key={tmpl.id}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all text-left group"
+                          >
+                            <span className="text-lg flex-shrink-0">{tmpl.emoji}</span>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-gray-800 group-hover:text-green-700 truncate">{tmpl.label}</div>
+                              <div className="text-xs text-gray-400 truncate">{tmpl.description}</div>
+                            </div>
+                          </a>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

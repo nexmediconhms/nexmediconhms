@@ -5,7 +5,8 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, calculateGA, getHospitalSettings } from '@/lib/utils'
 import { assessObstetricRisk } from '@/lib/clinical-risk'
-import { Baby, AlertTriangle, Search, Calendar, Heart, Droplets, RefreshCw, Printer } from 'lucide-react'
+import { Baby, AlertTriangle, Search, Calendar, Heart, Droplets, RefreshCw, Printer, MessageCircle } from 'lucide-react'
+import { getTemplate, whatsAppUrl } from '@/lib/whatsapp-templates'
 
 interface ANCRecord {
   encounterId:    string
@@ -297,10 +298,30 @@ export default function ANCPage() {
 
                     {/* Action */}
                     <td className="px-4 py-3">
-                      <Link href={`/patients/${r.patientId}`}
-                        className="text-xs text-blue-600 hover:underline whitespace-nowrap">
-                        View →
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        {r.mobile && (() => {
+                          const tmpl = getTemplate('anc_reminder')
+                          if (!tmpl) return null
+                          const msg = tmpl.generate({
+                            patientName: r.patientName,
+                            mobile: r.mobile,
+                            lmp: r.lmp,
+                            edd: r.edd,
+                            ga: r.ga,
+                          })
+                          return (
+                            <a href={whatsAppUrl(r.mobile, msg)} target="_blank" rel="noopener noreferrer"
+                              className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"
+                              title="Send ANC reminder via WhatsApp">
+                              <MessageCircle className="w-4 h-4"/>
+                            </a>
+                          )
+                        })()}
+                        <Link href={`/patients/${r.patientId}`}
+                          className="text-xs text-blue-600 hover:underline whitespace-nowrap">
+                          View →
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
