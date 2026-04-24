@@ -646,10 +646,10 @@ export default function NewPatientPage() {
                       <button key={g} type="button"
                         onClick={() => set('gender', g)}
                         className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.gender === g
-                            ? g === 'Female' ? 'border-pink-400 bg-pink-50 text-pink-700'
-                              : g === 'Male' ? 'border-blue-400 bg-blue-50 text-blue-700'
-                                : 'border-purple-400 bg-purple-50 text-purple-700'
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                          ? g === 'Female' ? 'border-pink-400 bg-pink-50 text-pink-700'
+                            : g === 'Male' ? 'border-blue-400 bg-blue-50 text-blue-700'
+                              : 'border-purple-400 bg-purple-50 text-purple-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                           }`}>
                         {g === 'Female' ? '♀ ' : g === 'Male' ? '♂ ' : '⚧ '}{g}
                       </button>
@@ -665,8 +665,8 @@ export default function NewPatientPage() {
                       <button key={b} type="button"
                         onClick={() => set('blood_group', form.blood_group === b ? '' : b)}
                         className={`py-2 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${form.blood_group === b
-                            ? 'border-red-400 bg-red-50 text-red-700'
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                          ? 'border-red-400 bg-red-50 text-red-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                           }`}>
                         {b}
                       </button>
@@ -858,8 +858,8 @@ export default function NewPatientPage() {
                       <button key={v} type="button"
                         onClick={() => { set('mediclaim', v); if (v === 'No') set('cashless', 'No') }}
                         className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim === v
-                            ? v === 'Yes' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 bg-gray-50 text-gray-700'
-                            : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                          ? v === 'Yes' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 bg-gray-50 text-gray-700'
+                          : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
                           }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
@@ -876,9 +876,9 @@ export default function NewPatientPage() {
                         disabled={form.mediclaim !== 'Yes'}
                         onClick={() => set('cashless', v)}
                         className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim !== 'Yes' ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
-                            form.cashless === v
-                              ? v === 'Yes' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-gray-50 text-gray-700'
-                              : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                          form.cashless === v
+                            ? v === 'Yes' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-gray-50 text-gray-700'
+                            : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
                           }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
@@ -942,7 +942,7 @@ export default function NewPatientPage() {
                       <p className="text-xs text-gray-400 mt-1">Appears on the insurance cover sheet</p>
                     </div>
                   </div>
- 
+
                   <div className="sm:col-span-3 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
                     <p className="text-xs font-bold text-blue-800 mb-1.5">
                       📋 Mediclaim Patient — Required Steps

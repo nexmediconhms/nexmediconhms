@@ -5,7 +5,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
-import { loadSettings } from '@/lib/settings'
+import { loadSettings, type HospitalSettings } from '@/lib/settings'
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
@@ -314,7 +314,7 @@ export default function BillingPage() {
   const searchParams = useSearchParams()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
   // Load CA settings separately (includes caName, caWhatsApp, caEmail)
-  const caSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' }
+  const caSettings: HospitalSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' } as HospitalSettings
 
   // ── Load bills ───────────────────────────────────────────────
   const loadBills = useCallback(async () => {
