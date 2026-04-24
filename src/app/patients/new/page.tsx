@@ -17,26 +17,29 @@ import { verifyABHANumber, isValidABHANumber, mapABDMGender, buildDOBFromProfile
 import type { ABHAProfile } from '@/lib/abdm'
 
 // ─── Constants ────────────────────────────────────────────────
-const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
-const GENDERS      = ['Female','Male','Other']
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
+const GENDERS = ['Female', 'Male', 'Other']
 
 // ─── Form state type ──────────────────────────────────────────
 interface FormData {
-  full_name:               string
-  age:                     string
-  date_of_birth:           string
-  gender:                  string
-  mobile:                  string
-  blood_group:             string
-  address:                 string
-  abha_id:                 string
-  aadhaar_no:              string
-  emergency_contact_name:  string
+  full_name: string
+  age: string
+  date_of_birth: string
+  gender: string
+  mobile: string
+  blood_group: string
+  address: string
+  abha_id: string
+  aadhaar_no: string
+  emergency_contact_name: string
   emergency_contact_phone: string
-  mediclaim:               string
-  cashless:                string
-  reference_source:        string
-  reference_detail:        string
+  mediclaim: string
+  cashless: string
+  reference_source: string
+  reference_detail: string
+  // ── Insurance policy details (NEW) ────────────────────────
+  policy_tpa_name: string
+  policy_number: string
 }
 
 const EMPTY: FormData = {
@@ -44,6 +47,7 @@ const EMPTY: FormData = {
   mobile: '', blood_group: '', address: '', abha_id: '', aadhaar_no: '',
   emergency_contact_name: '', emergency_contact_phone: '',
   mediclaim: 'No', cashless: 'No', reference_source: '', reference_detail: '',
+  policy_tpa_name: '', policy_number: '',
 }
 
 // ─── Duplicate match type ─────────────────────────────────────
@@ -56,25 +60,25 @@ interface DuplicateMatch {
 export default function NewPatientPage() {
   const router = useRouter()
 
-  const [form,       setForm]       = useState<FormData>(EMPTY)
-  const [errors,     setErrors]     = useState<Partial<FormData>>({})
-  const [saving,     setSaving]     = useState(false)
-  const [success,    setSuccess]    = useState<{ mrn: string; name: string } | null>(null)
-  const [successId,     setSuccessId]     = useState<string>('')
+  const [form, setForm] = useState<FormData>(EMPTY)
+  const [errors, setErrors] = useState<Partial<FormData>>({})
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState<{ mrn: string; name: string } | null>(null)
+  const [successId, setSuccessId] = useState<string>('')
   const [successMobile, setSuccessMobile] = useState<string>('')
-  const [payLink,       setPayLink]       = useState<{url?:string;whatsappText:string;type:string}|null>(null)
-  const [payLinkLoading,setPayLinkLoading]= useState(false)
+  const [payLink, setPayLink] = useState<{ url?: string; whatsappText: string; type: string } | null>(null)
+  const [payLinkLoading, setPayLinkLoading] = useState(false)
 
   // Duplicate detection
-  const [duplicates,       setDuplicates]       = useState<DuplicateMatch[]>([])
-  const [showDuplicateWarn,setShowDuplicateWarn] = useState(false)
-  const [checkingDups,     setCheckingDups]      = useState(false)
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
+  const [showDuplicateWarn, setShowDuplicateWarn] = useState(false)
+  const [checkingDups, setCheckingDups] = useState(false)
 
   // ABHA verification
-  const [abhaVerifying,  setAbhaVerifying]  = useState(false)
-  const [abhaVerified,   setAbhaVerified]   = useState(false)
-  const [abhaProfile,    setAbhaProfile]    = useState<ABHAProfile | null>(null)
-  const [abhaError,      setAbhaError]      = useState('')
+  const [abhaVerifying, setAbhaVerifying] = useState(false)
+  const [abhaVerified, setAbhaVerified] = useState(false)
+  const [abhaProfile, setAbhaProfile] = useState<ABHAProfile | null>(null)
+  const [abhaError, setAbhaError] = useState('')
   const abdmConfig = typeof window !== 'undefined' ? loadABDMConfig() : { enabled: false } as any
 
 
@@ -82,11 +86,11 @@ export default function NewPatientPage() {
   useEffect(() => {
     try {
       const prefillParam = new URLSearchParams(window.location.search).get('prefill')
-      const key    = 'ocr_prefill_generic'
+      const key = 'ocr_prefill_generic'
       const stored = sessionStorage.getItem(key)
       if (!stored || !prefillParam) return
-      const ocr    = JSON.parse(stored)
-      const p      = ocr.patient ?? {}
+      const ocr = JSON.parse(stored)
+      const p = ocr.patient ?? {}
       const apply = (field: keyof typeof EMPTY, val: string | undefined) => {
         if (!val) return
         setForm(prev => ({ ...prev, [field]: val }))
@@ -146,14 +150,14 @@ export default function NewPatientPage() {
       }
     }
 
-    maybeSet('full_name',               p.full_name)
-    maybeSet('age',                     p.age)
-    maybeSet('date_of_birth',           p.date_of_birth)
-    maybeSet('mobile',                  p.mobile)
-    maybeSet('address',                 p.address)
-    maybeSet('abha_id',                 p.abha_id)
-    maybeSet('aadhaar_no',              p.aadhaar_no)
-    maybeSet('emergency_contact_name',  p.emergency_contact_name)
+    maybeSet('full_name', p.full_name)
+    maybeSet('age', p.age)
+    maybeSet('date_of_birth', p.date_of_birth)
+    maybeSet('mobile', p.mobile)
+    maybeSet('address', p.address)
+    maybeSet('abha_id', p.abha_id)
+    maybeSet('aadhaar_no', p.aadhaar_no)
+    maybeSet('emergency_contact_name', p.emergency_contact_name)
     maybeSet('emergency_contact_phone', p.emergency_contact_phone)
 
     if (p.gender && GENDERS.includes(p.gender)) newFields.gender = p.gender
@@ -272,19 +276,19 @@ export default function NewPatientPage() {
         setPayLink(data)
       }
     } catch {
-      setPayLink({ type:'manual', whatsappText: fallbackMsg })
+      setPayLink({ type: 'manual', whatsappText: fallbackMsg })
     }
     setPayLinkLoading(false)
   }
 
   // ── Duplicate check ────────────────────────────────────────────
   async function checkDuplicates(): Promise<DuplicateMatch[]> {
-    const mobile   = normalizePhone(form.mobile)
-    const aadhaar  = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
-    const name     = form.full_name.trim().toLowerCase()
+    const mobile = normalizePhone(form.mobile)
+    const aadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
+    const name = form.full_name.trim().toLowerCase()
 
     const orFilters: string[] = []
-    if (mobile)  orFilters.push(`mobile.eq.${mobile}`)
+    if (mobile) orFilters.push(`mobile.eq.${mobile}`)
     if (aadhaar) orFilters.push(`aadhaar_no.eq.${aadhaar}`)
 
     if (orFilters.length === 0 && !name) return []
@@ -363,24 +367,26 @@ export default function NewPatientPage() {
     const { data, error } = await supabase
       .from('patients')
       .insert({
-        full_name:               form.full_name.trim(),
-        age:                     normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
-        date_of_birth:           form.date_of_birth                          || null,
-        gender:                  form.gender                                  || null,
-        mobile:                  normalizedMobile,
-        blood_group:             form.blood_group                             || null,
-        address:                 form.address.trim()                         || null,
-        abha_id:                 form.abha_id.trim()                         || null,
-        aadhaar_no:              normalizedAadhaar                            || null,
-        emergency_contact_name:  form.emergency_contact_name.trim()          || null,
-        emergency_contact_phone: normalizedEmergPhone                        || null,
-        mediclaim:               form.mediclaim === 'Yes',
-        cashless:                form.cashless  === 'Yes',
-        reference_source:        form.reference_source
-                                   ? (form.reference_detail.trim()
-                                       ? `${form.reference_source} — ${form.reference_detail.trim()}`
-                                       : form.reference_source)
-                                   : null,
+        full_name: form.full_name.trim(),
+        age: normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        mobile: normalizedMobile,
+        blood_group: form.blood_group || null,
+        address: form.address.trim() || null,
+        abha_id: form.abha_id.trim() || null,
+        aadhaar_no: normalizedAadhaar || null,
+        emergency_contact_name: form.emergency_contact_name.trim() || null,
+        emergency_contact_phone: normalizedEmergPhone || null,
+        mediclaim: form.mediclaim === 'Yes',
+        cashless: form.cashless === 'Yes',
+        reference_source: form.reference_source
+          ? (form.reference_detail.trim()
+            ? `${form.reference_source} — ${form.reference_detail.trim()}`
+            : form.reference_source)
+          : null,
+        policy_tpa_name: form.policy_tpa_name.trim() || null,
+        policy_number: form.policy_number.trim() || null,
       })
       .select('id, mrn, full_name')
       .single()
@@ -405,7 +411,7 @@ export default function NewPatientPage() {
   // ── Helper: input class ────────────────────────────────────────
   function inputClass(field: keyof FormData, extra = '') {
     const base = 'w-full rounded-xl border bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-    const err  = errors[field] ? 'border-red-300 bg-red-50 focus:ring-red-400' : 'border-gray-200 hover:border-gray-300'
+    const err = errors[field] ? 'border-red-300 bg-red-50 focus:ring-red-400' : 'border-gray-200 hover:border-gray-300'
     return [base, err, extra].filter(Boolean).join(' ')
   }
 
@@ -462,7 +468,7 @@ export default function NewPatientPage() {
                     )}
                     <div className="flex gap-2">
                       {successMobile && (
-                        <a href={`https://wa.me/91${successMobile.replace(/\D/g,'')}?text=${encodeURIComponent(payLink.whatsappText)}`}
+                        <a href={`https://wa.me/91${successMobile.replace(/\D/g, '')}?text=${encodeURIComponent(payLink.whatsappText)}`}
                           target="_blank" rel="noopener noreferrer"
                           className="flex-1 flex items-center justify-center gap-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
                           📲 Send via WhatsApp
@@ -639,13 +645,12 @@ export default function NewPatientPage() {
                     {GENDERS.map(g => (
                       <button key={g} type="button"
                         onClick={() => set('gender', g)}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.gender === g
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.gender === g
                             ? g === 'Female' ? 'border-pink-400 bg-pink-50 text-pink-700'
                               : g === 'Male' ? 'border-blue-400 bg-blue-50 text-blue-700'
-                              : 'border-purple-400 bg-purple-50 text-purple-700'
+                                : 'border-purple-400 bg-purple-50 text-purple-700'
                             : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                        }`}>
+                          }`}>
                         {g === 'Female' ? '♀ ' : g === 'Male' ? '♂ ' : '⚧ '}{g}
                       </button>
                     ))}
@@ -659,11 +664,10 @@ export default function NewPatientPage() {
                     {BLOOD_GROUPS.map(b => (
                       <button key={b} type="button"
                         onClick={() => set('blood_group', form.blood_group === b ? '' : b)}
-                        className={`py-2 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${
-                          form.blood_group === b
+                        className={`py-2 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${form.blood_group === b
                             ? 'border-red-400 bg-red-50 text-red-700'
                             : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                        }`}>
+                          }`}>
                         {b}
                       </button>
                     ))}
@@ -763,8 +767,8 @@ export default function NewPatientPage() {
                         {abhaVerifying
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : abhaVerified
-                          ? <CheckCircle className="w-3.5 h-3.5" />
-                          : <Shield className="w-3.5 h-3.5" />}
+                            ? <CheckCircle className="w-3.5 h-3.5" />
+                            : <Shield className="w-3.5 h-3.5" />}
                         {abhaVerifying ? 'Verifying…' : abhaVerified ? 'Verified' : 'Verify ABHA'}
                       </button>
                     )}
@@ -853,11 +857,10 @@ export default function NewPatientPage() {
                     {['No', 'Yes'].map(v => (
                       <button key={v} type="button"
                         onClick={() => { set('mediclaim', v); if (v === 'No') set('cashless', 'No') }}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.mediclaim === v
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim === v
                             ? v === 'Yes' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 bg-gray-50 text-gray-700'
                             : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
-                        }`}>
+                          }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
                     ))}
@@ -872,12 +875,11 @@ export default function NewPatientPage() {
                       <button key={v} type="button"
                         disabled={form.mediclaim !== 'Yes'}
                         onClick={() => set('cashless', v)}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.mediclaim !== 'Yes' ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
-                          form.cashless === v
-                            ? v === 'Yes' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-gray-50 text-gray-700'
-                            : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
-                        }`}>
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim !== 'Yes' ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
+                            form.cashless === v
+                              ? v === 'Yes' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-gray-50 text-gray-700'
+                              : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                          }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
                     ))}
@@ -914,34 +916,63 @@ export default function NewPatientPage() {
 
               {/* Mediclaim guidance */}
               {form.mediclaim === 'Yes' && (
-                <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-blue-800 mb-1.5">
-                    📋 Mediclaim Patient — Required Steps
-                  </p>
-                  <div className="space-y-1 text-xs text-blue-700">
-                    <p>✓ Collect insurance card / policy document</p>
-                    <p>✓ Note Policy Number and TPA name in consultation notes</p>
-                    <p>✓ Get pre-authorisation letter if IPD admission</p>
-                    {form.cashless === 'Yes' ? (
-                      <>
-                        <p className="font-semibold text-blue-900 mt-2">💳 Cashless Process:</p>
-                        <p>1. Contact TPA/insurance company for pre-auth approval</p>
-                        <p>2. Fill TPA cashless request form</p>
-                        <p>3. Attach patient's ID proof + insurance card</p>
-                        <p>4. Submit to hospital billing — patient pays only non-covered amount</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-semibold text-blue-900 mt-2">🧾 Reimbursement Process:</p>
-                        <p>1. Collect full payment from patient at discharge</p>
-                        <p>2. Provide detailed itemised bill + all receipts</p>
-                        <p>3. Give originals of all lab reports, prescriptions</p>
-                        <p>4. Patient submits to insurance for reimbursement</p>
-                      </>
-                    )}
+                <>
+                  {/* Policy details — new fields */}
+                  <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-5 mt-1">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Insurance Company / TPA Name
+                      </label>
+                      <input className={inputClass('policy_tpa_name')}
+                        placeholder="e.g. Medi Assist, Star Health, New India"
+                        value={form.policy_tpa_name}
+                        onChange={e => set('policy_tpa_name', e.target.value)}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Name of insurer or TPA — printed on insurance documents</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Policy / Card Number
+                      </label>
+                      <input className={inputClass('policy_number', 'font-mono')}
+                        placeholder="e.g. P/211200/01/2024/000123"
+                        value={form.policy_number}
+                        onChange={e => set('policy_number', e.target.value)}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Appears on the insurance cover sheet</p>
+                    </div>
                   </div>
-                </div>
+ 
+                  <div className="sm:col-span-3 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-blue-800 mb-1.5">
+                      📋 Mediclaim Patient — Required Steps
+                    </p>
+                    <div className="space-y-1 text-xs text-blue-700">
+                      <p>✓ Collect insurance card / policy document</p>
+                      <p>✓ Note Policy Number and TPA name in consultation notes</p>
+                      <p>✓ Get pre-authorisation letter if IPD admission</p>
+                      {form.cashless === 'Yes' ? (
+                        <>
+                          <p className="font-semibold text-blue-900 mt-2">💳 Cashless Process:</p>
+                          <p>1. Contact TPA/insurance company for pre-auth approval</p>
+                          <p>2. Fill TPA cashless request form</p>
+                          <p>3. Attach patient's ID proof + insurance card</p>
+                          <p>4. Submit to hospital billing — patient pays only non-covered amount</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-blue-900 mt-2">🧾 Reimbursement Process:</p>
+                          <p>1. Collect full payment from patient at discharge</p>
+                          <p>2. Provide detailed itemised bill + all receipts</p>
+                          <p>3. Give originals of all lab reports, prescriptions</p>
+                          <p>4. Patient submits to insurance for reimbursement</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
+
 
             </div>
           </div>

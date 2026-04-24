@@ -15,17 +15,20 @@ export interface Patient {
   mediclaim?: boolean
   cashless?: boolean
   reference_source?: string
+  // ── Insurance policy details (added v12) ─────────────────────
+  policy_tpa_name?: string   // e.g. "Medi Assist", "Star Health"
+  policy_number?:   string   // actual policy / card number
   created_at: string
 }
 
 export interface Procedure {
-  name: string                // e.g., "D&C", "Colposcopy", "IUD Insertion"
-  indication?: string         // why the procedure was done
-  findings?: string           // what was found
-  complications?: string      // any complications
-  surgeon?: string            // who performed it
-  anaesthesia?: string        // type of anaesthesia used
-  notes?: string              // additional notes
+  name: string
+  indication?: string
+  findings?: string
+  complications?: string
+  surgeon?: string
+  anaesthesia?: string
+  notes?: string
 }
 
 export interface Encounter {
@@ -44,28 +47,26 @@ export interface Encounter {
   diagnosis?: string
   notes?: string
   ob_data?: OBData
-  procedures?: Procedure[]    // structured procedure log
+  procedures?: Procedure[]
   doctor_name?: string
   created_at: string
   patients?: Patient
 }
 
-// ── Per-pregnancy obstetric history entry ────────────────────────
 export interface ObstetricEntry {
-  pregnancy_no:   number                           // 1, 2, 3, 4 …
+  pregnancy_no:   number
   type:           'Full Term' | 'Preterm' | ''
   delivery_mode?: 'Normal' | 'CS' | ''
   outcome?:       'Live' | 'Expired' | ''
   baby_gender?:   'M' | 'F' | ''
-  age_of_child?:  string                           // e.g. "3 years", "8 months"
+  age_of_child?:  string
 }
 
-// ── Per-abortion detail entry ─────────────────────────────────────
 export interface AbortionEntry {
   type?:      'Spontaneous' | 'Induced' | ''
-  weeks?:     string                               // gestational age e.g. "8"
+  weeks?:     string
   method?:    'Medicines' | 'Surgery' | ''
-  years_ago?: string                               // how many years back
+  years_ago?: string
 }
 
 export interface OBData {
@@ -96,50 +97,38 @@ export interface OBData {
   per_vaginum?: string
   right_ovary?: string
   left_ovary?: string
-  // ── Clinical risk fields ──
-  previous_cs?: number          // number of previous caesarean sections
-  multiple_pregnancy?: boolean  // twins / triplets
+  previous_cs?: number
+  multiple_pregnancy?: boolean
   gestational_diabetes?: boolean
-  haemoglobin?: number          // g/dL — latest Hb value
-  blood_sugar_fasting?: number  // mg/dL
-  blood_sugar_pp?: number       // mg/dL (post-prandial)
-  // ── USG / Ultrasound fields ──
-  usg_date?: string             // ISO date of USG
-  usg_ga?: string               // gestational age at USG (e.g. "28w3d")
-  bpd?: number                  // Biparietal Diameter (mm)
-  hc?: number                   // Head Circumference (mm)
-  ac?: number                   // Abdominal Circumference (mm)
-  fl?: number                   // Femur Length (mm)
-  efw?: number                  // Estimated Fetal Weight (grams)
-  afi?: number                  // Amniotic Fluid Index (cm)
-  placenta?: string             // e.g. "Anterior", "Posterior", "Fundal", "Low-lying", "Previa"
-  placenta_grade?: string       // Grade 0, I, II, III
-  cord_loops?: string           // e.g. "None", "1 loop around neck", "2 loops"
-  usg_remarks?: string          // free text for additional findings
-
-  // ── Menstrual History (NEW) ──────────────────────────────────
+  haemoglobin?: number
+  blood_sugar_fasting?: number
+  blood_sugar_pp?: number
+  usg_date?: string
+  usg_ga?: string
+  bpd?: number
+  hc?: number
+  ac?: number
+  fl?: number
+  efw?: number
+  afi?: number
+  placenta?: string
+  placenta_grade?: string
+  cord_loops?: string
+  usg_remarks?: string
   menstrual_regularity?:     'Regular' | 'Irregular' | ''
   menstrual_flow?:           'Scanty' | 'Normal' | 'Heavy' | ''
-  post_menstrual_days?:      string    // number of days of post-menstrual bleeding/spotting
+  post_menstrual_days?:      string
   post_menstrual_pain?:      'Mild' | 'Moderate' | 'Severe' | ''
-  urine_pregnancy_result?:   string    // urine pregnancy test result (~3 months)
-
-  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  urine_pregnancy_result?:   string
   obstetric_history?:        ObstetricEntry[]
-
-  // ── Abortion details (NEW) ───────────────────────────────────
   abortion_entries?:         AbortionEntry[]
-
-  // ── Past Medical & Surgical History (NEW) ────────────────────
   past_diabetes?:            boolean
   past_hypertension?:        boolean
   past_thyroid?:             boolean
   past_surgery?:             boolean
   past_surgery_detail?:      string
-
-  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
-  income?:                   string    // monthly household income ₹
-  expenditure?:              string    // monthly household expenditure ₹
+  income?:                   string
+  expenditure?:              string
 }
 
 export interface Medication {

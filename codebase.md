@@ -4291,6 +4291,9 @@ GUJARATI MEDICAL TERMS:
 સ્ત્રી=Female, પુરૂષ=Male, સરનામું=Address, ફોન/મોબાઈલ=Phone
 લોહી જૂથ=Blood Group, નિદાન=Diagnosis, ફરિયાદ=Complaint
 છેલ્લા માસિક=LMP, ગ્રૅવિડ=Gravida, પ્રસૂત=Para, ઈ.ડી.ડી=EDD
+માસિક=Menstrual, નિયમિત=Regular, અનિયમિત=Irregular
+ભૂતકાળ=Past History, ડાયાબિટીસ=Diabetes, બ્લડ પ્રેશર=BP
+ઓપરેશન=Surgery, આવક=Income, ખર્ચ=Expenditure
 
 ABSOLUTE RULES:
 1. Return ONLY valid JSON — no markdown, no explanation
@@ -4305,6 +4308,10 @@ ABSOLUTE RULES:
 10. Mediclaim: "Yes" if the Yes checkbox next to "Mediclaim / Health Insurance" is marked, "No" if the No checkbox is marked or neither is marked
 11. Cashless: "Yes" if the Yes checkbox next to "Cashless Facility" is marked, "No" if the No checkbox is marked or neither is marked
 12. Reference source: Match to one of: "Doctor Referral"|"Patient Referral"|"Advertisement"|"Google / Internet"|"Social Media"|"Walk-in"|"Camp / Outreach"|"Other"
+13. For obstetric_history: create one entry per pregnancy row found (1st, 2nd, 3rd, 4th). Only include rows that have data.
+14. For abortion_entries: create one entry per distinct abortion event found. Only include if abortion count > 0.
+15. past_diabetes / past_hypertension / past_thyroid / past_surgery: set true only if clearly marked/written as positive. Default omit (not false).
+16. income / expenditure: extract numeric value only (no ₹ symbol), store as string.
 
 JSON SCHEMA:
 {
@@ -4327,7 +4334,37 @@ JSON SCHEMA:
   "ob_data": {
     "lmp":"YYYY-MM-DD","gravida":"","para":"","abortion":"","living":"",
     "fhs":"","liquor":"","fundal_height":"","presentation":"",
-    "per_abdomen":"","per_speculum":"","per_vaginum":""
+    "per_abdomen":"","per_speculum":"","per_vaginum":"",
+    "menstrual_regularity":"Regular|Irregular",
+    "menstrual_flow":"Scanty|Normal|Heavy",
+    "post_menstrual_days":"",
+    "post_menstrual_pain":"Mild|Moderate|Severe",
+    "urine_pregnancy_result":"",
+    "obstetric_history":[
+      {
+        "pregnancy_no":"1",
+        "type":"Full Term|Preterm",
+        "delivery_mode":"Normal|CS",
+        "outcome":"Live|Expired",
+        "baby_gender":"M|F",
+        "age_of_child":""
+      }
+    ],
+    "abortion_entries":[
+      {
+        "type":"Spontaneous|Induced",
+        "weeks":"",
+        "method":"Medicines|Surgery",
+        "years_ago":""
+      }
+    ],
+    "past_diabetes":false,
+    "past_hypertension":false,
+    "past_thyroid":false,
+    "past_surgery":false,
+    "past_surgery_detail":"",
+    "income":"",
+    "expenditure":""
   },
   "prescription": {
     "medications":[{"drug":"","dose":"","route":"","frequency":"","duration":""}],
@@ -4452,7 +4489,6 @@ export async function POST(req: NextRequest) {
     })
   }
 }
-
 ```
 
 # src\app\api\parse-pdf\route.ts
@@ -6142,41 +6178,43 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { loadSettings } from '@/lib/settings'
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
-  ArrowLeft, Receipt, AlertCircle
+  ArrowLeft, Receipt, AlertCircle, Calculator, Mail,
+  MessageCircle, ChevronDown, ChevronUp, Calendar,
 } from 'lucide-react'
 
 // ── Common fee presets ────────────────────────────────────────
-// Dynamic fee presets — reads from Settings so doctor's custom fees are used
 function getFeePresets() {
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
   return [
-    { label: 'OPD Consultation',         amount: Number(hs.feeOPD)       || 500  },
-    { label: 'ANC Consultation',         amount: Number(hs.feeANC)       || 400  },
-    { label: 'Follow-up Consultation',   amount: Number(hs.feeFollowUp)  || 300  },
-    { label: 'Emergency Consultation',   amount: Number(hs.feeEmergency) || 800  },
-  { label: 'USG (Obstetric)',          amount: 1200 },
-  { label: 'USG (Pelvis)',             amount: 1000 },
-  { label: 'Colour Doppler',           amount: 2000 },
-  { label: 'PAP Smear',               amount: 600  },
-  { label: 'Colposcopy',              amount: 2500 },
-  { label: 'Dressing / Procedure',    amount: 300  },
-  { label: 'Injection Administration',amount: 100  },
-  { label: 'IUD Insertion',           amount: 800  },
-  { label: 'IPD Admission (per day)', amount: 1500 },
-  { label: 'OT Charges (minor)',      amount: 5000 },
-  { label: 'OT Charges (major)',      amount: 15000},
-  { label: 'Blood Test (CBC)',        amount: 300  },
-  { label: 'Blood Test (panel)',      amount: 800  },
-  { label: 'Medicines / Pharmacy',    amount: 0    },   // custom amount
+    { label: 'OPD Consultation', amount: Number(hs.feeOPD) || 500 },
+    { label: 'ANC Consultation', amount: Number(hs.feeANC) || 400 },
+    { label: 'Follow-up Consultation', amount: Number(hs.feeFollowUp) || 300 },
+    { label: 'Emergency Consultation', amount: Number(hs.feeEmergency) || 800 },
+    { label: 'USG (Obstetric)', amount: 1200 },
+    { label: 'USG (Pelvis)', amount: 1000 },
+    { label: 'Colour Doppler', amount: 2000 },
+    { label: 'PAP Smear', amount: 600 },
+    { label: 'Colposcopy', amount: 2500 },
+    { label: 'Dressing / Procedure', amount: 300 },
+    { label: 'Injection Administration', amount: 100 },
+    { label: 'IUD Insertion', amount: 800 },
+    { label: 'IPD Admission (per day)', amount: 1500 },
+    { label: 'OT Charges (minor)', amount: 5000 },
+    { label: 'OT Charges (major)', amount: 15000 },
+    { label: 'Blood Test (CBC)', amount: 300 },
+    { label: 'Blood Test (panel)', amount: 800 },
+    { label: 'Medicines / Pharmacy', amount: 0 },
   ]
 }
 
 interface BillItem { label: string; amount: number }
-type PayMode   = 'cash' | 'upi' | 'card'
+type PayMode = 'cash' | 'upi' | 'card'
 type BillStatus = 'pending' | 'paid' | 'cancelled'
+type Period = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'custom'
 
 interface Bill {
   id: string
@@ -6196,113 +6234,301 @@ interface Bill {
   paid_at?: string
 }
 
-// ── Razorpay script loader ────────────────────────────────────
+// ── CA Report types ───────────────────────────────────────────
+interface CAReportData {
+  period: string
+  fromDate: string
+  toDate: string
+  totalGross: number
+  totalDiscount: number
+  totalNet: number
+  billCount: number
+  pendingCount: number
+  pendingAmount: number
+  paymentBreakdown: { mode: string; amount: number; count: number }[]
+  serviceBreakdown: { label: string; amount: number; count: number }[]
+}
+
+// ── Razorpay loader ───────────────────────────────────────────
 function loadRazorpay(): Promise<boolean> {
   return new Promise(resolve => {
     if ((window as any).Razorpay) { resolve(true); return }
     const s = document.createElement('script')
     s.src = 'https://checkout.razorpay.com/v1/checkout.js'
-    s.onload  = () => resolve(true)
+    s.onload = () => resolve(true)
     s.onerror = () => resolve(false)
     document.body.appendChild(s)
   })
 }
 
-// ── Payment mode card ─────────────────────────────────────────
-// Using static class names to avoid Tailwind purge issues
-const PAY_MODES: { mode: PayMode; icon: any; label: string; desc: string;
-  activeClass: string; iconClass: string }[] = [
-  {
-    mode: 'cash', icon: Banknote, label: 'Cash', desc: 'Record cash received',
-    activeClass: 'border-green-500 bg-green-50',
-    iconClass:   'text-green-600',
-  },
-  {
-    mode: 'upi', icon: Smartphone, label: 'UPI', desc: 'Razorpay UPI / GPay / PhonePe',
-    activeClass: 'border-blue-500 bg-blue-50',
-    iconClass:   'text-blue-600',
-  },
-  {
-    mode: 'card', icon: CreditCard, label: 'Card', desc: 'Debit / Credit via Razorpay',
-    activeClass: 'border-purple-500 bg-purple-50',
-    iconClass:   'text-purple-600',
-  },
+const PAY_MODES: { mode: PayMode; icon: any; label: string; desc: string; activeClass: string; iconClass: string }[] = [
+  { mode: 'cash', icon: Banknote, label: 'Cash', desc: 'Record cash received', activeClass: 'border-green-500 bg-green-50', iconClass: 'text-green-600' },
+  { mode: 'upi', icon: Smartphone, label: 'UPI', desc: 'Razorpay UPI / GPay / PhonePe', activeClass: 'border-blue-500 bg-blue-50', iconClass: 'text-blue-600' },
+  { mode: 'card', icon: CreditCard, label: 'Card', desc: 'Debit / Credit via Razorpay', activeClass: 'border-purple-500 bg-purple-50', iconClass: 'text-purple-600' },
 ]
 
+// ── Date range helper ─────────────────────────────────────────
+function getPeriodDates(period: Period, customFrom: string, customTo: string): { from: string; to: string; label: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() // 0-indexed
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  switch (period) {
+    case 'this_month': {
+      const from = new Date(y, m, 1)
+      const to = new Date(y, m + 1, 0)
+      return { from: iso(from), to: iso(to), label: from.toLocaleString('en-IN', { month: 'long', year: 'numeric' }) }
+    }
+    case 'last_month': {
+      const from = new Date(y, m - 1, 1)
+      const to = new Date(y, m, 0)
+      return { from: iso(from), to: iso(to), label: from.toLocaleString('en-IN', { month: 'long', year: 'numeric' }) }
+    }
+    case 'this_quarter': {
+      const qStart = Math.floor(m / 3) * 3
+      const from = new Date(y, qStart, 1)
+      const to = new Date(y, qStart + 3, 0)
+      const qNames = ['Jan–Mar', 'Apr–Jun', 'Jul–Sep', 'Oct–Dec']
+      return { from: iso(from), to: iso(to), label: `Q${Math.floor(m / 3) + 1} ${y} (${qNames[Math.floor(m / 3)]})` }
+    }
+    case 'last_quarter': {
+      const lqStart = (Math.floor(m / 3) - 1 + 4) % 4 * 3
+      const lqYear = m < 3 ? y - 1 : y
+      const from = new Date(lqYear, lqStart, 1)
+      const to = new Date(lqYear, lqStart + 3, 0)
+      const qNames = ['Jan–Mar', 'Apr–Jun', 'Jul–Sep', 'Oct–Dec']
+      return { from: iso(from), to: iso(to), label: `Q${Math.floor(lqStart / 3) + 1} ${lqYear} (${qNames[Math.floor(lqStart / 3)]})` }
+    }
+    case 'this_year': {
+      const from = new Date(y, 0, 1)
+      const to = new Date(y, 11, 31)
+      return { from: iso(from), to: iso(to), label: `FY ${y}` }
+    }
+    case 'custom':
+      return { from: customFrom, to: customTo, label: `${customFrom} to ${customTo}` }
+    default:
+      return { from: iso(new Date(y, m, 1)), to: iso(new Date()), label: 'Custom' }
+  }
+}
+
+// ── Compute CA report from bills ──────────────────────────────
+function computeCAReport(bills: Bill[], from: string, to: string, label: string): CAReportData {
+  const fromDate = new Date(from + 'T00:00:00')
+  const toDate = new Date(to + 'T23:59:59')
+
+  const inRange = bills.filter(b => {
+    const d = new Date(b.created_at)
+    return d >= fromDate && d <= toDate
+  })
+
+  const paid = inRange.filter(b => b.status === 'paid')
+  const pending = inRange.filter(b => b.status === 'pending')
+
+  const totalGross = paid.reduce((s, b) => s + (Number(b.subtotal) || 0), 0)
+  const totalDiscount = paid.reduce((s, b) => s + (Number(b.discount) || 0), 0)
+  const totalNet = paid.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+
+  // Payment mode breakdown
+  const modeMap: Record<string, { amount: number; count: number }> = {}
+  paid.forEach(b => {
+    const mode = b.payment_mode || 'unknown'
+    if (!modeMap[mode]) modeMap[mode] = { amount: 0, count: 0 }
+    modeMap[mode].amount += Number(b.net_amount) || 0
+    modeMap[mode].count += 1
+  })
+  const paymentBreakdown = Object.entries(modeMap).map(([mode, v]) => ({ mode, ...v }))
+    .sort((a, b) => b.amount - a.amount)
+
+  // Service breakdown — flatten all bill items
+  const serviceMap: Record<string, { amount: number; count: number }> = {}
+  paid.forEach(b => {
+    if (!Array.isArray(b.items)) return
+    b.items.forEach((item: BillItem) => {
+      const key = item.label || 'Other'
+      if (!serviceMap[key]) serviceMap[key] = { amount: 0, count: 0 }
+      serviceMap[key].amount += Number(item.amount) || 0
+      serviceMap[key].count += 1
+    })
+  })
+  const serviceBreakdown = Object.entries(serviceMap).map(([label, v]) => ({ label, ...v }))
+    .sort((a, b) => b.amount - a.amount)
+
+  return {
+    period: label,
+    fromDate: from,
+    toDate: to,
+    totalGross,
+    totalDiscount,
+    totalNet,
+    billCount: paid.length,
+    pendingCount: pending.length,
+    pendingAmount: pending.reduce((s, b) => s + (Number(b.net_amount) || 0), 0),
+    paymentBreakdown,
+    serviceBreakdown,
+  }
+}
+
+// ── Format currency ───────────────────────────────────────────
+function inr(n: number) { return `₹${n.toLocaleString('en-IN')}` }
+
+// ── Build WhatsApp message text ───────────────────────────────
+function buildWhatsAppMessage(r: CAReportData, hs: any): string {
+  const modeLines = r.paymentBreakdown
+    .map(m => `• ${m.mode.toUpperCase()}: ${inr(m.amount)} (${m.count} bills)`)
+    .join('\n')
+  const svcLines = r.serviceBreakdown.slice(0, 8)
+    .map(s => `• ${s.label}: ${inr(s.amount)}`)
+    .join('\n')
+
+  return encodeURIComponent(
+    `*${hs.hospitalName || 'Clinic'} — Revenue Report*
+*Period: ${r.period}*
+
+*Summary*
+Total Billed (Gross): ${inr(r.totalGross)}
+Total Discounts Given: ${inr(r.totalDiscount)}
+*Net Collected: ${inr(r.totalNet)}*
+Bills Paid: ${r.billCount}
+Pending Bills: ${r.pendingCount} (${inr(r.pendingAmount)})
+
+*Payment Mode Breakdown*
+${modeLines || 'No paid bills in this period.'}
+
+*Top Services*
+${svcLines || '—'}
+
+_Generated by NexMedicon HMS — ${new Date().toLocaleDateString('en-IN')}_`
+  )
+}
+
+// ── Build Email body ──────────────────────────────────────────
+function buildEmailBody(r: CAReportData, hs: any): string {
+  const modeLines = r.paymentBreakdown
+    .map(m => `  • ${m.mode.toUpperCase()}: ${inr(m.amount)} (${m.count} bills)`)
+    .join('\n')
+  const svcLines = r.serviceBreakdown.slice(0, 10)
+    .map(s => `  • ${s.label}: ${inr(s.amount)}`)
+    .join('\n')
+
+  return encodeURIComponent(
+    `Dear ${hs.caName || 'CA'},
+
+Please find the revenue report for ${r.period} from ${hs.hospitalName || 'our clinic'}.
+
+SUMMARY
+-------
+Gross Revenue (before discounts) : ${inr(r.totalGross)}
+Total Discounts Given             : ${inr(r.totalDiscount)}
+Net Revenue Collected             : ${inr(r.totalNet)}
+Number of Paid Bills              : ${r.billCount}
+Pending Bills                     : ${r.pendingCount} (${inr(r.pendingAmount)})
+
+PAYMENT MODE BREAKDOWN
+----------------------
+${modeLines || 'No paid bills in this period.'}
+
+SERVICE-WISE REVENUE
+--------------------
+${svcLines || '—'}
+
+Period: ${r.fromDate} to ${r.toDate}
+Generated: ${new Date().toLocaleDateString('en-IN')} by NexMedicon HMS
+
+Regards,
+${hs.doctorName || 'Doctor'}
+${hs.hospitalName || ''}
+${hs.phone || ''}
+`
+  )
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// MAIN PAGE COMPONENT
+// ══════════════════════════════════════════════════════════════
 export default function BillingPage() {
-  const [view,         setView]         = useState<'list'|'new'|'receipt'>('list')
-  const [bills,        setBills]        = useState<Bill[]>([])
+  const [view, setView] = useState<'list' | 'new' | 'receipt'>('list')
+  const [bills, setBills] = useState<Bill[]>([])
   const [loadingBills, setLoadingBills] = useState(true)
 
-  // New bill form state
-  const [patientQuery,   setPatientQuery]   = useState('')
+  // New bill form
+  const [patientQuery, setPatientQuery] = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
-  const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [billItems,      setBillItems]      = useState<BillItem[]>([])
-  const [discount,       setDiscount]       = useState(0)
-  const [payMode,        setPayMode]        = useState<PayMode>('cash')
-  const [notes,          setNotes]          = useState('')
-  const [customLabel,    setCustomLabel]    = useState('')
-  const [customAmt,      setCustomAmt]      = useState('')
-  const [paying,         setPaying]         = useState(false)
-  const [payError,       setPayError]       = useState('')
+  const [selPatient, setSelPatient] = useState<any>(null)
+  const [billItems, setBillItems] = useState<BillItem[]>([])
+  const [discount, setDiscount] = useState(0)
+  const [payMode, setPayMode] = useState<PayMode>('cash')
+  const [notes, setNotes] = useState('')
+  const [customLabel, setCustomLabel] = useState('')
+  const [customAmt, setCustomAmt] = useState('')
+  const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState('')
 
-  // Receipt view
-  const [selectedBill,   setSelectedBill]   = useState<Bill | null>(null)
+  // Receipt
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
+  const [cashSuccess, setCashSuccess] = useState(false)
 
-  // Filter
-  const [filterStatus,   setFilterStatus]   = useState<'all'|'paid'|'pending'>('all')
-  const [filterMode,     setFilterMode]     = useState<'all'|'cash'|'upi'|'card'>('all')
-  const [cashSuccess,    setCashSuccess]     = useState(false)
-  const searchTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
+  // Filters
+  const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending'>('all')
+  const [filterMode, setFilterMode] = useState<'all' | 'cash' | 'upi' | 'card'>('all')
 
+  // CA Report state
+  const [showCAReport, setShowCAReport] = useState(false)
+  const [period, setPeriod] = useState<Period>('this_month')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [caReport, setCAReport] = useState<CAReportData | null>(null)
+  const [caLoading, setCALoading] = useState(false)
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  // Load CA settings separately (includes caName, caWhatsApp, caEmail)
+  const caSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' }
 
-  // ── Load bills from Supabase ───────────────────────────────
+  // ── Load bills ───────────────────────────────────────────────
   const loadBills = useCallback(async () => {
     setLoadingBills(true)
-    const { data } = await supabase
-      .from('bills')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100)
+    const { data } = await supabase.from('bills').select('*').order('created_at', { ascending: false }).limit(500)
     setBills((data || []) as Bill[])
     setLoadingBills(false)
   }, [])
 
   useEffect(() => { loadBills() }, [loadBills])
 
-  // Auto-add fee based on encounter type when arriving from OPD flow
+  // Auto-add fee from encounter type URL param
   useEffect(() => {
     const encType = searchParams.get('encounterType')
     if (encType && billItems.length === 0) {
       const hs2 = getHospitalSettings()
-      const feeMap: Record<string, { label:string; amount:number }> = {
-        OPD:       { label:'OPD Consultation',       amount: Number(hs2.feeOPD)       || 500  },
-        ANC:       { label:'ANC Consultation',       amount: Number(hs2.feeANC)       || 400  },
-        FollowUp:  { label:'Follow-up Consultation', amount: Number(hs2.feeFollowUp)  || 300  },
-        IPD:       { label:'IPD Admission (per day)',amount: Number(hs2.feeIPD)       || 1500 },
-        Emergency: { label:'Emergency Consultation', amount: Number(hs2.feeEmergency) || 800  },
+      const feeMap: Record<string, { label: string; amount: number }> = {
+        OPD: { label: 'OPD Consultation', amount: Number(hs2.feeOPD) || 500 },
+        ANC: { label: 'ANC Consultation', amount: Number(hs2.feeANC) || 400 },
+        FollowUp: { label: 'Follow-up Consultation', amount: Number(hs2.feeFollowUp) || 300 },
+        IPD: { label: 'IPD Admission (per day)', amount: Number(hs2.feeIPD) || 1500 },
+        Emergency: { label: 'Emergency Consultation', amount: Number(hs2.feeEmergency) || 800 },
       }
       if (feeMap[encType]) setBillItems([feeMap[encType]])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
-  // Pre-fill patient from URL params (e.g. from patient registration success screen)
+  // Pre-fill patient from URL
   useEffect(() => {
-    const patientId   = searchParams.get('patientId')
+    const patientId = searchParams.get('patientId')
     const patientName = searchParams.get('patientName')
-    const mrn         = searchParams.get('mrn')
+    const mrn = searchParams.get('mrn')
     if (patientId && patientName && mrn && !selPatient) {
       setSelPatient({ id: patientId, full_name: decodeURIComponent(patientName), mrn, age: '', mobile: '' })
       setView('new')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
-  // ── Patient search ─────────────────────────────────────────
+  // ── Patient search ───────────────────────────────────────────
   function searchPatients(q: string) {
     setPatientQuery(q); setSelPatient(null)
     if (q.trim().length < 2) { setPatientResults([]); return }
@@ -6317,7 +6543,6 @@ export default function BillingPage() {
   }
 
   function addPreset(p: { label: string; amount: number }) {
-    // If preset has 0 amount (like Medicines), prompt for amount
     const amt = p.amount > 0 ? p.amount : Number(prompt(`Enter amount for "${p.label}":`) || 0)
     if (amt > 0) setBillItems(prev => [...prev, { label: p.label, amount: amt }])
   }
@@ -6330,33 +6555,33 @@ export default function BillingPage() {
 
   function removeItem(i: number) { setBillItems(prev => prev.filter((_, j) => j !== i)) }
 
-  const subtotal  = billItems.reduce((s, i) => s + i.amount, 0)
+  const subtotal = billItems.reduce((s, i) => s + i.amount, 0)
   const netAmount = Math.max(0, subtotal - discount)
 
-  // ── Save bill to Supabase ──────────────────────────────────
+  // ── Save bill ────────────────────────────────────────────────
   async function saveBill(razorpayId: string | null, mode: PayMode): Promise<Bill | null> {
     const hs2 = getHospitalSettings()
     const payload = {
-      patient_id:          selPatient.id,
-      patient_name:        selPatient.full_name,
-      mrn:                 selPatient.mrn,
-      items:               billItems,
+      patient_id: selPatient.id,
+      patient_name: selPatient.full_name,
+      mrn: selPatient.mrn,
+      items: billItems,
       subtotal,
       discount,
-      net_amount:          netAmount,
-      payment_mode:        mode,
-      status:              'paid' as BillStatus,
+      net_amount: netAmount,
+      payment_mode: mode,
+      status: 'paid' as BillStatus,
       razorpay_payment_id: razorpayId || null,
-      notes:               notes.trim() || null,
-      created_by:          hs2.doctorName || null,
-      paid_at:             new Date().toISOString(),
+      notes: notes.trim() || null,
+      created_by: hs2.doctorName || null,
+      paid_at: new Date().toISOString(),
     }
     const { data, error } = await supabase.from('bills').insert(payload).select().single()
     if (error) { console.error('Bill save error:', error); return null }
     return data as Bill
   }
 
-  // ── Handle payment ─────────────────────────────────────────
+  // ── Handle payment ───────────────────────────────────────────
   async function handlePay() {
     if (!selPatient || billItems.length === 0) return
     setPaying(true); setPayError('')
@@ -6370,33 +6595,28 @@ export default function BillingPage() {
       return
     }
 
-    // UPI / Card via Razorpay
     const loaded = await loadRazorpay()
-    if (!loaded) {
-      setPaying(false)
-      setPayError('Could not load Razorpay checkout. Check your internet connection.')
-      return
-    }
+    if (!loaded) { setPaying(false); setPayError('Could not load Razorpay checkout.'); return }
 
     const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
     if (!rzpKey || rzpKey === 'rzp_test_YOUR_KEY_HERE') {
       setPaying(false)
-      setPayError('Razorpay Key not configured. Add NEXT_PUBLIC_RAZORPAY_KEY_ID to .env.local and restart the server.')
+      setPayError('Razorpay Key not configured. Add NEXT_PUBLIC_RAZORPAY_KEY_ID to .env.local and restart.')
       return
     }
 
     const options = {
-      key:         rzpKey,
-      amount:      netAmount * 100,   // paise
-      currency:    'INR',
-      name:        hs.hospitalName || 'NexMedicon HMS',
+      key: rzpKey,
+      amount: netAmount * 100,
+      currency: 'INR',
+      name: hs.hospitalName || 'NexMedicon HMS',
       description: billItems.map(i => i.label).join(', ').slice(0, 100),
-      prefill:     { name: selPatient.full_name, contact: selPatient.mobile },
-      theme:       { color: '#2563eb' },
+      prefill: { name: selPatient.full_name, contact: selPatient.mobile },
+      theme: { color: '#2563eb' },
       handler: async (response: any) => {
         const bill = await saveBill(response.razorpay_payment_id, payMode)
         setPaying(false)
-        if (!bill) { setPayError('Payment received but bill save failed. Contact support.'); return }
+        if (!bill) { setPayError('Payment received but bill save failed.'); return }
         await loadBills()
         setSelectedBill(bill); setView('receipt'); resetForm()
       },
@@ -6405,15 +6625,9 @@ export default function BillingPage() {
 
     try {
       const rzp = new (window as any).Razorpay(options)
-      rzp.on('payment.failed', (resp: any) => {
-        setPaying(false)
-        setPayError(`Payment failed: ${resp.error.description}`)
-      })
+      rzp.on('payment.failed', (resp: any) => { setPaying(false); setPayError(`Payment failed: ${resp.error.description}`) })
       rzp.open()
-    } catch (e: any) {
-      setPaying(false)
-      setPayError(`Razorpay error: ${e.message}`)
-    }
+    } catch (e: any) { setPaying(false); setPayError(`Razorpay error: ${e.message}`) }
   }
 
   function resetForm() {
@@ -6421,37 +6635,66 @@ export default function BillingPage() {
     setBillItems([]); setDiscount(0); setPayMode('cash'); setNotes(''); setPayError('')
   }
 
-  // ── Derived stats ──────────────────────────────────────────
-  const todayStr    = new Date().toDateString()
-  const todayBills  = bills.filter(b => new Date(b.created_at).toDateString() === todayStr && b.status === 'paid')
-  const todayTotal  = todayBills.reduce((s, b) => s + b.net_amount, 0)
-  const allTotal    = bills.filter(b => b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
-  const filtered    = bills.filter(b => {
+  // ── CA Report generation ─────────────────────────────────────
+  function generateCAReport() {
+    setCALoading(true)
+    const { from, to, label } = getPeriodDates(period, customFrom, customTo)
+
+    // Validate custom date range
+    if (period === 'custom') {
+      if (!customFrom || !customTo) {
+        alert('Please select both From and To dates for custom range.')
+        setCALoading(false)
+        return
+      }
+      if (new Date(customFrom) > new Date(customTo)) {
+        alert('"From" date cannot be after "To" date.')
+        setCALoading(false)
+        return
+      }
+      // Warn if range > 1 year
+      const diffDays = (new Date(customTo).getTime() - new Date(customFrom).getTime()) / (1000 * 60 * 60 * 24)
+      if (diffDays > 366) {
+        if (!confirm('The selected range is over 1 year. This may take a moment. Continue?')) {
+          setCALoading(false)
+          return
+        }
+      }
+    }
+
+    const report = computeCAReport(bills, from, to, label)
+    setCAReport(report)
+    setCALoading(false)
+  }
+
+  // ── Derived stats ────────────────────────────────────────────
+  const todayStr = new Date().toDateString()
+  const todayBills = bills.filter(b => new Date(b.created_at).toDateString() === todayStr && b.status === 'paid')
+  const todayTotal = todayBills.reduce((s, b) => s + b.net_amount, 0)
+  const allTotal = bills.filter(b => b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+  const filtered = bills.filter(b => {
     const statusOk = filterStatus === 'all' || b.status === filterStatus
-    const modeOk   = filterMode   === 'all' || b.payment_mode === filterMode
+    const modeOk = filterMode === 'all' || b.payment_mode === filterMode
     return statusOk && modeOk
   })
 
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // RECEIPT VIEW
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   if (view === 'receipt' && selectedBill) {
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
           <div className="no-print flex items-center gap-3 mb-5">
             <button onClick={() => { setView('list'); setSelectedBill(null); setCashSuccess(false) }}
-              className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5"/></button>
+              className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
             <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => window.print()}
-                className="btn-secondary flex items-center gap-2 text-xs">
-                <Printer className="w-3.5 h-3.5"/> Print
+              <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs">
+                <Printer className="w-3.5 h-3.5" /> Print
               </button>
-              <Link href={`/patients/${selectedBill.patient_id}`}
-                className="btn-secondary text-xs">Patient Record</Link>
-              <button onClick={() => { resetForm(); setView('new') }}
-                className="btn-primary text-xs">New Bill</button>
+              <Link href={`/patients/${selectedBill.patient_id}`} className="btn-secondary text-xs">Patient Record</Link>
+              <button onClick={() => { resetForm(); setView('new') }} className="btn-primary text-xs">New Bill</button>
             </div>
           </div>
           {cashSuccess && (
@@ -6462,9 +6705,8 @@ export default function BillingPage() {
               <div>
                 <p className="font-bold text-green-800 text-sm">Cash Payment Received ✓</p>
                 <p className="text-xs text-green-700">
-                  ₹{selectedBill.net_amount.toLocaleString('en-IN')} collected in cash.
+                  {inr(selectedBill.net_amount)} collected in cash.
                   Bill #{selectedBill.id.slice(-6).toUpperCase()} marked as Paid.
-                  Print and hand the receipt to the patient.
                 </p>
               </div>
             </div>
@@ -6476,177 +6718,156 @@ export default function BillingPage() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // NEW BILL VIEW
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   if (view === 'new') {
+    const feePresets = getFeePresets()
     return (
       <AppShell>
         <div className="p-6 max-w-4xl mx-auto">
           <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => { resetForm(); setView('list') }}
-              className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5"/></button>
+            <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
             <h1 className="text-xl font-bold text-gray-900">New Bill</h1>
           </div>
 
           {payError && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0"/>{payError}
+              <AlertCircle className="w-4 h-4" /> {payError}
             </div>
           )}
 
-          {/* Step 1: Patient */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">1. Select Patient</h2>
-            {selPatient ? (
-              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-                <div>
-                  <div className="font-semibold text-gray-900">{selPatient.full_name}</div>
-                  <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.age}y · {selPatient.mobile}</div>
+          <div className="grid grid-cols-5 gap-6">
+            {/* Left: fee selection */}
+            <div className="col-span-3 space-y-5">
+              {/* Step 1: Patient */}
+              <div className="card p-5">
+                <h2 className="section-title">1. Select Patient</h2>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input className="input pl-9" placeholder="Search patient by name, MRN, mobile..."
+                    value={patientQuery} onChange={e => searchPatients(e.target.value)} />
                 </div>
-                <button onClick={() => { setSelPatient(null); setPatientQuery(''); setPatientResults([]) }}
-                  className="text-gray-400 hover:text-red-500 p-1"><X className="w-4 h-4"/></button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-                <input className="input pl-9"
-                  placeholder="Search by patient name, MRN, or mobile number…"
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)} autoFocus/>
-                {patientResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                {patientResults.length > 0 && !selPatient && (
+                  <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden shadow-lg">
                     {patientResults.map(p => (
                       <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-50 last:border-0">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-blue-700">{p.full_name[0]}</span>
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 text-left border-b border-gray-50 last:border-0">
+                        <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-blue-700">{p.full_name.charAt(0)}</span>
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-gray-900">{p.full_name}</div>
+                          <div className="text-sm font-semibold">{p.full_name}</div>
                           <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.mobile}</div>
                         </div>
                       </button>
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-
-          {/* Step 2: Fee items */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">2. Fee Items</h2>
-
-            {/* Quick add from preset */}
-            <div className="mb-3">
-              <label className="label">Quick Add</label>
-              <select className="input"
-                onChange={e => {
-                  const found = getFeePresets().find(p => p.label === e.target.value)
-                  if (found) addPreset(found)
-                  e.target.value = ''
-                }}>
-                <option value="">+ Add from common fees list…</option>
-                {getFeePresets().map(p => (
-                  <option key={p.label} value={p.label}>
-                    {p.label}{p.amount > 0 ? ` — ₹${p.amount}` : ' — custom amount'}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Custom item */}
-            <div className="flex gap-2 mb-4 items-end">
-              <div className="flex-1">
-                <label className="label">Custom Description</label>
-                <input className="input" placeholder="e.g. Scanning charges, Lab test…"
-                  value={customLabel} onChange={e => setCustomLabel(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addCustom()}/>
-              </div>
-              <div className="w-36">
-                <label className="label">Amount (₹)</label>
-                <input className="input font-mono" type="number" min="0" placeholder="0"
-                  value={customAmt} onChange={e => setCustomAmt(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addCustom()}/>
-              </div>
-              <button onClick={addCustom} className="btn-secondary flex items-center gap-1 text-xs mb-0.5">
-                <Plus className="w-3.5 h-3.5"/> Add
-              </button>
-            </div>
-
-            {/* Items table */}
-            {billItems.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-5 border-2 border-dashed border-gray-100 rounded-lg">
-                No items yet. Use the dropdown or add a custom item above.
-              </p>
-            ) : (
-              <div>
-                <div className="space-y-1 mb-3">
-                  {billItems.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 hover:bg-gray-100 group">
-                      <span className="text-sm text-gray-800">{item.label}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-semibold text-gray-900">
-                          ₹{item.amount.toLocaleString('en-IN')}
-                        </span>
-                        <button onClick={() => removeItem(i)}
-                          className="text-gray-300 hover:text-red-500 group-hover:text-gray-400 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5"/>
-                        </button>
-                      </div>
+                {selPatient && (
+                  <div className="mt-2 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+                    <div>
+                      <span className="font-semibold text-blue-900">{selPatient.full_name}</span>
+                      <span className="text-xs text-gray-500 ml-2">{selPatient.mrn}</span>
                     </div>
+                    <button onClick={() => { setSelPatient(null); setPatientQuery('') }} className="text-gray-400 hover:text-red-500">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Services */}
+              <div className="card p-5">
+                <h2 className="section-title">2. Add Services</h2>
+                <div className="grid grid-cols-2 gap-2 mb-4 max-h-64 overflow-y-auto pr-1">
+                  {feePresets.map(p => (
+                    <button key={p.label} onClick={() => addPreset(p)}
+                      className="text-left px-3 py-2 text-xs rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all">
+                      <div className="font-medium text-gray-800">{p.label}</div>
+                      <div className="text-gray-500 font-mono">{p.amount > 0 ? inr(p.amount) : 'Custom ₹'}</div>
+                    </button>
                   ))}
                 </div>
-
-                {/* Totals */}
-                <div className="border-t border-gray-200 pt-3 space-y-2">
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Subtotal</span>
-                    <span className="font-mono">₹{subtotal.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">Discount (₹)</span>
-                    <input className="input w-32 font-mono text-sm py-1 text-right"
-                      type="number" min="0" max={subtotal} value={discount}
-                      onChange={e => setDiscount(Math.min(Number(e.target.value), subtotal))}/>
-                  </div>
-                  <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-2">
-                    <span>Net Amount</span>
-                    <span className="font-mono text-blue-700 text-lg">
-                      ₹{netAmount.toLocaleString('en-IN')}
-                    </span>
-                  </div>
+                <div className="flex gap-2 mt-2 pt-3 border-t border-gray-100">
+                  <input className="input flex-1 text-sm" placeholder="Custom service name"
+                    value={customLabel} onChange={e => setCustomLabel(e.target.value)} />
+                  <input className="input w-28 text-sm font-mono" placeholder="₹ amount" type="number" min="0"
+                    value={customAmt} onChange={e => setCustomAmt(e.target.value)} />
+                  <button onClick={addCustom} className="btn-secondary text-xs px-3">Add</button>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Right: bill summary */}
+            <div className="col-span-2 space-y-5">
+              <div className="card p-5 sticky top-20">
+                <h2 className="section-title">Bill Summary</h2>
+                {billItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic py-4 text-center">Add services from the left panel.</p>
+                ) : (
+                  <div className="space-y-1 mb-4 max-h-48 overflow-y-auto">
+                    {billItems.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 hover:bg-gray-100 group">
+                        <span className="text-sm text-gray-800">{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-semibold text-gray-900">{inr(item.amount)}</span>
+                          <button onClick={() => removeItem(i)} className="text-gray-300 hover:text-red-500 group-hover:text-gray-400 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {billItems.length > 0 && (
+                  <div className="border-t border-gray-200 pt-3 space-y-2">
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Subtotal</span>
+                      <span className="font-mono">{inr(subtotal)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Discount (₹)</span>
+                      <input className="input w-28 font-mono text-sm py-1 text-right" type="number" min="0" max={subtotal}
+                        value={discount} onChange={e => setDiscount(Math.min(Number(e.target.value), subtotal))} />
+                    </div>
+                    <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-2">
+                      <span>Net Amount</span>
+                      <span className="font-mono text-blue-700 text-lg">{inr(netAmount)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Step 3: Payment method */}
-          <div className="card p-5 mb-5">
+          <div className="card p-5 mb-5 mt-5">
             <h2 className="section-title">3. Payment Method</h2>
             <div className="grid grid-cols-3 gap-3 mb-4">
               {PAY_MODES.map(({ mode, icon: Icon, label, desc, activeClass, iconClass }) => (
                 <button key={mode} onClick={() => setPayMode(mode)}
                   className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-center
                     ${payMode === mode ? activeClass : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
-                  <Icon className={`w-6 h-6 ${payMode === mode ? iconClass : 'text-gray-400'}`}/>
+                  <Icon className={`w-6 h-6 ${payMode === mode ? iconClass : 'text-gray-400'}`} />
                   <div className="text-sm font-semibold text-gray-800">{label}</div>
                   <div className="text-xs text-gray-400 leading-tight">{desc}</div>
                 </button>
               ))}
             </div>
-
             {(payMode === 'upi' || payMode === 'card') && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800 mb-4">
-                <strong>Setup required:</strong> Add your Razorpay Key ID to <code className="bg-amber-100 px-1 rounded">NEXT_PUBLIC_RAZORPAY_KEY_ID</code> in <code className="bg-amber-100 px-1 rounded">.env.local</code> and restart the dev server.
-                Get your key from <strong>dashboard.razorpay.com → Settings → API Keys</strong>.
+                <strong>Setup required:</strong> Add your Razorpay Key ID to{' '}
+                <code className="bg-amber-100 px-1 rounded">NEXT_PUBLIC_RAZORPAY_KEY_ID</code> in{' '}
+                <code className="bg-amber-100 px-1 rounded">.env.local</code> and restart.
               </div>
             )}
-
             <div>
               <label className="label">Notes (optional)</label>
               <input className="input" placeholder="e.g. Partial payment, insurance, instalment…"
-                value={notes} onChange={e => setNotes(e.target.value)}/>
+                value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
 
@@ -6656,13 +6877,11 @@ export default function BillingPage() {
               disabled={paying || !selPatient || billItems.length === 0 || netAmount === 0}
               className="btn-primary flex items-center gap-2 px-8 disabled:opacity-60 text-base">
               {paying
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                : <IndianRupee className="w-5 h-5"/>}
-              {paying
-                ? 'Processing…'
-                : payMode === 'cash'
-                  ? `Collect ₹${netAmount.toLocaleString('en-IN')} Cash`
-                  : `Pay ₹${netAmount.toLocaleString('en-IN')} via ${payMode.toUpperCase()}`}
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <IndianRupee className="w-5 h-5" />}
+              {paying ? 'Processing…' : payMode === 'cash'
+                ? `Collect ${inr(netAmount)} Cash`
+                : `Pay ${inr(netAmount)} via ${payMode.toUpperCase()}`}
             </button>
           </div>
         </div>
@@ -6670,31 +6889,40 @@ export default function BillingPage() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────
-  // BILL LIST VIEW
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // BILL LIST VIEW (default)
+  // ─────────────────────────────────────────────────────────────
   return (
     <AppShell>
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <IndianRupee className="w-6 h-6 text-green-600"/> Billing & Payments
+              <IndianRupee className="w-6 h-6 text-green-600" /> Billing & Payments
             </h1>
             <p className="text-sm text-gray-500">Collect payments and generate receipts for patients.</p>
           </div>
-          <button onClick={() => { resetForm(); setView('new') }}
-            className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4"/> New Bill
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCAReport(v => !v)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all
+                ${showCAReport
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-50'}`}>
+              <Calculator className="w-4 h-4" />
+              CA Report
+              {showCAReport ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            <button onClick={() => { resetForm(); setView('new') }} className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4" /> New Bill
+            </button>
+          </div>
         </div>
 
         {/* Summary tiles */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="card p-5 bg-green-50">
-            <div className="text-3xl font-bold text-green-700 mb-1">
-              ₹{todayTotal.toLocaleString('en-IN')}
-            </div>
+            <div className="text-3xl font-bold text-green-700 mb-1">{inr(todayTotal)}</div>
             <div className="text-xs font-semibold text-gray-600">Collected Today</div>
             <div className="text-xs text-gray-400">{todayBills.length} bill{todayBills.length !== 1 ? 's' : ''}</div>
           </div>
@@ -6706,13 +6934,233 @@ export default function BillingPage() {
             <div className="text-xs text-gray-400">all statuses</div>
           </div>
           <div className="card p-5 bg-purple-50">
-            <div className="text-3xl font-bold text-purple-700 mb-1">
-              ₹{allTotal.toLocaleString('en-IN')}
-            </div>
+            <div className="text-3xl font-bold text-purple-700 mb-1">{inr(allTotal)}</div>
             <div className="text-xs font-semibold text-gray-600">Total Collected</div>
             <div className="text-xs text-gray-400">all time</div>
           </div>
         </div>
+
+        {/* ══════════════════════════════════════════════════════
+            CA REPORT PANEL (collapsible)
+        ══════════════════════════════════════════════════════ */}
+        {showCAReport && (
+          <div className="card p-6 mb-6 border-purple-200 bg-purple-50/40">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center">
+                <Calculator className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">CA Revenue Report</h2>
+                <p className="text-xs text-gray-500">
+                  Generate a financial summary and share it directly with your Chartered Accountant.
+                </p>
+              </div>
+            </div>
+
+            {/* Period selector */}
+            <div className="grid grid-cols-3 gap-3 mb-4 sm:grid-cols-6">
+              {([
+                ['this_month', 'This Month'],
+                ['last_month', 'Last Month'],
+                ['this_quarter', 'This Quarter'],
+                ['last_quarter', 'Last Quarter'],
+                ['this_year', 'This Year'],
+                ['custom', 'Custom Range'],
+              ] as [Period, string][]).map(([p, label]) => (
+                <button key={p} onClick={() => { setPeriod(p); setCAReport(null) }}
+                  className={`text-xs font-semibold py-2 px-3 rounded-lg border transition-all
+                    ${period === p
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300 hover:bg-purple-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom date inputs */}
+            {period === 'custom' && (
+              <div className="flex gap-3 mb-4 items-end">
+                <div>
+                  <label className="label">From Date</label>
+                  <input type="date" className="input"
+                    max={customTo || undefined}
+                    value={customFrom} onChange={e => { setCustomFrom(e.target.value); setCAReport(null) }} />
+                </div>
+                <div>
+                  <label className="label">To Date</label>
+                  <input type="date" className="input"
+                    min={customFrom || undefined}
+                    max={new Date().toISOString().split('T')[0]}
+                    value={customTo} onChange={e => { setCustomTo(e.target.value); setCAReport(null) }} />
+                </div>
+                {customFrom && customTo && (
+                  <p className="text-xs text-gray-400 pb-2">
+                    {Math.ceil((new Date(customTo).getTime() - new Date(customFrom).getTime()) / (1000 * 60 * 60 * 24))} days selected
+                  </p>
+                )}
+              </div>
+            )}
+
+            <button onClick={generateCAReport} disabled={caLoading || loadingBills}
+              className="btn-primary flex items-center gap-2 mb-5 disabled:opacity-60">
+              {caLoading
+                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <Calculator className="w-4 h-4" />}
+              {caLoading ? 'Generating...' : 'Generate Report'}
+            </button>
+
+            {/* ── CA settings warning ── */}
+            {!caSettings.caWhatsApp && !caSettings.caEmail && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  CA contact details not configured. Go to{' '}
+                  <Link href="/settings" className="underline font-semibold">Settings → CA Details</Link>
+                  {' '}to add your CA&apos;s WhatsApp number and email so you can share reports in one tap.
+                </span>
+              </div>
+            )}
+
+            {/* ── Report output ── */}
+            {caReport && (
+              <div className="bg-white border border-purple-200 rounded-xl p-5">
+
+                {/* Report header */}
+                <div className="text-center pb-4 mb-5 border-b-2 border-purple-100">
+                  <div className="text-lg font-bold text-gray-900">{hs.hospitalName || 'Clinic'}</div>
+                  <div className="text-sm text-gray-500">Revenue Report — {caReport.period}</div>
+                  <div className="text-xs text-gray-400">{caReport.fromDate} to {caReport.toDate}</div>
+                </div>
+
+                {/* Summary grid */}
+                <div className="grid grid-cols-2 gap-4 mb-5 sm:grid-cols-4">
+                  {[
+                    { label: 'Gross Revenue', value: inr(caReport.totalGross), color: 'text-gray-800' },
+                    { label: 'Total Discounts', value: inr(caReport.totalDiscount), color: 'text-orange-600' },
+                    { label: 'Net Collected', value: inr(caReport.totalNet), color: 'text-green-700 font-bold text-lg' },
+                    { label: 'Bills Paid', value: String(caReport.billCount), color: 'text-blue-700' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-4 py-3 text-center">
+                      <div className={`text-xl font-mono font-bold ${color}`}>{value}</div>
+                      <div className="text-xs text-gray-500 mt-1">{label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pending bills alert */}
+                {caReport.pendingCount > 0 && (
+                  <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 text-sm text-orange-800 flex items-center gap-2">
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    {caReport.pendingCount} pending bill{caReport.pendingCount > 1 ? 's' : ''} — {inr(caReport.pendingAmount)} not yet collected (not included in Net above)
+                  </div>
+                )}
+
+                {/* Zero bills warning */}
+                {caReport.billCount === 0 && (
+                  <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-500 text-center">
+                    No paid bills found for this period.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-5">
+                  {/* Payment mode breakdown */}
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Payment Mode Breakdown</h3>
+                    {caReport.paymentBreakdown.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No data</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {caReport.paymentBreakdown.map(m => (
+                          <div key={m.mode} className="flex items-center justify-between text-sm py-1 border-b border-gray-50">
+                            <span className="capitalize font-medium text-gray-700">
+                              {m.mode === 'cash' ? '💵' : m.mode === 'upi' ? '📱' : '💳'} {m.mode}
+                            </span>
+                            <div className="text-right">
+                              <div className="font-mono font-semibold text-gray-900">{inr(m.amount)}</div>
+                              <div className="text-xs text-gray-400">{m.count} bill{m.count > 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Service breakdown */}
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Top Services</h3>
+                    {caReport.serviceBreakdown.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No data</p>
+                    ) : (
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {caReport.serviceBreakdown.map(s => (
+                          <div key={s.label} className="flex items-center justify-between text-sm py-1 border-b border-gray-50">
+                            <span className="text-gray-700 truncate max-w-[160px]" title={s.label}>{s.label}</span>
+                            <div className="text-right flex-shrink-0 ml-2">
+                              <div className="font-mono font-semibold text-gray-900">{inr(s.amount)}</div>
+                              <div className="text-xs text-gray-400">×{s.count}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Share buttons */}
+                <div className="mt-5 pt-4 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Share with CA</p>
+                  <div className="flex flex-wrap gap-2">
+
+                    {/* WhatsApp share */}
+                    {caSettings.caWhatsApp ? (
+                      <a
+                        href={`https://wa.me/91${caSettings.caWhatsApp.replace(/\D/g, '')}?text=${buildWhatsAppMessage(caReport, { ...hs, caName: caSettings.caName })}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                        <MessageCircle className="w-4 h-4" />
+                        WhatsApp {caSettings.caName ? `— ${caSettings.caName}` : 'CA'}
+                      </a>
+                    ) : (
+                      <a
+                        href={`https://wa.me/?text=${buildWhatsAppMessage(caReport, { ...hs, caName: caSettings.caName })}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                        <MessageCircle className="w-4 h-4" />
+                        Share via WhatsApp
+                      </a>
+                    )}
+
+                    {/* Email share */}
+                    <a
+                      href={`mailto:${caSettings.caEmail || ''}?subject=${encodeURIComponent(`Revenue Report — ${caReport.period} | ${hs.hospitalName || 'Clinic'}`)}&body=${buildEmailBody(caReport, { ...hs, caName: caSettings.caName })}`}
+                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                      <Mail className="w-4 h-4" />
+                      {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
+                    </a>
+
+                    {/* Print */}
+                    <button onClick={() => window.print()}
+                      className="flex items-center gap-2 btn-secondary text-sm">
+                      <Printer className="w-4 h-4" />
+                      Print / Save PDF
+                    </button>
+
+                  </div>
+                  {(!caSettings.caWhatsApp || !caSettings.caEmail) && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      <Link href="/settings" className="underline text-blue-600">Configure CA contact details in Settings</Link>
+                      {' '}to pre-fill WhatsApp number and email automatically.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-3 text-xs text-gray-400 text-right">
+                  Generated {new Date().toLocaleString('en-IN')} · NexMedicon HMS
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4 items-center">
@@ -6720,20 +7168,16 @@ export default function BillingPage() {
           {(['all', 'paid', 'pending'] as const).map(s => (
             <button key={s} onClick={() => setFilterStatus(s)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full capitalize transition-all
-                ${filterStatus === s
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                ${filterStatus === s ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {s}
             </button>
           ))}
           <span className="text-xs text-gray-300 mx-1">|</span>
           <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Mode:</span>
-          {([['all','All'], ['cash','💵 Cash'], ['upi','📱 UPI'], ['card','💳 Card']] as const).map(([m,label]) => (
+          {([['all', 'All'], ['cash', '💵 Cash'], ['upi', '📱 UPI'], ['card', '💳 Card']] as const).map(([m, label]) => (
             <button key={m} onClick={() => setFilterMode(m as any)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all
-                ${filterMode === m
-                  ? 'bg-green-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                ${filterMode === m ? 'bg-green-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {label}
             </button>
           ))}
@@ -6742,18 +7186,16 @@ export default function BillingPage() {
         {/* Bill list */}
         {loadingBills ? (
           <div className="flex items-center justify-center h-40">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
-            <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30"/>
-            <p className="font-medium mb-1">
-              {bills.length === 0 ? 'No bills yet' : 'No bills match this filter'}
-            </p>
+            <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium mb-1">{bills.length === 0 ? 'No bills yet' : 'No bills match this filter'}</p>
             {bills.length === 0 && (
               <button onClick={() => { resetForm(); setView('new') }}
                 className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
-                <Plus className="w-3.5 h-3.5"/> Create First Bill
+                <Plus className="w-3.5 h-3.5" /> Create First Bill
               </button>
             )}
           </div>
@@ -6762,7 +7204,7 @@ export default function BillingPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date','Patient','Items','Amount','Mode','Status',''].map(h => (
+                  {['Date', 'Patient', 'Items', 'Amount', 'Mode', 'Status', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -6772,49 +7214,43 @@ export default function BillingPage() {
                   <tr key={bill.id}
                     className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
                     onClick={() => { setSelectedBill(bill); setView('receipt') }}>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {formatDate(bill.created_at)}
-                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(bill.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{bill.patient_name}</div>
                       <div className="text-xs text-gray-400">{bill.mrn}</div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
-                      {Array.isArray(bill.items)
-                        ? bill.items.map((i: any) => i.label).join(', ')
-                        : '—'}
+                      {Array.isArray(bill.items) ? bill.items.map((i: any) => i.label).join(', ') : '—'}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-gray-900 whitespace-nowrap">
-                      ₹{Number(bill.net_amount).toLocaleString('en-IN')}
+                      {inr(Number(bill.net_amount))}
                       {Number(bill.discount) > 0 && (
-                        <div className="text-xs text-gray-400 font-normal">
-                          -₹{Number(bill.discount).toLocaleString('en-IN')} disc.
-                        </div>
+                        <div className="text-xs text-gray-400 font-normal">-{inr(Number(bill.discount))} disc.</div>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize
-                        ${bill.payment_mode === 'cash'   ? 'bg-green-100 text-green-700'  :
-                          bill.payment_mode === 'upi'    ? 'bg-blue-100 text-blue-700'    :
-                          bill.payment_mode === 'card'   ? 'bg-purple-100 text-purple-700' :
-                                                           'bg-gray-100 text-gray-600'}`}>
+                        ${bill.payment_mode === 'cash' ? 'bg-green-100 text-green-700' :
+                          bill.payment_mode === 'upi' ? 'bg-blue-100 text-blue-700' :
+                            bill.payment_mode === 'card' ? 'bg-purple-100 text-purple-700' :
+                              'bg-gray-100 text-gray-600'}`}>
                         {bill.payment_mode || 'pending'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       {bill.status === 'paid' ? (
                         <span className="flex items-center gap-1 text-xs text-green-700 font-semibold">
-                          <CheckCircle className="w-3.5 h-3.5"/> Paid
+                          <CheckCircle className="w-3.5 h-3.5" /> Paid
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-xs text-orange-700 font-semibold">
-                          <Clock className="w-3.5 h-3.5"/> Pending
+                          <Clock className="w-3.5 h-3.5" /> Pending
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs text-blue-600 flex items-center gap-1">
-                        <Printer className="w-3 h-3"/> Receipt
+                        <Printer className="w-3 h-3" /> Receipt
                       </span>
                     </td>
                   </tr>
@@ -6833,13 +7269,10 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
   const items = Array.isArray(bill.items) ? bill.items : []
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
-      {/* Header */}
       <div className="text-center pb-4 mb-5 border-b-2 border-gray-800">
-        <div className="text-xl font-bold tracking-wide uppercase">
-          {hs.hospitalName || 'NexMedicon Hospital'}
-        </div>
+        <div className="text-xl font-bold tracking-wide uppercase">{hs.hospitalName || 'NexMedicon Hospital'}</div>
         {hs.address && <div className="text-sm text-gray-500">{hs.address}</div>}
-        {hs.phone   && <div className="text-sm text-gray-500">Tel: {hs.phone}</div>}
+        {hs.phone && <div className="text-sm text-gray-500">Tel: {hs.phone}</div>}
         {(hs.regNo || hs.gstin) && (
           <div className="text-xs text-gray-400">
             {hs.regNo && `Reg: ${hs.regNo}`}{hs.regNo && hs.gstin && ' · '}{hs.gstin && `GSTIN: ${hs.gstin}`}
@@ -6847,23 +7280,16 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
         )}
         <div className="text-lg font-bold mt-2 uppercase tracking-wider">Payment Receipt</div>
       </div>
-
-      {/* Patient + bill meta */}
       <div className="grid grid-cols-2 gap-4 mb-5 text-sm">
         <div className="space-y-1">
           <div><span className="font-semibold">Patient: </span>{bill.patient_name}</div>
           <div><span className="font-semibold">MRN: </span><span className="font-mono">{bill.mrn}</span></div>
         </div>
         <div className="space-y-1 text-right">
-          <div>
-            <span className="font-semibold">Receipt No: </span>
-            <span className="font-mono text-xs">{bill.id.slice(-10).toUpperCase()}</span>
-          </div>
+          <div><span className="font-semibold">Receipt No: </span><span className="font-mono text-xs">{bill.id.slice(-10).toUpperCase()}</span></div>
           <div><span className="font-semibold">Date: </span>{formatDate(bill.created_at)}</div>
         </div>
       </div>
-
-      {/* Items */}
       <table className="w-full text-sm mb-4">
         <thead>
           <tr className="border-b-2 border-gray-300">
@@ -6877,59 +7303,46 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
             <tr key={i} className="border-b border-gray-100">
               <td className="py-2 pr-4 text-gray-400">{i + 1}</td>
               <td className="py-2">{item.label}</td>
-              <td className="py-2 text-right font-mono">₹{Number(item.amount).toLocaleString('en-IN')}</td>
+              <td className="py-2 text-right font-mono">{inr(Number(item.amount))}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t border-gray-200">
             <td colSpan={2} className="py-2 text-right text-gray-500 pr-4">Subtotal</td>
-            <td className="py-2 text-right font-mono">₹{Number(bill.subtotal).toLocaleString('en-IN')}</td>
+            <td className="py-2 text-right font-mono">{inr(Number(bill.subtotal))}</td>
           </tr>
           {Number(bill.discount) > 0 && (
             <tr>
               <td colSpan={2} className="py-1 text-right text-gray-500 pr-4">Discount</td>
-              <td className="py-1 text-right font-mono text-green-700">
-                − ₹{Number(bill.discount).toLocaleString('en-IN')}
-              </td>
+              <td className="py-1 text-right font-mono text-green-700">− {inr(Number(bill.discount))}</td>
             </tr>
           )}
           <tr className="border-t-2 border-gray-800">
             <td colSpan={2} className="py-2 text-right font-bold text-base pr-4">Net Amount Paid</td>
-            <td className="py-2 text-right font-bold font-mono text-base">
-              ₹{Number(bill.net_amount).toLocaleString('en-IN')}
-            </td>
+            <td className="py-2 text-right font-bold font-mono text-base">{inr(Number(bill.net_amount))}</td>
           </tr>
         </tfoot>
       </table>
-
-      {/* Payment confirmation */}
       <div className="flex justify-between items-center border border-green-200 rounded-lg px-4 py-3 mb-4 bg-green-50">
         <div className="flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600"/>
+          <CheckCircle className="w-5 h-5 text-green-600" />
           <span className="font-semibold text-green-800">Payment Received</span>
         </div>
         <div className="text-sm text-gray-600">
           Mode: <strong className="capitalize">{bill.payment_mode}</strong>
           {bill.razorpay_payment_id && (
-            <span className="ml-2 text-xs text-gray-400 font-mono">
-              Ref: {bill.razorpay_payment_id}
-            </span>
+            <span className="ml-2 text-xs text-gray-400 font-mono">Ref: {bill.razorpay_payment_id}</span>
           )}
         </div>
       </div>
-
-      {bill.notes && (
-        <div className="text-xs text-gray-500 mb-3">Notes: {bill.notes}</div>
-      )}
-
+      {bill.notes && <div className="text-xs text-gray-500 mb-3">Notes: {bill.notes}</div>}
       <div className="text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
         Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
       </div>
     </div>
   )
 }
-
 ```
 
 # src\app\dashboard\page.tsx
@@ -10560,7 +10973,7 @@ import AppShell from '@/components/layout/AppShell'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
-import type { Encounter } from '@/types'
+import type { Encounter, OBData } from '@/types'
 import { ArrowLeft, Pill, Printer, Edit } from 'lucide-react'
 
 export default function EncounterDetailPage() {
@@ -10591,18 +11004,39 @@ export default function EncounterDetailPage() {
     <AppShell><div className="p-6 text-center py-20 text-gray-400">Encounter not found.</div></AppShell>
   )
 
-  const ob = encounter.ob_data || {}
+  // ── Properly typed ob — avoids all TypeScript errors downstream ──
+  const ob: OBData = (encounter.ob_data as OBData) || {}
   const p = encounter.patients as any
+
+  // ── Safe numeric guards for AFI thresholds ──────────────────────
+  const afiVal        = typeof ob.afi === 'number' ? ob.afi : null
+  const afiLow        = afiVal !== null && afiVal < 5
+  const afiHigh       = afiVal !== null && afiVal > 25
+  const afiHighlight  = afiLow || afiHigh
+  const afiSuffix     = afiLow ? ' ⚠️ LOW' : afiHigh ? ' ⚠️ HIGH' : ''
+
+  // ── Safe string guards for placenta highlight ────────────────────
+  const placentaHighlight =
+    ob.placenta === 'Previa' || ob.placenta === 'Low-lying'
 
   return (
     <AppShell>
       <div className="p-6 max-w-4xl mx-auto">
+
         {/* Header */}
         <div className="flex items-center gap-3 mb-5">
-          <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
+          <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Consultation — {formatDate(encounter.encounter_date)}</h1>
-            {p && <p className="text-sm text-gray-500">{p.full_name} · {p.mrn} · {p.age}y</p>}
+            <h1 className="text-xl font-bold text-gray-900">
+              Consultation — {formatDate(encounter.encounter_date)}
+            </h1>
+            {p && (
+              <p className="text-sm text-gray-500">
+                {p.full_name} · {p.mrn} · {p.age}y
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <Link href={`/opd/${id}/edit`} className="btn-secondary flex items-center gap-2 text-xs">
@@ -10625,14 +11059,16 @@ export default function EncounterDetailPage() {
         <div className="card p-5 mb-4">
           <h2 className="section-title">Vital Signs</h2>
           <div className="flex gap-3 flex-wrap">
-            {encounter.pulse       && <Vital label="Pulse"       value={`${encounter.pulse} bpm`} />}
-            {encounter.bp_systolic && <Vital label="BP"          value={`${encounter.bp_systolic}/${encounter.bp_diastolic} mmHg`} />}
-            {encounter.temperature && <Vital label="Temp"        value={`${encounter.temperature}°C`} />}
-            {encounter.spo2        && <Vital label="SpO₂"        value={`${encounter.spo2}%`} />}
-            {encounter.weight      && <Vital label="Weight"      value={`${encounter.weight} kg`} />}
-            {encounter.height      && <Vital label="Height"      value={`${encounter.height} cm`} />}
+            {encounter.pulse       && <Vital label="Pulse"  value={`${encounter.pulse} bpm`} />}
+            {encounter.bp_systolic && <Vital label="BP"     value={`${encounter.bp_systolic}/${encounter.bp_diastolic} mmHg`} />}
+            {encounter.temperature && <Vital label="Temp"   value={`${encounter.temperature}°C`} />}
+            {encounter.spo2        && <Vital label="SpO₂"   value={`${encounter.spo2}%`} />}
+            {encounter.weight      && <Vital label="Weight" value={`${encounter.weight} kg`} />}
+            {encounter.height      && <Vital label="Height" value={`${encounter.height} cm`} />}
           </div>
-          {!encounter.pulse && !encounter.bp_systolic && <p className="text-sm text-gray-400">No vitals recorded.</p>}
+          {!encounter.pulse && !encounter.bp_systolic && (
+            <p className="text-sm text-gray-400">No vitals recorded.</p>
+          )}
         </div>
 
         {/* Consultation */}
@@ -10640,40 +11076,63 @@ export default function EncounterDetailPage() {
           <h2 className="section-title">Consultation</h2>
           {encounter.chief_complaint && <InfoRow label="Chief Complaint" value={encounter.chief_complaint} />}
           {encounter.diagnosis       && <InfoRow label="Diagnosis"       value={encounter.diagnosis} highlight />}
-          {encounter.notes           && <InfoRow label="Clinical Notes"   value={encounter.notes} />}
+          {encounter.notes           && <InfoRow label="Clinical Notes"  value={encounter.notes} />}
         </div>
 
         {/* OB/GYN */}
         {ob && Object.keys(ob).some(k => (ob as any)[k]) && (
           <div className="card p-5 mb-4">
             <h2 className="section-title">Gynecology / OB Examination</h2>
+
+            {/* ── Menstrual History ── */}
+            {(ob.menstrual_regularity || ob.menstrual_flow || ob.post_menstrual_days || ob.post_menstrual_pain || ob.urine_pregnancy_result) && (
+              <div className="mb-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">🩸 Menstrual History</h3>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                  {ob.menstrual_regularity   && <InfoRow label="Regularity"         value={ob.menstrual_regularity} />}
+                  {ob.menstrual_flow         && <InfoRow label="Flow"               value={ob.menstrual_flow} />}
+                  {ob.post_menstrual_days    && <InfoRow label="Post-Menstrual Spotting" value={`${ob.post_menstrual_days} days`} />}
+                  {ob.post_menstrual_pain    && <InfoRow label="Post-Menstrual Pain" value={ob.post_menstrual_pain} />}
+                  {ob.urine_pregnancy_result && <InfoRow label="Urine Pregnancy Test" value={ob.urine_pregnancy_result} />}
+                </div>
+              </div>
+            )}
+
+            {/* ── Obstetric History ── */}
             <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-              {ob.lmp         && <InfoRow label="LMP"          value={formatDate(ob.lmp)} />}
-              {ob.edd         && <InfoRow label="EDD"          value={formatDate(ob.edd)} />}
-              {ob.gestational_age && <InfoRow label="Gestational Age" value={ob.gestational_age} />}
-              {(ob.gravida !== undefined) && <InfoRow label="Gravida/Para" value={`G${ob.gravida} P${ob.para} A${ob.abortion} L${ob.living}`} />}
-              {ob.fhs         && <InfoRow label="FHS"          value={`${ob.fhs} bpm`} />}
-              {ob.liquor      && <InfoRow label="Liquor"       value={ob.liquor} />}
-              {ob.fundal_height && <InfoRow label="Fundal Height" value={`${ob.fundal_height} cm`} />}
-              {ob.presentation && <InfoRow label="Presentation" value={ob.presentation} />}
-              {ob.engagement  && <InfoRow label="Engagement"   value={ob.engagement} />}
-              {ob.uterus_size && <InfoRow label="Uterus Size"  value={ob.uterus_size} />}
-              {ob.scar_tenderness && <InfoRow label="Scar Tenderness" value={ob.scar_tenderness} />}
-              {ob.fetal_movement  && <InfoRow label="Fetal Movement"  value={ob.fetal_movement} />}
-              {ob.previous_cs     && <InfoRow label="Previous CS"     value={`${ob.previous_cs} CS`} />}
+              {ob.lmp              && <InfoRow label="LMP"             value={formatDate(ob.lmp)} />}
+              {ob.edd              && <InfoRow label="EDD"             value={formatDate(ob.edd)} />}
+              {ob.gestational_age  && <InfoRow label="Gestational Age" value={ob.gestational_age} />}
+              {ob.gravida !== undefined && (
+                <InfoRow
+                  label="Gravida/Para"
+                  value={`G${ob.gravida} P${ob.para} A${ob.abortion} L${ob.living}`}
+                />
+              )}
+              {ob.fhs              && <InfoRow label="FHS"             value={`${ob.fhs} bpm`} />}
+              {ob.liquor           && <InfoRow label="Liquor"          value={ob.liquor} />}
+              {ob.fundal_height    && <InfoRow label="Fundal Height"   value={`${ob.fundal_height} cm`} />}
+              {ob.presentation     && <InfoRow label="Presentation"    value={ob.presentation} />}
+              {ob.engagement       && <InfoRow label="Engagement"      value={ob.engagement} />}
+              {ob.uterus_size      && <InfoRow label="Uterus Size"     value={ob.uterus_size} />}
+              {ob.scar_tenderness  && <InfoRow label="Scar Tenderness" value={ob.scar_tenderness} />}
+              {ob.fetal_movement   && <InfoRow label="Fetal Movement"  value={ob.fetal_movement} />}
+              {ob.previous_cs      && <InfoRow label="Previous CS"     value={`${ob.previous_cs} CS`} />}
               {ob.multiple_pregnancy && <InfoRow label="Multiple Pregnancy" value="Twins / Multiple" />}
-              {ob.gestational_diabetes && <InfoRow label="GDM" value="Yes" />}
-              {ob.haemoglobin     && <InfoRow label="Haemoglobin"     value={`${ob.haemoglobin} g/dL`} />}
+              {ob.gestational_diabetes && <InfoRow label="GDM"         value="Yes" />}
+              {ob.haemoglobin      && <InfoRow label="Haemoglobin"     value={`${ob.haemoglobin} g/dL`} />}
               {ob.blood_sugar_fasting && <InfoRow label="Fasting Sugar" value={`${ob.blood_sugar_fasting} mg/dL`} />}
-              {ob.blood_sugar_pp  && <InfoRow label="PP Sugar"        value={`${ob.blood_sugar_pp} mg/dL`} />}
-              {ob.cervix_speculum && <InfoRow label="Cervix (Speculum)" value={ob.cervix_speculum} />}
-              {ob.cervix_pv  && <InfoRow label="Cervix (PV)"  value={ob.cervix_pv} />}
-              {ob.os_pv      && <InfoRow label="Os"            value={ob.os_pv} />}
-              {ob.uterus_position && <InfoRow label="Uterus Position" value={ob.uterus_position} />}
+              {ob.blood_sugar_pp   && <InfoRow label="PP Sugar"        value={`${ob.blood_sugar_pp} mg/dL`} />}
+              {ob.cervix_speculum  && <InfoRow label="Cervix (Speculum)" value={ob.cervix_speculum} />}
+              {ob.cervix_pv        && <InfoRow label="Cervix (PV)"    value={ob.cervix_pv} />}
+              {ob.os_pv            && <InfoRow label="Os"             value={ob.os_pv} />}
+              {ob.uterus_position  && <InfoRow label="Uterus Position" value={ob.uterus_position} />}
             </div>
+
             {ob.per_abdomen  && <InfoRow label="Per Abdomen"  value={ob.per_abdomen} />}
             {ob.per_speculum && <InfoRow label="Per Speculum" value={ob.per_speculum} />}
             {ob.per_vaginum  && <InfoRow label="Per Vaginum"  value={ob.per_vaginum} />}
+
             {(ob.right_ovary || ob.left_ovary) && (
               <div className="mt-2 grid grid-cols-2 gap-4">
                 {ob.right_ovary && <InfoRow label="Right Ovary" value={ob.right_ovary} />}
@@ -10681,22 +11140,119 @@ export default function EncounterDetailPage() {
               </div>
             )}
 
-            {/* USG / Ultrasound Report */}
+            {/* ── Per-pregnancy obstetric history table ── */}
+            {ob.obstetric_history && ob.obstetric_history.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">🤰 Pregnancy-wise History</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        {['#', 'Type', 'Mode', 'Outcome', 'Gender', 'Child Age'].map(h => (
+                          <th key={h} className="border border-gray-200 px-2 py-1 text-left font-semibold text-gray-600">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ob.obstetric_history.map((entry, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="border border-gray-200 px-2 py-1 font-semibold">{entry.pregnancy_no}</td>
+                          <td className="border border-gray-200 px-2 py-1">{entry.type || '—'}</td>
+                          <td className="border border-gray-200 px-2 py-1">{entry.delivery_mode || '—'}</td>
+                          <td className="border border-gray-200 px-2 py-1">
+                            <span className={entry.outcome === 'Expired' ? 'text-red-600 font-semibold' : ''}>
+                              {entry.outcome || '—'}
+                            </span>
+                          </td>
+                          <td className="border border-gray-200 px-2 py-1">{entry.baby_gender || '—'}</td>
+                          <td className="border border-gray-200 px-2 py-1">{entry.age_of_child || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── Abortion details ── */}
+            {ob.abortion_entries && ob.abortion_entries.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Abortion Details</h3>
+                <div className="space-y-1">
+                  {ob.abortion_entries.map((entry, idx) => (
+                    <div key={idx} className="text-sm text-gray-700 flex flex-wrap gap-3">
+                      {entry.type      && <span><span className="text-gray-400 text-xs uppercase font-semibold">Type:</span> {entry.type}</span>}
+                      {entry.weeks     && <span><span className="text-gray-400 text-xs uppercase font-semibold">At:</span> {entry.weeks} wks</span>}
+                      {entry.method    && <span><span className="text-gray-400 text-xs uppercase font-semibold">Method:</span> {entry.method}</span>}
+                      {entry.years_ago && <span><span className="text-gray-400 text-xs uppercase font-semibold">Years ago:</span> {entry.years_ago}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── USG / Ultrasound Report ── */}
             {(ob.bpd || ob.hc || ob.ac || ob.fl || ob.afi || ob.efw || ob.placenta || ob.usg_remarks) && (
               <div className="mt-4 pt-4 border-t border-gray-100">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">📊 USG Report {ob.usg_date ? `(${new Date(ob.usg_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})})` : ''}</h3>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+                  📊 USG Report{' '}
+                  {ob.usg_date
+                    ? `(${new Date(ob.usg_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})`
+                    : ''}
+                </h3>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-                  {ob.usg_ga   && <InfoRow label="GA at USG"  value={ob.usg_ga} />}
-                  {ob.efw      && <InfoRow label="EFW"        value={`${ob.efw} g (${(ob.efw/1000).toFixed(2)} kg)`} />}
-                  {ob.bpd      && <InfoRow label="BPD"        value={`${ob.bpd} mm`} />}
-                  {ob.hc       && <InfoRow label="HC"         value={`${ob.hc} mm`} />}
-                  {ob.ac       && <InfoRow label="AC"         value={`${ob.ac} mm`} />}
-                  {ob.fl       && <InfoRow label="FL"         value={`${ob.fl} mm`} />}
-                  {ob.afi      && <InfoRow label="AFI"        value={`${ob.afi} cm${ob.afi < 5 ? ' ⚠️ LOW' : ob.afi > 25 ? ' ⚠️ HIGH' : ''}`} highlight={ob.afi < 5 || ob.afi > 25} />}
-                  {ob.placenta && <InfoRow label="Placenta"   value={`${ob.placenta}${ob.placenta_grade ? ` · ${ob.placenta_grade}` : ''}`} highlight={ob.placenta === 'Previa' || ob.placenta === 'Low-lying'} />}
-                  {ob.cord_loops && <InfoRow label="Cord"     value={ob.cord_loops} />}
+                  {ob.usg_ga && <InfoRow label="GA at USG" value={ob.usg_ga} />}
+                  {ob.efw    && <InfoRow label="EFW" value={`${ob.efw} g (${(ob.efw / 1000).toFixed(2)} kg)`} />}
+                  {ob.bpd    && <InfoRow label="BPD" value={`${ob.bpd} mm`} />}
+                  {ob.hc     && <InfoRow label="HC"  value={`${ob.hc} mm`} />}
+                  {ob.ac     && <InfoRow label="AC"  value={`${ob.ac} mm`} />}
+                  {ob.fl     && <InfoRow label="FL"  value={`${ob.fl} mm`} />}
+                  {afiVal !== null && (
+                    <InfoRow
+                      label="AFI"
+                      value={`${afiVal} cm${afiSuffix}`}
+                      highlight={afiHighlight}
+                    />
+                  )}
+                  {ob.placenta && (
+                    <InfoRow
+                      label="Placenta"
+                      value={`${ob.placenta}${ob.placenta_grade ? ` · ${ob.placenta_grade}` : ''}`}
+                      highlight={placentaHighlight}
+                    />
+                  )}
+                  {ob.cord_loops && <InfoRow label="Cord" value={ob.cord_loops} />}
                 </div>
                 {ob.usg_remarks && <InfoRow label="USG Remarks" value={ob.usg_remarks} />}
+              </div>
+            )}
+
+            {/* ── Past Medical & Surgical History ── */}
+            {(ob.past_diabetes || ob.past_hypertension || ob.past_thyroid || ob.past_surgery) && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">📋 Past Medical & Surgical History</h3>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {ob.past_diabetes    && <span className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full font-medium">Diabetic</span>}
+                  {ob.past_hypertension && <span className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-medium">Hypertension / BP</span>}
+                  {ob.past_thyroid     && <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-medium">Thyroid Disorder</span>}
+                  {ob.past_surgery     && <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-medium">Previous Surgery</span>}
+                </div>
+                {ob.past_surgery && ob.past_surgery_detail && (
+                  <InfoRow label="Surgery Details" value={ob.past_surgery_detail} />
+                )}
+              </div>
+            )}
+
+            {/* ── Socioeconomic / CA Data ── */}
+            {(ob.income || ob.expenditure) && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">💰 Socioeconomic Information</h3>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                  {ob.income      && <InfoRow label="Monthly Income"      value={`₹${ob.income}`} />}
+                  {ob.expenditure && <InfoRow label="Monthly Expenditure" value={`₹${ob.expenditure}`} />}
+                </div>
               </div>
             )}
           </div>
@@ -10711,14 +11267,20 @@ export default function EncounterDetailPage() {
                 <div key={i} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-bold text-gray-900 text-sm">{proc.name}</span>
-                    {proc.anaesthesia && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{proc.anaesthesia}</span>}
-                    {proc.surgeon && <span className="text-xs text-gray-500">by {proc.surgeon}</span>}
+                    {proc.anaesthesia && (
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                        {proc.anaesthesia}
+                      </span>
+                    )}
+                    {proc.surgeon && (
+                      <span className="text-xs text-gray-500">by {proc.surgeon}</span>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                    {proc.indication && <InfoRow label="Indication" value={proc.indication} />}
-                    {proc.findings && <InfoRow label="Findings" value={proc.findings} />}
+                    {proc.indication   && <InfoRow label="Indication"   value={proc.indication} />}
+                    {proc.findings     && <InfoRow label="Findings"     value={proc.findings} />}
                     {proc.complications && <InfoRow label="Complications" value={proc.complications} />}
-                    {proc.notes && <InfoRow label="Notes" value={proc.notes} />}
+                    {proc.notes        && <InfoRow label="Notes"        value={proc.notes} />}
                   </div>
                 </div>
               ))}
@@ -10739,21 +11301,29 @@ export default function EncounterDetailPage() {
           <div className="card p-5">
             <div className="flex justify-between items-center mb-3">
               <h2 className="section-title mb-0">Prescription</h2>
-              <Link href={`/opd/${id}/prescription`} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              <Link
+                href={`/opd/${id}/prescription`}
+                className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+              >
                 <Printer className="w-3 h-3" /> Print
               </Link>
             </div>
             <div className="space-y-1">
-              {Array.isArray(prescription.medications) && prescription.medications.map((m: any, i: number) => (
-                <div key={i} className="flex gap-3 text-sm py-1 border-b border-gray-50">
-                  <span className="text-gray-400 w-5 font-mono">{i+1}.</span>
-                  <div>
-                    <span className="font-semibold text-gray-900">{m.drug}</span>
-                    <span className="text-gray-500"> — {m.dose} · {m.route} · {m.frequency} · {m.duration}</span>
-                    {m.instructions && <span className="text-xs text-blue-600 ml-1">({m.instructions})</span>}
+              {Array.isArray(prescription.medications) &&
+                prescription.medications.map((m: any, i: number) => (
+                  <div key={i} className="flex gap-3 text-sm py-1 border-b border-gray-50">
+                    <span className="text-gray-400 w-5 font-mono">{i + 1}.</span>
+                    <div>
+                      <span className="font-semibold text-gray-900">{m.drug}</span>
+                      <span className="text-gray-500">
+                        {' '}— {m.dose} · {m.route} · {m.frequency} · {m.duration}
+                      </span>
+                      {m.instructions && (
+                        <span className="text-xs text-blue-600 ml-1">({m.instructions})</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
             {prescription.follow_up_date && (
               <div className="mt-3 text-sm text-green-700 font-medium">
@@ -10762,6 +11332,7 @@ export default function EncounterDetailPage() {
             )}
           </div>
         )}
+
       </div>
     </AppShell>
   )
@@ -10784,7 +11355,6 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
     </div>
   )
 }
-
 ```
 
 # src\app\opd\[id]\prescription\page.tsx
@@ -11242,7 +11812,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
-import type { Patient, OBData, Procedure } from '@/types'
+import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine } from 'lucide-react'
 
@@ -11263,6 +11833,13 @@ const EMPTY_VITALS: Vitals = {
 type VitalsHL  = Partial<Record<keyof Vitals, boolean>>
 type OBHL      = Partial<Record<keyof OBData, boolean>>
 interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean }
+
+// ── Ordinal suffix helper ─────────────────────────────────────
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return String(n) + (s[(v - 20) % 10] || s[v] || s[0])
+}
 
 export default function NewConsultationPage() {
   const router       = useRouter()
@@ -11411,7 +11988,7 @@ export default function NewConsultationPage() {
       // Helper to set and flag
       const applyOB = (k: keyof OBData, val: any) => {
         if (val !== undefined && val !== null && val !== '') {
-          setO(k, typeof val === 'string' ? val : String(val))
+          setO(k, typeof val === 'string' ? val : val)
           ;(obHL_ as any)[k] = true
         }
       }
@@ -11439,6 +12016,21 @@ export default function NewConsultationPage() {
       applyOB('per_vaginum',      o.per_vaginum)
       applyOB('right_ovary',      o.right_ovary)
       applyOB('left_ovary',       o.left_ovary)
+      // ── New fields ──────────────────────────────────────────
+      applyOB('menstrual_regularity',   o.menstrual_regularity)
+      applyOB('menstrual_flow',         o.menstrual_flow)
+      applyOB('post_menstrual_days',    o.post_menstrual_days)
+      applyOB('post_menstrual_pain',    o.post_menstrual_pain)
+      applyOB('urine_pregnancy_result', o.urine_pregnancy_result)
+      applyOB('obstetric_history',      o.obstetric_history)
+      applyOB('abortion_entries',       o.abortion_entries)
+      applyOB('past_diabetes',          o.past_diabetes)
+      applyOB('past_hypertension',      o.past_hypertension)
+      applyOB('past_thyroid',           o.past_thyroid)
+      applyOB('past_surgery',           o.past_surgery)
+      applyOB('past_surgery_detail',    o.past_surgery_detail)
+      applyOB('income',                 o.income)
+      applyOB('expenditure',            o.expenditure)
     }
 
     flashHL(setVHL,  vitalsHL)
@@ -11879,6 +12471,59 @@ export default function NewConsultationPage() {
         {tab === 'obgyn' && (
           <div className="space-y-5">
 
+            {/* ── MENSTRUAL HISTORY (NEW) ──────────────────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Menstrual History</h2>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <label className="label">Cycle Regularity</label>
+                  <select className="input bg-white"
+                    value={ob.menstrual_regularity || ''}
+                    onChange={e => setO('menstrual_regularity', e.target.value)}>
+                    <option value="">Select</option>
+                    <option>Regular</option>
+                    <option>Irregular</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Flow</label>
+                  <select className="input bg-white"
+                    value={ob.menstrual_flow || ''}
+                    onChange={e => setO('menstrual_flow', e.target.value)}>
+                    <option value="">Select</option>
+                    <option>Scanty</option>
+                    <option>Normal</option>
+                    <option>Heavy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Post-Menstrual Spotting (days)</label>
+                  <input className="input" type="number" min="0" max="30"
+                    placeholder="e.g. 2"
+                    value={ob.post_menstrual_days || ''}
+                    onChange={e => setO('post_menstrual_days', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Post-Menstrual Pain</label>
+                  <select className="input bg-white"
+                    value={ob.post_menstrual_pain || ''}
+                    onChange={e => setO('post_menstrual_pain', e.target.value)}>
+                    <option value="">None / Not reported</option>
+                    <option>Mild</option>
+                    <option>Moderate</option>
+                    <option>Severe</option>
+                  </select>
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <label className="label">Urine Pregnancy Test Result (~3 months)</label>
+                  <input className="input"
+                    placeholder="e.g. Positive, Negative, Not done"
+                    value={ob.urine_pregnancy_result || ''}
+                    onChange={e => setO('urine_pregnancy_result', e.target.value)} />
+                </div>
+              </div>
+            </div>
+
             {/* A — Obstetric History */}
             <div className="card p-5">
               <h2 className="section-title">A. Obstetric History</h2>
@@ -11908,7 +12553,195 @@ export default function NewConsultationPage() {
                   </div>
                 ))}
               </div>
+
+              {/* ── Per-pregnancy details table (NEW) ── */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="label mb-0 text-gray-700">Pregnancy-wise Details</label>
+                  <button type="button"
+                    className="text-xs btn-secondary py-1 px-3"
+                    onClick={() => {
+                      const current = ob.obstetric_history || []
+                      setO('obstetric_history', [
+                        ...current,
+                        { pregnancy_no: current.length + 1, type: '', delivery_mode: '', outcome: '', baby_gender: '', age_of_child: '' } as ObstetricEntry,
+                      ])
+                    }}>
+                    + Add Row
+                  </button>
+                </div>
+
+                {(!ob.obstetric_history || ob.obstetric_history.length === 0) ? (
+                  <p className="text-xs text-gray-400 italic">Click "+ Add Row" to enter details of each past pregnancy.</p>
+                ) : (
+                  <>
+                    {/* Column headers */}
+                    <div className="hidden sm:grid grid-cols-7 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-1">
+                      <span>#</span>
+                      <span>Type</span>
+                      <span>Mode</span>
+                      <span>Outcome</span>
+                      <span>Gender</span>
+                      <span>Child Age</span>
+                      <span></span>
+                    </div>
+                    {(ob.obstetric_history || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-7 gap-2 items-center border border-gray-200 rounded-lg px-3 py-2 mb-2 bg-gray-50 text-sm">
+                        <span className="font-semibold text-gray-600 text-xs">{ordinal(idx + 1)}</span>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.type || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], type: e.target.value as ObstetricEntry['type'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Full Term</option>
+                          <option>Preterm</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.delivery_mode || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], delivery_mode: e.target.value as ObstetricEntry['delivery_mode'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Normal</option>
+                          <option>CS</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.outcome || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], outcome: e.target.value as ObstetricEntry['outcome'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option>Live</option>
+                          <option>Expired</option>
+                        </select>
+                        <select className="input text-xs bg-white col-span-1"
+                          value={entry.baby_gender || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], baby_gender: e.target.value as ObstetricEntry['baby_gender'] }
+                            setO('obstetric_history', updated)
+                          }}>
+                          <option value="">—</option>
+                          <option value="M">Male</option>
+                          <option value="F">Female</option>
+                        </select>
+                        <input className="input text-xs col-span-1"
+                          placeholder="e.g. 3 yrs"
+                          value={entry.age_of_child || ''}
+                          onChange={e => {
+                            const updated = [...(ob.obstetric_history || [])]
+                            updated[idx] = { ...updated[idx], age_of_child: e.target.value }
+                            setO('obstetric_history', updated)
+                          }} />
+                        <button type="button"
+                          onClick={() => {
+                            const updated = (ob.obstetric_history || []).filter((_, i) => i !== idx)
+                            setO('obstetric_history', updated)
+                          }}
+                          className="text-red-400 hover:text-red-600 text-center text-xs font-bold">
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* ── ABORTION DETAILS (NEW) — shown only when abortion > 0 ── */}
+            {(ob.abortion ?? 0) > 0 && (
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="section-title mb-0">Abortion Details</h2>
+                  <button type="button"
+                    className="text-xs btn-secondary py-1 px-3"
+                    onClick={() => {
+                      setO('abortion_entries', [
+                        ...(ob.abortion_entries || []),
+                        { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
+                      ])
+                    }}>
+                    + Add Entry
+                  </button>
+                </div>
+
+                {(!ob.abortion_entries || ob.abortion_entries.length === 0) ? (
+                  <p className="text-xs text-gray-400 italic">Click "+ Add Entry" to record abortion details.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(ob.abortion_entries || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-4 gap-3 border border-gray-200 rounded-lg p-3 bg-gray-50 relative">
+                        <button type="button"
+                          className="absolute top-2 right-2 text-red-400 hover:text-red-600 text-xs font-bold"
+                          onClick={() => {
+                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
+                            setO('abortion_entries', updated)
+                          }}>✕</button>
+                        <div>
+                          <label className="label">Type</label>
+                          <select className="input bg-white"
+                            value={entry.type || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select</option>
+                            <option>Spontaneous</option>
+                            <option>Induced</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">At Weeks (gestation)</label>
+                          <input className="input" type="number" min="4" max="28"
+                            placeholder="e.g. 8"
+                            value={entry.weeks || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], weeks: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                        </div>
+                        <div>
+                          <label className="label">Method</label>
+                          <select className="input bg-white"
+                            value={entry.method || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select</option>
+                            <option>Medicines</option>
+                            <option>Surgery</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">How Many Years Ago</label>
+                          <input className="input" type="number" min="0" max="50"
+                            placeholder="e.g. 2"
+                            value={entry.years_ago || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* B — ANC */}
             <div className="card p-5">
@@ -11974,7 +12807,7 @@ export default function NewConsultationPage() {
                   </select>
                 </div>
 
-                {/* ── New Clinical Risk Fields ── */}
+                {/* ── Clinical Risk Fields ── */}
                 <div>
                   <label className="label">Previous CS</label>
                   <select className={oc('previous_cs')} value={ob.previous_cs ?? ''} onChange={e=>setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
@@ -12113,9 +12946,9 @@ export default function NewConsultationPage() {
               </div>
             </div>
 
-            {/* F — USG / Ultrasound Report */}
+            {/* G — USG / Ultrasound Report */}
             <div className="card p-5">
-              <h2 className="section-title">F. USG / Ultrasound Report</h2>
+              <h2 className="section-title">G. USG / Ultrasound Report</h2>
               <p className="text-xs text-gray-400 mb-3">Enter structured USG findings. These are tracked across visits for trend analysis.</p>
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -12194,6 +13027,82 @@ export default function NewConsultationPage() {
               </div>
             </div>
 
+            {/* ── PAST MEDICAL & SURGICAL HISTORY (NEW) ──────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Past Medical & Surgical History</h2>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="label mb-3">Conditions (tick all that apply)</label>
+                  <div className="flex flex-col gap-3 mt-1">
+                    {(
+                      [
+                        { key: 'past_diabetes',     label: 'Diabetic'          },
+                        { key: 'past_hypertension', label: 'Hypertension / BP' },
+                        { key: 'past_thyroid',      label: 'Thyroid Disorder'  },
+                      ] as Array<{ key: keyof OBData; label: string }>
+                    ).map(({ key, label }) => (
+                      <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!!(ob as any)[key]}
+                          onChange={e => setO(key, e.target.checked)}
+                          className="w-4 h-4 rounded accent-blue-600"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none mb-2">
+                    <input
+                      type="checkbox"
+                      checked={!!ob.past_surgery}
+                      onChange={e => setO('past_surgery', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                    Previous Surgery
+                  </label>
+                  {ob.past_surgery && (
+                    <textarea
+                      className="input resize-none mt-1"
+                      rows={3}
+                      placeholder="Describe: type of surgery, year, hospital..."
+                      value={ob.past_surgery_detail || ''}
+                      onChange={e => setO('past_surgery_detail', e.target.value)}
+                    />
+                  )}
+                  {!ob.past_surgery && (
+                    <p className="text-xs text-gray-400 mt-1 italic">Tick the checkbox above to add surgery details.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── SOCIOECONOMIC / CA DATA (NEW) ──────────────────── */}
+            <div className="card p-5">
+              <h2 className="section-title">Socioeconomic Information</h2>
+              <p className="text-xs text-gray-400 mb-4">
+                Optional — used for BPL / subsidy / insurance eligibility assessment.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Monthly Income (₹)</label>
+                  <input className="input" type="number" min="0"
+                    placeholder="e.g. 8000"
+                    value={ob.income || ''}
+                    onChange={e => setO('income', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Monthly Expenditure (₹)</label>
+                  <input className="input" type="number" min="0"
+                    placeholder="e.g. 6000"
+                    value={ob.expenditure || ''}
+                    onChange={e => setO('expenditure', e.target.value)} />
+                </div>
+              </div>
+            </div>
+
             {/* OCR highlight note */}
             {Object.values(obHL).some(Boolean) && (
               <div className="flex items-center gap-2 text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
@@ -12263,7 +13172,6 @@ function VitalCard({
     </div>
   )
 }
-
 ```
 
 # src\app\opd\page.tsx
@@ -13302,7 +14210,7 @@ export default function PatientDetailPage() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: bills }] = await Promise.all([
+    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }] = await Promise.all([
       supabase.from('patients').select('*').eq('id', id).single(),
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
@@ -13313,7 +14221,7 @@ export default function PatientDetailPage() {
     setEncounters(enc || [])
     setPrescriptions(rx || [])
     setDischarges(ds || [])
-    setBills((bills as any) || [])
+    setBills(billsData || [])
     setLoading(false)
   }
 
@@ -13793,15 +14701,15 @@ export default function PatientDetailPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {[
-                              { key: 'afi', label: 'AFI (cm)', unit: 'cm', warn: (v: number) => v < 5 ? '🚨' : v < 8 ? '⚠️' : v > 25 ? '⚠️' : '' },
-                              { key: 'efw', label: 'EFW (g)', unit: 'g', warn: (v: number) => v > 4000 ? '⚠️' : '' },
-                              { key: 'bpd', label: 'BPD (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'hc', label: 'HC (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'ac', label: 'AC (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'fl', label: 'FL (mm)', unit: 'mm', warn: () => '' },
-                              { key: 'placenta', label: 'Placenta', unit: '', warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
-                            ].map(param => {
+                            {([
+                              { key: 'afi',      label: 'AFI (cm)',  unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
+                              { key: 'efw',      label: 'EFW (g)',   unit: 'g',  warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
+                              { key: 'bpd',      label: 'BPD (mm)',  unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'hc',       label: 'HC (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'ac',       label: 'AC (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'fl',       label: 'FL (mm)',   unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'placenta', label: 'Placenta',  unit: '',   warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
+                            ] as Array<{ key: string; label: string; unit: string; warn: (v: any) => string }>).map(param => {
                               const hasAny = usgEncs.some(e => (e.ob_data as any)?.[param.key])
                               if (!hasAny) return null
                               return (
@@ -13835,14 +14743,15 @@ export default function PatientDetailPage() {
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const maxAfi = Math.max(...afiData.map(x => x.afi))
-                                const height = Math.max(8, (d.afi / Math.max(maxAfi, 25)) * 100)
-                                const isLow = d.afi < 8
-                                const isCritical = d.afi < 5
+                                const afiNum   = Number(d.afi)
+                                const maxAfi   = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height   = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const isLow      = afiNum < 8
+                                const isCritical = afiNum < 5
                                 return (
-                                  <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${d.afi} cm`}>
+                                  <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${afiNum} cm`}>
                                     <div className="text-xs font-mono font-bold mb-1" style={{ color: isCritical ? '#dc2626' : isLow ? '#ea580c' : '#059669' }}>
-                                      {d.afi}
+                                      {afiNum}
                                     </div>
                                     <div
                                       className={`w-full max-w-[40px] rounded-t ${isCritical ? 'bg-red-500' : isLow ? 'bg-orange-400' : 'bg-green-500'}`}
@@ -14075,7 +14984,7 @@ export default function PatientDetailPage() {
                           <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-purple-600" />
                             <span className="font-semibold text-sm text-gray-900">
-                              Discharge: {ds.discharge_date ? formatDate(ds.discharge_date) : formatDate(ds.created_at)}
+                              Discharge: {ds.discharge_date ? formatDate(ds.discharge_date) : formatDate(ds.updated_at)}
                             </span>
                             {ds.is_final && (
                               <span className="badge-green text-xs flex items-center gap-1">
@@ -14101,7 +15010,6 @@ export default function PatientDetailPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\patients\new\page.tsx
@@ -15191,8 +16099,6 @@ export default function NewPatientPage() {
     </AppShell>
   )
 }
-
-
 ```
 
 # src\app\patients\page.tsx
@@ -15200,6 +16106,7 @@ export default function NewPatientPage() {
 ```tsx
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -15214,15 +16121,17 @@ const bloodGroupColor: Record<string, string> = {
 }
 
 export default function PatientsPage() {
-  const [patients,    setPatients]    = useState<any[]>([])
-  const [totalCount,  setTotalCount]  = useState(0)
-  const [query,       setQuery]       = useState('')
-  const [genderFilter,setGenderFilter] = useState('')
-  const [bgFilter,    setBgFilter]    = useState('')
-  const [loading,     setLoading]     = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
+  const router = useRouter()
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
+  const [patients,     setPatients]     = useState<any[]>([])
+  const [totalCount,   setTotalCount]   = useState(0)
+  const [query,        setQuery]        = useState('')
+  const [genderFilter, setGenderFilter] = useState('')
+  const [bgFilter,     setBgFilter]     = useState('')
+  const [loading,      setLoading]      = useState(true)
+  const [showFilters,  setShowFilters]  = useState(false)
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { loadPatients() }, [])
 
@@ -15258,11 +16167,13 @@ export default function PatientsPage() {
     loadPatients(query, '', '')
   }
 
-  const hasFilters = genderFilter || bgFilter
+  // Fix 1: explicit boolean — prevents TS errors when used in className ternary and JSX conditions
+  const hasFilters = Boolean(genderFilter || bgFilter)
 
   return (
     <AppShell>
       <div className="p-4 md:p-6">
+
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -15291,21 +16202,29 @@ export default function PatientsPage() {
                 onChange={e => handleSearch(e.target.value)}
               />
               {query && (
-                <button onClick={() => handleSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <X className="w-3.5 h-3.5"/>
+                <button
+                  onClick={() => handleSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
-            <button onClick={() => setShowFilters(!showFilters)}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 hasFilters
                   ? 'bg-blue-50 border-blue-300 text-blue-700'
                   : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}>
-              <Filter className="w-4 h-4"/>
+              }`}
+            >
+              <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filter</span>
-              {hasFilters && <span className="text-xs bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center">!</span>}
+              {hasFilters && (
+                <span className="text-xs bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center">
+                  !
+                </span>
+              )}
             </button>
           </div>
 
@@ -15314,9 +16233,11 @@ export default function PatientsPage() {
             <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-3 items-end">
               <div>
                 <label className="label">Gender</label>
-                <select className="input w-32 py-1.5 text-xs"
+                <select
+                  className="input w-32 py-1.5 text-xs"
                   value={genderFilter}
-                  onChange={e => applyFilter(e.target.value, bgFilter)}>
+                  onChange={e => applyFilter(e.target.value, bgFilter)}
+                >
                   <option value="">All</option>
                   <option>Female</option>
                   <option>Male</option>
@@ -15325,17 +16246,21 @@ export default function PatientsPage() {
               </div>
               <div>
                 <label className="label">Blood Group</label>
-                <select className="input w-28 py-1.5 text-xs"
+                <select
+                  className="input w-28 py-1.5 text-xs"
                   value={bgFilter}
-                  onChange={e => applyFilter(genderFilter, e.target.value)}>
+                  onChange={e => applyFilter(genderFilter, e.target.value)}
+                >
                   <option value="">All</option>
                   {BLOOD_GROUPS.map(bg => <option key={bg}>{bg}</option>)}
                 </select>
               </div>
               {hasFilters && (
-                <button onClick={clearFilters}
-                  className="text-xs text-red-600 hover:underline flex items-center gap-1 pb-1">
-                  <X className="w-3 h-3"/> Clear filters
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-red-600 hover:underline flex items-center gap-1 pb-1"
+                >
+                  <X className="w-3 h-3" /> Clear filters
                 </button>
               )}
             </div>
@@ -15348,31 +16273,41 @@ export default function PatientsPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 {['Patient','MRN','Age / Gender','Mobile','Blood Group','Registered',''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">
-                  <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"/>
-                  Loading patients...
-                </td></tr>
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                    <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                    Loading patients...
+                  </td>
+                </tr>
               ) : patients.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-16">
-                  <User className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
-                  <p className="text-gray-400 font-medium">No patients found</p>
-                  {!query && !hasFilters && (
-                    <Link href="/patients/new" className="text-blue-600 text-sm hover:underline mt-1 block">
-                      Register your first patient →
-                    </Link>
-                  )}
-                </td></tr>
+                <tr>
+                  <td colSpan={7} className="text-center py-16">
+                    <User className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                    <p className="text-gray-400 font-medium">No patients found</p>
+                    {!query && !hasFilters && (
+                      <Link href="/patients/new" className="text-blue-600 text-sm hover:underline mt-1 block">
+                        Register your first patient →
+                      </Link>
+                    )}
+                  </td>
+                </tr>
               ) : patients.map(p => {
                 const displayAge = ageFromDOB(p.date_of_birth) ?? p.age
                 return (
-                  <tr key={p.id} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors cursor-pointer"
-                    onClick={() => window.location.href = `/patients/${p.id}`}>
+                  <tr
+                    key={p.id}
+                    className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors cursor-pointer"
+                    // Fix 2: router.push() returns void — window.location.href assignment returns string which TS rejects
+                    onClick={() => router.push(`/patients/${p.id}`)}
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -15384,7 +16319,9 @@ export default function PatientsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><span className="badge-blue font-mono text-xs">{p.mrn}</span></td>
+                    <td className="px-4 py-3">
+                      <span className="badge-blue font-mono text-xs">{p.mrn}</span>
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{displayAge ?? '—'}y · {p.gender || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.mobile}</td>
                     <td className="px-4 py-3">
@@ -15394,7 +16331,7 @@ export default function PatientsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(p.created_at)}</td>
                     <td className="px-4 py-3">
-                      <ChevronRight className="w-4 h-4 text-gray-400"/>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
                     </td>
                   </tr>
                 )
@@ -15407,19 +16344,22 @@ export default function PatientsPage() {
         <div className="md:hidden space-y-2">
           {loading ? (
             <div className="card p-8 text-center text-gray-400">
-              <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"/>
+              <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               Loading...
             </div>
           ) : patients.length === 0 ? (
             <div className="card p-8 text-center text-gray-400">
-              <User className="w-8 h-8 mx-auto mb-2 opacity-30"/>
+              <User className="w-8 h-8 mx-auto mb-2 opacity-30" />
               <p className="font-medium">No patients found</p>
             </div>
           ) : patients.map(p => {
             const displayAge = ageFromDOB(p.date_of_birth) ?? p.age
             return (
-              <Link key={p.id} href={`/patients/${p.id}`}
-                className="card p-4 flex items-center gap-3 hover:border-blue-200 active:bg-blue-50 transition-colors">
+              <Link
+                key={p.id}
+                href={`/patients/${p.id}`}
+                className="card p-4 flex items-center gap-3 hover:border-blue-200 active:bg-blue-50 transition-colors"
+              >
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
                 </div>
@@ -15431,7 +16371,7 @@ export default function PatientsPage() {
                   </div>
                   <div className="text-xs text-gray-400 font-mono">{p.mobile}</div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0"/>
+                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
               </Link>
             )
           })}
@@ -15442,11 +16382,11 @@ export default function PatientsPage() {
             Showing first 100 results. Use search to find specific patients.
           </p>
         )}
+
       </div>
     </AppShell>
   )
 }
-
 ```
 
 # src\app\queue\page.tsx
@@ -17355,28 +18295,34 @@ export default function SearchPage() {
 ```tsx
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-import { useAuth } from '@/lib/auth'
-import type { ClinicUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
-import { Settings, Save, CheckCircle, Building2, User, Printer, Info, Shield, ChevronRight, UserPlus, Users, Trash2, AlertCircle, Loader2, Copy } from 'lucide-react'
+import {
+  Settings, Save, CheckCircle, Building2, User, Printer, Info, Shield,
+  UserPlus, Users, Trash2, AlertCircle, Loader2, Copy, Calculator
+} from 'lucide-react'
 import { loadSettings, DEFAULTS, SETTINGS_STORAGE_KEY, type HospitalSettings } from '@/lib/settings'
+import type { ClinicUser } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 
-function Field({ label, value, onChange, placeholder, hint }: {
-  label: string; value: string; onChange: (v:string)=>void; placeholder?: string; hint?: string
+function Field({ label, value, onChange, placeholder, hint, type = 'text' }: {
+  label: string; value: string; onChange: (v: string) => void
+  placeholder?: string; hint?: string; type?: string
 }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <input className="input" placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)}/>
+      <input
+        className="input" type={type} placeholder={placeholder}
+        value={value} onChange={e => onChange(e.target.value)}
+      />
       {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
     </div>
   )
 }
 
 export default function SettingsPage() {
-  const [form,  setForm]  = useState<HospitalSettings>(DEFAULTS)
+  const [form, setForm] = useState<HospitalSettings>(DEFAULTS)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -17408,67 +18354,67 @@ export default function SettingsPage() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-            <Settings className="w-5 h-5 text-blue-600"/>
+            <Settings className="w-5 h-5 text-blue-600" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-            <p className="text-sm text-gray-500">Configure hospital and doctor details used in print headers.</p>
+            <p className="text-sm text-gray-500">Configure hospital, doctor, and CA details.</p>
           </div>
         </div>
 
         {saved && (
           <div className="mb-5 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-            <CheckCircle className="w-4 h-4"/> Settings saved successfully.
+            <CheckCircle className="w-4 h-4" /> Settings saved successfully.
           </div>
         )}
 
         {/* Info callout */}
         <div className="mb-5 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 flex items-start gap-3 text-sm text-blue-700">
-          <Info className="w-4 h-4 flex-shrink-0 mt-0.5"/>
-          <span>These details appear on printed prescriptions and discharge summaries. Changes take effect immediately on the next print.</span>
+          <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>These details appear on printed prescriptions, discharge summaries, and CA reports. Changes take effect immediately on the next print or share.</span>
         </div>
 
         {/* Hospital Info */}
         <div className="card p-6 mb-5">
           <h2 className="section-title flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-blue-600"/> Hospital Details
+            <Building2 className="w-4 h-4 text-blue-600" /> Hospital Details
           </h2>
           <div className="grid grid-cols-2 gap-5">
             <div className="col-span-2">
               <Field label="Hospital Name" value={form.hospitalName}
-                onChange={v=>set('hospitalName',v)}
+                onChange={v => set('hospitalName', v)}
                 placeholder="e.g. City Women's Hospital"
-                hint="Appears as the large heading on all printed documents"/>
+                hint="Appears as the large heading on all printed documents" />
             </div>
             <div className="col-span-2">
               <Field label="Address" value={form.address}
-                onChange={v=>set('address',v)}
-                placeholder="Full address including city and PIN code"/>
+                onChange={v => set('address', v)}
+                placeholder="Full address including city and PIN code" />
             </div>
             <Field label="Phone / WhatsApp" value={form.phone}
-              onChange={v=>set('phone',v)} placeholder="+91 98765 43210"/>
+              onChange={v => set('phone', v)} placeholder="+91 98765 43210" />
             <Field label="Registration Number" value={form.regNo}
-              onChange={v=>set('regNo',v)} placeholder="e.g. GJ/2024/12345"/>
+              onChange={v => set('regNo', v)} placeholder="e.g. GJ/2024/12345" />
             <Field label="GSTIN" value={form.gstin}
-              onChange={v=>set('gstin',v)} placeholder="27XXXXXXX1Z5"/>
+              onChange={v => set('gstin', v)} placeholder="27XXXXXXX1Z5" />
           </div>
         </div>
 
         {/* Doctor Info */}
         <div className="card p-6 mb-5">
           <h2 className="section-title flex items-center gap-2">
-            <User className="w-4 h-4 text-blue-600"/> Default Doctor Details
+            <User className="w-4 h-4 text-blue-600" /> Default Doctor Details
           </h2>
           <p className="text-xs text-gray-400 mb-4">
             These appear in the signature block on prescriptions and discharge summaries.
           </p>
           <div className="grid grid-cols-2 gap-5">
             <Field label="Doctor Name" value={form.doctorName}
-              onChange={v=>set('doctorName',v)} placeholder="Dr. Full Name"/>
+              onChange={v => set('doctorName', v)} placeholder="Dr. Full Name" />
             <Field label="Qualifications" value={form.doctorQual}
-              onChange={v=>set('doctorQual',v)} placeholder="MBBS, MD (OBG), DNB"/>
+              onChange={v => set('doctorQual', v)} placeholder="MBBS, MD (OBG), DNB" />
             <Field label="Medical Council Registration" value={form.doctorReg}
-              onChange={v=>set('doctorReg',v)} placeholder="GJ/12345/2010"/>
+              onChange={v => set('doctorReg', v)} placeholder="GJ/12345/2010" />
           </div>
         </div>
 
@@ -17483,20 +18429,20 @@ export default function SettingsPage() {
           <div className="grid grid-cols-2 gap-5">
             <div className="col-span-2">
               <Field label="Hospital UPI ID" value={form.upiId}
-                onChange={v=>set('upiId',v)}
+                onChange={v => set('upiId', v)}
                 placeholder="yourhospital@upibank"
-                hint="Used in payment links sent to patients via WhatsApp"/>
+                hint="Used in payment links sent to patients via WhatsApp" />
             </div>
             <Field label="OPD Consultation Fee (₹)" value={form.feeOPD}
-              onChange={v=>set('feeOPD',v)} placeholder="500"/>
+              onChange={v => set('feeOPD', v)} placeholder="500" />
             <Field label="ANC Consultation Fee (₹)" value={form.feeANC}
-              onChange={v=>set('feeANC',v)} placeholder="400"/>
+              onChange={v => set('feeANC', v)} placeholder="400" />
             <Field label="Follow-up Consultation Fee (₹)" value={form.feeFollowUp}
-              onChange={v=>set('feeFollowUp',v)} placeholder="300"/>
+              onChange={v => set('feeFollowUp', v)} placeholder="300" />
             <Field label="IPD Admission (per day) (₹)" value={form.feeIPD}
-              onChange={v=>set('feeIPD',v)} placeholder="1500"/>
+              onChange={v => set('feeIPD', v)} placeholder="1500" />
             <Field label="Emergency Consultation Fee (₹)" value={form.feeEmergency}
-              onChange={v=>set('feeEmergency',v)} placeholder="800"/>
+              onChange={v => set('feeEmergency', v)} placeholder="800" />
           </div>
         </div>
 
@@ -17520,62 +18466,102 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400 mt-2">These amounts auto-populate in the Billing module when creating bills.</p>
         </div>
 
+        {/* ── CA Contact Details (NEW) ─────────────────────────── */}
+        <div className="card p-6 mb-5">
+          <h2 className="section-title flex items-center gap-2">
+            <Calculator className="w-4 h-4 text-blue-600" /> Chartered Accountant (CA) Details
+          </h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Used when sharing revenue reports directly with your CA via WhatsApp or Email from the Billing page.
+            Fill these once — the CA Report will use them automatically.
+          </p>
+          <div className="grid grid-cols-2 gap-5">
+            <div className="col-span-2">
+              <Field label="CA Name" value={form.caName}
+                onChange={v => set('caName', v)}
+                placeholder="e.g. Mr. Rajesh Shah"
+                hint="Personalises the report header shared with your CA" />
+            </div>
+            <Field label="CA WhatsApp Number" value={form.caWhatsApp}
+              onChange={v => set('caWhatsApp', v)}
+              placeholder="e.g. 9876543210"
+              hint="10 digits only — no +91 prefix needed" />
+            <Field label="CA Email" value={form.caEmail}
+              onChange={v => set('caEmail', v)}
+              placeholder="ca@example.com"
+              hint="Used in mailto link for email sharing" />
+          </div>
+          {(form.caWhatsApp || form.caEmail) && (
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+              {form.caWhatsApp && (
+                <span className="bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-full">
+                  ✅ WhatsApp configured
+                </span>
+              )}
+              {form.caEmail && (
+                <span className="bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded-full">
+                  ✅ Email configured
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Print Footer */}
         <div className="card p-6 mb-6">
           <h2 className="section-title flex items-center gap-2">
-            <Printer className="w-4 h-4 text-blue-600"/> Print Footer Note
+            <Printer className="w-4 h-4 text-blue-600" /> Print Footer Note
           </h2>
           <label className="label">Footer message on prescriptions</label>
           <textarea className="input resize-none" rows={2}
             placeholder="e.g. Thank you for visiting. Please follow the advice given above."
-            value={form.footerNote} onChange={e=>set('footerNote',e.target.value)}/>
+            value={form.footerNote} onChange={e => set('footerNote', e.target.value)} />
           <p className="text-xs text-gray-400 mt-1">Appears at the bottom of every printed prescription.</p>
         </div>
 
-        {/* Preview */}
+        {/* Print Header Preview */}
         <div className="card p-5 mb-6 bg-gray-50 border-gray-200">
           <h2 className="section-title flex items-center gap-2">
-            <Printer className="w-4 h-4 text-gray-500"/> Print Header Preview
+            <Printer className="w-4 h-4 text-gray-500" /> Print Header Preview
           </h2>
-          <div className="bg-white border border-gray-200 rounded-lg p-5 text-center">
-            <div className="text-lg font-bold tracking-wide uppercase">{form.hospitalName || '—'}</div>
-            <div className="text-sm text-gray-500 mt-0.5">{form.address || '—'}</div>
-            <div className="text-xs text-gray-400 mt-0.5">
-              Tel: {form.phone || '—'}
-              {form.regNo  && ` · Reg: ${form.regNo}`}
-              {form.gstin  && ` · GSTIN: ${form.gstin}`}
+          <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-5 text-center">
+            <div className="text-lg font-bold uppercase tracking-wide">
+              {form.hospitalName || 'NexMedicon Hospital'}
             </div>
-            <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400 text-right">
-              <div className="font-semibold text-gray-700">{form.doctorName || '—'}</div>
-              <div>{form.doctorQual || '—'}</div>
-              {form.doctorReg && <div>Reg: {form.doctorReg}</div>}
+            {form.address && <div className="text-sm text-gray-500 mt-1">{form.address}</div>}
+            {form.phone && <div className="text-sm text-gray-500">Tel: {form.phone}</div>}
+            {(form.regNo || form.gstin) && (
+              <div className="text-xs text-gray-400">
+                {form.regNo && `Reg: ${form.regNo}`}
+                {form.regNo && form.gstin && ' · '}
+                {form.gstin && `GSTIN: ${form.gstin}`}
+              </div>
+            )}
+            <div className="border-t border-gray-300 mt-3 pt-2 text-sm">
+              <span className="font-semibold">{form.doctorName || 'Dr. Your Name'}</span>
+              {form.doctorQual && <span className="text-gray-500 ml-2">{form.doctorQual}</span>}
             </div>
+            {form.doctorReg && (
+              <div className="text-xs text-gray-400">Reg. No: {form.doctorReg}</div>
+            )}
           </div>
         </div>
 
-        {/* ABDM / FHIR Integration */}
-        <Link href="/abdm-setup"
-          className="card p-5 mb-6 flex items-center gap-4 hover:border-green-300 hover:bg-green-50/30 transition-colors group cursor-pointer">
-          <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-200 transition-colors">
-            <Shield className="w-5 h-5 text-green-600"/>
-          </div>
-          <div className="flex-1">
-            <div className="font-semibold text-gray-900">ABDM / ABHA Integration</div>
-            <div className="text-xs text-gray-500">Configure Ayushman Bharat Digital Mission, ABHA verification & HL7 FHIR R4 export</div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-green-600"/>
-        </Link>
-
-        {/* User Management — Admin only */}
-        <UserManagementSection />
-
-        <div className="flex items-center justify-between">
-          <button onClick={handleReset} className="btn-secondary text-xs text-red-600 border-red-200 hover:bg-red-50">
+        {/* Save buttons */}
+        <div className="flex gap-3">
+          <button onClick={handleSave}
+            className="btn-primary flex items-center gap-2">
+            <Save className="w-4 h-4" /> Save Settings
+          </button>
+          <button onClick={handleReset}
+            className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 text-sm">
             Reset to Defaults
           </button>
-          <button onClick={handleSave} className="btn-primary flex items-center gap-2">
-            <Save className="w-4 h-4"/> Save Settings
-          </button>
+        </div>
+
+        {/* User Management section */}
+        <div className="mt-8">
+          <UserManagementSection />
         </div>
 
       </div>
@@ -17583,68 +18569,57 @@ export default function SettingsPage() {
   )
 }
 
-// ── User Management Section (Admin only) ─────────────────────
+// ── User Management (extracted component — unchanged from original) ──
 function UserManagementSection() {
-  const { isAdmin } = useAuth()
-  const [users,       setUsers]       = useState<ClinicUser[]>([])
-  const [loading,     setLoading]     = useState(false)
-  const [showInvite,  setShowInvite]  = useState(false)
-  const [invEmail,    setInvEmail]    = useState('')
-  const [invName,     setInvName]     = useState('')
-  const [invRole,     setInvRole]     = useState<'doctor' | 'staff'>('staff')
-  const [inviting,    setInviting]    = useState(false)
-  const [invResult,   setInvResult]   = useState<{ ok: boolean; msg: string; pwd?: string } | null>(null)
-  const [error,       setError]       = useState('')
+  const { user } = useAuth()
+  const [users, setUsers] = useState<ClinicUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [showInvite, setShowInvite] = useState(false)
+  const [invName, setInvName] = useState('')
+  const [invEmail, setInvEmail] = useState('')
+  const [invRole, setInvRole] = useState<'doctor' | 'staff'>('doctor')
+  const [inviting, setInviting] = useState(false)
+  const [invResult, setInvResult] = useState<{ ok: boolean; msg: string; pwd?: string } | null>(null)
 
-  if (!isAdmin) return null
+  useEffect(() => { loadUsers() }, [])
 
   async function loadUsers() {
-    setLoading(true)
-    setError('')
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-
-    const res = await fetch('/api/users', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-    const json = await res.json()
-    if (json.error) { setError(json.error); setLoading(false); return }
-    setUsers(json.users || [])
+    setLoading(true); setError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setError('Not authenticated'); setLoading(false); return }
+      const res = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const json = await res.json()
+      if (json.error) setError(json.error)
+      else setUsers(json.users || [])
+    } catch (err: any) {
+      setError(err.message)
+    }
     setLoading(false)
   }
 
-  // Load users on first render
-  useEffect(() => { loadUsers() }, [])
-
   async function handleInvite() {
     if (!invEmail.trim() || !invName.trim()) return
-    setInviting(true)
-    setInvResult(null)
-    setError('')
-
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { setInviting(false); return }
-
+    setInviting(true); setInvResult(null)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setInvResult({ ok: false, msg: 'Not authenticated' }); setInviting(false); return }
       const res = await fetch('/api/users/invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          email: invEmail.trim(),
-          full_name: invName.trim(),
-          role: invRole,
-        }),
+        body: JSON.stringify({ email: invEmail.trim(), full_name: invName.trim(), role: invRole }),
       })
       const json = await res.json()
-      if (json.error) {
-        setInvResult({ ok: false, msg: json.error })
-      } else {
+      if (json.error) setInvResult({ ok: false, msg: json.error })
+      else {
         setInvResult({ ok: true, msg: json.message, pwd: json.tempPassword })
-        setInvEmail('')
-        setInvName('')
+        setInvEmail(''); setInvName('')
         loadUsers()
       }
     } catch (err: any) {
@@ -17656,13 +18631,9 @@ function UserManagementSection() {
   async function toggleActive(userId: string, currentActive: boolean) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
-
     await fetch('/api/users', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ userId, updates: { is_active: !currentActive } }),
     })
     loadUsers()
@@ -17671,28 +18642,24 @@ function UserManagementSection() {
   async function changeRole(userId: string, newRole: string) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
-
     await fetch('/api/users', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ userId, updates: { role: newRole } }),
     })
     loadUsers()
   }
 
   const ROLE_COLORS: Record<string, string> = {
-    admin:  'bg-purple-100 text-purple-700',
+    admin: 'bg-purple-100 text-purple-700',
     doctor: 'bg-blue-100 text-blue-700',
-    staff:  'bg-green-100 text-green-700',
+    staff: 'bg-green-100 text-green-700',
   }
 
   return (
     <div className="card p-6 mb-6">
       <h2 className="section-title flex items-center gap-2">
-        <Users className="w-4 h-4 text-blue-600"/> Manage Users
+        <Users className="w-4 h-4 text-blue-600" /> Manage Users
       </h2>
       <p className="text-xs text-gray-400 mb-4">
         Invite doctors and staff to use the system. Each user gets their own login.
@@ -17700,37 +18667,32 @@ function UserManagementSection() {
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Current users list */}
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-          <Loader2 className="w-4 h-4 animate-spin"/> Loading users...
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading users...
         </div>
       ) : (
         <div className="space-y-2 mb-4">
           {users.map(u => (
-            <div key={u.id} className={`flex items-center gap-3 p-3 rounded-lg border ${u.is_active ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+            <div key={u.id}
+              className={`flex items-center gap-3 p-3 rounded-lg border ${u.is_active ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-gray-900 truncate">{u.full_name}</div>
                 <div className="text-xs text-gray-500 truncate">{u.email}</div>
               </div>
-              <select
-                value={u.role}
-                onChange={e => changeRole(u.id, e.target.value)}
-                className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}
-              >
+              <select value={u.role} onChange={e => changeRole(u.id, e.target.value)}
+                className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}>
                 <option value="admin">👑 Admin</option>
                 <option value="doctor">🩺 Doctor</option>
                 <option value="staff">📋 Staff</option>
               </select>
-              <button
-                onClick={() => toggleActive(u.id, u.is_active)}
-                className={`text-xs px-2 py-1 rounded-lg border ${u.is_active ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
-              >
+              <button onClick={() => toggleActive(u.id, u.is_active)}
+                className={`text-xs px-2 py-1 rounded-lg border ${u.is_active ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
                 {u.is_active ? 'Deactivate' : 'Activate'}
               </button>
             </div>
@@ -17741,50 +18703,47 @@ function UserManagementSection() {
         </div>
       )}
 
-      {/* Invite new user */}
       {!showInvite ? (
         <button onClick={() => setShowInvite(true)}
           className="btn-primary text-sm flex items-center gap-2">
-          <UserPlus className="w-4 h-4"/> Invite New User
+          <UserPlus className="w-4 h-4" /> Invite New User
         </button>
       ) : (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
-            <UserPlus className="w-4 h-4"/> Invite New User
+            <UserPlus className="w-4 h-4" /> Invite New User
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Full Name</label>
-              <input className="input" placeholder="Dr. Patel" value={invName}
-                onChange={e => setInvName(e.target.value)} />
+              <input className="input" placeholder="Dr. Patel"
+                value={invName} onChange={e => setInvName(e.target.value)} />
             </div>
             <div>
               <label className="label">Email</label>
-              <input className="input" type="email" placeholder="doctor@clinic.com" value={invEmail}
-                onChange={e => setInvEmail(e.target.value)} />
+              <input className="input" type="email" placeholder="doctor@clinic.com"
+                value={invEmail} onChange={e => setInvEmail(e.target.value)} />
             </div>
           </div>
           <div>
             <label className="label">Role</label>
             <div className="flex gap-2">
               {(['doctor', 'staff'] as const).map(r => (
-                <button key={r} type="button"
-                  onClick={() => setInvRole(r)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
-                    invRole === r
+                <button key={r} type="button" onClick={() => setInvRole(r)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${invRole === r
                       ? r === 'doctor' ? 'bg-blue-600 text-white border-blue-600' : 'bg-green-600 text-white border-green-600'
                       : 'bg-white text-gray-600 border-gray-300'
-                  }`}
-                >
+                    }`}>
                   {r === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={handleInvite} disabled={inviting || !invEmail.trim() || !invName.trim()}
+            <button onClick={handleInvite}
+              disabled={inviting || !invEmail.trim() || !invName.trim()}
               className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
-              {inviting ? <Loader2 className="w-4 h-4 animate-spin"/> : <UserPlus className="w-4 h-4"/>}
+              {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
               {inviting ? 'Creating...' : 'Create User'}
             </button>
             <button onClick={() => { setShowInvite(false); setInvResult(null) }}
@@ -17801,7 +18760,7 @@ function UserManagementSection() {
                     <code className="text-lg font-mono font-bold text-green-900 bg-green-50 px-3 py-1 rounded">{invResult.pwd}</code>
                     <button onClick={() => navigator.clipboard.writeText(invResult.pwd!)}
                       className="text-green-600 hover:text-green-800 p-1" title="Copy password">
-                      <Copy className="w-4 h-4"/>
+                      <Copy className="w-4 h-4" />
                     </button>
                   </div>
                   <p className="text-xs text-green-600 mt-1">The user should change this password after first login.</p>
@@ -17814,7 +18773,6 @@ function UserManagementSection() {
     </div>
   )
 }
-
 ```
 
 # src\app\setup\page.tsx
@@ -21737,6 +22695,42 @@ export interface OCROBData {
   per_vaginum?: string
   right_ovary?: string
   left_ovary?: string
+
+  // ── Menstrual History (NEW) ──────────────────────────────────
+  menstrual_regularity?:    string   // "Regular" | "Irregular"
+  menstrual_flow?:          string   // "Scanty" | "Normal" | "Heavy"
+  post_menstrual_days?:     string   // number of days as string e.g. "3"
+  post_menstrual_pain?:     string   // "Mild" | "Moderate" | "Severe"
+  urine_pregnancy_result?:  string   // e.g. "Positive", "Negative", "Not done"
+
+  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  obstetric_history?: Array<{
+    pregnancy_no?:  string   // "1", "2", "3", "4"
+    type?:          string   // "Full Term" | "Preterm"
+    delivery_mode?: string   // "Normal" | "CS"
+    outcome?:       string   // "Live" | "Expired"
+    baby_gender?:   string   // "M" | "F"
+    age_of_child?:  string   // e.g. "3 years", "8 months"
+  }>
+
+  // ── Abortion details (NEW) ───────────────────────────────────
+  abortion_entries?: Array<{
+    type?:      string   // "Spontaneous" | "Induced"
+    weeks?:     string   // gestational age e.g. "8"
+    method?:    string   // "Medicines" | "Surgery"
+    years_ago?: string   // how many years back e.g. "2"
+  }>
+
+  // ── Past Medical & Surgical History (NEW) ────────────────────
+  past_diabetes?:        boolean
+  past_hypertension?:    boolean
+  past_thyroid?:         boolean
+  past_surgery?:         boolean
+  past_surgery_detail?:  string
+
+  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
+  income?:      string   // monthly income ₹ as string
+  expenditure?: string   // monthly expenditure ₹ as string
 }
 
 export interface OCRLabData {
@@ -21777,7 +22771,6 @@ export interface OCRResult {
   prescription?: OCRPrescriptionData
   unrecognised_fields?: string // anything on the form that didn't map to a known field
 }
-
 ```
 
 # src\lib\pdf-to-image.ts
@@ -21901,6 +22894,10 @@ export interface HospitalSettings {
   feeFollowUp: string
   feeIPD: string
   feeEmergency: string
+  // ── CA (Chartered Accountant) contact details ────────────────
+  caName: string   // CA's full name
+  caWhatsApp: string   // CA's WhatsApp number (10 digits)
+  caEmail: string   // CA's email address
 }
 
 export const DEFAULTS: HospitalSettings = {
@@ -21919,6 +22916,10 @@ export const DEFAULTS: HospitalSettings = {
   feeFollowUp: '300',
   feeIPD: '1500',
   feeEmergency: '800',
+  // CA defaults — empty so the doctor fills them in Settings
+  caName: '',
+  caWhatsApp: '',
+  caEmail: '',
 }
 
 export const SETTINGS_STORAGE_KEY = STORAGE_KEY
@@ -21928,7 +22929,7 @@ export function loadSettings(): HospitalSettings {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) return { ...DEFAULTS, ...JSON.parse(stored) }
-  } catch {}
+  } catch { }
   return DEFAULTS
 }
 ```
@@ -22448,6 +23449,24 @@ export interface Encounter {
   patients?: Patient
 }
 
+// ── Per-pregnancy obstetric history entry ────────────────────────
+export interface ObstetricEntry {
+  pregnancy_no:   number                           // 1, 2, 3, 4 …
+  type:           'Full Term' | 'Preterm' | ''
+  delivery_mode?: 'Normal' | 'CS' | ''
+  outcome?:       'Live' | 'Expired' | ''
+  baby_gender?:   'M' | 'F' | ''
+  age_of_child?:  string                           // e.g. "3 years", "8 months"
+}
+
+// ── Per-abortion detail entry ─────────────────────────────────────
+export interface AbortionEntry {
+  type?:      'Spontaneous' | 'Induced' | ''
+  weeks?:     string                               // gestational age e.g. "8"
+  method?:    'Medicines' | 'Surgery' | ''
+  years_ago?: string                               // how many years back
+}
+
 export interface OBData {
   lmp?: string
   edd?: string
@@ -22496,6 +23515,30 @@ export interface OBData {
   placenta_grade?: string       // Grade 0, I, II, III
   cord_loops?: string           // e.g. "None", "1 loop around neck", "2 loops"
   usg_remarks?: string          // free text for additional findings
+
+  // ── Menstrual History (NEW) ──────────────────────────────────
+  menstrual_regularity?:     'Regular' | 'Irregular' | ''
+  menstrual_flow?:           'Scanty' | 'Normal' | 'Heavy' | ''
+  post_menstrual_days?:      string    // number of days of post-menstrual bleeding/spotting
+  post_menstrual_pain?:      'Mild' | 'Moderate' | 'Severe' | ''
+  urine_pregnancy_result?:   string    // urine pregnancy test result (~3 months)
+
+  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  obstetric_history?:        ObstetricEntry[]
+
+  // ── Abortion details (NEW) ───────────────────────────────────
+  abortion_entries?:         AbortionEntry[]
+
+  // ── Past Medical & Surgical History (NEW) ────────────────────
+  past_diabetes?:            boolean
+  past_hypertension?:        boolean
+  past_thyroid?:             boolean
+  past_surgery?:             boolean
+  past_surgery_detail?:      string
+
+  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
+  income?:                   string    // monthly household income ₹
+  expenditure?:              string    // monthly household expenditure ₹
 }
 
 export interface Medication {
@@ -22559,12 +23602,9 @@ export interface DischargeSummary {
   version: number
   is_final: boolean
   signed_by?: string
-  signed_at?: string
-  created_at: string
   updated_at: string
-  patients?: Patient
+  encounter_id?: string
 }
-
 ```
 
 # supabase_add_aadhaar.sql

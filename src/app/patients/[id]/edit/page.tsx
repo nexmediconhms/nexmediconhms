@@ -12,24 +12,47 @@ const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 const GENDERS      = ['Female','Male','Other']
 
 interface FormData {
-  full_name: string; age: string; date_of_birth: string; gender: string
-  mobile: string; blood_group: string; address: string; abha_id: string; aadhaar_no: string
-  emergency_contact_name: string; emergency_contact_phone: string
-  mediclaim: string; cashless: string; reference_source: string
+  full_name:               string
+  age:                     string
+  date_of_birth:           string
+  gender:                  string
+  mobile:                  string
+  blood_group:             string
+  address:                 string
+  abha_id:                 string
+  aadhaar_no:              string
+  emergency_contact_name:  string
+  emergency_contact_phone: string
+  mediclaim:               string
+  cashless:                string
+  reference_source:        string
+  // ── Insurance policy details (NEW) ──────────────────────────
+  policy_tpa_name:         string
+  policy_number:           string
 }
 
 function Err({ msg }: { msg: string }) {
-  return <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{msg}</p>
+  return (
+    <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+      <AlertCircle className="w-3 h-3" />{msg}
+    </p>
+  )
 }
 
 export default function EditPatientPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
+  const router  = useRouter()
 
-  const [form, setForm]     = useState<FormData>({ full_name:'', age:'', date_of_birth:'', gender:'Female', mobile:'', blood_group:'', address:'', abha_id:'', aadhaar_no:'', emergency_contact_name:'', emergency_contact_phone:'', mediclaim:'No', cashless:'No', reference_source:'' })
-  const [errors, setErrors] = useState<Partial<FormData>>({})
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved]   = useState(false)
+  const [form, setForm] = useState<FormData>({
+    full_name: '', age: '', date_of_birth: '', gender: 'Female',
+    mobile: '', blood_group: '', address: '', abha_id: '', aadhaar_no: '',
+    emergency_contact_name: '', emergency_contact_phone: '',
+    mediclaim: 'No', cashless: 'No', reference_source: '',
+    policy_tpa_name: '', policy_number: '',
+  })
+  const [errors,  setErrors]  = useState<Partial<FormData>>({})
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
   const [loading, setLoading] = useState(true)
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set())
 
@@ -52,6 +75,8 @@ export default function EditPatientPage() {
           mediclaim:               data.mediclaim ? 'Yes' : 'No',
           cashless:                data.cashless  ? 'Yes' : 'No',
           reference_source:        data.reference_source || '',
+          policy_tpa_name:         data.policy_tpa_name || '',
+          policy_number:           data.policy_number   || '',
         })
       }
       setLoading(false)
@@ -77,7 +102,7 @@ export default function EditPatientPage() {
     const p = result.patient
     if (!p) return
     if (p.full_name) set('full_name', p.full_name, true)
-    if (p.age) set('age', p.age, true)
+    if (p.age)       set('age', p.age, true)
     if (p.date_of_birth) handleDOB(p.date_of_birth, true)
     if (p.gender && GENDERS.includes(p.gender)) set('gender', p.gender, true)
     if (p.mobile) set('mobile', p.mobile.replace(/\D/g,'').slice(-10), true)
@@ -85,8 +110,9 @@ export default function EditPatientPage() {
     if (p.address) set('address', p.address, true)
     if (p.abha_id) set('abha_id', p.abha_id, true)
     if (p.aadhaar_no) set('aadhaar_no', p.aadhaar_no, true)
-    if (p.emergency_contact_name) set('emergency_contact_name', p.emergency_contact_name, true)
-    if (p.emergency_contact_phone) set('emergency_contact_phone', p.emergency_contact_phone.replace(/\D/g,'').slice(-10), true)
+    if (p.emergency_contact_name)  set('emergency_contact_name',  p.emergency_contact_name, true)
+    if (p.emergency_contact_phone) set('emergency_contact_phone',  p.emergency_contact_phone.replace(/\D/g,'').slice(-10), true)
+    if ((p as any).policy_tpa_name) set('policy_tpa_name', (p as any).policy_tpa_name, true)
   }
 
   function validate(): boolean {
@@ -118,6 +144,8 @@ export default function EditPatientPage() {
       mediclaim:               form.mediclaim === 'Yes',
       cashless:                form.cashless  === 'Yes',
       reference_source:        form.reference_source.trim() || null,
+      policy_tpa_name:         form.policy_tpa_name.trim() || null,
+      policy_number:           form.policy_number.trim()   || null,
       updated_at:              new Date().toISOString(),
     }).eq('id', id)
 
@@ -129,8 +157,8 @@ export default function EditPatientPage() {
 
   function inputCls(field: keyof FormData) {
     return 'input' +
-      (errors[field] ? ' border-red-400 focus:ring-red-400' : '') +
-      (ocrFields.has(field) ? ' !border-green-400 !bg-green-50' : '')
+      (errors[field]        ? ' border-red-400 focus:ring-red-400' : '') +
+      (ocrFields.has(field) ? ' !border-green-400 !bg-green-50'   : '')
   }
 
   if (loading) return (
@@ -142,12 +170,17 @@ export default function EditPatientPage() {
   return (
     <AppShell>
       <div className="p-6 max-w-4xl mx-auto">
+
+        {/* Header */}
         <div className="flex items-center gap-4 mb-5">
-          <Link href={`/patients/${id}`} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></Link>
+          <Link href={`/patients/${id}`} className="text-gray-400 hover:text-gray-600">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Edit Patient Details</h1>
             <p className="text-sm text-gray-500">
-              Update information below. <span className="text-green-700 text-xs font-medium">● Green = filled by scanner</span>
+              Update information below.{' '}
+              <span className="text-green-700 text-xs font-medium">● Green = filled by scanner</span>
             </p>
           </div>
         </div>
@@ -163,39 +196,47 @@ export default function EditPatientPage() {
           className="mb-5" />
 
         <form onSubmit={handleSave} noValidate>
+
+          {/* ── Personal Details ── */}
           <div className="card p-6 mb-5">
             <h2 className="section-title">Personal Details</h2>
             <div className="grid grid-cols-2 gap-5">
               <div className="col-span-2">
                 <label className="label">Full Name *</label>
-                <input className={inputCls('full_name')} value={form.full_name} onChange={e => set('full_name', e.target.value)} />
+                <input className={inputCls('full_name')} value={form.full_name}
+                  onChange={e => set('full_name', e.target.value)} />
                 {errors.full_name && <Err msg={errors.full_name} />}
               </div>
               <div>
                 <label className="label">Age (years)</label>
-                <input className={inputCls('age')} type="number" min="0" max="150" value={form.age} onChange={e => set('age', e.target.value)} />
+                <input className={inputCls('age')} type="number" min="0" max="150"
+                  value={form.age} onChange={e => set('age', e.target.value)} />
               </div>
               <div>
                 <label className="label">Date of Birth</label>
-                <input className={inputCls('date_of_birth')} type="date" max={new Date().toISOString().split('T')[0]}
+                <input className={inputCls('date_of_birth')} type="date"
+                  max={new Date().toISOString().split('T')[0]}
                   value={form.date_of_birth} onChange={e => handleDOB(e.target.value)} />
               </div>
               <div>
                 <label className="label">Gender</label>
-                <select className={inputCls('gender')} value={form.gender} onChange={e => set('gender', e.target.value)}>
+                <select className={inputCls('gender')} value={form.gender}
+                  onChange={e => set('gender', e.target.value)}>
                   {GENDERS.map(g => <option key={g}>{g}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label">Blood Group</label>
-                <select className={inputCls('blood_group')} value={form.blood_group} onChange={e => set('blood_group', e.target.value)}>
+                <select className={inputCls('blood_group')} value={form.blood_group}
+                  onChange={e => set('blood_group', e.target.value)}>
                   <option value="">Select</option>
                   {BLOOD_GROUPS.map(bg => <option key={bg}>{bg}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label">Mobile Number *</label>
-                <input className={`${inputCls('mobile')} font-mono`} maxLength={10} value={form.mobile}
+                <input className={`${inputCls('mobile')} font-mono`} maxLength={10}
+                  value={form.mobile}
                   onChange={e => set('mobile', e.target.value.replace(/\D/g,''))} />
                 {errors.mobile && <Err msg={errors.mobile} />}
               </div>
@@ -203,38 +244,50 @@ export default function EditPatientPage() {
                 <label className="label">Aadhaar Card No</label>
                 <input className={`${inputCls('aadhaar_no')} font-mono`} maxLength={14}
                   placeholder="e.g. 1234 5678 9012"
-                  value={form.aadhaar_no} onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))} />
+                  value={form.aadhaar_no}
+                  onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))} />
               </div>
               <div>
                 <label className="label">ABHA ID</label>
-                <input className={`${inputCls('abha_id')} font-mono`} value={form.abha_id} onChange={e => set('abha_id', e.target.value)} />
+                <input className={`${inputCls('abha_id')} font-mono`}
+                  value={form.abha_id} onChange={e => set('abha_id', e.target.value)} />
               </div>
               <div className="col-span-2">
                 <label className="label">Address</label>
-                <textarea className={`${inputCls('address')} resize-none`} rows={2} value={form.address} onChange={e => set('address', e.target.value)} />
+                <textarea className={`${inputCls('address')} resize-none`} rows={2}
+                  value={form.address} onChange={e => set('address', e.target.value)} />
               </div>
             </div>
           </div>
 
-          <div className="card p-6 mb-6">
-            <h2 className="section-title">Insurance & Referral</h2>
+          {/* ── Insurance & Referral ── */}
+          <div className="card p-6 mb-5">
+            <h2 className="section-title">Insurance &amp; Referral</h2>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="label">Mediclaim / Insurance</label>
-                <select className="input" value={form.mediclaim} onChange={e=>set('mediclaim',e.target.value)}>
-                  <option value="No">No</option><option value="Yes">Yes</option>
+                <select className="input" value={form.mediclaim}
+                  onChange={e => {
+                    set('mediclaim', e.target.value)
+                    if (e.target.value === 'No') set('cashless', 'No')
+                  }}>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </select>
               </div>
               <div>
                 <label className="label">Cashless Option</label>
                 <select className="input" value={form.cashless}
-                  disabled={form.mediclaim !== 'Yes'} onChange={e=>set('cashless',e.target.value)}>
-                  <option value="No">No</option><option value="Yes">Yes</option>
+                  disabled={form.mediclaim !== 'Yes'}
+                  onChange={e => set('cashless', e.target.value)}>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </select>
               </div>
               <div>
                 <label className="label">Referred By / Source</label>
-                <select className="input" value={form.reference_source} onChange={e=>set('reference_source',e.target.value)}>
+                <select className="input" value={form.reference_source}
+                  onChange={e => set('reference_source', e.target.value)}>
                   <option value="">Select (optional)</option>
                   <option>Doctor Referral</option><option>Patient Referral</option>
                   <option>Advertisement</option><option>Social Media</option>
@@ -243,30 +296,64 @@ export default function EditPatientPage() {
                 </select>
               </div>
             </div>
+
+            {/* Policy fields — visible only when mediclaim = Yes */}
+            {form.mediclaim === 'Yes' && (
+              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+                <div>
+                  <label className="label">Insurance Company / TPA Name</label>
+                  <input className={inputCls('policy_tpa_name')}
+                    placeholder="e.g. Medi Assist, Star Health, New India"
+                    value={form.policy_tpa_name}
+                    onChange={e => set('policy_tpa_name', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Name of insurer or TPA — printed on all insurance documents</p>
+                </div>
+                <div>
+                  <label className="label">Policy / Card Number</label>
+                  <input className={`${inputCls('policy_number')} font-mono`}
+                    placeholder="e.g. P/211200/01/2024/000123"
+                    value={form.policy_number}
+                    onChange={e => set('policy_number', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Appears on the insurance cover sheet and receipts</p>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* ── Emergency Contact ── */}
           <div className="card p-5 mb-4">
             <h2 className="section-title">Emergency Contact</h2>
             <div className="grid grid-cols-2 gap-5">
               <div>
                 <label className="label">Contact Name</label>
-                <input className={inputCls('emergency_contact_name')} value={form.emergency_contact_name} onChange={e => set('emergency_contact_name', e.target.value)} />
+                <input className={inputCls('emergency_contact_name')}
+                  value={form.emergency_contact_name}
+                  onChange={e => set('emergency_contact_name', e.target.value)} />
               </div>
               <div>
                 <label className="label">Contact Phone</label>
-                <input className={`${inputCls('emergency_contact_phone')} font-mono`} maxLength={10} value={form.emergency_contact_phone}
+                <input className={`${inputCls('emergency_contact_phone')} font-mono`} maxLength={10}
+                  value={form.emergency_contact_phone}
                   onChange={e => set('emergency_contact_phone', e.target.value.replace(/\D/g,''))} />
               </div>
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex items-center justify-between">
             <Link href={`/patients/${id}`} className="btn-secondary">Cancel</Link>
-            <button type="submit" disabled={saving || saved} className="btn-primary px-8 disabled:opacity-60 flex items-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving...</>
-                : saved ? <><CheckCircle className="w-4 h-4" />Saved!</>
-                : <><Save className="w-4 h-4" />Save Changes</>}
+            <button type="submit" disabled={saving || saved}
+              className="btn-primary px-8 disabled:opacity-60 flex items-center gap-2">
+              {saving ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving...</>
+              ) : saved ? (
+                <><CheckCircle className="w-4 h-4" />Saved!</>
+              ) : (
+                <><Save className="w-4 h-4" />Save Changes</>
+              )}
             </button>
           </div>
+
         </form>
       </div>
     </AppShell>

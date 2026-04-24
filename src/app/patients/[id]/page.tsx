@@ -15,12 +15,11 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download
+  Shield, Download, ExternalLink, MessageCircle,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
 function VitalsChart({ encounters }: { encounters: Encounter[] }) {
-  // Show last 8 encounters with vitals, oldest→newest
   const pts = [...encounters]
     .filter(e => e.bp_systolic || e.pulse || e.weight)
     .slice(0, 8)
@@ -69,14 +68,12 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
-        {/* Y-axis gridlines */}
         {[0, 0.25, 0.5, 0.75, 1].map(f => (
           <line key={f}
             x1={PAD.l} y1={PAD.t + chartH * (1-f)}
             x2={PAD.l + chartW} y2={PAD.t + chartH * (1-f)}
             stroke="#f1f5f9" strokeWidth="1"/>
         ))}
-        {/* X axis labels */}
         {pts.map((e, i) => (
           <text key={i}
             x={PAD.l + (i/(pts.length-1))*chartW}
@@ -85,7 +82,6 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
             {new Date(e.encounter_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
           </text>
         ))}
-        {/* Lines */}
         {lines.map(({ key, color }) => {
           const d = makePath(key)
           if (!d) return null
@@ -105,7 +101,6 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           )
         })}
       </svg>
-      {/* Legend */}
       <div className="flex gap-4 justify-center mt-1">
         {lines.map(({ key, label, color, unit }) => {
           const last = [...pts].reverse().find(e => Number(e[key]))
@@ -126,7 +121,8 @@ const BLOOD_COLOR: Record<string, string> = {
   'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
 }
 
-type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | 'labs' | 'files'
+// ── Tab type — insurance added ────────────────────────────────
+type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | 'labs' | 'files' | 'insurance'
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -143,13 +139,12 @@ export default function PatientDetailPage() {
   const [fhirExporting, setFhirExporting] = useState(false)
 
   // AI summary state
-  const [summary,       setSummary]       = useState('')
-  const [summaryState,  setSummaryState]  = useState<'idle'|'loading'|'done'|'error'>('idle')
-  const [summaryError,  setSummaryError]  = useState('')
+  const [summary,      setSummary]      = useState('')
+  const [summaryState, setSummaryState] = useState<'idle'|'loading'|'done'|'error'>('idle')
+  const [summaryError, setSummaryError] = useState('')
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => {
-    // Labs stored in localStorage keyed by patient_id
     try {
       const all = JSON.parse(localStorage.getItem('nexmedicon_labs') || '[]')
       setLabReports(all.filter((r: any) => r.patient_id === id))
@@ -173,7 +168,6 @@ export default function PatientDetailPage() {
     setLoading(false)
   }
 
-  // Live age: prefer DOB calculation, fall back to stored age
   function displayAge(p: Patient): string {
     const live = ageFromDOB(p.date_of_birth)
     if (live !== null) return `${live} years`
@@ -213,6 +207,27 @@ export default function PatientDetailPage() {
       <Link href="/patients" className="text-blue-600 text-sm hover:underline mt-2 block">← Back to patients</Link>
     </div></AppShell>
   )
+
+  // ── Derived insurance data ────────────────────────────────────
+  const pat = patient as any
+  const paidBills     = bills.filter(b => b.status === 'paid')
+  const totalBilled   = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+  const hasFinalDS    = discharges.some(d => d.is_final)
+  const hasDS         = discharges.length > 0
+  const hasRx         = prescriptions.length > 0
+  const hasBills      = paidBills.length > 0
+  const hasVisits     = encounters.length > 0
+
+  // Insurance bundle URL
+  const bundleUrl = `/api/insurance-bundle/${patient.id}`
+
+  // WhatsApp message for insurance docs ready
+  const insuranceWAMsg = TEMPLATES.find(t => t.id === 'insurance_docs_ready')?.generate({
+    patientName:   patient.full_name,
+    mobile:        patient.mobile,
+    mrn:           patient.mrn,
+    policyTpaName: pat.policy_tpa_name || '',
+  }) || ''
 
   return (
     <AppShell>
@@ -322,10 +337,10 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                 )}
-                {(patient as any).aadhaar_no && (
+                {pat.aadhaar_no && (
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Aadhaar No</div>
-                    <div className="text-sm font-mono font-medium text-gray-700">{(patient as any).aadhaar_no}</div>
+                    <div className="text-sm font-mono font-medium text-gray-700">{pat.aadhaar_no}</div>
                   </div>
                 )}
                 {patient.abha_id && (
@@ -342,18 +357,20 @@ export default function PatientDetailPage() {
                 </div>
               </div>
 
-              {(patient as any).mediclaim && (
-                <div className="flex items-center gap-2 text-sm">
+              {pat.mediclaim && (
+                <div className="flex items-center gap-2 text-sm mt-2">
                   <span className="text-xs text-gray-400 w-28 flex-shrink-0">Insurance</span>
                   <span className="font-medium text-green-700">
-                    Mediclaim ✓{(patient as any).cashless ? ' · Cashless' : ''}
+                    Mediclaim ✓{pat.cashless ? ' · Cashless' : ''}
+                    {pat.policy_tpa_name ? ` · ${pat.policy_tpa_name}` : ''}
+                    {pat.policy_number   ? ` · #${pat.policy_number}`  : ''}
                   </span>
                 </div>
               )}
-              {(patient as any).reference_source && (
+              {pat.reference_source && (
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-xs text-gray-400 w-28 flex-shrink-0">Referred by</span>
-                  <span className="font-medium text-gray-700">{(patient as any).reference_source}</span>
+                  <span className="font-medium text-gray-700">{pat.reference_source}</span>
                 </div>
               )}
               {patient.emergency_contact_name && (
@@ -371,14 +388,12 @@ export default function PatientDetailPage() {
 
         {/* ═══ CLINICAL RISK ALERT ═══════════════════════════════ */}
         {(() => {
-          // Compute risk from latest encounter
           const latestEnc = encounters[0]
           if (!latestEnc) return null
 
           const hasOB = latestEnc.ob_data && Object.keys(latestEnc.ob_data as object).length > 0
           const ob = (latestEnc.ob_data || {}) as any
 
-          // Run obstetric risk if patient has OB data
           let riskResult: RiskAssessment | null = null
           if (hasOB && ob.lmp) {
             riskResult = assessObstetricRisk({
@@ -390,7 +405,6 @@ export default function PatientDetailPage() {
             })
           }
 
-          // Also check vital signs for all patients
           const vitalFlags = assessVitalRisk({
             bp_systolic: latestEnc.bp_systolic || undefined,
             bp_diastolic: latestEnc.bp_diastolic || undefined,
@@ -399,9 +413,7 @@ export default function PatientDetailPage() {
             spo2: latestEnc.spo2 || undefined,
           })
 
-          // Combine all flags
           const allFlags = [...(riskResult?.flags || []), ...vitalFlags]
-          // Deduplicate by category (obstetric BP check may overlap with vital BP check)
           const seen = new Set<string>()
           const uniqueFlags = allFlags.filter(f => {
             if (seen.has(f.category)) return false
@@ -412,7 +424,7 @@ export default function PatientDetailPage() {
           if (uniqueFlags.length === 0) return null
 
           const hasCritical = uniqueFlags.some(f => f.level === 'critical')
-          const hasHigh = uniqueFlags.some(f => f.level === 'high')
+          const hasHigh     = uniqueFlags.some(f => f.level === 'high')
           const overallStyle = hasCritical
             ? riskLevelStyle('critical')
             : hasHigh
@@ -477,9 +489,9 @@ export default function PatientDetailPage() {
           ))}
         </div>
 
-        {/* Tabs */}
+        {/* ═══ TABS ═══════════════════════════════════════════════ */}
         <div className="card overflow-hidden">
-          <div className="flex border-b border-gray-100">
+          <div className="flex border-b border-gray-100 overflow-x-auto">
             {([
               { id:'overview',      label:'Overview' },
               { id:'visits',        label:`Visits (${encounters.length})` },
@@ -488,9 +500,10 @@ export default function PatientDetailPage() {
               { id:'billing',       label:`Bills (${bills.length})` },
               { id:'labs',          label:`Labs (${labReports.length})` },
               { id:'files',         label:'Files & Photos' },
+              { id:'insurance',     label:'🛡️ Insurance Docs' },   // NEW
             ] as {id:Tab;label:string}[]).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`px-5 py-3 text-sm font-medium capitalize transition-colors
+                className={`px-5 py-3 text-sm font-medium capitalize transition-colors whitespace-nowrap
                   ${activeTab === t.id
                     ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50/50'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
@@ -525,7 +538,6 @@ export default function PatientDetailPage() {
                         : <><Sparkles className="w-3 h-3" />Generate Summary</>}
                     </button>
                   </div>
-
                   {summaryState === 'idle' && (
                     <p className="text-xs text-gray-500">
                       {encounters.length === 0
@@ -533,20 +545,17 @@ export default function PatientDetailPage() {
                         : `Click "Generate Summary" to get an AI clinical overview based on ${encounters.length} visit(s) and ${prescriptions.length} prescription(s).`}
                     </p>
                   )}
-
                   {summaryState === 'loading' && (
                     <div className="flex items-center gap-2 text-xs text-purple-700">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Reading all consultations and generating clinical summary...
                     </div>
                   )}
-
                   {summaryState === 'error' && (
                     <p className="text-xs text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" />{summaryError}
                     </p>
                   )}
-
                   {summaryState === 'done' && summary && (
                     <p className="text-sm text-gray-800 leading-relaxed">{summary}</p>
                   )}
@@ -612,7 +621,6 @@ export default function PatientDetailPage() {
 
                 {/* USG Trend Timeline */}
                 {(() => {
-                  // Collect all encounters with USG data, oldest first
                   const usgEncs = [...encounters]
                     .filter(e => {
                       const ob = (e.ob_data || {}) as any
@@ -630,8 +638,6 @@ export default function PatientDetailPage() {
                       <p className="text-xs text-gray-400 mb-3">
                         Structured ultrasound parameters tracked across {usgEncs.length} visit{usgEncs.length > 1 ? 's' : ''}
                       </p>
-
-                      {/* Trend table */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
@@ -679,21 +685,20 @@ export default function PatientDetailPage() {
                         </table>
                       </div>
 
-                      {/* AFI trend line (if multiple readings) */}
+                      {/* AFI trend bar chart */}
                       {(() => {
                         const afiData = usgEncs
                           .map(e => ({ date: e.encounter_date, ga: (e.ob_data as any)?.usg_ga, afi: (e.ob_data as any)?.afi }))
                           .filter(d => d.afi)
                         if (afiData.length < 2) return null
-
                         return (
                           <div className="mt-4 pt-4 border-t border-gray-100">
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const afiNum   = Number(d.afi)
-                                const maxAfi   = Math.max(...afiData.map(x => Number(x.afi)))
-                                const height   = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const afiNum     = Number(d.afi)
+                                const maxAfi     = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height     = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
                                 const isLow      = afiNum < 8
                                 const isCritical = afiNum < 5
                                 return (
@@ -723,7 +728,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
 
-                {/* ── WhatsApp Clinical Reminders ── */}
+                {/* WhatsApp Clinical Reminders */}
                 {patient.mobile && (
                   <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -734,34 +739,28 @@ export default function PatientDetailPage() {
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {TEMPLATES.map(tmpl => {
-                        // Build params from patient + encounter data
                         const latestEnc = encounters[0]
                         const ob = (latestEnc?.ob_data || {}) as any
                         const latestRx = prescriptions[0]
                         const params: TemplateParams = {
                           patientName: patient.full_name,
                           mobile: patient.mobile,
-                          ga: ob.lmp ? undefined : undefined, // will be calculated in template
                           lmp: ob.lmp,
                           edd: ob.edd,
                           followUpDate: latestRx?.follow_up_date || '',
                           diagnosis: latestEnc?.diagnosis || '',
                           doctorName: latestEnc?.doctor_name || '',
+                          mrn: patient.mrn,
+                          policyTpaName: pat.policy_tpa_name || '',
                           medications: latestRx?.medications
                             ? (latestRx.medications as any[]).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''}`).join('\n')
                             : '',
                         }
                         const msg = tmpl.generate(params)
                         const url = whatsAppUrl(patient.mobile, msg)
-
                         return (
-                          <a
-                            key={tmpl.id}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all text-left group"
-                          >
+                          <a key={tmpl.id} href={url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all text-left group">
                             <span className="text-lg flex-shrink-0">{tmpl.emoji}</span>
                             <div className="min-w-0">
                               <div className="text-xs font-semibold text-gray-800 group-hover:text-green-700 truncate">{tmpl.label}</div>
@@ -949,6 +948,247 @@ export default function PatientDetailPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── LABS ── */}
+            {activeTab === 'labs' && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-4">Lab Reports</h3>
+                {labReports.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                    <p className="font-medium mb-1">No lab reports yet</p>
+                    <p className="text-xs">Lab reports added during consultations will appear here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {labReports.map((r: any) => (
+                      <div key={r.id} className="border border-gray-100 rounded-lg p-4">
+                        <div className="font-semibold text-sm text-gray-900 mb-1">{r.test_name || 'Lab Report'}</div>
+                        {r.result && <div className="text-xs text-gray-600">{r.result}</div>}
+                        <div className="text-xs text-gray-400 mt-1">{formatDate(r.date || r.created_at)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ══ INSURANCE DOCS TAB (NEW) ══════════════════════════════ */}
+            {activeTab === 'insurance' && (
+              <div className="space-y-5">
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-blue-600"/>
+                      Medical Insurance Document Bundle
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      All documents required for your insurance claim — compiled in one place.
+                    </p>
+                  </div>
+                  <Link href={`/patients/${patient.id}/edit`}
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                    <Edit className="w-3 h-3"/> Update policy details
+                  </Link>
+                </div>
+
+                {/* Policy details card */}
+                <div className={`rounded-xl border p-4 ${pat.mediclaim ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`}/>
+                    <span className="font-semibold text-sm text-gray-900">Insurance / Policy Details</span>
+                    {pat.mediclaim
+                      ? <span className="badge-green text-xs">Mediclaim Active</span>
+                      : <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">No Insurance on record</span>}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Claim Type</div>
+                      <div className="font-semibold text-gray-800">
+                        {pat.mediclaim ? (pat.cashless ? '💳 Cashless' : '🧾 Reimbursement') : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Insurance / TPA</div>
+                      <div className="font-semibold text-gray-800">{pat.policy_tpa_name || <span className="text-gray-400 font-normal italic">Not entered</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Policy Number</div>
+                      <div className="font-mono font-semibold text-gray-800">{pat.policy_number || <span className="text-gray-400 font-normal italic">Not entered</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">ABHA ID</div>
+                      <div className="font-mono font-semibold text-gray-800">{patient.abha_id || <span className="text-gray-400 font-normal italic">Not linked</span>}</div>
+                    </div>
+                  </div>
+                  {(!pat.policy_tpa_name || !pat.policy_number) && (
+                    <div className="mt-3 pt-3 border-t border-green-200 text-xs text-amber-700 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                      <span>
+                        Policy company and number not filled.{' '}
+                        <Link href={`/patients/${patient.id}/edit`} className="underline font-semibold">
+                          Edit patient
+                        </Link>{' '}
+                        to add them — they appear on the insurance cover sheet.
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Document checklist */}
+                <div className="card p-5">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-4">Document Checklist</h4>
+                  <div className="space-y-3">
+                    {/* Discharge summary */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasDS ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasDS ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Discharge Summary</div>
+                          <div className="text-xs text-gray-500">
+                            {hasDS
+                              ? `${discharges.length} document(s)${hasFinalDS ? ' · Finalised ✓' : ' · Draft — not yet finalised'}`
+                              : 'Not created yet — required for IPD claims'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/patients/${patient.id}/discharge`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <FileText className="w-3 h-3"/>
+                        {hasDS ? 'View' : 'Create'}
+                      </Link>
+                    </div>
+
+                    {/* Prescriptions */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasRx ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasRx ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Prescriptions</div>
+                          <div className="text-xs text-gray-500">
+                            {hasRx ? `${prescriptions.length} prescription(s) on record` : 'No prescriptions yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/opd/new?patient=${patient.id}`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Pill className="w-3 h-3"/>
+                        {hasRx ? 'View Visits' : 'Add'}
+                      </Link>
+                    </div>
+
+                    {/* Payment receipts */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasBills ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasBills ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Payment Receipts</div>
+                          <div className="text-xs text-gray-500">
+                            {hasBills
+                              ? `${paidBills.length} receipt(s) — Total ₹${totalBilled.toLocaleString('en-IN')}`
+                              : 'No paid bills yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <IndianRupee className="w-3 h-3"/>
+                        {hasBills ? 'View' : 'Add'}
+                      </Link>
+                    </div>
+
+                    {/* Consultation notes */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasVisits ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasVisits ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Consultation Notes</div>
+                          <div className="text-xs text-gray-500">
+                            {hasVisits ? `${encounters.length} visit(s) on record` : 'No consultations yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={() => setActiveTab('visits')}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Stethoscope className="w-3 h-3"/> View
+                      </button>
+                    </div>
+
+                    {/* Patient identity */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-green-50 border-green-200">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">✅</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Patient Identity</div>
+                          <div className="text-xs text-gray-500">
+                            {[patient.aadhaar_no && 'Aadhaar', patient.abha_id && 'ABHA', patient.mrn && `MRN: ${patient.mrn}`]
+                              .filter(Boolean).join(' · ') || 'Name, MRN, demographics on record'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/patients/${patient.id}/edit`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Edit className="w-3 h-3"/> Edit
+                      </Link>
+                    </div>
+
+                    {/* Uploaded files */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 border-blue-200">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">📎</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Uploaded Files</div>
+                          <div className="text-xs text-gray-500">Lab PDFs, scan reports, X-rays (listed in bundle)</div>
+                        </div>
+                      </div>
+                      <button onClick={() => setActiveTab('files')}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Download className="w-3 h-3"/> View
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary CTA — Open Insurance Bundle */}
+                <div className="bg-blue-600 rounded-xl p-5 text-white">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Shield className="w-5 h-5"/>
+                    </div>
+                    <div>
+                      <div className="font-bold text-base">Open Insurance Bundle</div>
+                      <div className="text-xs text-blue-200">
+                        Cover sheet + Discharge + Prescriptions + Receipts + Consultations — all in one printable document
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => window.open(bundleUrl, '_blank')}
+                      className="flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors">
+                      <ExternalLink className="w-4 h-4"/>
+                      Open &amp; Print Bundle
+                    </button>
+                    {patient.mobile && insuranceWAMsg && (
+                      <a href={whatsAppUrl(patient.mobile, insuranceWAMsg)}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors">
+                        <MessageCircle className="w-4 h-4"/>
+                        Notify Patient via WhatsApp
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs text-blue-200 mt-3">
+                    The bundle opens in a new tab. Use your browser&apos;s Print or Ctrl+P to save as PDF or print.
+                    Hospital name on the bundle comes from{' '}
+                    <span className="font-semibold">Settings → Hospital Details</span>.
+                  </p>
+                </div>
+
               </div>
             )}
 

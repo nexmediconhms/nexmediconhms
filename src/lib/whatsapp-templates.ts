@@ -12,6 +12,7 @@
  * 5. Follow-up Appointment
  * 6. Medication Reminder
  * 7. General Health Checkup
+ * 8. Insurance Documents Ready  ← NEW
  */
 
 import { getHospitalSettings } from './utils'
@@ -27,6 +28,7 @@ export type TemplateId =
   | 'follow_up'
   | 'medication'
   | 'general_checkup'
+  | 'insurance_docs_ready'   // NEW
 
 export interface TemplateParams {
   patientName: string
@@ -43,6 +45,8 @@ export interface TemplateParams {
   diagnosis?: string       // current diagnosis
   doctorName?: string      // treating doctor
   customNote?: string      // any additional note
+  mrn?: string             // patient MRN (used in insurance template)
+  policyTpaName?: string   // insurance company / TPA name
 }
 
 export interface Template {
@@ -159,6 +163,19 @@ export const TEMPLATES: Template[] = [
       const h = hospitalInfo()
       const dateText = p.followUpDate ? formatDateNice(p.followUpDate) : ''
       return `*${h.name}*\n\nNamaste ${p.patientName} ji 🙏\n\nIt's time for your *routine health check-up*.\n\n${dateText ? `📅 *Suggested Date:* ${dateText}\n` : ''}🏥 *Hospital:* ${h.name}\n📍 *Address:* ${h.address}\n\nRegular check-ups help detect health issues early.\n\nPlease come *fasting* (empty stomach) for accurate blood test results.\n\n${p.customNote ? `📝 *Note:* ${p.customNote}\n\n` : ''}For appointment: ${h.phone}\n\n---\nતમારી નિયમિત આરોગ્ય તપાસનો સમય થયો છે. કૃપા કરીને ખાલી પેટે આવો.\n\n_${h.name} — Prevention is better than cure_`
+    },
+  },
+
+  // ── NEW: Insurance Documents Ready ───────────────────────────
+  {
+    id: 'insurance_docs_ready',
+    label: 'Insurance Docs Ready',
+    emoji: '🛡️',
+    description: 'Notify patient that insurance documents are compiled and ready',
+    category: 'general',
+    generate: (p) => {
+      const h = hospitalInfo()
+      return `*${h.name}*\n\nNamaste ${p.patientName} ji 🙏\n\nYour *Medical Insurance Documents* are ready for collection. 🛡️\n\n📋 *Documents compiled:*\n✅ Discharge Summary\n✅ Prescriptions & Medications\n✅ Payment Receipts / Bills\n✅ Consultation Notes\n✅ Doctor's Declaration Letter\n\n${p.mrn ? `🪪 *Your MRN:* ${p.mrn}\n` : ''}${p.policyTpaName ? `🏢 *Insurance / TPA:* ${p.policyTpaName}\n` : ''}🏥 *Collect from:* ${h.name}\n📍 *Address:* ${h.address}\n⏰ *Timing:* 9 AM – 5 PM (Mon–Sat)\n\nPlease bring your *insurance card* and a valid *ID proof* when you collect the documents.\n\n${p.customNote ? `📝 *Note:* ${p.customNote}\n\n` : ''}For queries: ${h.phone}\n\n---\nતમારા વીમા (Insurance) ક્લેઈમ માટેના તમામ દસ્તાવેજો તૈયાર છે. ઓફિસ ટાઇમ દરમ્યાન ID proof અને insurance card સાથે લઈ જાઓ.\n\n_${h.name} — We care for you_ 🙏`
     },
   },
 ]
