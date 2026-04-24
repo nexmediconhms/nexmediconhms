@@ -16,6 +16,10 @@ export interface HospitalSettings {
   feeFollowUp: string
   feeIPD: string
   feeEmergency: string
+  // ── CA (Chartered Accountant) contact details ────────────────
+  caName: string   // CA's full name
+  caWhatsApp: string   // CA's WhatsApp number (10 digits)
+  caEmail: string   // CA's email address
 }
 
 export const DEFAULTS: HospitalSettings = {
@@ -34,6 +38,10 @@ export const DEFAULTS: HospitalSettings = {
   feeFollowUp: '300',
   feeIPD: '1500',
   feeEmergency: '800',
+  // CA defaults — empty so the doctor fills them in Settings
+  caName: '',
+  caWhatsApp: '',
+  caEmail: '',
 }
 
 export const SETTINGS_STORAGE_KEY = STORAGE_KEY
@@ -43,6 +51,6 @@ export function loadSettings(): HospitalSettings {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) return { ...DEFAULTS, ...JSON.parse(stored) }
-  } catch {}
+  } catch { }
   return DEFAULTS
 }
