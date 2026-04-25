@@ -16,11 +16,11 @@ import {
 } from 'lucide-react'
 
 interface NavItemDef {
-  href:       string
-  icon:       any
-  label:      string
+  href:        string
+  icon:        any
+  label:       string
   permission?: Permission
-  badge?:     number   // live badge count
+  badge?:      number
 }
 
 interface NavGroupDef {
@@ -40,24 +40,24 @@ export default function Sidebar() {
     Tools:    true,
   })
 
-  // Live urgent reminder count — fetched once on mount, refreshed every 5 minutes
-  const [urgentCount, setUrgentCount] = useState(0)
+  // Live badge count — urgent + today reminders
+  const [reminderBadge, setReminderBadge] = useState(0)
 
   useEffect(() => {
-    async function fetchUrgentCount() {
+    async function fetchBadge() {
       try {
-        const res  = await fetch('/api/reminders')
+        const res = await fetch('/api/reminders')
         if (!res.ok) return
         const data = await res.json()
-        const urgent = (data.reminders || []).filter(
+        const count = (data.reminders || []).filter(
           (r: any) => r.priority === 'urgent' || r.priority === 'today'
         ).length
-        setUrgentCount(urgent)
+        setReminderBadge(count)
       } catch {}
     }
-    fetchUrgentCount()
-    const interval = setInterval(fetchUrgentCount, 5 * 60 * 1000) // refresh every 5 min
-    return () => clearInterval(interval)
+    fetchBadge()
+    const t = setInterval(fetchBadge, 5 * 60 * 1000)
+    return () => clearInterval(t)
   }, [])
 
   const NAV_GROUPS: NavGroupDef[] = [
@@ -65,42 +65,42 @@ export default function Sidebar() {
       label: 'Clinical',
       emoji: '🏥',
       items: [
-        { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'        },
-        { href: '/patients',     icon: Users,           label: 'Patients',         permission: 'patients.view'      },
-        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'    },
-        { href: '/queue',        icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'         },
-        { href: '/appointments', icon: CalendarDays,    label: 'Appointments'      },
-        { href: '/reminders',    icon: BellRing,        label: 'Reminders',        badge: urgentCount               },
-        { href: '/beds',         icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'          },
-        { href: '/anc',          icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'           },
-        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'          },
-        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'         },
+        { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'                                           },
+        { href: '/patients',     icon: Users,           label: 'Patients',         permission: 'patients.view'       },
+        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'     },
+        { href: '/queue',        icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'          },
+        { href: '/appointments', icon: CalendarDays,    label: 'Appointments'                                        },
+        { href: '/reminders',    icon: BellRing,        label: 'Reminders',        badge: reminderBadge              },
+        { href: '/beds',         icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'           },
+        { href: '/anc',          icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'            },
+        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'           },
+        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'          },
       ],
     },
     {
       label: 'Finance',
       emoji: '💰',
       items: [
-        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'       },
-        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
-        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
-        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
+        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'        },
+        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'        },
+        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'        },
+        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'   },
       ],
     },
     {
       label: 'Tools',
       emoji: '🔧',
       items: [
-        { href: '/reports', icon: BarChart2,   label: 'Reports',       permission: 'reports.view' },
-        { href: '/search',  icon: SearchIcon,  label: 'Global Search'  },
+        { href: '/reports', icon: BarChart2,  label: 'Reports',      permission: 'reports.view' },
+        { href: '/search',  icon: SearchIcon, label: 'Global Search'                            },
       ],
     },
   ]
 
   const FOOTER_LINKS: NavItemDef[] = [
-    { href: '/ai-setup',   icon: Sparkles, label: 'AI Status'    },
-    { href: '/abdm-setup', icon: Shield,   label: 'ABDM / FHIR' },
-    { href: '/setup',      icon: BookOpen, label: 'Setup Guide'  },
+    { href: '/ai-setup',   icon: Sparkles, label: 'AI Status'                               },
+    { href: '/abdm-setup', icon: Shield,   label: 'ABDM / FHIR'                            },
+    { href: '/setup',      icon: BookOpen, label: 'Setup Guide'                             },
     { href: '/settings',   icon: Settings, label: 'Settings',    permission: 'settings.view' },
   ]
 
@@ -134,13 +134,14 @@ export default function Sidebar() {
             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
         <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}/>
         <span className="truncate flex-1">{label}</span>
-        {/* Live badge — shows urgent+today count */}
         {badge != null && badge > 0 && (
-          <span className="flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 animate-pulse">
+          <span
+            className="flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white font-bold px-1"
+            style={{ fontSize: '10px' }}>
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {active && (!badge || badge === 0) && (
+        {active && (badge == null || badge === 0) && (
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>
         )}
       </Link>
