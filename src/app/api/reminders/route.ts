@@ -6,29 +6,46 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
-// ── Date helpers ──────────────────────────────────────────────
+// ── Date helpers (IST-aware — Asia/Kolkata) ───────────────────
+const IST = 'Asia/Kolkata'
+
+/** Current date string in IST (YYYY-MM-DD) */
 function today(): string {
-  return new Date().toISOString().split('T')[0]
+  return new Date().toLocaleDateString('en-CA', { timeZone: IST }) // en-CA → YYYY-MM-DD
 }
 
+/** Tomorrow's date string in IST */
 function tomorrow(): string {
   const d = new Date()
   d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
+  return d.toLocaleDateString('en-CA', { timeZone: IST })
 }
 
+/** Date string N days from now in IST */
 function daysFromNow(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  return d.toLocaleDateString('en-CA', { timeZone: IST })
 }
 
+/** Parse a YYYY-MM-DD string into midnight-IST as a Date */
+function parseISTDate(dateStr: string): Date {
+  // Treat the date string as an IST date by appending the IST offset
+  return new Date(dateStr + 'T00:00:00+05:30')
+}
+
+/** How many calendar days ago was dateStr (in IST)? */
 function daysSince(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+  const todayIST = parseISTDate(today())
+  const target   = parseISTDate(dateStr)
+  return Math.floor((todayIST.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+/** How many calendar days until dateStr (in IST)? 0 = today, 1 = tomorrow, -1 = yesterday */
 function daysUntil(dateStr: string): number {
-  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  const todayIST = parseISTDate(today())
+  const target   = parseISTDate(dateStr)
+  return Math.round((target.getTime() - todayIST.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 // Standard ANC visit schedule in weeks of gestation
@@ -234,7 +251,7 @@ export async function GET(_req: NextRequest) {
       // Find which ANC visit window she is in and when next one is due
       for (const schedWeek of ANC_SCHEDULE_WEEKS) {
         const visitDueMs  = lmpDate.getTime() + schedWeek * 7 * 24 * 60 * 60 * 1000
-        const visitDueStr = new Date(visitDueMs).toISOString().split('T')[0]
+        const visitDueStr = new Date(visitDueMs).toLocaleDateString('en-CA', { timeZone: IST })
         const daysAway    = daysUntil(visitDueStr)
 
         // Show upcoming ANC reminder if visit is due within 7 days
@@ -283,7 +300,7 @@ export async function GET(_req: NextRequest) {
 
       const delivMs     = new Date(ds.delivery_date).getTime()
       const followUpMs  = delivMs + 42 * 24 * 60 * 60 * 1000  // 6 weeks = 42 days
-      const followUpStr = new Date(followUpMs).toISOString().split('T')[0]
+      const followUpStr = new Date(followUpMs).toLocaleDateString('en-CA', { timeZone: IST })
       const daysAway    = daysUntil(followUpStr)
 
       // Show if within window: 3 days before to 7 days after
@@ -331,7 +348,7 @@ export async function GET(_req: NextRequest) {
 
       for (const vax of VAX_SCHEDULE) {
         const vaxDueMs  = delivMs + vax.days * 24 * 60 * 60 * 1000
-        const vaxDueStr = new Date(vaxDueMs).toISOString().split('T')[0]
+        const vaxDueStr = new Date(vaxDueMs).toLocaleDateString('en-CA', { timeZone: IST })
         const daysAway  = daysUntil(vaxDueStr)
 
         // Show if within window: 3 days before to 5 days after
