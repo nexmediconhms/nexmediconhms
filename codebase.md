@@ -3895,6 +3895,489 @@ export async function GET(req: NextRequest) {
 
 ```
 
+# src\app\api\insurance-bundle\[patientId]\route.ts
+
+```ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+)
+
+// ── Small helpers ─────────────────────────────────────────────
+function fmtDate(d?: string | null): string {
+  if (!d) return '—'
+  try {
+    return new Date(d).toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    })
+  } catch { return d }
+}
+
+function inr(n?: number | null): string {
+  if (!n) return '₹0'
+  return '₹' + Number(n).toLocaleString('en-IN')
+}
+
+function esc(s?: string | null): string {
+  if (!s) return ''
+  return s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+// ── Build full printable HTML bundle ─────────────────────────
+function buildHTML(
+  patient:       any,
+  encounters:    any[],
+  prescriptions: any[],
+  bills:         any[],
+  discharges:    any[],
+  attachments:   any[],
+): string {
+  const hs = {
+    name:    process.env.HOSPITAL_NAME    || 'NexMedicon Hospital',
+    address: process.env.HOSPITAL_ADDRESS || '',
+    phone:   process.env.HOSPITAL_PHONE   || '',
+    regNo:   process.env.HOSPITAL_REG_NO  || '',
+    gstin:   process.env.HOSPITAL_GSTIN   || '',
+    doctor:  process.env.DOCTOR_NAME      || '',
+    qual:    process.env.DOCTOR_QUAL      || '',
+    reg:     process.env.DOCTOR_REG       || '',
+  }
+
+  const now = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'long', year: 'numeric',
+  })
+
+  const paidBills  = bills.filter((b: any) => b.status === 'paid')
+  const totalPaid  = paidBills.reduce((s: number, b: any) => s + (Number(b.net_amount) || 0), 0)
+
+  // ── shared CSS ───────────────────────────────────────────────
+  const css = `
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #111827; background: #f3f4f6; }
+
+.page {
+  background: #fff; width: 210mm; min-height: 297mm;
+  margin: 24px auto; padding: 20mm 18mm;
+  box-shadow: 0 2px 12px rgba(0,0,0,.1); page-break-after: always;
+}
+@media print {
+  body { background: #fff; }
+  .page { margin: 0; padding: 15mm 14mm; box-shadow: none; }
+  .no-print { display: none !important; }
+}
+
+/* letterhead */
+.lh { text-align: center; border-bottom: 2.5px solid #1e3a5f; padding-bottom: 10px; margin-bottom: 18px; }
+.lh-name { font-size: 19px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #1e3a5f; }
+.lh-sub  { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+/* page running header */
+.ph { display:flex; justify-content:space-between; font-size:10px; color:#9ca3af;
+      border-bottom:1px solid #e5e7eb; padding-bottom:5px; margin-bottom:14px; }
+
+/* titles */
+.doc-title    { font-size:17px; font-weight:700; color:#1e3a5f; text-align:center;
+                margin-bottom:4px; text-transform:uppercase; letter-spacing:.5px; }
+.doc-subtitle { font-size:11px; color:#6b7280; text-align:center; margin-bottom:18px; }
+
+/* info table */
+.it { width:100%; border-collapse:collapse; margin-bottom:14px; }
+.it td { padding:5px 8px; vertical-align:top; font-size:12px; border-bottom:1px solid #f3f4f6; }
+.it .lbl { color:#6b7280; width:36%; font-weight:600; font-size:11px;
+           text-transform:uppercase; letter-spacing:.3px; }
+.mono { font-family:monospace; }
+
+/* section header */
+.sh { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+      color:#374151; background:#f9fafb; border-left:3px solid #1e3a5f;
+      padding:4px 8px; margin:13px 0 7px; }
+
+/* text block */
+.tb { white-space:pre-wrap; font-size:12px; color:#374151; line-height:1.6; padding:4px 0; }
+
+/* data table */
+.dt { width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px; }
+.dt th { background:#1e3a5f; color:#fff; padding:6px 8px; text-align:left;
+         font-size:10px; text-transform:uppercase; letter-spacing:.3px; }
+.dt td { padding:5px 8px; border-bottom:1px solid #f0f0f0; vertical-align:top; }
+.dt tr:nth-child(even) td { background:#f9fafb; }
+.dt .tr { background:#eff6ff!important; font-weight:700; border-top:2px solid #1e3a5f; }
+
+/* declaration */
+.decl { border:1.5px solid #d1d5db; border-radius:6px; padding:14px;
+        margin:18px 0; background:#f9fafb; }
+.decl-title { font-weight:700; font-size:12px; margin-bottom:8px; color:#1e3a5f; }
+.decl p { font-size:12px; line-height:1.7; color:#374151; }
+
+/* signature */
+.sig { margin-top:28px; text-align:right; }
+.sig-line { border-top:1.5px solid #374151; width:200px; margin-left:auto; margin-bottom:6px; }
+.sig-name { font-weight:700; font-size:13px; }
+.sig-sub  { font-size:11px; color:#6b7280; margin-top:2px; }
+
+/* inline sig (prescriptions) */
+.sig2 { margin-top:20px; text-align:right; font-size:11px; color:#374151; }
+.sig2-line { border-top:1px solid #9ca3af; width:160px; margin-left:auto; margin-bottom:4px; }
+
+/* receipt block */
+.rb { border:1px solid #e5e7eb; border-radius:6px; padding:12px; margin-bottom:12px; }
+.rb-head { font-size:12px; font-weight:700; color:#1e3a5f; margin-bottom:8px;
+           display:flex; justify-content:space-between; }
+.rb-ref  { font-family:monospace; font-size:11px; color:#9ca3af; }
+.rb-foot { font-size:11px; color:#6b7280; margin-top:8px; padding-top:6px; border-top:1px solid #f0f0f0; }
+
+/* badges */
+.by { background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+.bn { background:#f3f4f6; color:#6b7280; padding:2px 8px; border-radius:999px; font-size:11px; }
+
+/* print bar */
+.pbar {
+  position:fixed; top:0; left:0; right:0; z-index:9999;
+  background:#1e3a5f; color:#fff; padding:10px 20px;
+  display:flex; align-items:center; justify-content:space-between;
+  font-family:'Segoe UI',Arial,sans-serif; font-size:13px;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);
+}
+.pbar strong { font-size:14px; }
+.pbar-sub { font-size:11px; color:#93c5fd; margin-top:2px; }
+.pbtn {
+  background:#22c55e; color:#fff; border:none; cursor:pointer;
+  padding:8px 22px; border-radius:6px; font-size:13px; font-weight:700;
+}
+.pbtn:hover { background:#16a34a; }
+`
+
+  // ── Cover page ────────────────────────────────────────────────
+  const cover = `
+<div class="page">
+  <div class="lh">
+    <div class="lh-name">${esc(hs.name)}</div>
+    ${hs.address ? `<div class="lh-sub">${esc(hs.address)}</div>` : ''}
+    ${hs.phone   ? `<div class="lh-sub">Tel: ${esc(hs.phone)}</div>` : ''}
+    ${(hs.regNo || hs.gstin)
+      ? `<div class="lh-sub">${hs.regNo ? 'Reg: ' + esc(hs.regNo) : ''}${hs.regNo && hs.gstin ? ' · ' : ''}${hs.gstin ? 'GSTIN: ' + esc(hs.gstin) : ''}</div>`
+      : ''}
+  </div>
+
+  <div class="doc-title">Medical Insurance Document Bundle</div>
+  <div class="doc-subtitle">Generated on ${now}</div>
+
+  <div class="sh">Patient Details</div>
+  <table class="it">
+    <tr><td class="lbl">Patient Name</td><td><strong>${esc(patient.full_name)}</strong></td></tr>
+    <tr><td class="lbl">MRN</td><td class="mono">${esc(patient.mrn)}</td></tr>
+    <tr><td class="lbl">Date of Birth</td><td>${fmtDate(patient.date_of_birth)}${patient.age ? ` (${patient.age} yrs)` : ''}</td></tr>
+    <tr><td class="lbl">Gender</td><td>${esc(patient.gender) || '—'}</td></tr>
+    <tr><td class="lbl">Blood Group</td><td>${esc(patient.blood_group) || '—'}</td></tr>
+    <tr><td class="lbl">Mobile</td><td class="mono">${esc(patient.mobile)}</td></tr>
+    ${patient.aadhaar_no ? `<tr><td class="lbl">Aadhaar No</td><td class="mono">${esc(patient.aadhaar_no)}</td></tr>` : ''}
+    ${patient.abha_id    ? `<tr><td class="lbl">ABHA ID</td><td class="mono">${esc(patient.abha_id)}</td></tr>` : ''}
+    ${patient.address    ? `<tr><td class="lbl">Address</td><td>${esc(patient.address)}</td></tr>` : ''}
+  </table>
+
+  <div class="sh">Insurance / Policy Details</div>
+  <table class="it">
+    <tr><td class="lbl">Mediclaim</td><td>${patient.mediclaim ? '<span class="by">Yes — Mediclaim Patient</span>' : '<span class="bn">No</span>'}</td></tr>
+    <tr><td class="lbl">Claim Type</td><td>${patient.cashless ? '<span class="by">Cashless</span>' : 'Reimbursement'}</td></tr>
+    ${patient.policy_tpa_name ? `<tr><td class="lbl">Insurance / TPA</td><td><strong>${esc(patient.policy_tpa_name)}</strong></td></tr>` : ''}
+    ${patient.policy_number   ? `<tr><td class="lbl">Policy Number</td><td class="mono">${esc(patient.policy_number)}</td></tr>` : ''}
+  </table>
+
+  <div class="sh">Documents Enclosed</div>
+  <table class="it">
+    <tr><td class="lbl">Discharge Summaries</td><td>${discharges.length ? `${discharges.length} document(s)` : '<em style="color:#9ca3af">None on record</em>'}</td></tr>
+    <tr><td class="lbl">Prescriptions</td><td>${prescriptions.length ? `${prescriptions.length} prescription(s)` : '<em style="color:#9ca3af">None on record</em>'}</td></tr>
+    <tr><td class="lbl">Payment Receipts</td><td>${paidBills.length ? `${paidBills.length} receipt(s) — Total ${inr(totalPaid)}` : '<em style="color:#9ca3af">None on record</em>'}</td></tr>
+    <tr><td class="lbl">Consultation Notes</td><td>${encounters.length ? `${encounters.length} visit(s)` : '<em style="color:#9ca3af">None on record</em>'}</td></tr>
+    <tr><td class="lbl">Uploaded Files</td><td>${attachments.length ? `${attachments.length} file(s) listed` : '<em style="color:#9ca3af">None uploaded</em>'}</td></tr>
+  </table>
+
+  <div class="decl">
+    <div class="decl-title">Doctor&apos;s Declaration</div>
+    <p>
+      I, <strong>${esc(hs.doctor || 'Doctor')}</strong>${hs.qual ? ` (${esc(hs.qual)})` : ''},
+      hereby certify that the clinical documents compiled in this bundle are true and accurate
+      records from the medical files of <strong>${esc(patient.full_name)}</strong>
+      (MRN: <span class="mono">${esc(patient.mrn)}</span>).
+      These documents are issued for the purpose of medical insurance claim processing and
+      are attested to the best of my knowledge and belief.
+    </p>
+  </div>
+
+  <div class="sig">
+    <div class="sig-line"></div>
+    <div class="sig-name">${esc(hs.doctor || 'Doctor')}</div>
+    ${hs.qual ? `<div class="sig-sub">${esc(hs.qual)}</div>` : ''}
+    ${hs.reg  ? `<div class="sig-sub">Reg. No: ${esc(hs.reg)}</div>` : ''}
+    <div class="sig-sub">${esc(hs.name)}</div>
+    <div class="sig-sub">Date: ${now}</div>
+  </div>
+</div>`
+
+  // ── Discharge summaries ───────────────────────────────────────
+  const dischargPages = discharges.map((ds: any, i: number) => `
+<div class="page">
+  <div class="ph"><span>${esc(hs.name)}</span><span>Discharge Summary${discharges.length > 1 ? ` (${i + 1}/${discharges.length})` : ''}</span></div>
+  <div class="doc-title">Discharge Summary</div>
+
+  <table class="it">
+    <tr><td class="lbl">Patient</td><td>${esc(patient.full_name)} — <span class="mono">${esc(patient.mrn)}</span></td></tr>
+    ${ds.admission_date  ? `<tr><td class="lbl">Admission</td><td>${fmtDate(ds.admission_date)}</td></tr>` : ''}
+    ${ds.discharge_date  ? `<tr><td class="lbl">Discharge</td><td>${fmtDate(ds.discharge_date)}</td></tr>` : ''}
+    ${ds.final_diagnosis ? `<tr><td class="lbl">Final Diagnosis</td><td><strong>${esc(ds.final_diagnosis)}</strong></td></tr>` : ''}
+    ${ds.secondary_diagnosis ? `<tr><td class="lbl">Secondary Dx</td><td>${esc(ds.secondary_diagnosis)}</td></tr>` : ''}
+    ${ds.condition_at_discharge ? `<tr><td class="lbl">Condition at Discharge</td><td>${esc(ds.condition_at_discharge)}</td></tr>` : ''}
+    ${ds.signed_by ? `<tr><td class="lbl">Signed By</td><td>${esc(ds.signed_by)}</td></tr>` : ''}
+    <tr><td class="lbl">Status</td><td>${ds.is_final ? '<span class="by">Finalised</span>' : 'Draft'}</td></tr>
+  </table>
+
+  ${ds.clinical_summary    ? `<div class="sh">Clinical Summary</div><div class="tb">${esc(ds.clinical_summary)}</div>` : ''}
+  ${ds.investigations      ? `<div class="sh">Investigations</div><div class="tb">${esc(ds.investigations)}</div>` : ''}
+  ${ds.treatment_given     ? `<div class="sh">Treatment Given</div><div class="tb">${esc(ds.treatment_given)}</div>` : ''}
+  ${ds.discharge_advice    ? `<div class="sh">Discharge Advice</div><div class="tb">${esc(ds.discharge_advice)}</div>` : ''}
+  ${ds.medications_at_discharge ? `<div class="sh">Medications at Discharge</div><div class="tb">${esc(ds.medications_at_discharge)}</div>` : ''}
+  ${ds.follow_up_date      ? `<div class="sh">Follow-up</div><div class="tb">${fmtDate(ds.follow_up_date)}${ds.follow_up_note ? ' — ' + esc(ds.follow_up_note) : ''}</div>` : ''}
+  ${ds.complications       ? `<div class="sh">Complications</div><div class="tb">${esc(ds.complications)}</div>` : ''}
+
+  ${(ds.delivery_type || ds.baby_weight) ? `
+  <div class="sh">Delivery Details</div>
+  <table class="it">
+    ${ds.delivery_type ? `<tr><td class="lbl">Delivery Type</td><td>${esc(ds.delivery_type)}</td></tr>` : ''}
+    ${ds.delivery_date ? `<tr><td class="lbl">Delivery Date</td><td>${fmtDate(ds.delivery_date)}</td></tr>` : ''}
+    ${ds.baby_sex      ? `<tr><td class="lbl">Baby Gender</td><td>${esc(ds.baby_sex)}</td></tr>` : ''}
+    ${ds.baby_weight   ? `<tr><td class="lbl">Birth Weight</td><td>${esc(ds.baby_weight)} kg</td></tr>` : ''}
+    ${ds.apgar_score   ? `<tr><td class="lbl">APGAR Score</td><td>${esc(ds.apgar_score)}</td></tr>` : ''}
+  </table>` : ''}
+</div>`).join('')
+
+  // ── Prescriptions ─────────────────────────────────────────────
+  const rxPages = prescriptions.map((rx: any, i: number) => {
+    const meds = Array.isArray(rx.medications) ? rx.medications : []
+    const rows = meds.map((m: any, j: number) => `
+<tr>
+  <td>${j + 1}</td>
+  <td><strong>${esc(m.drug)}</strong></td>
+  <td>${esc(m.dose)}</td>
+  <td>${esc(m.route)}</td>
+  <td>${esc(m.frequency)}</td>
+  <td>${esc(m.duration)}</td>
+</tr>`).join('')
+
+    return `
+<div class="page">
+  <div class="ph"><span>${esc(hs.name)}</span><span>Prescription${prescriptions.length > 1 ? ` (${i + 1}/${prescriptions.length})` : ''}</span></div>
+  <div class="doc-title">Prescription</div>
+
+  <table class="it">
+    <tr><td class="lbl">Patient</td><td>${esc(patient.full_name)} — <span class="mono">${esc(patient.mrn)}</span></td></tr>
+    <tr><td class="lbl">Date</td><td>${fmtDate(rx.created_at)}</td></tr>
+    ${rx.follow_up_date ? `<tr><td class="lbl">Follow-up</td><td>${fmtDate(rx.follow_up_date)}</td></tr>` : ''}
+  </table>
+
+  ${meds.length ? `
+  <div class="sh">Medications</div>
+  <table class="dt">
+    <thead><tr><th>#</th><th>Drug</th><th>Dose</th><th>Route</th><th>Frequency</th><th>Duration</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>` : ''}
+
+  ${rx.reports_needed ? `<div class="sh">Investigations Required</div><div class="tb">${esc(rx.reports_needed)}</div>` : ''}
+  ${rx.advice         ? `<div class="sh">Advice</div><div class="tb">${esc(rx.advice)}</div>` : ''}
+  ${rx.dietary_advice ? `<div class="sh">Dietary Advice</div><div class="tb">${esc(rx.dietary_advice)}</div>` : ''}
+
+  <div class="sig2">
+    <div class="sig2-line"></div>
+    <div>${esc(hs.doctor)}${hs.qual ? ` (${esc(hs.qual)})` : ''}</div>
+  </div>
+</div>`
+  }).join('')
+
+  // ── Bills / receipts ──────────────────────────────────────────
+  const billsPage = paidBills.length ? `
+<div class="page">
+  <div class="ph"><span>${esc(hs.name)}</span><span>Payment Receipts</span></div>
+  <div class="doc-title">Payment Receipts</div>
+
+  <table class="it">
+    <tr><td class="lbl">Patient</td><td>${esc(patient.full_name)} — <span class="mono">${esc(patient.mrn)}</span></td></tr>
+    <tr><td class="lbl">Total Paid</td><td><strong>${inr(totalPaid)}</strong></td></tr>
+    <tr><td class="lbl">Number of Receipts</td><td>${paidBills.length}</td></tr>
+  </table>
+
+  ${paidBills.map((bill: any, i: number) => {
+    const items = Array.isArray(bill.items) ? bill.items : []
+    return `
+  <div class="rb">
+    <div class="rb-head">
+      <span>Receipt ${i + 1} — ${fmtDate(bill.created_at)}</span>
+      <span class="rb-ref"># ${(bill.id || '').slice(-8).toUpperCase()}</span>
+    </div>
+    <table class="dt">
+      <thead><tr><th>#</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${items.map((item: any, j: number) => `<tr><td>${j + 1}</td><td>${esc(item.label)}</td><td style="text-align:right;font-family:monospace">${inr(item.amount)}</td></tr>`).join('')}
+        ${Number(bill.discount) > 0 ? `<tr><td colspan="2" style="text-align:right;color:#6b7280">Discount</td><td style="text-align:right;color:#6b7280;font-family:monospace">− ${inr(bill.discount)}</td></tr>` : ''}
+        <tr class="tr"><td colspan="2"><strong>Net Amount Paid</strong></td><td style="text-align:right;font-family:monospace"><strong>${inr(bill.net_amount)}</strong></td></tr>
+      </tbody>
+    </table>
+    <div class="rb-foot">Mode: <strong style="text-transform:capitalize">${esc(bill.payment_mode) || '—'}</strong>${bill.razorpay_payment_id ? ` &nbsp;·&nbsp; Ref: <span class="mono">${esc(bill.razorpay_payment_id)}</span>` : ''}</div>
+  </div>`
+  }).join('')}
+</div>` : ''
+
+  // ── Consultation history ──────────────────────────────────────
+  const consultPage = encounters.length ? `
+<div class="page">
+  <div class="ph"><span>${esc(hs.name)}</span><span>Consultation History</span></div>
+  <div class="doc-title">Consultation History</div>
+
+  <table class="it">
+    <tr><td class="lbl">Patient</td><td>${esc(patient.full_name)} — <span class="mono">${esc(patient.mrn)}</span></td></tr>
+    <tr><td class="lbl">Total Visits</td><td>${encounters.length}</td></tr>
+  </table>
+
+  <table class="dt" style="margin-top:14px">
+    <thead>
+      <tr><th>Date</th><th>Type</th><th>Chief Complaint</th><th>Diagnosis</th><th>BP</th><th>Wt</th></tr>
+    </thead>
+    <tbody>
+      ${encounters.map((enc: any) => `
+      <tr>
+        <td style="white-space:nowrap">${fmtDate(enc.encounter_date)}</td>
+        <td>${esc(enc.encounter_type)}</td>
+        <td>${esc(enc.chief_complaint) || '—'}</td>
+        <td><strong>${esc(enc.diagnosis) || '—'}</strong></td>
+        <td>${enc.bp_systolic ? `${enc.bp_systolic}/${enc.bp_diastolic}` : '—'}</td>
+        <td>${enc.weight ? enc.weight + ' kg' : '—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>` : ''
+
+  // ── Uploaded files list ───────────────────────────────────────
+  const filesPage = attachments.length ? `
+<div class="page">
+  <div class="ph"><span>${esc(hs.name)}</span><span>Uploaded Medical Files</span></div>
+  <div class="doc-title">Uploaded Medical Files</div>
+  <p style="color:#6b7280;font-size:12px;margin-bottom:12px">
+    The files below are stored in the hospital system. Request physical copies from the hospital for submission to the insurer.
+  </p>
+  <table class="dt">
+    <thead><tr><th>#</th><th>File Name</th><th>Type</th><th>Date</th><th>Notes</th></tr></thead>
+    <tbody>
+      ${attachments.map((a: any, i: number) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${esc(a.file_name)}</td>
+        <td>${esc(a.file_type || '').replace('image/', '').replace('application/', '').toUpperCase()}</td>
+        <td style="white-space:nowrap">${fmtDate(a.created_at)}</td>
+        <td>${esc(a.notes) || '—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>` : ''
+
+  // ── Print bar summary text ────────────────────────────────────
+  const summaryParts = [
+    discharges.length    ? `${discharges.length} discharge` : '',
+    prescriptions.length ? `${prescriptions.length} Rx` : '',
+    paidBills.length     ? `${paidBills.length} receipts (${inr(totalPaid)})` : '',
+    encounters.length    ? `${encounters.length} visits` : '',
+    attachments.length   ? `${attachments.length} files` : '',
+  ].filter(Boolean).join(' · ')
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Insurance Bundle — ${esc(patient.full_name)} (${esc(patient.mrn)})</title>
+<style>${css}</style>
+</head>
+<body>
+
+<div class="pbar no-print">
+  <div>
+    <strong>🛡️ Insurance Bundle</strong> — ${esc(patient.full_name)} (${esc(patient.mrn)})
+    <div class="pbar-sub">${summaryParts}</div>
+  </div>
+  <button class="pbtn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+</div>
+
+<div style="margin-top:62px">
+  ${cover}
+  ${dischargPages}
+  ${rxPages}
+  ${billsPage}
+  ${consultPage}
+  ${filesPage}
+</div>
+
+</body>
+</html>`
+}
+
+// ── Route handler ─────────────────────────────────────────────
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { patientId: string } },
+) {
+  const { patientId } = params
+  if (!patientId) {
+    return NextResponse.json({ error: 'patientId required' }, { status: 400 })
+  }
+
+  const [
+    { data: patient },
+    { data: encounters },
+    { data: prescriptions },
+    { data: discharges },
+    { data: bills },
+    { data: att1 },
+    { data: att2 },
+  ] = await Promise.all([
+    supabase.from('patients').select('*').eq('id', patientId).single(),
+    supabase.from('encounters').select('*').eq('patient_id', patientId).order('encounter_date', { ascending: false }),
+    supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('discharge_summaries').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('bills').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('consultation_attachments').select('id,file_name,file_type,notes,created_at').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('consultation_files_db').select('id,file_name,file_type,notes,created_at').eq('patient_id', patientId).order('created_at', { ascending: false }),
+  ])
+
+  if (!patient) {
+    return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
+  }
+
+  const attachments = [
+    ...(att1 || []),
+    ...(att2 || []),
+  ].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const html = buildHTML(
+    patient,
+    encounters    || [],
+    prescriptions || [],
+    bills         || [],
+    discharges    || [],
+    attachments,
+  )
+
+  return new NextResponse(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+```
+
 # src\app\api\ocr-free\route.ts
 
 ```ts
@@ -4860,6 +5343,458 @@ export async function POST(req: NextRequest) {
   }
 }
 
+```
+
+# src\app\api\reminders\route.ts
+
+```ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+)
+
+// ── Date helpers ──────────────────────────────────────────────
+function today(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+function tomorrow(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+}
+
+function daysFromNow(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+function daysSince(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function daysUntil(dateStr: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+}
+
+// Standard ANC visit schedule in weeks of gestation
+const ANC_SCHEDULE_WEEKS = [16, 20, 24, 28, 32, 36, 38, 40]
+
+// Vaccination schedule in days from delivery
+const VAX_SCHEDULE: { name: string; days: number }[] = [
+  { name: 'OPV / DPT / Hep-B (6 weeks)',    days: 42  },
+  { name: 'OPV / DPT / Hep-B (10 weeks)',   days: 70  },
+  { name: 'OPV / DPT / Hep-B (14 weeks)',   days: 98  },
+  { name: 'Measles / MMR (9 months)',        days: 270 },
+]
+
+// ── Reminder item shape ───────────────────────────────────────
+export interface ReminderItem {
+  id:            string   // unique key for React
+  type:          'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  priority:      'urgent' | 'today' | 'tomorrow' | 'upcoming'
+  patientId:     string
+  patientName:   string
+  mobile:        string
+  mrn:           string
+  sourceId:      string   // appointments.id, prescriptions.id, discharge_summaries.id, bills.id, encounters.id
+  sourceTable:   'appointments' | 'prescriptions' | 'discharge_summaries' | 'bills' | 'encounters'
+  title:         string
+  subtitle:      string
+  dueDate?:      string
+  reminderSentAt?: string | null
+  context: {     // raw data for WhatsApp message generation on the client
+    lmp?:          string
+    edd?:          string
+    deliveryDate?: string
+    babyName?:     string
+    apptDate?:     string
+    apptTime?:     string
+    apptType?:     string
+    followUpDate?: string
+    diagnosis?:    string
+    labTests?:     string
+    billAmount?:   number
+    vaxName?:      string
+    daysOverdue?:  number
+    weeksGA?:      string
+    riskReasons?:  string[]
+  }
+}
+
+// ── Route handler ─────────────────────────────────────────────
+export async function GET(_req: NextRequest) {
+  const tod = today()
+  const tom = tomorrow()
+  const in3  = daysFromNow(3)
+  const in7  = daysFromNow(7)
+
+  const reminders: ReminderItem[] = []
+
+  // ── 1. Appointments — today, tomorrow, next 3 days ───────────
+  try {
+    const { data: appts } = await supabase
+      .from('appointments')
+      .select('id, patient_id, patient_name, mrn, mobile, date, time, type, notes, status, reminder_sent, reminder_sent_at')
+      .gte('date', tod)
+      .lte('date', in3)
+      .neq('status', 'cancelled')
+      .neq('status', 'completed')
+      .order('date', { ascending: true })
+      .order('time', { ascending: true })
+
+    for (const a of appts || []) {
+      const daysAway = daysUntil(a.date)
+      reminders.push({
+        id:          `appt-${a.id}`,
+        type:        'appointment',
+        priority:    daysAway === 0 ? 'today' : daysAway === 1 ? 'tomorrow' : 'upcoming',
+        patientId:   a.patient_id,
+        patientName: a.patient_name,
+        mobile:      a.mobile,
+        mrn:         a.mrn,
+        sourceId:    a.id,
+        sourceTable: 'appointments',
+        title:       `Appointment — ${a.type}`,
+        subtitle:    daysAway === 0 ? `Today at ${a.time}` : daysAway === 1 ? `Tomorrow at ${a.time}` : `${a.date} at ${a.time}`,
+        dueDate:     a.date,
+        reminderSentAt: a.reminder_sent_at,
+        context: {
+          apptDate: a.date,
+          apptTime: a.time,
+          apptType: a.type,
+        },
+      })
+    }
+  } catch {}
+
+  // ── 2. Overdue + due-today follow-ups (from prescriptions) ───
+  try {
+    const { data: rxs } = await supabase
+      .from('prescriptions')
+      .select(`
+        id, patient_id, follow_up_date, reminder_sent_at,
+        patients(full_name, mrn, mobile),
+        encounters(diagnosis)
+      `)
+      .not('follow_up_date', 'is', null)
+      .lte('follow_up_date', in7)
+      .order('follow_up_date', { ascending: true })
+      .limit(60)
+
+    for (const rx of rxs || []) {
+      const pat  = rx.patients as any
+      const enc  = rx.encounters as any
+      const due  = rx.follow_up_date as string
+      const days = daysUntil(due)
+
+      // Only show overdue (negative) through next 7 days
+      if (!pat?.mobile) continue
+
+      const isOverdue = days < 0
+
+      reminders.push({
+        id:          `rx-${rx.id}`,
+        type:        'follow_up',
+        priority:    isOverdue ? 'urgent' : days === 0 ? 'today' : days === 1 ? 'tomorrow' : 'upcoming',
+        patientId:   rx.patient_id,
+        patientName: pat.full_name,
+        mobile:      pat.mobile,
+        mrn:         pat.mrn,
+        sourceId:    rx.id,
+        sourceTable: 'prescriptions',
+        title:       isOverdue ? `⚠️ Overdue Follow-up (${Math.abs(days)} days)` : 'Follow-up Appointment',
+        subtitle:    `Due: ${due}${enc?.diagnosis ? ' · ' + enc.diagnosis : ''}`,
+        dueDate:     due,
+        reminderSentAt: rx.reminder_sent_at,
+        context: {
+          followUpDate: due,
+          diagnosis:    enc?.diagnosis || '',
+          daysOverdue:  isOverdue ? Math.abs(days) : 0,
+        },
+      })
+    }
+  } catch {}
+
+  // ── 3. ANC patients — due for next visit ─────────────────────
+  try {
+    const { data: encs } = await supabase
+      .from('encounters')
+      .select(`
+        id, patient_id, encounter_date, ob_data, bp_systolic, bp_diastolic,
+        patients(full_name, mrn, mobile, age)
+      `)
+      .not('ob_data', 'is', null)
+      .order('encounter_date', { ascending: false })
+      .limit(200)
+
+    // Deduplicate — latest encounter per patient
+    const seen = new Set<string>()
+
+    for (const enc of encs || []) {
+      const ob  = enc.ob_data as any
+      const pat = enc.patients as any
+      if (!ob?.lmp || seen.has(enc.patient_id) || !pat?.mobile) continue
+      seen.add(enc.patient_id)
+
+      const lmpDate    = new Date(ob.lmp)
+      const nowMs      = Date.now()
+      const weeksNow   = (nowMs - lmpDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
+      const eddDate    = ob.edd ? new Date(ob.edd) : null
+      const weeksToEDD = eddDate ? daysUntil(ob.edd) / 7 : 999
+
+      // Skip if delivered (EDD > 2 weeks ago)
+      if (eddDate && weeksToEDD < -2) continue
+
+      // High risk alert — always surface in the queue
+      const highRiskFlags: string[] = []
+      if (ob.liquor === 'Reduced' || ob.liquor === 'Absent') highRiskFlags.push('Oligohydramnios')
+      if (ob.presentation === 'Breech' || ob.presentation === 'Transverse') highRiskFlags.push('Abnormal presentation')
+      if (ob.fhs && (Number(ob.fhs) < 110 || Number(ob.fhs) > 160)) highRiskFlags.push('Abnormal FHS')
+      if (ob.haemoglobin && Number(ob.haemoglobin) < 8) highRiskFlags.push('Severe anaemia')
+      if (pat.age && pat.age >= 35) highRiskFlags.push('Advanced maternal age')
+
+      if (highRiskFlags.length > 0) {
+        reminders.push({
+          id:          `anc-hr-${enc.id}`,
+          type:        'high_risk_anc',
+          priority:    'urgent',
+          patientId:   enc.patient_id,
+          patientName: pat.full_name,
+          mobile:      pat.mobile,
+          mrn:         pat.mrn,
+          sourceId:    enc.id,
+          sourceTable: 'encounters',
+          title:       '🚨 High-Risk ANC — Urgent Follow-up',
+          subtitle:    highRiskFlags.join(' · '),
+          reminderSentAt: null,
+          context: {
+            lmp:         ob.lmp,
+            edd:         ob.edd,
+            weeksGA:     `${Math.floor(weeksNow)} weeks`,
+            riskReasons: highRiskFlags,
+          },
+        })
+      }
+
+      // Find which ANC visit window she is in and when next one is due
+      for (const schedWeek of ANC_SCHEDULE_WEEKS) {
+        const visitDueMs  = lmpDate.getTime() + schedWeek * 7 * 24 * 60 * 60 * 1000
+        const visitDueStr = new Date(visitDueMs).toISOString().split('T')[0]
+        const daysAway    = daysUntil(visitDueStr)
+
+        // Show upcoming ANC reminder if visit is due within 7 days
+        if (daysAway >= -3 && daysAway <= 7) {
+          reminders.push({
+            id:          `anc-${enc.id}-w${schedWeek}`,
+            type:        'anc',
+            priority:    daysAway <= 0 ? 'today' : daysAway === 1 ? 'tomorrow' : 'upcoming',
+            patientId:   enc.patient_id,
+            patientName: pat.full_name,
+            mobile:      pat.mobile,
+            mrn:         pat.mrn,
+            sourceId:    enc.id,
+            sourceTable: 'encounters',
+            title:       `ANC Visit Due — ${schedWeek} Weeks`,
+            subtitle:    `GA: ${Math.floor(weeksNow)}w · EDD: ${ob.edd || '—'} · G${ob.gravida || 0}P${ob.para || 0}`,
+            dueDate:     visitDueStr,
+            reminderSentAt: null,
+            context: {
+              lmp:     ob.lmp,
+              edd:     ob.edd,
+              weeksGA: `${Math.floor(weeksNow)} weeks`,
+            },
+          })
+          break // only show the next upcoming visit per patient
+        }
+      }
+    }
+  } catch {}
+
+  // ── 4. Post-delivery follow-up (6 weeks after delivery) ──────
+  try {
+    const { data: dsList } = await supabase
+      .from('discharge_summaries')
+      .select(`
+        id, patient_id, delivery_date, reminder_sent_at,
+        patients(full_name, mrn, mobile)
+      `)
+      .not('delivery_date', 'is', null)
+      .order('delivery_date', { ascending: false })
+      .limit(50)
+
+    for (const ds of dsList || []) {
+      const pat = ds.patients as any
+      if (!ds.delivery_date || !pat?.mobile) continue
+
+      const delivMs     = new Date(ds.delivery_date).getTime()
+      const followUpMs  = delivMs + 42 * 24 * 60 * 60 * 1000  // 6 weeks = 42 days
+      const followUpStr = new Date(followUpMs).toISOString().split('T')[0]
+      const daysAway    = daysUntil(followUpStr)
+
+      // Show if within window: 3 days before to 7 days after
+      if (daysAway >= -7 && daysAway <= 3) {
+        reminders.push({
+          id:          `postdel-${ds.id}`,
+          type:        'post_delivery',
+          priority:    daysAway <= 0 ? 'urgent' : daysAway === 1 ? 'tomorrow' : 'upcoming',
+          patientId:   ds.patient_id,
+          patientName: pat.full_name,
+          mobile:      pat.mobile,
+          mrn:         pat.mrn,
+          sourceId:    ds.id,
+          sourceTable: 'discharge_summaries',
+          title:       '👶 Post-Delivery 6-Week Review',
+          subtitle:    `Delivered: ${ds.delivery_date} · Review due: ${followUpStr}`,
+          dueDate:     followUpStr,
+          reminderSentAt: ds.reminder_sent_at,
+          context: {
+            deliveryDate: ds.delivery_date,
+            followUpDate: followUpStr,
+          },
+        })
+      }
+    }
+  } catch {}
+
+  // ── 5. Vaccination reminders ──────────────────────────────────
+  try {
+    const { data: dsList } = await supabase
+      .from('discharge_summaries')
+      .select(`
+        id, patient_id, delivery_date, baby_sex,
+        patients(full_name, mrn, mobile)
+      `)
+      .not('delivery_date', 'is', null)
+      .order('delivery_date', { ascending: false })
+      .limit(50)
+
+    for (const ds of dsList || []) {
+      const pat = ds.patients as any
+      if (!ds.delivery_date || !pat?.mobile) continue
+
+      const delivMs = new Date(ds.delivery_date).getTime()
+
+      for (const vax of VAX_SCHEDULE) {
+        const vaxDueMs  = delivMs + vax.days * 24 * 60 * 60 * 1000
+        const vaxDueStr = new Date(vaxDueMs).toISOString().split('T')[0]
+        const daysAway  = daysUntil(vaxDueStr)
+
+        // Show if within window: 3 days before to 5 days after
+        if (daysAway >= -5 && daysAway <= 3) {
+          reminders.push({
+            id:          `vax-${ds.id}-${vax.days}`,
+            type:        'vaccination',
+            priority:    daysAway <= 0 ? 'urgent' : daysAway === 1 ? 'tomorrow' : 'upcoming',
+            patientId:   ds.patient_id,
+            patientName: pat.full_name,
+            mobile:      pat.mobile,
+            mrn:         pat.mrn,
+            sourceId:    ds.id,
+            sourceTable: 'discharge_summaries',
+            title:       `💉 ${vax.name}`,
+            subtitle:    `Mother: ${pat.full_name} · Delivered: ${ds.delivery_date} · Due: ${vaxDueStr}`,
+            dueDate:     vaxDueStr,
+            reminderSentAt: null,
+            context: {
+              deliveryDate: ds.delivery_date,
+              vaxName:      vax.name,
+              followUpDate: vaxDueStr,
+            },
+          })
+          break // one upcoming vax per discharge summary
+        }
+      }
+    }
+  } catch {}
+
+  // ── 6. Pending bills older than 3 days ───────────────────────
+  try {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data: pendingBills } = await supabase
+      .from('bills')
+      .select('id, patient_id, patient_name, mrn, net_amount, created_at, items')
+      .eq('status', 'pending')
+      .lt('created_at', threeDaysAgo)
+      .order('created_at', { ascending: true })
+      .limit(30)
+
+    for (const bill of pendingBills || []) {
+      // Look up mobile number
+      const { data: pat } = await supabase
+        .from('patients')
+        .select('mobile')
+        .eq('id', bill.patient_id)
+        .single()
+
+      if (!pat?.mobile) continue
+
+      const overdueDays = daysSince(bill.created_at)
+      reminders.push({
+        id:          `bill-${bill.id}`,
+        type:        'pending_bill',
+        priority:    overdueDays > 7 ? 'urgent' : 'upcoming',
+        patientId:   bill.patient_id,
+        patientName: bill.patient_name,
+        mobile:      pat.mobile,
+        mrn:         bill.mrn,
+        sourceId:    bill.id,
+        sourceTable: 'bills',
+        title:       `💳 Pending Payment — ₹${Number(bill.net_amount).toLocaleString('en-IN')}`,
+        subtitle:    `${overdueDays} days pending · ${Array.isArray(bill.items) ? bill.items.map((i: any) => i.label).join(', ').slice(0, 60) : ''}`,
+        reminderSentAt: null,
+        context: {
+          billAmount: Number(bill.net_amount),
+        },
+      })
+    }
+  } catch {}
+
+  // ── Sort: urgent first, then by dueDate ──────────────────────
+  const priorityOrder = { urgent: 0, today: 1, tomorrow: 2, upcoming: 3 }
+  reminders.sort((a, b) => {
+    const po = priorityOrder[a.priority] - priorityOrder[b.priority]
+    if (po !== 0) return po
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate)
+    return 0
+  })
+
+  return NextResponse.json({ reminders, generatedAt: new Date().toISOString() })
+}
+
+// ── PATCH — mark a reminder as sent ──────────────────────────
+export async function PATCH(req: NextRequest) {
+  const { sourceTable, sourceId } = await req.json()
+  if (!sourceTable || !sourceId) {
+    return NextResponse.json({ error: 'sourceTable and sourceId required' }, { status: 400 })
+  }
+
+  // Only update tables that have reminder_sent_at
+  const allowed = ['appointments', 'prescriptions', 'discharge_summaries']
+  if (!allowed.includes(sourceTable)) {
+    return NextResponse.json({ ok: true }) // bills / encounters don't track sent_at
+  }
+
+  await supabase
+    .from(sourceTable)
+    .update({ reminder_sent_at: new Date().toISOString() })
+    .eq('id', sourceId)
+
+  // Also mark appointments reminder_sent = true (existing field)
+  if (sourceTable === 'appointments') {
+    await supabase
+      .from('appointments')
+      .update({ reminder_sent: true })
+      .eq('id', sourceId)
+  }
+
+  return NextResponse.json({ ok: true })
+}
 ```
 
 # src\app\api\test-ai\route.ts
@@ -6178,7 +7113,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
-import { loadSettings } from '@/lib/settings'
+import { loadSettings, type HospitalSettings } from '@/lib/settings'
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
@@ -6487,7 +7422,7 @@ export default function BillingPage() {
   const searchParams = useSearchParams()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
   // Load CA settings separately (includes caName, caWhatsApp, caEmail)
-  const caSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' }
+  const caSettings: HospitalSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' } as HospitalSettings
 
   // ── Load bills ───────────────────────────────────────────────
   const loadBills = useCallback(async () => {
@@ -13784,24 +14719,47 @@ const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 const GENDERS      = ['Female','Male','Other']
 
 interface FormData {
-  full_name: string; age: string; date_of_birth: string; gender: string
-  mobile: string; blood_group: string; address: string; abha_id: string; aadhaar_no: string
-  emergency_contact_name: string; emergency_contact_phone: string
-  mediclaim: string; cashless: string; reference_source: string
+  full_name:               string
+  age:                     string
+  date_of_birth:           string
+  gender:                  string
+  mobile:                  string
+  blood_group:             string
+  address:                 string
+  abha_id:                 string
+  aadhaar_no:              string
+  emergency_contact_name:  string
+  emergency_contact_phone: string
+  mediclaim:               string
+  cashless:                string
+  reference_source:        string
+  // ── Insurance policy details (NEW) ──────────────────────────
+  policy_tpa_name:         string
+  policy_number:           string
 }
 
 function Err({ msg }: { msg: string }) {
-  return <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{msg}</p>
+  return (
+    <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+      <AlertCircle className="w-3 h-3" />{msg}
+    </p>
+  )
 }
 
 export default function EditPatientPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
+  const router  = useRouter()
 
-  const [form, setForm]     = useState<FormData>({ full_name:'', age:'', date_of_birth:'', gender:'Female', mobile:'', blood_group:'', address:'', abha_id:'', aadhaar_no:'', emergency_contact_name:'', emergency_contact_phone:'', mediclaim:'No', cashless:'No', reference_source:'' })
-  const [errors, setErrors] = useState<Partial<FormData>>({})
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved]   = useState(false)
+  const [form, setForm] = useState<FormData>({
+    full_name: '', age: '', date_of_birth: '', gender: 'Female',
+    mobile: '', blood_group: '', address: '', abha_id: '', aadhaar_no: '',
+    emergency_contact_name: '', emergency_contact_phone: '',
+    mediclaim: 'No', cashless: 'No', reference_source: '',
+    policy_tpa_name: '', policy_number: '',
+  })
+  const [errors,  setErrors]  = useState<Partial<FormData>>({})
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
   const [loading, setLoading] = useState(true)
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set())
 
@@ -13824,6 +14782,8 @@ export default function EditPatientPage() {
           mediclaim:               data.mediclaim ? 'Yes' : 'No',
           cashless:                data.cashless  ? 'Yes' : 'No',
           reference_source:        data.reference_source || '',
+          policy_tpa_name:         data.policy_tpa_name || '',
+          policy_number:           data.policy_number   || '',
         })
       }
       setLoading(false)
@@ -13849,7 +14809,7 @@ export default function EditPatientPage() {
     const p = result.patient
     if (!p) return
     if (p.full_name) set('full_name', p.full_name, true)
-    if (p.age) set('age', p.age, true)
+    if (p.age)       set('age', p.age, true)
     if (p.date_of_birth) handleDOB(p.date_of_birth, true)
     if (p.gender && GENDERS.includes(p.gender)) set('gender', p.gender, true)
     if (p.mobile) set('mobile', p.mobile.replace(/\D/g,'').slice(-10), true)
@@ -13857,8 +14817,9 @@ export default function EditPatientPage() {
     if (p.address) set('address', p.address, true)
     if (p.abha_id) set('abha_id', p.abha_id, true)
     if (p.aadhaar_no) set('aadhaar_no', p.aadhaar_no, true)
-    if (p.emergency_contact_name) set('emergency_contact_name', p.emergency_contact_name, true)
-    if (p.emergency_contact_phone) set('emergency_contact_phone', p.emergency_contact_phone.replace(/\D/g,'').slice(-10), true)
+    if (p.emergency_contact_name)  set('emergency_contact_name',  p.emergency_contact_name, true)
+    if (p.emergency_contact_phone) set('emergency_contact_phone',  p.emergency_contact_phone.replace(/\D/g,'').slice(-10), true)
+    if ((p as any).policy_tpa_name) set('policy_tpa_name', (p as any).policy_tpa_name, true)
   }
 
   function validate(): boolean {
@@ -13890,6 +14851,8 @@ export default function EditPatientPage() {
       mediclaim:               form.mediclaim === 'Yes',
       cashless:                form.cashless  === 'Yes',
       reference_source:        form.reference_source.trim() || null,
+      policy_tpa_name:         form.policy_tpa_name.trim() || null,
+      policy_number:           form.policy_number.trim()   || null,
       updated_at:              new Date().toISOString(),
     }).eq('id', id)
 
@@ -13901,8 +14864,8 @@ export default function EditPatientPage() {
 
   function inputCls(field: keyof FormData) {
     return 'input' +
-      (errors[field] ? ' border-red-400 focus:ring-red-400' : '') +
-      (ocrFields.has(field) ? ' !border-green-400 !bg-green-50' : '')
+      (errors[field]        ? ' border-red-400 focus:ring-red-400' : '') +
+      (ocrFields.has(field) ? ' !border-green-400 !bg-green-50'   : '')
   }
 
   if (loading) return (
@@ -13914,12 +14877,17 @@ export default function EditPatientPage() {
   return (
     <AppShell>
       <div className="p-6 max-w-4xl mx-auto">
+
+        {/* Header */}
         <div className="flex items-center gap-4 mb-5">
-          <Link href={`/patients/${id}`} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></Link>
+          <Link href={`/patients/${id}`} className="text-gray-400 hover:text-gray-600">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Edit Patient Details</h1>
             <p className="text-sm text-gray-500">
-              Update information below. <span className="text-green-700 text-xs font-medium">● Green = filled by scanner</span>
+              Update information below.{' '}
+              <span className="text-green-700 text-xs font-medium">● Green = filled by scanner</span>
             </p>
           </div>
         </div>
@@ -13935,39 +14903,47 @@ export default function EditPatientPage() {
           className="mb-5" />
 
         <form onSubmit={handleSave} noValidate>
+
+          {/* ── Personal Details ── */}
           <div className="card p-6 mb-5">
             <h2 className="section-title">Personal Details</h2>
             <div className="grid grid-cols-2 gap-5">
               <div className="col-span-2">
                 <label className="label">Full Name *</label>
-                <input className={inputCls('full_name')} value={form.full_name} onChange={e => set('full_name', e.target.value)} />
+                <input className={inputCls('full_name')} value={form.full_name}
+                  onChange={e => set('full_name', e.target.value)} />
                 {errors.full_name && <Err msg={errors.full_name} />}
               </div>
               <div>
                 <label className="label">Age (years)</label>
-                <input className={inputCls('age')} type="number" min="0" max="150" value={form.age} onChange={e => set('age', e.target.value)} />
+                <input className={inputCls('age')} type="number" min="0" max="150"
+                  value={form.age} onChange={e => set('age', e.target.value)} />
               </div>
               <div>
                 <label className="label">Date of Birth</label>
-                <input className={inputCls('date_of_birth')} type="date" max={new Date().toISOString().split('T')[0]}
+                <input className={inputCls('date_of_birth')} type="date"
+                  max={new Date().toISOString().split('T')[0]}
                   value={form.date_of_birth} onChange={e => handleDOB(e.target.value)} />
               </div>
               <div>
                 <label className="label">Gender</label>
-                <select className={inputCls('gender')} value={form.gender} onChange={e => set('gender', e.target.value)}>
+                <select className={inputCls('gender')} value={form.gender}
+                  onChange={e => set('gender', e.target.value)}>
                   {GENDERS.map(g => <option key={g}>{g}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label">Blood Group</label>
-                <select className={inputCls('blood_group')} value={form.blood_group} onChange={e => set('blood_group', e.target.value)}>
+                <select className={inputCls('blood_group')} value={form.blood_group}
+                  onChange={e => set('blood_group', e.target.value)}>
                   <option value="">Select</option>
                   {BLOOD_GROUPS.map(bg => <option key={bg}>{bg}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label">Mobile Number *</label>
-                <input className={`${inputCls('mobile')} font-mono`} maxLength={10} value={form.mobile}
+                <input className={`${inputCls('mobile')} font-mono`} maxLength={10}
+                  value={form.mobile}
                   onChange={e => set('mobile', e.target.value.replace(/\D/g,''))} />
                 {errors.mobile && <Err msg={errors.mobile} />}
               </div>
@@ -13975,38 +14951,50 @@ export default function EditPatientPage() {
                 <label className="label">Aadhaar Card No</label>
                 <input className={`${inputCls('aadhaar_no')} font-mono`} maxLength={14}
                   placeholder="e.g. 1234 5678 9012"
-                  value={form.aadhaar_no} onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))} />
+                  value={form.aadhaar_no}
+                  onChange={e => set('aadhaar_no', e.target.value.replace(/[^\d\s]/g, ''))} />
               </div>
               <div>
                 <label className="label">ABHA ID</label>
-                <input className={`${inputCls('abha_id')} font-mono`} value={form.abha_id} onChange={e => set('abha_id', e.target.value)} />
+                <input className={`${inputCls('abha_id')} font-mono`}
+                  value={form.abha_id} onChange={e => set('abha_id', e.target.value)} />
               </div>
               <div className="col-span-2">
                 <label className="label">Address</label>
-                <textarea className={`${inputCls('address')} resize-none`} rows={2} value={form.address} onChange={e => set('address', e.target.value)} />
+                <textarea className={`${inputCls('address')} resize-none`} rows={2}
+                  value={form.address} onChange={e => set('address', e.target.value)} />
               </div>
             </div>
           </div>
 
-          <div className="card p-6 mb-6">
-            <h2 className="section-title">Insurance & Referral</h2>
+          {/* ── Insurance & Referral ── */}
+          <div className="card p-6 mb-5">
+            <h2 className="section-title">Insurance &amp; Referral</h2>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="label">Mediclaim / Insurance</label>
-                <select className="input" value={form.mediclaim} onChange={e=>set('mediclaim',e.target.value)}>
-                  <option value="No">No</option><option value="Yes">Yes</option>
+                <select className="input" value={form.mediclaim}
+                  onChange={e => {
+                    set('mediclaim', e.target.value)
+                    if (e.target.value === 'No') set('cashless', 'No')
+                  }}>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </select>
               </div>
               <div>
                 <label className="label">Cashless Option</label>
                 <select className="input" value={form.cashless}
-                  disabled={form.mediclaim !== 'Yes'} onChange={e=>set('cashless',e.target.value)}>
-                  <option value="No">No</option><option value="Yes">Yes</option>
+                  disabled={form.mediclaim !== 'Yes'}
+                  onChange={e => set('cashless', e.target.value)}>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </select>
               </div>
               <div>
                 <label className="label">Referred By / Source</label>
-                <select className="input" value={form.reference_source} onChange={e=>set('reference_source',e.target.value)}>
+                <select className="input" value={form.reference_source}
+                  onChange={e => set('reference_source', e.target.value)}>
                   <option value="">Select (optional)</option>
                   <option>Doctor Referral</option><option>Patient Referral</option>
                   <option>Advertisement</option><option>Social Media</option>
@@ -14015,36 +15003,69 @@ export default function EditPatientPage() {
                 </select>
               </div>
             </div>
+
+            {/* Policy fields — visible only when mediclaim = Yes */}
+            {form.mediclaim === 'Yes' && (
+              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+                <div>
+                  <label className="label">Insurance Company / TPA Name</label>
+                  <input className={inputCls('policy_tpa_name')}
+                    placeholder="e.g. Medi Assist, Star Health, New India"
+                    value={form.policy_tpa_name}
+                    onChange={e => set('policy_tpa_name', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Name of insurer or TPA — printed on all insurance documents</p>
+                </div>
+                <div>
+                  <label className="label">Policy / Card Number</label>
+                  <input className={`${inputCls('policy_number')} font-mono`}
+                    placeholder="e.g. P/211200/01/2024/000123"
+                    value={form.policy_number}
+                    onChange={e => set('policy_number', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Appears on the insurance cover sheet and receipts</p>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* ── Emergency Contact ── */}
           <div className="card p-5 mb-4">
             <h2 className="section-title">Emergency Contact</h2>
             <div className="grid grid-cols-2 gap-5">
               <div>
                 <label className="label">Contact Name</label>
-                <input className={inputCls('emergency_contact_name')} value={form.emergency_contact_name} onChange={e => set('emergency_contact_name', e.target.value)} />
+                <input className={inputCls('emergency_contact_name')}
+                  value={form.emergency_contact_name}
+                  onChange={e => set('emergency_contact_name', e.target.value)} />
               </div>
               <div>
                 <label className="label">Contact Phone</label>
-                <input className={`${inputCls('emergency_contact_phone')} font-mono`} maxLength={10} value={form.emergency_contact_phone}
+                <input className={`${inputCls('emergency_contact_phone')} font-mono`} maxLength={10}
+                  value={form.emergency_contact_phone}
                   onChange={e => set('emergency_contact_phone', e.target.value.replace(/\D/g,''))} />
               </div>
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex items-center justify-between">
             <Link href={`/patients/${id}`} className="btn-secondary">Cancel</Link>
-            <button type="submit" disabled={saving || saved} className="btn-primary px-8 disabled:opacity-60 flex items-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving...</>
-                : saved ? <><CheckCircle className="w-4 h-4" />Saved!</>
-                : <><Save className="w-4 h-4" />Save Changes</>}
+            <button type="submit" disabled={saving || saved}
+              className="btn-primary px-8 disabled:opacity-60 flex items-center gap-2">
+              {saving ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving...</>
+              ) : saved ? (
+                <><CheckCircle className="w-4 h-4" />Saved!</>
+              ) : (
+                <><Save className="w-4 h-4" />Save Changes</>
+              )}
             </button>
           </div>
+
         </form>
       </div>
     </AppShell>
   )
 }
-
 ```
 
 # src\app\patients\[id]\page.tsx
@@ -14067,12 +15088,11 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download
+  Shield, Download, ExternalLink, MessageCircle,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
 function VitalsChart({ encounters }: { encounters: Encounter[] }) {
-  // Show last 8 encounters with vitals, oldest→newest
   const pts = [...encounters]
     .filter(e => e.bp_systolic || e.pulse || e.weight)
     .slice(0, 8)
@@ -14121,14 +15141,12 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
-        {/* Y-axis gridlines */}
         {[0, 0.25, 0.5, 0.75, 1].map(f => (
           <line key={f}
             x1={PAD.l} y1={PAD.t + chartH * (1-f)}
             x2={PAD.l + chartW} y2={PAD.t + chartH * (1-f)}
             stroke="#f1f5f9" strokeWidth="1"/>
         ))}
-        {/* X axis labels */}
         {pts.map((e, i) => (
           <text key={i}
             x={PAD.l + (i/(pts.length-1))*chartW}
@@ -14137,7 +15155,6 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
             {new Date(e.encounter_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
           </text>
         ))}
-        {/* Lines */}
         {lines.map(({ key, color }) => {
           const d = makePath(key)
           if (!d) return null
@@ -14157,7 +15174,6 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           )
         })}
       </svg>
-      {/* Legend */}
       <div className="flex gap-4 justify-center mt-1">
         {lines.map(({ key, label, color, unit }) => {
           const last = [...pts].reverse().find(e => Number(e[key]))
@@ -14178,7 +15194,8 @@ const BLOOD_COLOR: Record<string, string> = {
   'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
 }
 
-type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | 'labs' | 'files'
+// ── Tab type — insurance added ────────────────────────────────
+type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | 'labs' | 'files' | 'insurance'
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -14195,13 +15212,12 @@ export default function PatientDetailPage() {
   const [fhirExporting, setFhirExporting] = useState(false)
 
   // AI summary state
-  const [summary,       setSummary]       = useState('')
-  const [summaryState,  setSummaryState]  = useState<'idle'|'loading'|'done'|'error'>('idle')
-  const [summaryError,  setSummaryError]  = useState('')
+  const [summary,      setSummary]      = useState('')
+  const [summaryState, setSummaryState] = useState<'idle'|'loading'|'done'|'error'>('idle')
+  const [summaryError, setSummaryError] = useState('')
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => {
-    // Labs stored in localStorage keyed by patient_id
     try {
       const all = JSON.parse(localStorage.getItem('nexmedicon_labs') || '[]')
       setLabReports(all.filter((r: any) => r.patient_id === id))
@@ -14225,7 +15241,6 @@ export default function PatientDetailPage() {
     setLoading(false)
   }
 
-  // Live age: prefer DOB calculation, fall back to stored age
   function displayAge(p: Patient): string {
     const live = ageFromDOB(p.date_of_birth)
     if (live !== null) return `${live} years`
@@ -14265,6 +15280,27 @@ export default function PatientDetailPage() {
       <Link href="/patients" className="text-blue-600 text-sm hover:underline mt-2 block">← Back to patients</Link>
     </div></AppShell>
   )
+
+  // ── Derived insurance data ────────────────────────────────────
+  const pat = patient as any
+  const paidBills     = bills.filter(b => b.status === 'paid')
+  const totalBilled   = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+  const hasFinalDS    = discharges.some(d => d.is_final)
+  const hasDS         = discharges.length > 0
+  const hasRx         = prescriptions.length > 0
+  const hasBills      = paidBills.length > 0
+  const hasVisits     = encounters.length > 0
+
+  // Insurance bundle URL
+  const bundleUrl = `/api/insurance-bundle/${patient.id}`
+
+  // WhatsApp message for insurance docs ready
+  const insuranceWAMsg = TEMPLATES.find(t => t.id === 'insurance_docs_ready')?.generate({
+    patientName:   patient.full_name,
+    mobile:        patient.mobile,
+    mrn:           patient.mrn,
+    policyTpaName: pat.policy_tpa_name || '',
+  }) || ''
 
   return (
     <AppShell>
@@ -14374,10 +15410,10 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                 )}
-                {(patient as any).aadhaar_no && (
+                {pat.aadhaar_no && (
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Aadhaar No</div>
-                    <div className="text-sm font-mono font-medium text-gray-700">{(patient as any).aadhaar_no}</div>
+                    <div className="text-sm font-mono font-medium text-gray-700">{pat.aadhaar_no}</div>
                   </div>
                 )}
                 {patient.abha_id && (
@@ -14394,18 +15430,20 @@ export default function PatientDetailPage() {
                 </div>
               </div>
 
-              {(patient as any).mediclaim && (
-                <div className="flex items-center gap-2 text-sm">
+              {pat.mediclaim && (
+                <div className="flex items-center gap-2 text-sm mt-2">
                   <span className="text-xs text-gray-400 w-28 flex-shrink-0">Insurance</span>
                   <span className="font-medium text-green-700">
-                    Mediclaim ✓{(patient as any).cashless ? ' · Cashless' : ''}
+                    Mediclaim ✓{pat.cashless ? ' · Cashless' : ''}
+                    {pat.policy_tpa_name ? ` · ${pat.policy_tpa_name}` : ''}
+                    {pat.policy_number   ? ` · #${pat.policy_number}`  : ''}
                   </span>
                 </div>
               )}
-              {(patient as any).reference_source && (
+              {pat.reference_source && (
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-xs text-gray-400 w-28 flex-shrink-0">Referred by</span>
-                  <span className="font-medium text-gray-700">{(patient as any).reference_source}</span>
+                  <span className="font-medium text-gray-700">{pat.reference_source}</span>
                 </div>
               )}
               {patient.emergency_contact_name && (
@@ -14423,14 +15461,12 @@ export default function PatientDetailPage() {
 
         {/* ═══ CLINICAL RISK ALERT ═══════════════════════════════ */}
         {(() => {
-          // Compute risk from latest encounter
           const latestEnc = encounters[0]
           if (!latestEnc) return null
 
           const hasOB = latestEnc.ob_data && Object.keys(latestEnc.ob_data as object).length > 0
           const ob = (latestEnc.ob_data || {}) as any
 
-          // Run obstetric risk if patient has OB data
           let riskResult: RiskAssessment | null = null
           if (hasOB && ob.lmp) {
             riskResult = assessObstetricRisk({
@@ -14442,7 +15478,6 @@ export default function PatientDetailPage() {
             })
           }
 
-          // Also check vital signs for all patients
           const vitalFlags = assessVitalRisk({
             bp_systolic: latestEnc.bp_systolic || undefined,
             bp_diastolic: latestEnc.bp_diastolic || undefined,
@@ -14451,9 +15486,7 @@ export default function PatientDetailPage() {
             spo2: latestEnc.spo2 || undefined,
           })
 
-          // Combine all flags
           const allFlags = [...(riskResult?.flags || []), ...vitalFlags]
-          // Deduplicate by category (obstetric BP check may overlap with vital BP check)
           const seen = new Set<string>()
           const uniqueFlags = allFlags.filter(f => {
             if (seen.has(f.category)) return false
@@ -14464,7 +15497,7 @@ export default function PatientDetailPage() {
           if (uniqueFlags.length === 0) return null
 
           const hasCritical = uniqueFlags.some(f => f.level === 'critical')
-          const hasHigh = uniqueFlags.some(f => f.level === 'high')
+          const hasHigh     = uniqueFlags.some(f => f.level === 'high')
           const overallStyle = hasCritical
             ? riskLevelStyle('critical')
             : hasHigh
@@ -14529,9 +15562,9 @@ export default function PatientDetailPage() {
           ))}
         </div>
 
-        {/* Tabs */}
+        {/* ═══ TABS ═══════════════════════════════════════════════ */}
         <div className="card overflow-hidden">
-          <div className="flex border-b border-gray-100">
+          <div className="flex border-b border-gray-100 overflow-x-auto">
             {([
               { id:'overview',      label:'Overview' },
               { id:'visits',        label:`Visits (${encounters.length})` },
@@ -14540,9 +15573,10 @@ export default function PatientDetailPage() {
               { id:'billing',       label:`Bills (${bills.length})` },
               { id:'labs',          label:`Labs (${labReports.length})` },
               { id:'files',         label:'Files & Photos' },
+              { id:'insurance',     label:'🛡️ Insurance Docs' },   // NEW
             ] as {id:Tab;label:string}[]).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`px-5 py-3 text-sm font-medium capitalize transition-colors
+                className={`px-5 py-3 text-sm font-medium capitalize transition-colors whitespace-nowrap
                   ${activeTab === t.id
                     ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50/50'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
@@ -14577,7 +15611,6 @@ export default function PatientDetailPage() {
                         : <><Sparkles className="w-3 h-3" />Generate Summary</>}
                     </button>
                   </div>
-
                   {summaryState === 'idle' && (
                     <p className="text-xs text-gray-500">
                       {encounters.length === 0
@@ -14585,20 +15618,17 @@ export default function PatientDetailPage() {
                         : `Click "Generate Summary" to get an AI clinical overview based on ${encounters.length} visit(s) and ${prescriptions.length} prescription(s).`}
                     </p>
                   )}
-
                   {summaryState === 'loading' && (
                     <div className="flex items-center gap-2 text-xs text-purple-700">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Reading all consultations and generating clinical summary...
                     </div>
                   )}
-
                   {summaryState === 'error' && (
                     <p className="text-xs text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" />{summaryError}
                     </p>
                   )}
-
                   {summaryState === 'done' && summary && (
                     <p className="text-sm text-gray-800 leading-relaxed">{summary}</p>
                   )}
@@ -14664,7 +15694,6 @@ export default function PatientDetailPage() {
 
                 {/* USG Trend Timeline */}
                 {(() => {
-                  // Collect all encounters with USG data, oldest first
                   const usgEncs = [...encounters]
                     .filter(e => {
                       const ob = (e.ob_data || {}) as any
@@ -14682,8 +15711,6 @@ export default function PatientDetailPage() {
                       <p className="text-xs text-gray-400 mb-3">
                         Structured ultrasound parameters tracked across {usgEncs.length} visit{usgEncs.length > 1 ? 's' : ''}
                       </p>
-
-                      {/* Trend table */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
@@ -14731,21 +15758,20 @@ export default function PatientDetailPage() {
                         </table>
                       </div>
 
-                      {/* AFI trend line (if multiple readings) */}
+                      {/* AFI trend bar chart */}
                       {(() => {
                         const afiData = usgEncs
                           .map(e => ({ date: e.encounter_date, ga: (e.ob_data as any)?.usg_ga, afi: (e.ob_data as any)?.afi }))
                           .filter(d => d.afi)
                         if (afiData.length < 2) return null
-
                         return (
                           <div className="mt-4 pt-4 border-t border-gray-100">
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const afiNum   = Number(d.afi)
-                                const maxAfi   = Math.max(...afiData.map(x => Number(x.afi)))
-                                const height   = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const afiNum     = Number(d.afi)
+                                const maxAfi     = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height     = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
                                 const isLow      = afiNum < 8
                                 const isCritical = afiNum < 5
                                 return (
@@ -14775,7 +15801,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
 
-                {/* ── WhatsApp Clinical Reminders ── */}
+                {/* WhatsApp Clinical Reminders */}
                 {patient.mobile && (
                   <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -14786,34 +15812,28 @@ export default function PatientDetailPage() {
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {TEMPLATES.map(tmpl => {
-                        // Build params from patient + encounter data
                         const latestEnc = encounters[0]
                         const ob = (latestEnc?.ob_data || {}) as any
                         const latestRx = prescriptions[0]
                         const params: TemplateParams = {
                           patientName: patient.full_name,
                           mobile: patient.mobile,
-                          ga: ob.lmp ? undefined : undefined, // will be calculated in template
                           lmp: ob.lmp,
                           edd: ob.edd,
                           followUpDate: latestRx?.follow_up_date || '',
                           diagnosis: latestEnc?.diagnosis || '',
                           doctorName: latestEnc?.doctor_name || '',
+                          mrn: patient.mrn,
+                          policyTpaName: pat.policy_tpa_name || '',
                           medications: latestRx?.medications
                             ? (latestRx.medications as any[]).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''}`).join('\n')
                             : '',
                         }
                         const msg = tmpl.generate(params)
                         const url = whatsAppUrl(patient.mobile, msg)
-
                         return (
-                          <a
-                            key={tmpl.id}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all text-left group"
-                          >
+                          <a key={tmpl.id} href={url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all text-left group">
                             <span className="text-lg flex-shrink-0">{tmpl.emoji}</span>
                             <div className="min-w-0">
                               <div className="text-xs font-semibold text-gray-800 group-hover:text-green-700 truncate">{tmpl.label}</div>
@@ -15004,6 +16024,247 @@ export default function PatientDetailPage() {
               </div>
             )}
 
+            {/* ── LABS ── */}
+            {activeTab === 'labs' && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-4">Lab Reports</h3>
+                {labReports.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                    <p className="font-medium mb-1">No lab reports yet</p>
+                    <p className="text-xs">Lab reports added during consultations will appear here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {labReports.map((r: any) => (
+                      <div key={r.id} className="border border-gray-100 rounded-lg p-4">
+                        <div className="font-semibold text-sm text-gray-900 mb-1">{r.test_name || 'Lab Report'}</div>
+                        {r.result && <div className="text-xs text-gray-600">{r.result}</div>}
+                        <div className="text-xs text-gray-400 mt-1">{formatDate(r.date || r.created_at)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ══ INSURANCE DOCS TAB (NEW) ══════════════════════════════ */}
+            {activeTab === 'insurance' && (
+              <div className="space-y-5">
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-blue-600"/>
+                      Medical Insurance Document Bundle
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      All documents required for your insurance claim — compiled in one place.
+                    </p>
+                  </div>
+                  <Link href={`/patients/${patient.id}/edit`}
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                    <Edit className="w-3 h-3"/> Update policy details
+                  </Link>
+                </div>
+
+                {/* Policy details card */}
+                <div className={`rounded-xl border p-4 ${pat.mediclaim ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`}/>
+                    <span className="font-semibold text-sm text-gray-900">Insurance / Policy Details</span>
+                    {pat.mediclaim
+                      ? <span className="badge-green text-xs">Mediclaim Active</span>
+                      : <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">No Insurance on record</span>}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Claim Type</div>
+                      <div className="font-semibold text-gray-800">
+                        {pat.mediclaim ? (pat.cashless ? '💳 Cashless' : '🧾 Reimbursement') : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Insurance / TPA</div>
+                      <div className="font-semibold text-gray-800">{pat.policy_tpa_name || <span className="text-gray-400 font-normal italic">Not entered</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">Policy Number</div>
+                      <div className="font-mono font-semibold text-gray-800">{pat.policy_number || <span className="text-gray-400 font-normal italic">Not entered</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 uppercase tracking-wide mb-0.5">ABHA ID</div>
+                      <div className="font-mono font-semibold text-gray-800">{patient.abha_id || <span className="text-gray-400 font-normal italic">Not linked</span>}</div>
+                    </div>
+                  </div>
+                  {(!pat.policy_tpa_name || !pat.policy_number) && (
+                    <div className="mt-3 pt-3 border-t border-green-200 text-xs text-amber-700 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                      <span>
+                        Policy company and number not filled.{' '}
+                        <Link href={`/patients/${patient.id}/edit`} className="underline font-semibold">
+                          Edit patient
+                        </Link>{' '}
+                        to add them — they appear on the insurance cover sheet.
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Document checklist */}
+                <div className="card p-5">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-4">Document Checklist</h4>
+                  <div className="space-y-3">
+                    {/* Discharge summary */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasDS ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasDS ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Discharge Summary</div>
+                          <div className="text-xs text-gray-500">
+                            {hasDS
+                              ? `${discharges.length} document(s)${hasFinalDS ? ' · Finalised ✓' : ' · Draft — not yet finalised'}`
+                              : 'Not created yet — required for IPD claims'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/patients/${patient.id}/discharge`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <FileText className="w-3 h-3"/>
+                        {hasDS ? 'View' : 'Create'}
+                      </Link>
+                    </div>
+
+                    {/* Prescriptions */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasRx ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasRx ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Prescriptions</div>
+                          <div className="text-xs text-gray-500">
+                            {hasRx ? `${prescriptions.length} prescription(s) on record` : 'No prescriptions yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/opd/new?patient=${patient.id}`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Pill className="w-3 h-3"/>
+                        {hasRx ? 'View Visits' : 'Add'}
+                      </Link>
+                    </div>
+
+                    {/* Payment receipts */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasBills ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasBills ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Payment Receipts</div>
+                          <div className="text-xs text-gray-500">
+                            {hasBills
+                              ? `${paidBills.length} receipt(s) — Total ₹${totalBilled.toLocaleString('en-IN')}`
+                              : 'No paid bills yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <IndianRupee className="w-3 h-3"/>
+                        {hasBills ? 'View' : 'Add'}
+                      </Link>
+                    </div>
+
+                    {/* Consultation notes */}
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${hasVisits ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{hasVisits ? '✅' : '⚠️'}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Consultation Notes</div>
+                          <div className="text-xs text-gray-500">
+                            {hasVisits ? `${encounters.length} visit(s) on record` : 'No consultations yet'}
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={() => setActiveTab('visits')}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Stethoscope className="w-3 h-3"/> View
+                      </button>
+                    </div>
+
+                    {/* Patient identity */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-green-50 border-green-200">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">✅</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Patient Identity</div>
+                          <div className="text-xs text-gray-500">
+                            {[patient.aadhaar_no && 'Aadhaar', patient.abha_id && 'ABHA', patient.mrn && `MRN: ${patient.mrn}`]
+                              .filter(Boolean).join(' · ') || 'Name, MRN, demographics on record'}
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/patients/${patient.id}/edit`}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Edit className="w-3 h-3"/> Edit
+                      </Link>
+                    </div>
+
+                    {/* Uploaded files */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 border-blue-200">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">📎</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Uploaded Files</div>
+                          <div className="text-xs text-gray-500">Lab PDFs, scan reports, X-rays (listed in bundle)</div>
+                        </div>
+                      </div>
+                      <button onClick={() => setActiveTab('files')}
+                        className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
+                        <Download className="w-3 h-3"/> View
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary CTA — Open Insurance Bundle */}
+                <div className="bg-blue-600 rounded-xl p-5 text-white">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Shield className="w-5 h-5"/>
+                    </div>
+                    <div>
+                      <div className="font-bold text-base">Open Insurance Bundle</div>
+                      <div className="text-xs text-blue-200">
+                        Cover sheet + Discharge + Prescriptions + Receipts + Consultations — all in one printable document
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => window.open(bundleUrl, '_blank')}
+                      className="flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors">
+                      <ExternalLink className="w-4 h-4"/>
+                      Open &amp; Print Bundle
+                    </button>
+                    {patient.mobile && insuranceWAMsg && (
+                      <a href={whatsAppUrl(patient.mobile, insuranceWAMsg)}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors">
+                        <MessageCircle className="w-4 h-4"/>
+                        Notify Patient via WhatsApp
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs text-blue-200 mt-3">
+                    The bundle opens in a new tab. Use your browser&apos;s Print or Ctrl+P to save as PDF or print.
+                    Hospital name on the bundle comes from{' '}
+                    <span className="font-semibold">Settings → Hospital Details</span>.
+                  </p>
+                </div>
+
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -15034,26 +16295,29 @@ import { verifyABHANumber, isValidABHANumber, mapABDMGender, buildDOBFromProfile
 import type { ABHAProfile } from '@/lib/abdm'
 
 // ─── Constants ────────────────────────────────────────────────
-const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
-const GENDERS      = ['Female','Male','Other']
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
+const GENDERS = ['Female', 'Male', 'Other']
 
 // ─── Form state type ──────────────────────────────────────────
 interface FormData {
-  full_name:               string
-  age:                     string
-  date_of_birth:           string
-  gender:                  string
-  mobile:                  string
-  blood_group:             string
-  address:                 string
-  abha_id:                 string
-  aadhaar_no:              string
-  emergency_contact_name:  string
+  full_name: string
+  age: string
+  date_of_birth: string
+  gender: string
+  mobile: string
+  blood_group: string
+  address: string
+  abha_id: string
+  aadhaar_no: string
+  emergency_contact_name: string
   emergency_contact_phone: string
-  mediclaim:               string
-  cashless:                string
-  reference_source:        string
-  reference_detail:        string
+  mediclaim: string
+  cashless: string
+  reference_source: string
+  reference_detail: string
+  // ── Insurance policy details (NEW) ────────────────────────
+  policy_tpa_name: string
+  policy_number: string
 }
 
 const EMPTY: FormData = {
@@ -15061,6 +16325,7 @@ const EMPTY: FormData = {
   mobile: '', blood_group: '', address: '', abha_id: '', aadhaar_no: '',
   emergency_contact_name: '', emergency_contact_phone: '',
   mediclaim: 'No', cashless: 'No', reference_source: '', reference_detail: '',
+  policy_tpa_name: '', policy_number: '',
 }
 
 // ─── Duplicate match type ─────────────────────────────────────
@@ -15073,25 +16338,25 @@ interface DuplicateMatch {
 export default function NewPatientPage() {
   const router = useRouter()
 
-  const [form,       setForm]       = useState<FormData>(EMPTY)
-  const [errors,     setErrors]     = useState<Partial<FormData>>({})
-  const [saving,     setSaving]     = useState(false)
-  const [success,    setSuccess]    = useState<{ mrn: string; name: string } | null>(null)
-  const [successId,     setSuccessId]     = useState<string>('')
+  const [form, setForm] = useState<FormData>(EMPTY)
+  const [errors, setErrors] = useState<Partial<FormData>>({})
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState<{ mrn: string; name: string } | null>(null)
+  const [successId, setSuccessId] = useState<string>('')
   const [successMobile, setSuccessMobile] = useState<string>('')
-  const [payLink,       setPayLink]       = useState<{url?:string;whatsappText:string;type:string}|null>(null)
-  const [payLinkLoading,setPayLinkLoading]= useState(false)
+  const [payLink, setPayLink] = useState<{ url?: string; whatsappText: string; type: string } | null>(null)
+  const [payLinkLoading, setPayLinkLoading] = useState(false)
 
   // Duplicate detection
-  const [duplicates,       setDuplicates]       = useState<DuplicateMatch[]>([])
-  const [showDuplicateWarn,setShowDuplicateWarn] = useState(false)
-  const [checkingDups,     setCheckingDups]      = useState(false)
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
+  const [showDuplicateWarn, setShowDuplicateWarn] = useState(false)
+  const [checkingDups, setCheckingDups] = useState(false)
 
   // ABHA verification
-  const [abhaVerifying,  setAbhaVerifying]  = useState(false)
-  const [abhaVerified,   setAbhaVerified]   = useState(false)
-  const [abhaProfile,    setAbhaProfile]    = useState<ABHAProfile | null>(null)
-  const [abhaError,      setAbhaError]      = useState('')
+  const [abhaVerifying, setAbhaVerifying] = useState(false)
+  const [abhaVerified, setAbhaVerified] = useState(false)
+  const [abhaProfile, setAbhaProfile] = useState<ABHAProfile | null>(null)
+  const [abhaError, setAbhaError] = useState('')
   const abdmConfig = typeof window !== 'undefined' ? loadABDMConfig() : { enabled: false } as any
 
 
@@ -15099,11 +16364,11 @@ export default function NewPatientPage() {
   useEffect(() => {
     try {
       const prefillParam = new URLSearchParams(window.location.search).get('prefill')
-      const key    = 'ocr_prefill_generic'
+      const key = 'ocr_prefill_generic'
       const stored = sessionStorage.getItem(key)
       if (!stored || !prefillParam) return
-      const ocr    = JSON.parse(stored)
-      const p      = ocr.patient ?? {}
+      const ocr = JSON.parse(stored)
+      const p = ocr.patient ?? {}
       const apply = (field: keyof typeof EMPTY, val: string | undefined) => {
         if (!val) return
         setForm(prev => ({ ...prev, [field]: val }))
@@ -15163,14 +16428,14 @@ export default function NewPatientPage() {
       }
     }
 
-    maybeSet('full_name',               p.full_name)
-    maybeSet('age',                     p.age)
-    maybeSet('date_of_birth',           p.date_of_birth)
-    maybeSet('mobile',                  p.mobile)
-    maybeSet('address',                 p.address)
-    maybeSet('abha_id',                 p.abha_id)
-    maybeSet('aadhaar_no',              p.aadhaar_no)
-    maybeSet('emergency_contact_name',  p.emergency_contact_name)
+    maybeSet('full_name', p.full_name)
+    maybeSet('age', p.age)
+    maybeSet('date_of_birth', p.date_of_birth)
+    maybeSet('mobile', p.mobile)
+    maybeSet('address', p.address)
+    maybeSet('abha_id', p.abha_id)
+    maybeSet('aadhaar_no', p.aadhaar_no)
+    maybeSet('emergency_contact_name', p.emergency_contact_name)
     maybeSet('emergency_contact_phone', p.emergency_contact_phone)
 
     if (p.gender && GENDERS.includes(p.gender)) newFields.gender = p.gender
@@ -15289,19 +16554,19 @@ export default function NewPatientPage() {
         setPayLink(data)
       }
     } catch {
-      setPayLink({ type:'manual', whatsappText: fallbackMsg })
+      setPayLink({ type: 'manual', whatsappText: fallbackMsg })
     }
     setPayLinkLoading(false)
   }
 
   // ── Duplicate check ────────────────────────────────────────────
   async function checkDuplicates(): Promise<DuplicateMatch[]> {
-    const mobile   = normalizePhone(form.mobile)
-    const aadhaar  = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
-    const name     = form.full_name.trim().toLowerCase()
+    const mobile = normalizePhone(form.mobile)
+    const aadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
+    const name = form.full_name.trim().toLowerCase()
 
     const orFilters: string[] = []
-    if (mobile)  orFilters.push(`mobile.eq.${mobile}`)
+    if (mobile) orFilters.push(`mobile.eq.${mobile}`)
     if (aadhaar) orFilters.push(`aadhaar_no.eq.${aadhaar}`)
 
     if (orFilters.length === 0 && !name) return []
@@ -15380,24 +16645,26 @@ export default function NewPatientPage() {
     const { data, error } = await supabase
       .from('patients')
       .insert({
-        full_name:               form.full_name.trim(),
-        age:                     normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
-        date_of_birth:           form.date_of_birth                          || null,
-        gender:                  form.gender                                  || null,
-        mobile:                  normalizedMobile,
-        blood_group:             form.blood_group                             || null,
-        address:                 form.address.trim()                         || null,
-        abha_id:                 form.abha_id.trim()                         || null,
-        aadhaar_no:              normalizedAadhaar                            || null,
-        emergency_contact_name:  form.emergency_contact_name.trim()          || null,
-        emergency_contact_phone: normalizedEmergPhone                        || null,
-        mediclaim:               form.mediclaim === 'Yes',
-        cashless:                form.cashless  === 'Yes',
-        reference_source:        form.reference_source
-                                   ? (form.reference_detail.trim()
-                                       ? `${form.reference_source} — ${form.reference_detail.trim()}`
-                                       : form.reference_source)
-                                   : null,
+        full_name: form.full_name.trim(),
+        age: normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        mobile: normalizedMobile,
+        blood_group: form.blood_group || null,
+        address: form.address.trim() || null,
+        abha_id: form.abha_id.trim() || null,
+        aadhaar_no: normalizedAadhaar || null,
+        emergency_contact_name: form.emergency_contact_name.trim() || null,
+        emergency_contact_phone: normalizedEmergPhone || null,
+        mediclaim: form.mediclaim === 'Yes',
+        cashless: form.cashless === 'Yes',
+        reference_source: form.reference_source
+          ? (form.reference_detail.trim()
+            ? `${form.reference_source} — ${form.reference_detail.trim()}`
+            : form.reference_source)
+          : null,
+        policy_tpa_name: form.policy_tpa_name.trim() || null,
+        policy_number: form.policy_number.trim() || null,
       })
       .select('id, mrn, full_name')
       .single()
@@ -15422,7 +16689,7 @@ export default function NewPatientPage() {
   // ── Helper: input class ────────────────────────────────────────
   function inputClass(field: keyof FormData, extra = '') {
     const base = 'w-full rounded-xl border bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-    const err  = errors[field] ? 'border-red-300 bg-red-50 focus:ring-red-400' : 'border-gray-200 hover:border-gray-300'
+    const err = errors[field] ? 'border-red-300 bg-red-50 focus:ring-red-400' : 'border-gray-200 hover:border-gray-300'
     return [base, err, extra].filter(Boolean).join(' ')
   }
 
@@ -15479,7 +16746,7 @@ export default function NewPatientPage() {
                     )}
                     <div className="flex gap-2">
                       {successMobile && (
-                        <a href={`https://wa.me/91${successMobile.replace(/\D/g,'')}?text=${encodeURIComponent(payLink.whatsappText)}`}
+                        <a href={`https://wa.me/91${successMobile.replace(/\D/g, '')}?text=${encodeURIComponent(payLink.whatsappText)}`}
                           target="_blank" rel="noopener noreferrer"
                           className="flex-1 flex items-center justify-center gap-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
                           📲 Send via WhatsApp
@@ -15656,13 +16923,12 @@ export default function NewPatientPage() {
                     {GENDERS.map(g => (
                       <button key={g} type="button"
                         onClick={() => set('gender', g)}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.gender === g
-                            ? g === 'Female' ? 'border-pink-400 bg-pink-50 text-pink-700'
-                              : g === 'Male' ? 'border-blue-400 bg-blue-50 text-blue-700'
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.gender === g
+                          ? g === 'Female' ? 'border-pink-400 bg-pink-50 text-pink-700'
+                            : g === 'Male' ? 'border-blue-400 bg-blue-50 text-blue-700'
                               : 'border-purple-400 bg-purple-50 text-purple-700'
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                        }`}>
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                          }`}>
                         {g === 'Female' ? '♀ ' : g === 'Male' ? '♂ ' : '⚧ '}{g}
                       </button>
                     ))}
@@ -15676,11 +16942,10 @@ export default function NewPatientPage() {
                     {BLOOD_GROUPS.map(b => (
                       <button key={b} type="button"
                         onClick={() => set('blood_group', form.blood_group === b ? '' : b)}
-                        className={`py-2 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${
-                          form.blood_group === b
-                            ? 'border-red-400 bg-red-50 text-red-700'
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                        }`}>
+                        className={`py-2 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${form.blood_group === b
+                          ? 'border-red-400 bg-red-50 text-red-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                          }`}>
                         {b}
                       </button>
                     ))}
@@ -15780,8 +17045,8 @@ export default function NewPatientPage() {
                         {abhaVerifying
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : abhaVerified
-                          ? <CheckCircle className="w-3.5 h-3.5" />
-                          : <Shield className="w-3.5 h-3.5" />}
+                            ? <CheckCircle className="w-3.5 h-3.5" />
+                            : <Shield className="w-3.5 h-3.5" />}
                         {abhaVerifying ? 'Verifying…' : abhaVerified ? 'Verified' : 'Verify ABHA'}
                       </button>
                     )}
@@ -15870,11 +17135,10 @@ export default function NewPatientPage() {
                     {['No', 'Yes'].map(v => (
                       <button key={v} type="button"
                         onClick={() => { set('mediclaim', v); if (v === 'No') set('cashless', 'No') }}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.mediclaim === v
-                            ? v === 'Yes' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 bg-gray-50 text-gray-700'
-                            : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
-                        }`}>
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim === v
+                          ? v === 'Yes' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 bg-gray-50 text-gray-700'
+                          : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                          }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
                     ))}
@@ -15889,12 +17153,11 @@ export default function NewPatientPage() {
                       <button key={v} type="button"
                         disabled={form.mediclaim !== 'Yes'}
                         onClick={() => set('cashless', v)}
-                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${
-                          form.mediclaim !== 'Yes' ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all duration-200 ${form.mediclaim !== 'Yes' ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
                           form.cashless === v
                             ? v === 'Yes' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-gray-50 text-gray-700'
                             : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
-                        }`}>
+                          }`}>
                         {v === 'Yes' ? '✓ Yes' : '✗ No'}
                       </button>
                     ))}
@@ -15931,34 +17194,63 @@ export default function NewPatientPage() {
 
               {/* Mediclaim guidance */}
               {form.mediclaim === 'Yes' && (
-                <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-blue-800 mb-1.5">
-                    📋 Mediclaim Patient — Required Steps
-                  </p>
-                  <div className="space-y-1 text-xs text-blue-700">
-                    <p>✓ Collect insurance card / policy document</p>
-                    <p>✓ Note Policy Number and TPA name in consultation notes</p>
-                    <p>✓ Get pre-authorisation letter if IPD admission</p>
-                    {form.cashless === 'Yes' ? (
-                      <>
-                        <p className="font-semibold text-blue-900 mt-2">💳 Cashless Process:</p>
-                        <p>1. Contact TPA/insurance company for pre-auth approval</p>
-                        <p>2. Fill TPA cashless request form</p>
-                        <p>3. Attach patient's ID proof + insurance card</p>
-                        <p>4. Submit to hospital billing — patient pays only non-covered amount</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-semibold text-blue-900 mt-2">🧾 Reimbursement Process:</p>
-                        <p>1. Collect full payment from patient at discharge</p>
-                        <p>2. Provide detailed itemised bill + all receipts</p>
-                        <p>3. Give originals of all lab reports, prescriptions</p>
-                        <p>4. Patient submits to insurance for reimbursement</p>
-                      </>
-                    )}
+                <>
+                  {/* Policy details — new fields */}
+                  <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-5 mt-1">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Insurance Company / TPA Name
+                      </label>
+                      <input className={inputClass('policy_tpa_name')}
+                        placeholder="e.g. Medi Assist, Star Health, New India"
+                        value={form.policy_tpa_name}
+                        onChange={e => set('policy_tpa_name', e.target.value)}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Name of insurer or TPA — printed on insurance documents</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Policy / Card Number
+                      </label>
+                      <input className={inputClass('policy_number', 'font-mono')}
+                        placeholder="e.g. P/211200/01/2024/000123"
+                        value={form.policy_number}
+                        onChange={e => set('policy_number', e.target.value)}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Appears on the insurance cover sheet</p>
+                    </div>
                   </div>
-                </div>
+
+                  <div className="sm:col-span-3 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-blue-800 mb-1.5">
+                      📋 Mediclaim Patient — Required Steps
+                    </p>
+                    <div className="space-y-1 text-xs text-blue-700">
+                      <p>✓ Collect insurance card / policy document</p>
+                      <p>✓ Note Policy Number and TPA name in consultation notes</p>
+                      <p>✓ Get pre-authorisation letter if IPD admission</p>
+                      {form.cashless === 'Yes' ? (
+                        <>
+                          <p className="font-semibold text-blue-900 mt-2">💳 Cashless Process:</p>
+                          <p>1. Contact TPA/insurance company for pre-auth approval</p>
+                          <p>2. Fill TPA cashless request form</p>
+                          <p>3. Attach patient's ID proof + insurance card</p>
+                          <p>4. Submit to hospital billing — patient pays only non-covered amount</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-blue-900 mt-2">🧾 Reimbursement Process:</p>
+                          <p>1. Collect full payment from patient at discharge</p>
+                          <p>2. Provide detailed itemised bill + all receipts</p>
+                          <p>3. Give originals of all lab reports, prescriptions</p>
+                          <p>4. Patient submits to insurance for reimbursement</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
+
 
             </div>
           </div>
@@ -16683,6 +17975,466 @@ export default function QueuePage() {
   )
 }
 
+```
+
+# src\app\reminders\page.tsx
+
+```tsx
+'use client'
+import { useCallback, useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { getHospitalSettings } from '@/lib/utils'
+import { whatsAppUrl } from '@/lib/whatsapp-templates'
+import {
+  MessageCircle, RefreshCw, CheckCircle, Clock, AlertTriangle,
+  Baby, Calendar, Pill, IndianRupee, Syringe, Loader2,
+  Filter, BellRing, Send, ChevronDown, ChevronUp,
+} from 'lucide-react'
+
+// ── Types (mirrors the API response) ─────────────────────────
+type ReminderType =
+  | 'appointment' | 'follow_up' | 'anc' | 'post_delivery'
+  | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+
+type Priority = 'urgent' | 'today' | 'tomorrow' | 'upcoming'
+
+interface ReminderItem {
+  id:            string
+  type:          ReminderType
+  priority:      Priority
+  patientId:     string
+  patientName:   string
+  mobile:        string
+  mrn:           string
+  sourceId:      string
+  sourceTable:   string
+  title:         string
+  subtitle:      string
+  dueDate?:      string
+  reminderSentAt?: string | null
+  context: {
+    lmp?:          string
+    edd?:          string
+    deliveryDate?: string
+    babyName?:     string
+    apptDate?:     string
+    apptTime?:     string
+    apptType?:     string
+    followUpDate?: string
+    diagnosis?:    string
+    labTests?:     string
+    billAmount?:   number
+    vaxName?:      string
+    daysOverdue?:  number
+    weeksGA?:      string
+    riskReasons?:  string[]
+  }
+}
+
+// ── Priority config ───────────────────────────────────────────
+const PRIORITY: Record<Priority, { label: string; bg: string; text: string; border: string; dot: string }> = {
+  urgent:   { label: 'Urgent',   bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-500'    },
+  today:    { label: 'Today',    bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
+  tomorrow: { label: 'Tomorrow', bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
+  upcoming: { label: 'Upcoming', bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-400'   },
+}
+
+// ── Type config ───────────────────────────────────────────────
+const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: string }> = {
+  appointment:    { icon: Calendar,      color: 'text-blue-600',   label: 'Appointment'         },
+  follow_up:      { icon: Clock,         color: 'text-orange-600', label: 'Follow-up'           },
+  anc:            { icon: Baby,          color: 'text-pink-600',   label: 'ANC Visit'           },
+  high_risk_anc:  { icon: AlertTriangle, color: 'text-red-600',    label: 'High-Risk ANC'       },
+  post_delivery:  { icon: Baby,          color: 'text-purple-600', label: 'Post-Delivery'       },
+  vaccination:    { icon: Syringe,       color: 'text-green-600',  label: 'Vaccination'         },
+  pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
+}
+
+const FILTER_TABS: { key: ReminderType | 'all'; label: string; emoji: string }[] = [
+  { key: 'all',           label: 'All',            emoji: '📋' },
+  { key: 'appointment',   label: 'Appointments',   emoji: '📅' },
+  { key: 'follow_up',     label: 'Follow-ups',     emoji: '🔁' },
+  { key: 'anc',           label: 'ANC',            emoji: '🤰' },
+  { key: 'high_risk_anc', label: 'High-Risk ANC',  emoji: '🚨' },
+  { key: 'post_delivery', label: 'Post-Delivery',  emoji: '👶' },
+  { key: 'vaccination',   label: 'Vaccination',    emoji: '💉' },
+  { key: 'pending_bill',  label: 'Pending Bills',  emoji: '💳' },
+]
+
+// ── WhatsApp message builders (client-side, uses hospital settings) ─
+function buildWAMessage(r: ReminderItem, hs: any): string {
+  const h = hs.hospitalName || 'NexMedicon Hospital'
+  const a = hs.address      || ''
+  const p = hs.phone        || ''
+  const c = r.context
+
+  function fmtDate(d?: string): string {
+    if (!d) return '—'
+    try {
+      return new Date(d).toLocaleDateString('en-IN', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      })
+    } catch { return d }
+  }
+
+  switch (r.type) {
+
+    case 'appointment':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your *upcoming appointment*.\n\n📅 *Date:* ${fmtDate(c.apptDate)}\n🕐 *Time:* ${c.apptTime || '—'}\n🏥 *Visit Type:* ${c.apptType || 'Consultation'}\n📍 *Address:* ${a}\n\nPlease bring any previous reports and arrive 10 minutes early.\n\nFor queries: ${p}\n\n---\nઆપની ડૉક્ટર સાથેની મુલાકાત છે. સમય પર આવો.\n\n_${h} — Caring for you_`
+
+    case 'follow_up':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\n${c.daysOverdue ? `Your follow-up appointment was *due ${c.daysOverdue} days ago*. Please visit at the earliest. ⚠️` : `This is a reminder for your *follow-up visit* due on ${fmtDate(c.followUpDate)}.`}\n\n${c.diagnosis ? `🩺 *For:* ${c.diagnosis}\n` : ''}📍 *Address:* ${a}\n\nPlease bring:\n✅ Previous prescription\n✅ Any new reports\n\nFor queries: ${p}\n\n---\nઆપની ફૉલો-અપ મુલાકાત ${c.daysOverdue ? 'ઓવરડ્યૂ' : 'છે'}. અગાઉ prescription સાથે આવો.\n\n_${h} — Caring for you_`
+
+    case 'anc':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your *ANC (Antenatal) check-up*.\n\n🤰 *Current GA:* ${c.weeksGA || '—'}\n${c.edd ? `📅 *Expected Delivery:* ${fmtDate(c.edd)}\n` : ''}🏥 *Hospital:* ${h}\n📍 *Address:* ${a}\n\nPlease bring:\n✅ Previous reports & USG\n✅ ANC card\n✅ Urine sample (morning)\n\nFor queries: ${p}\n\n---\nANC તપાસ માટે રિપોર્ટ્સ અને ANC કાર્ડ સાથે આવો.\n\n_${h} — Caring for you & your baby_ 👶`
+
+    case 'high_risk_anc':
+      return `*${h}*\n\n🚨 *URGENT* — Namaste ${r.patientName} ji 🙏\n\nYour doctor has flagged *important concerns* that need immediate attention.\n\n⚠️ *Concerns noted:*\n${(c.riskReasons || []).map(r => `• ${r}`).join('\n')}\n\n🤰 *Current GA:* ${c.weeksGA || '—'}\n${c.edd ? `📅 *Expected Delivery:* ${fmtDate(c.edd)}\n` : ''}\nPlease *visit immediately* or call us.\n\n☎️ *Emergency:* ${p}\n\n---\nડૉક્ટરે તમારી તબિયત અંગે ચિંતા નોંધી છે. તરત મળો.\n\n_${h} — Your health is our priority_`
+
+    case 'post_delivery':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nCongratulations on your delivery! 🎉\n\nThis is a reminder for your *6-week post-delivery review* due on ${fmtDate(c.followUpDate)}.\n\n✅ Recovery check\n✅ Wound/stitch examination\n✅ Blood pressure & weight\n✅ Breastfeeding guidance\n✅ Family planning counselling\n\nPlease bring:\n📋 Discharge summary\n📋 Baby's vaccination card\n\nFor queries: ${p}\n\n---\nડિલિવરી પછીની 6 અઠવાડિયાની તપાસ માટે આવો.\n\n_${h} — Caring for mother & baby_ 👶`
+
+    case 'vaccination':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your baby's *vaccination*.\n\n💉 *Vaccine Due:* ${c.vaxName || 'As per schedule'}\n📅 *Due Date:* ${fmtDate(c.followUpDate)}\n🏥 *Hospital:* ${h}\n📍 *Address:* ${a}\n\nPlease bring:\n✅ Baby's vaccination card\n✅ Previous vaccination records\n\n⚠️ Do not skip vaccinations. They protect your baby from serious diseases.\n\nFor queries: ${p}\n\n---\nબાળકના રસીકરણ માટે vaccine card સાથે આવો.\n\n_${h} — Protecting your little one_ 💉`
+
+    case 'pending_bill':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a gentle reminder that your *payment of ₹${c.billAmount?.toLocaleString('en-IN') || '—'}* is pending.\n\nPlease visit the hospital billing counter or contact us to complete the payment.\n\n📍 *Address:* ${a}\n📞 *Contact:* ${p}\n\n---\nઆપની ₹${c.billAmount?.toLocaleString('en-IN') || '—'} ની ચૂકવણી બાકી છે.\n\n_${h}_`
+
+    default:
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder from ${h}. Please contact us for details.\n\n📞 ${p}\n\n_${h}_`
+  }
+}
+
+// ── Main component ────────────────────────────────────────────
+export default function RemindersPage() {
+  const [reminders,    setReminders]    = useState<ReminderItem[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [refreshing,   setRefreshing]   = useState(false)
+  const [filter,       setFilter]       = useState<ReminderType | 'all'>('all')
+  const [sent,         setSent]         = useState<Set<string>>(new Set())
+  const [expanded,     setExpanded]     = useState<string | null>(null)
+  const [generatedAt,  setGeneratedAt]  = useState<string>('')
+  const [sendingAll,   setSendingAll]   = useState(false)
+
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    else         setRefreshing(true)
+    try {
+      const res  = await fetch('/api/reminders')
+      const data = await res.json()
+      setReminders(data.reminders || [])
+      setGeneratedAt(data.generatedAt || '')
+    } catch {}
+    setLoading(false)
+    setRefreshing(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // Mark a single reminder as sent in Supabase + local state
+  async function markSent(r: ReminderItem) {
+    setSent(prev => new Set(Array.from(prev).concat(r.id)))
+    // Only tables with reminder_sent_at column need a PATCH
+    if (['appointments', 'prescriptions', 'discharge_summaries'].includes(r.sourceTable)) {
+      await fetch('/api/reminders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceTable: r.sourceTable, sourceId: r.sourceId }),
+      })
+    }
+  }
+
+  const filtered   = filter === 'all' ? reminders : reminders.filter(r => r.type === filter)
+  const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
+  const pending    = filtered.filter(r => !isSent(r))
+  const done       = filtered.filter(r => isSent(r))
+
+  const counts = Object.fromEntries(
+    FILTER_TABS.map(t => [
+      t.key,
+      t.key === 'all'
+        ? reminders.length
+        : reminders.filter(r => r.type === t.key).length,
+    ])
+  )
+  const urgentCount = reminders.filter(r => r.priority === 'urgent' && !sent.has(r.id)).length
+
+  return (
+    <AppShell>
+      <div className="p-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <BellRing className="w-6 h-6 text-blue-600"/>
+              WhatsApp Reminder Queue
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              All patients who need a reminder today — one tap to send.
+              {generatedAt && (
+                <span className="ml-2 text-xs text-gray-400">
+                  Last refreshed: {new Date(generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2 items-center">
+            {urgentCount > 0 && (
+              <span className="flex items-center gap-1.5 bg-red-100 text-red-700 text-xs font-bold px-3 py-1.5 rounded-full animate-pulse">
+                <AlertTriangle className="w-3.5 h-3.5"/>
+                {urgentCount} Urgent
+              </span>
+            )}
+            <button onClick={() => load(true)} disabled={refreshing}
+              className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}/>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Summary tiles */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Total Due',      val: reminders.length,                                         bg: 'bg-blue-50',   text: 'text-blue-700'   },
+            { label: 'Urgent',         val: reminders.filter(r => r.priority === 'urgent').length,     bg: 'bg-red-50',    text: 'text-red-700'    },
+            { label: 'Sent Today',     val: sent.size,                                                 bg: 'bg-green-50',  text: 'text-green-700'  },
+            { label: 'Still Pending',  val: reminders.filter(r => !sent.has(r.id)).length,             bg: 'bg-orange-50', text: 'text-orange-700' },
+          ].map(({ label, val, bg, text }) => (
+            <div key={label} className={`${bg} rounded-xl p-4 border border-opacity-50`}>
+              <div className={`text-3xl font-bold ${text} mb-1`}>{val}</div>
+              <div className="text-xs text-gray-500 font-semibold">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Type filter tabs */}
+        <div className="flex gap-2 flex-wrap mb-5 overflow-x-auto pb-1">
+          {FILTER_TABS.map(({ key, label, emoji }) => {
+            const count = counts[key] || 0
+            return (
+              <button key={key} onClick={() => setFilter(key)}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border whitespace-nowrap transition-all
+                  ${filter === key
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-700'}`}>
+                <span>{emoji}</span>
+                {label}
+                {count > 0 && (
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                    filter === key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                  }`}>{count}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin"/>
+              <p className="text-sm text-gray-500">Loading reminders from all modules...</p>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card p-16 text-center text-gray-400">
+            <CheckCircle className="w-14 h-14 mx-auto mb-4 text-green-400"/>
+            <p className="text-lg font-semibold text-gray-600 mb-2">All clear! 🎉</p>
+            <p className="text-sm">No reminders due for the selected category. Check back tomorrow morning.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+
+            {/* Pending reminders */}
+            {pending.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-orange-500"/>
+                    Pending ({pending.length})
+                  </h2>
+                  {pending.length > 1 && (
+                    <p className="text-xs text-gray-400">Click a card to preview the message, then tap Send</p>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {pending.map(r => (
+                    <ReminderCard
+                      key={r.id}
+                      reminder={r}
+                      hs={hs}
+                      isExpanded={expanded === r.id}
+                      onToggle={() => setExpanded(prev => prev === r.id ? null : r.id)}
+                      onSent={() => markSent(r)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Done reminders */}
+            {done.length > 0 && (
+              <div>
+                <h2 className="text-sm font-bold text-gray-500 flex items-center gap-2 mb-3 mt-6">
+                  <CheckCircle className="w-4 h-4 text-green-500"/>
+                  Sent / Done ({done.length})
+                </h2>
+                <div className="space-y-2 opacity-60">
+                  {done.map(r => (
+                    <div key={r.id}
+                      className="flex items-center gap-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl">
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0"/>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-gray-600">{r.patientName}</span>
+                        <span className="mx-2 text-gray-300">·</span>
+                        <span className="text-xs text-gray-400">{r.title}</span>
+                      </div>
+                      <span className="text-xs text-green-600 font-semibold">Sent ✓</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+      </div>
+    </AppShell>
+  )
+}
+
+// ── Reminder Card Component ───────────────────────────────────
+function ReminderCard({
+  reminder: r, hs, isExpanded, onToggle, onSent,
+}: {
+  reminder:   ReminderItem
+  hs:         any
+  isExpanded: boolean
+  onToggle:   () => void
+  onSent:     () => void
+}) {
+  const [editing,   setEditing]   = useState(false)
+  const [msgText,   setMsgText]   = useState('')
+
+  // Build message on expand
+  function handleToggle() {
+    if (!isExpanded) {
+      setMsgText(buildWAMessage(r, hs))
+      setEditing(false)
+    }
+    onToggle()
+  }
+
+  const pCfg = PRIORITY[r.priority]
+  const tCfg = TYPE_CONFIG[r.type]
+  const Icon  = tCfg.icon
+
+  const waUrl = whatsAppUrl(r.mobile, msgText || buildWAMessage(r, hs))
+
+  return (
+    <div className={`border-2 rounded-xl overflow-hidden transition-all ${pCfg.border} ${isExpanded ? pCfg.bg : 'bg-white hover:' + pCfg.bg}`}>
+
+      {/* Card header — always visible */}
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={handleToggle}>
+
+        {/* Priority dot */}
+        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${pCfg.dot}`}/>
+
+        {/* Type icon */}
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${pCfg.bg}`}>
+          <Icon className={`w-4 h-4 ${tCfg.color}`}/>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-bold text-sm text-gray-900 truncate">{r.patientName}</span>
+            <span className="text-xs font-mono text-gray-400">{r.mrn}</span>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pCfg.bg} ${pCfg.text} border ${pCfg.border}`}>
+              {pCfg.label}
+            </span>
+          </div>
+          <div className="text-xs text-gray-700 font-semibold">{r.title}</div>
+          <div className="text-xs text-gray-400 truncate">{r.subtitle}</div>
+        </div>
+
+        {/* Mobile + expand toggle */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs font-mono text-gray-500 hidden sm:block">{r.mobile}</span>
+          {isExpanded
+            ? <ChevronUp className="w-4 h-4 text-gray-400"/>
+            : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+        </div>
+      </div>
+
+      {/* Expanded section — message preview + send button */}
+      {isExpanded && (
+        <div className={`border-t ${pCfg.border} px-4 py-4`}>
+
+          {/* Message preview / editor */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-gray-600 uppercase tracking-wide">WhatsApp Message Preview</span>
+              <button onClick={() => setEditing(e => !e)}
+                className="text-xs text-blue-600 hover:underline">
+                {editing ? 'Done editing' : 'Edit message'}
+              </button>
+            </div>
+            {editing ? (
+              <textarea
+                className="w-full text-xs font-mono bg-white border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                rows={10}
+                value={msgText}
+                onChange={e => setMsgText(e.target.value)}
+              />
+            ) : (
+              <div className="bg-[#e9f5fe] border border-blue-100 rounded-xl px-4 py-3 text-xs text-gray-800 font-mono whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
+                {msgText}
+              </div>
+            )}
+          </div>
+
+          {/* Mobile number */}
+          <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
+            <MessageCircle className="w-3.5 h-3.5 text-green-500"/>
+            Sending to: <span className="font-mono font-semibold text-gray-700">+91 {r.mobile}</span>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            <a
+              href={waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onSent}
+              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2.5 px-4 rounded-xl transition-colors shadow-sm shadow-green-200">
+              <MessageCircle className="w-4 h-4"/>
+              Open in WhatsApp &amp; Send
+            </a>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(msgText)
+                onSent()
+              }}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 px-4 rounded-xl transition-colors">
+              <Send className="w-4 h-4"/>
+              Copy &amp; Mark Sent
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            Clicking either button marks this reminder as sent and removes it from the pending list.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 ```
 
 # src\app\reports\daily\page.tsx
@@ -19294,7 +21046,7 @@ export default function MobileNav() {
 
 ```tsx
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -19306,14 +21058,16 @@ import {
   BarChart2, LogOut, Activity, ChevronDown, ChevronRight,
   Baby, Settings, Clock, IndianRupee, FlaskConical,
   BookOpen, CalendarDays, TrendingUp, BarChart3,
-  Search as SearchIcon, Sparkles, ClipboardList, Shield
+  Search as SearchIcon, Sparkles, ClipboardList, Shield,
+  BellRing,
 } from 'lucide-react'
 
 interface NavItemDef {
-  href: string
-  icon: any
-  label: string
-  permission?: Permission  // if set, only visible to roles with this permission
+  href:       string
+  icon:       any
+  label:      string
+  permission?: Permission
+  badge?:     number   // live badge count
 }
 
 interface NavGroupDef {
@@ -19322,60 +21076,80 @@ interface NavGroupDef {
   items: NavItemDef[]
 }
 
-const NAV_GROUPS: NavGroupDef[] = [
-  {
-    label: 'Clinical',
-    emoji: '🏥',
-    items: [
-      { href: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard'        },
-      { href: '/patients',        icon: Users,           label: 'Patients',         permission: 'patients.view'      },
-      { href: '/opd',             icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'    },
-      { href: '/queue',           icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'         },
-      { href: '/appointments',    icon: CalendarDays,    label: 'Appointments'      },
-      { href: '/beds',            icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'          },
-      { href: '/anc',             icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'           },
-      { href: '/labs',            icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'          },
-      { href: '/forms',           icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'         },
-    ],
-  },
-  {
-    label: 'Finance',
-    emoji: '💰',
-    items: [
-      { href: '/billing',         icon: IndianRupee,     label: 'Billing',          permission: 'billing.view'       },
-      { href: '/reports/daily',   icon: TrendingUp,      label: 'Daily Report',     permission: 'reports.view'       },
-      { href: '/reports/monthly', icon: BarChart3,       label: 'Monthly Report',   permission: 'reports.view'       },
-      { href: '/reports/payments',icon: IndianRupee,     label: 'Payment Report',   permission: 'reports.financial'  },
-    ],
-  },
-  {
-    label: 'Tools',
-    emoji: '🔧',
-    items: [
-      { href: '/reports',         icon: BarChart2,       label: 'Reports',          permission: 'reports.view'       },
-      { href: '/search',          icon: SearchIcon,      label: 'Global Search'     },
-    ],
-  },
-]
-
-const FOOTER_LINKS: NavItemDef[] = [
-  { href: '/ai-setup',    icon: Sparkles, label: 'AI Status'    },
-  { href: '/abdm-setup',  icon: Shield,   label: 'ABDM / FHIR' },
-  { href: '/setup',       icon: BookOpen, label: 'Setup Guide'  },
-  { href: '/settings',    icon: Settings, label: 'Settings',    permission: 'settings.view' },
-]
-
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
   const { user, can } = useAuth()
 
-  // Track which groups are open — default all open
   const [open, setOpen] = useState<Record<string, boolean>>({
     Clinical: true,
     Finance:  true,
     Tools:    true,
   })
+
+  // Live urgent reminder count — fetched once on mount, refreshed every 5 minutes
+  const [urgentCount, setUrgentCount] = useState(0)
+
+  useEffect(() => {
+    async function fetchUrgentCount() {
+      try {
+        const res  = await fetch('/api/reminders')
+        if (!res.ok) return
+        const data = await res.json()
+        const urgent = (data.reminders || []).filter(
+          (r: any) => r.priority === 'urgent' || r.priority === 'today'
+        ).length
+        setUrgentCount(urgent)
+      } catch {}
+    }
+    fetchUrgentCount()
+    const interval = setInterval(fetchUrgentCount, 5 * 60 * 1000) // refresh every 5 min
+    return () => clearInterval(interval)
+  }, [])
+
+  const NAV_GROUPS: NavGroupDef[] = [
+    {
+      label: 'Clinical',
+      emoji: '🏥',
+      items: [
+        { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'        },
+        { href: '/patients',     icon: Users,           label: 'Patients',         permission: 'patients.view'      },
+        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'    },
+        { href: '/queue',        icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'         },
+        { href: '/appointments', icon: CalendarDays,    label: 'Appointments'      },
+        { href: '/reminders',    icon: BellRing,        label: 'Reminders',        badge: urgentCount               },
+        { href: '/beds',         icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'          },
+        { href: '/anc',          icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'           },
+        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'          },
+        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'         },
+      ],
+    },
+    {
+      label: 'Finance',
+      emoji: '💰',
+      items: [
+        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'       },
+        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
+        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
+        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
+      ],
+    },
+    {
+      label: 'Tools',
+      emoji: '🔧',
+      items: [
+        { href: '/reports', icon: BarChart2,   label: 'Reports',       permission: 'reports.view' },
+        { href: '/search',  icon: SearchIcon,  label: 'Global Search'  },
+      ],
+    },
+  ]
+
+  const FOOTER_LINKS: NavItemDef[] = [
+    { href: '/ai-setup',   icon: Sparkles, label: 'AI Status'    },
+    { href: '/abdm-setup', icon: Shield,   label: 'ABDM / FHIR' },
+    { href: '/setup',      icon: BookOpen, label: 'Setup Guide'  },
+    { href: '/settings',   icon: Settings, label: 'Settings',    permission: 'settings.view' },
+  ]
 
   function toggle(label: string) {
     setOpen(prev => ({ ...prev, [label]: !prev[label] }))
@@ -19390,15 +21164,14 @@ export default function Sidebar() {
     return pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'))
   }
 
-  // Filter items based on user's role permissions
   function filterItems(items: NavItemDef[]): NavItemDef[] {
     return items.filter(item => {
-      if (!item.permission) return true  // no permission = visible to all
+      if (!item.permission) return true
       return can(item.permission)
     })
   }
 
-  function NavLink({ href, icon: Icon, label }: { href: string; icon: any; label: string }) {
+  function NavLink({ href, icon: Icon, label, badge }: NavItemDef) {
     const active = isActive(href)
     return (
       <Link href={href}
@@ -19407,8 +21180,16 @@ export default function Sidebar() {
             ? 'bg-blue-50 text-blue-700'
             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
         <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}/>
-        <span className="truncate">{label}</span>
-        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>}
+        <span className="truncate flex-1">{label}</span>
+        {/* Live badge — shows urgent+today count */}
+        {badge != null && badge > 0 && (
+          <span className="flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 animate-pulse">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+        {active && (!badge || badge === 0) && (
+          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>
+        )}
       </Link>
     )
   }
@@ -19424,8 +21205,10 @@ export default function Sidebar() {
           </div>
           <div className="min-w-0">
             <div className="font-bold text-gray-900 text-xs leading-tight truncate">{BRAND.shortName} HMS</div>
-            <div className="text-xs text-gray-400" style={{fontSize:'9px'}}>
-              {user ? `${user.role === 'admin' ? '👑' : user.role === 'doctor' ? '🩺' : '📋'} ${user.full_name}` : 'Hospital Management'}
+            <div className="text-xs text-gray-400" style={{ fontSize: '9px' }}>
+              {user
+                ? `${user.role === 'admin' ? '👑' : user.role === 'doctor' ? '🩺' : '📋'} ${user.full_name}`
+                : 'Hospital Management'}
             </div>
           </div>
         </div>
@@ -19435,15 +21218,13 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-2">
         {NAV_GROUPS.map(group => {
           const filteredItems = filterItems(group.items)
-          // Don't show empty groups
           if (filteredItems.length === 0) return null
 
-          const isOpen  = open[group.label] ?? true
+          const isOpen    = open[group.label] ?? true
           const hasActive = filteredItems.some(i => isActive(i.href))
 
           return (
             <div key={group.label} className="mb-1">
-              {/* Group header — clickable to collapse */}
               <button
                 onClick={() => toggle(group.label)}
                 className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-gray-50 transition-colors mb-0.5">
@@ -19459,7 +21240,6 @@ export default function Sidebar() {
                   : <ChevronRight className="w-3 h-3 text-gray-400 flex-shrink-0"/>}
               </button>
 
-              {/* Group items — collapsible */}
               {isOpen && (
                 <div className="space-y-0.5 ml-1">
                   {filteredItems.map(item => (
@@ -19488,7 +21268,6 @@ export default function Sidebar() {
     </aside>
   )
 }
-
 ```
 
 # src\components\shared\ConsultationAttachments.tsx
@@ -23216,6 +24995,7 @@ export const GUJARATI_YESNO_MAP: Record<string, string> = {
  * 5. Follow-up Appointment
  * 6. Medication Reminder
  * 7. General Health Checkup
+ * 8. Insurance Documents Ready  ← NEW
  */
 
 import { getHospitalSettings } from './utils'
@@ -23231,6 +25011,7 @@ export type TemplateId =
   | 'follow_up'
   | 'medication'
   | 'general_checkup'
+  | 'insurance_docs_ready'   // NEW
 
 export interface TemplateParams {
   patientName: string
@@ -23247,6 +25028,8 @@ export interface TemplateParams {
   diagnosis?: string       // current diagnosis
   doctorName?: string      // treating doctor
   customNote?: string      // any additional note
+  mrn?: string             // patient MRN (used in insurance template)
+  policyTpaName?: string   // insurance company / TPA name
 }
 
 export interface Template {
@@ -23365,6 +25148,19 @@ export const TEMPLATES: Template[] = [
       return `*${h.name}*\n\nNamaste ${p.patientName} ji 🙏\n\nIt's time for your *routine health check-up*.\n\n${dateText ? `📅 *Suggested Date:* ${dateText}\n` : ''}🏥 *Hospital:* ${h.name}\n📍 *Address:* ${h.address}\n\nRegular check-ups help detect health issues early.\n\nPlease come *fasting* (empty stomach) for accurate blood test results.\n\n${p.customNote ? `📝 *Note:* ${p.customNote}\n\n` : ''}For appointment: ${h.phone}\n\n---\nતમારી નિયમિત આરોગ્ય તપાસનો સમય થયો છે. કૃપા કરીને ખાલી પેટે આવો.\n\n_${h.name} — Prevention is better than cure_`
     },
   },
+
+  // ── NEW: Insurance Documents Ready ───────────────────────────
+  {
+    id: 'insurance_docs_ready',
+    label: 'Insurance Docs Ready',
+    emoji: '🛡️',
+    description: 'Notify patient that insurance documents are compiled and ready',
+    category: 'general',
+    generate: (p) => {
+      const h = hospitalInfo()
+      return `*${h.name}*\n\nNamaste ${p.patientName} ji 🙏\n\nYour *Medical Insurance Documents* are ready for collection. 🛡️\n\n📋 *Documents compiled:*\n✅ Discharge Summary\n✅ Prescriptions & Medications\n✅ Payment Receipts / Bills\n✅ Consultation Notes\n✅ Doctor's Declaration Letter\n\n${p.mrn ? `🪪 *Your MRN:* ${p.mrn}\n` : ''}${p.policyTpaName ? `🏢 *Insurance / TPA:* ${p.policyTpaName}\n` : ''}🏥 *Collect from:* ${h.name}\n📍 *Address:* ${h.address}\n⏰ *Timing:* 9 AM – 5 PM (Mon–Sat)\n\nPlease bring your *insurance card* and a valid *ID proof* when you collect the documents.\n\n${p.customNote ? `📝 *Note:* ${p.customNote}\n\n` : ''}For queries: ${h.phone}\n\n---\nતમારા વીમા (Insurance) ક્લેઈમ માટેના તમામ દસ્તાવેજો તૈયાર છે. ઓફિસ ટાઇમ દરમ્યાન ID proof અને insurance card સાથે લઈ જાઓ.\n\n_${h.name} — We care for you_ 🙏`
+    },
+  },
 ]
 
 // ─── Helper Functions ─────────────────────────────────────────
@@ -23391,7 +25187,6 @@ export function whatsAppUrl(mobile: string, message: string): string {
 export function getTemplatesByCategory(category: 'obstetric' | 'general' | 'pediatric'): Template[] {
   return TEMPLATES.filter(t => t.category === category)
 }
-
 ```
 
 # src\types\index.ts
@@ -23414,17 +25209,20 @@ export interface Patient {
   mediclaim?: boolean
   cashless?: boolean
   reference_source?: string
+  // ── Insurance policy details (added v12) ─────────────────────
+  policy_tpa_name?: string   // e.g. "Medi Assist", "Star Health"
+  policy_number?:   string   // actual policy / card number
   created_at: string
 }
 
 export interface Procedure {
-  name: string                // e.g., "D&C", "Colposcopy", "IUD Insertion"
-  indication?: string         // why the procedure was done
-  findings?: string           // what was found
-  complications?: string      // any complications
-  surgeon?: string            // who performed it
-  anaesthesia?: string        // type of anaesthesia used
-  notes?: string              // additional notes
+  name: string
+  indication?: string
+  findings?: string
+  complications?: string
+  surgeon?: string
+  anaesthesia?: string
+  notes?: string
 }
 
 export interface Encounter {
@@ -23443,28 +25241,26 @@ export interface Encounter {
   diagnosis?: string
   notes?: string
   ob_data?: OBData
-  procedures?: Procedure[]    // structured procedure log
+  procedures?: Procedure[]
   doctor_name?: string
   created_at: string
   patients?: Patient
 }
 
-// ── Per-pregnancy obstetric history entry ────────────────────────
 export interface ObstetricEntry {
-  pregnancy_no:   number                           // 1, 2, 3, 4 …
+  pregnancy_no:   number
   type:           'Full Term' | 'Preterm' | ''
   delivery_mode?: 'Normal' | 'CS' | ''
   outcome?:       'Live' | 'Expired' | ''
   baby_gender?:   'M' | 'F' | ''
-  age_of_child?:  string                           // e.g. "3 years", "8 months"
+  age_of_child?:  string
 }
 
-// ── Per-abortion detail entry ─────────────────────────────────────
 export interface AbortionEntry {
   type?:      'Spontaneous' | 'Induced' | ''
-  weeks?:     string                               // gestational age e.g. "8"
+  weeks?:     string
   method?:    'Medicines' | 'Surgery' | ''
-  years_ago?: string                               // how many years back
+  years_ago?: string
 }
 
 export interface OBData {
@@ -23495,50 +25291,38 @@ export interface OBData {
   per_vaginum?: string
   right_ovary?: string
   left_ovary?: string
-  // ── Clinical risk fields ──
-  previous_cs?: number          // number of previous caesarean sections
-  multiple_pregnancy?: boolean  // twins / triplets
+  previous_cs?: number
+  multiple_pregnancy?: boolean
   gestational_diabetes?: boolean
-  haemoglobin?: number          // g/dL — latest Hb value
-  blood_sugar_fasting?: number  // mg/dL
-  blood_sugar_pp?: number       // mg/dL (post-prandial)
-  // ── USG / Ultrasound fields ──
-  usg_date?: string             // ISO date of USG
-  usg_ga?: string               // gestational age at USG (e.g. "28w3d")
-  bpd?: number                  // Biparietal Diameter (mm)
-  hc?: number                   // Head Circumference (mm)
-  ac?: number                   // Abdominal Circumference (mm)
-  fl?: number                   // Femur Length (mm)
-  efw?: number                  // Estimated Fetal Weight (grams)
-  afi?: number                  // Amniotic Fluid Index (cm)
-  placenta?: string             // e.g. "Anterior", "Posterior", "Fundal", "Low-lying", "Previa"
-  placenta_grade?: string       // Grade 0, I, II, III
-  cord_loops?: string           // e.g. "None", "1 loop around neck", "2 loops"
-  usg_remarks?: string          // free text for additional findings
-
-  // ── Menstrual History (NEW) ──────────────────────────────────
+  haemoglobin?: number
+  blood_sugar_fasting?: number
+  blood_sugar_pp?: number
+  usg_date?: string
+  usg_ga?: string
+  bpd?: number
+  hc?: number
+  ac?: number
+  fl?: number
+  efw?: number
+  afi?: number
+  placenta?: string
+  placenta_grade?: string
+  cord_loops?: string
+  usg_remarks?: string
   menstrual_regularity?:     'Regular' | 'Irregular' | ''
   menstrual_flow?:           'Scanty' | 'Normal' | 'Heavy' | ''
-  post_menstrual_days?:      string    // number of days of post-menstrual bleeding/spotting
+  post_menstrual_days?:      string
   post_menstrual_pain?:      'Mild' | 'Moderate' | 'Severe' | ''
-  urine_pregnancy_result?:   string    // urine pregnancy test result (~3 months)
-
-  // ── Per-pregnancy obstetric history (NEW) ────────────────────
+  urine_pregnancy_result?:   string
   obstetric_history?:        ObstetricEntry[]
-
-  // ── Abortion details (NEW) ───────────────────────────────────
   abortion_entries?:         AbortionEntry[]
-
-  // ── Past Medical & Surgical History (NEW) ────────────────────
   past_diabetes?:            boolean
   past_hypertension?:        boolean
   past_thyroid?:             boolean
   past_surgery?:             boolean
   past_surgery_detail?:      string
-
-  // ── Socioeconomic / CA Data (NEW) ────────────────────────────
-  income?:                   string    // monthly household income ₹
-  expenditure?:              string    // monthly household expenditure ₹
+  income?:                   string
+  expenditure?:              string
 }
 
 export interface Medication {
@@ -24501,6 +26285,96 @@ CREATE INDEX IF NOT EXISTS idx_encounters_procedures
   ON encounters USING gin(procedures);
 
 SELECT 'v10 procedure tracking migration complete ✓' AS result;
+
+```
+
+# supabase_v12_insurance.sql
+
+```sql
+-- ============================================================
+-- NexMedicon HMS — v12: Insurance policy fields on patients
+-- Run in Supabase → SQL Editor → New Query
+-- Safe to re-run (IF NOT EXISTS pattern).
+-- ============================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'patients' AND column_name = 'policy_tpa_name'
+  ) THEN
+    ALTER TABLE patients ADD COLUMN policy_tpa_name TEXT;
+    RAISE NOTICE 'Column policy_tpa_name added to patients.';
+  ELSE
+    RAISE NOTICE 'Column policy_tpa_name already exists — skipping.';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'patients' AND column_name = 'policy_number'
+  ) THEN
+    ALTER TABLE patients ADD COLUMN policy_number TEXT;
+    RAISE NOTICE 'Column policy_number added to patients.';
+  ELSE
+    RAISE NOTICE 'Column policy_number already exists — skipping.';
+  END IF;
+END $$;
+
+```
+
+# supabase_v13_reminders.sql
+
+```sql
+-- ================================================================
+-- NexMedicon HMS — v13: Reminder tracking columns
+-- Run in Supabase → SQL Editor → New Query
+-- Safe to re-run (IF NOT EXISTS pattern).
+-- ================================================================
+
+-- Track when a WhatsApp reminder was last sent for each appointment
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'appointments' AND column_name = 'reminder_sent_at'
+  ) THEN
+    ALTER TABLE appointments ADD COLUMN reminder_sent_at TIMESTAMPTZ;
+    RAISE NOTICE 'Column reminder_sent_at added to appointments.';
+  ELSE
+    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
+  END IF;
+END $$;
+
+-- Track when a follow-up reminder was last sent for each prescription
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'prescriptions' AND column_name = 'reminder_sent_at'
+  ) THEN
+    ALTER TABLE prescriptions ADD COLUMN reminder_sent_at TIMESTAMPTZ;
+    RAISE NOTICE 'Column reminder_sent_at added to prescriptions.';
+  ELSE
+    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
+  END IF;
+END $$;
+
+-- Track when a post-delivery / vaccination reminder was last sent
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'discharge_summaries' AND column_name = 'reminder_sent_at'
+  ) THEN
+    ALTER TABLE discharge_summaries ADD COLUMN reminder_sent_at TIMESTAMPTZ;
+    RAISE NOTICE 'Column reminder_sent_at added to discharge_summaries.';
+  ELSE
+    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
+  END IF;
+END $$;
 
 ```
 
