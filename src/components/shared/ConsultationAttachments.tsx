@@ -1,15 +1,26 @@
 'use client'
+/**
+ * src/components/shared/ConsultationAttachments.tsx  (UPDATED)
+ *
+ * Changes from original:
+ *  1. Added "Read Note" button on image attachments → calls /api/doctor-note-ocr
+ *  2. Supports cursive & non-block handwriting via Claude Vision
+ *  3. Shows transcription modal with structured extraction
+ *  4. Passes Authorization header (Supabase access token) to the API
+ *  5. Audit log on upload/delete
+ */
+
 import { useEffect, useId, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { formatDateTime } from '@/lib/utils'
+import { supabase }        from '@/lib/supabase'
+import { formatDateTime }  from '@/lib/utils'
+import { audit }           from '@/lib/audit'
 import {
   Paperclip, Upload, Camera, X, FileText,
   Image, Trash2, Download, Eye, Loader2,
-  AlertCircle, CheckCircle, Info
+  AlertCircle, CheckCircle, Info, BookOpen,
+  ChevronDown, ChevronUp,
 } from 'lucide-react'
 
-
-// Rename uploaded files to DoctorNote_DD_MM_YY.ext format
 function buildDoctorNoteFileName(originalFile: File): string {
   const now = new Date()
   const dd  = String(now.getDate()).padStart(2, '0')
@@ -25,10 +36,31 @@ interface Attachment {
   file_type:    string
   file_size:    number
   storage_key?: string
-  file_data?:   string   // base64 for DB fallback
+  file_data?:   string
   notes:        string
   created_at:   string
   source:       'storage' | 'db'
+}
+
+interface OCRResult {
+  transcription:      string
+  confidence:         'high' | 'medium' | 'low'
+  illegible_sections: string[]
+  structured: {
+    chief_complaint?:        string
+    history?:                string
+    examination_findings?:   string
+    diagnosis?:              string
+    investigations_ordered?: string
+    treatment_plan?:         string
+    medications?:            { drug: string; dose: string; frequency: string; duration: string; route: string }[]
+    advice?:                 string
+    follow_up?:              string
+    notes?:                  string
+  }
+  raw_text:    string
+  _provider?:  string
+  _parse_error?: boolean
 }
 
 interface Props {
@@ -40,7 +72,6 @@ interface Props {
 const BUCKET    = 'consultation-files'
 const MAX_MB    = 10
 const DB_MAX_MB = 2
-
 type StorageMode = 'checking' | 'storage' | 'db'
 
 export default function ConsultationAttachments({ patientId, encounterId, compact = false }: Props) {
@@ -54,18 +85,22 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   const [storageMode, setStorageMode] = useState<StorageMode>('checking')
   const [setupNote,   setSetupNote]   = useState('')
 
+  // ── OCR state ──────────────────────────────────────────────
+  const [ocrTarget,   setOcrTarget]   = useState<Attachment | null>(null)
+  const [ocrLoading,  setOcrLoading]  = useState(false)
+  const [ocrResult,   setOcrResult]   = useState<OCRResult | null>(null)
+  const [ocrError,    setOcrError]    = useState('')
+  const [showOcrRaw,  setShowOcrRaw]  = useState(false)
+
   const uid    = useId()
   const fileId = `attach-file-${uid}`
 
   const [camOpen, setCamOpen] = useState(false)
-  const videoRef  = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream|null>(null)
+  const videoRef   = useRef<HTMLVideoElement>(null)
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+  const streamRef  = useRef<MediaStream|null>(null)
 
-  useEffect(() => {
-    detectStorageMode().then(() => load())
-  }, [patientId, encounterId])
-
+  useEffect(() => { detectStorageMode().then(() => load()) }, [patientId, encounterId])
   useEffect(() => () => stopCam(), [])
 
   async function detectStorageMode() {
@@ -94,7 +129,6 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   async function load() {
     setLoading(true)
     const combined: Attachment[] = []
-
     try {
       let q = supabase.from('consultation_attachments')
         .select('*').eq('patient_id', patientId).order('created_at', { ascending: false })
@@ -102,7 +136,6 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
       const { data } = await q
       ;(data || []).forEach((r: any) => combined.push({ ...r, source: 'storage' as const }))
     } catch { /* table might not exist yet */ }
-
     try {
       let q2 = supabase.from('consultation_files_db')
         .select('*').eq('patient_id', patientId).order('created_at', { ascending: false })
@@ -110,7 +143,6 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
       const { data } = await q2
       ;(data || []).forEach((r: any) => combined.push({ ...r, source: 'db' as const }))
     } catch { /* DB fallback table might not exist yet */ }
-
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     setAttachments(combined)
     setLoading(false)
@@ -119,14 +151,11 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   async function upload(file: File) {
     const maxBytes = storageMode === 'db' ? DB_MAX_MB * 1024 * 1024 : MAX_MB * 1024 * 1024
     if (file.size > maxBytes) {
-      setError(`File too large — max ${storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB.${storageMode === 'db' ? ' Create the Supabase Storage bucket to allow up to 10 MB.' : ''}`)
+      setError(`File too large — max ${storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB.`)
       return
     }
     const allowed = ['image/jpeg','image/jpg','image/png','image/webp','application/pdf']
-    if (!allowed.includes(file.type)) {
-      setError('Unsupported type. Use JPG, PNG, WebP, or PDF.')
-      return
-    }
+    if (!allowed.includes(file.type)) { setError('Unsupported type. Use JPG, PNG, WebP, or PDF.'); return }
     setUploading(true); setError('')
     if (storageMode === 'storage') await uploadToStorage(file)
     else await uploadToDB(file)
@@ -138,19 +167,21 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
     const key = `${patientId}/${encounterId || 'general'}/${displayName.replace(/\s/g,'-')}-${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(key, file, { upsert: false })
     if (upErr) {
-      // Auto-fallback to DB
       setStorageMode('db')
       setSetupNote(`Storage error (${upErr.message}) — switched to DB fallback.`)
-      await uploadToDB(file)
-      return
+      await uploadToDB(file); return
     }
-    const { error: dbErr } = await supabase.from('consultation_attachments').insert({
+    const { data, error: dbErr } = await supabase.from('consultation_attachments').insert({
       patient_id: patientId, encounter_id: encounterId || null,
       file_name: displayName, file_type: file.type, file_size: file.size,
       storage_key: key, bucket: BUCKET, notes: noteInput.trim() || null,
-    })
+    }).select().single()
     if (dbErr) setError(`Save failed: ${dbErr.message}`)
-    else { setNoteInput(''); load() }
+    else {
+      setNoteInput('')
+      await audit('create', 'attachment', data?.id, displayName)
+      load()
+    }
     setUploading(false)
   }
 
@@ -163,65 +194,25 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
         r.readAsDataURL(file)
       })
       const displayName = buildDoctorNoteFileName(file)
-      const { error: dbErr } = await supabase.from('consultation_files_db').insert({
+      const { data, error: dbErr } = await supabase.from('consultation_files_db').insert({
         patient_id: patientId, encounter_id: encounterId || null,
         file_name: displayName, file_type: file.type, file_size: file.size,
         file_data: base64, notes: noteInput.trim() || null,
-      })
-      if (dbErr) {
-        if (dbErr.message.includes('does not exist') || dbErr.message.includes('relation')) {
-          setError('Run supabase_v6_updates.sql in Supabase SQL Editor, then try again.')
-        } else {
-          setError(`Upload failed: ${dbErr.message}`)
-        }
-      } else { setNoteInput(''); load() }
-    } catch (err: any) { setError(`Error: ${err.message}`) }
+      }).select().single()
+      if (dbErr) setError(`Save failed: ${dbErr.message}`)
+      else {
+        setNoteInput('')
+        await audit('create', 'attachment', data?.id, displayName)
+        load()
+      }
+    } catch (e: any) { setError(`Upload failed: ${e.message}`) }
     setUploading(false)
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) upload(file)
+    const f = e.target.files?.[0]
+    if (f) upload(f)
     e.target.value = ''
-  }
-
-  async function openCam() {
-    setCamOpen(true)
-    try {
-      let stream: MediaStream
-      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }) }
-      catch { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }) }
-      streamRef.current = stream
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play() }
-    } catch (err: any) {
-      setError(err.name === 'NotAllowedError' ? 'Camera permission denied.' : `Camera error: ${err.message}`)
-      setCamOpen(false)
-    }
-  }
-
-  function stopCam() { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null }
-
-  function captureCam() {
-    const v = videoRef.current; const cv = canvasRef.current
-    if (!v || !cv) return
-    cv.width = v.videoWidth || 1280; cv.height = v.videoHeight || 720
-    cv.getContext('2d')?.drawImage(v, 0, 0)
-    cv.toBlob(blob => {
-      if (!blob) return
-      stopCam(); setCamOpen(false)
-      const camFile = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
-      upload(camFile)  // will be renamed to DoctorNote_DD_MM_YY.jpg on upload
-    }, 'image/jpeg', 0.92)
-  }
-
-  async function openPreview(att: Attachment) {
-    setPreview(att)
-    if (att.source === 'db' && att.file_data) {
-      setPreviewUrl(`data:${att.file_type};base64,${att.file_data}`)
-    } else if (att.storage_key) {
-      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(att.storage_key, 300)
-      setPreviewUrl(data?.signedUrl || '')
-    }
   }
 
   async function deleteAttachment(att: Attachment) {
@@ -232,20 +223,113 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
     } else {
       await supabase.from('consultation_files_db').delete().eq('id', att.id)
     }
+    await audit('delete', 'attachment', att.id, att.file_name)
     load()
   }
 
-  function fmtSize(b: number) {
-    if (b < 1024) return `${b} B`
-    if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`
-    return `${(b/1024/1024).toFixed(1)} MB`
+  async function openPreview(att: Attachment) {
+    setPreview(att)
+    if (att.source === 'storage' && att.storage_key) {
+      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(att.storage_key, 300)
+      setPreviewUrl(data?.signedUrl ?? '')
+    } else if (att.source === 'db' && att.file_data) {
+      setPreviewUrl(`data:${att.file_type};base64,${att.file_data}`)
+    }
   }
 
+  // ── Camera ────────────────────────────────────────────────
+  async function openCam() {
+    setCamOpen(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      streamRef.current = stream
+      if (videoRef.current) videoRef.current.srcObject = stream
+    } catch { setCamOpen(false); setError('Camera access denied.') }
+  }
+  function stopCam() {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }
+  function captureCam() {
+    const video  = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+    canvas.width  = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')?.drawImage(video, 0, 0)
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const camFile = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' })
+      stopCam(); setCamOpen(false)
+      upload(camFile)
+    }, 'image/jpeg', 0.92)
+  }
+
+  // ── Doctor Note OCR ───────────────────────────────────────
+  async function readDoctorNote(att: Attachment) {
+    setOcrTarget(att)
+    setOcrLoading(true)
+    setOcrResult(null)
+    setOcrError('')
+
+    try {
+      // Get image blob
+      let imageBlob: Blob | null = null
+
+      if (att.source === 'storage' && att.storage_key) {
+        const { data } = await supabase.storage.from(BUCKET).download(att.storage_key)
+        imageBlob = data
+      } else if (att.source === 'db' && att.file_data) {
+        const byteChars = atob(att.file_data)
+        const bytes     = new Uint8Array(byteChars.length)
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+        imageBlob = new Blob([bytes], { type: att.file_type })
+      }
+
+      if (!imageBlob) throw new Error('Could not retrieve image data.')
+
+      // Get auth token for API
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Not authenticated.')
+
+      const fd = new FormData()
+      fd.append('image', new File([imageBlob], att.file_name, { type: att.file_type }))
+      fd.append('context', `Doctor note — patient file. Attached note: "${att.notes || 'no label'}"`)
+
+      const res  = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      const data = await res.json()
+
+      if (!res.ok || data.error) throw new Error(data.error || 'OCR failed.')
+      setOcrResult(data as OCRResult)
+      await audit('scan', 'attachment', att.id, att.file_name)
+    } catch (e: any) {
+      setOcrError(e.message || 'Failed to read note.')
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  function closeOcr() { setOcrTarget(null); setOcrResult(null); setOcrError('') }
+
+  const fmtSize = (b: number) =>
+    b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
+
+  const confColor = (c: string) =>
+    c === 'high' ? 'text-green-700 bg-green-50 border-green-200' :
+    c === 'medium' ? 'text-yellow-700 bg-yellow-50 border-yellow-200' :
+    'text-red-700 bg-red-50 border-red-200'
+
+  // ── Camera modal ──────────────────────────────────────────
   if (camOpen) return (
-    <div className="rounded-xl border-2 border-blue-300 bg-blue-50">
-      <div className="p-4">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-lg w-full p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-blue-800">📷 Live Camera — point at document, then Capture</p>
+          <h3 className="font-semibold text-gray-900">Capture Doctor Note</h3>
           <button type="button" onClick={() => { stopCam(); setCamOpen(false) }} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4"/></button>
         </div>
         <div className="relative bg-black rounded-lg overflow-hidden mb-3" style={{ aspectRatio:'16/9', maxHeight:'280px' }}>
@@ -255,6 +339,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
           </div>
         </div>
         <canvas ref={canvasRef} className="hidden"/>
+        <p className="text-xs text-gray-500 mb-3 text-center">Hold steady • Good lighting • Camera directly above the note</p>
         <div className="flex gap-2 justify-center">
           <button type="button" onClick={captureCam} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg">
             <Camera className="w-4 h-4"/> Capture
@@ -265,6 +350,123 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
     </div>
   )
 
+  // ── OCR result modal ──────────────────────────────────────
+  if (ocrTarget) return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-blue-600"/> Reading: {ocrTarget.file_name}
+            </h3>
+            <p className="text-xs text-gray-400">AI handwriting reader — works with cursive & block letters</p>
+          </div>
+          <button onClick={closeOcr} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {ocrLoading && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+              <Loader2 className="w-8 h-8 animate-spin mb-3 text-blue-500"/>
+              <p className="text-sm font-medium">Reading handwriting…</p>
+              <p className="text-xs text-gray-400 mt-1">Works with cursive, scrawl, abbreviations</p>
+            </div>
+          )}
+
+          {ocrError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5"/>
+              <div>
+                <p className="font-medium text-red-800 text-sm">Could not read note</p>
+                <p className="text-red-600 text-xs mt-1">{ocrError}</p>
+                <p className="text-red-500 text-xs mt-1">Tip: Ensure good lighting and the camera is directly above the note.</p>
+              </div>
+            </div>
+          )}
+
+          {ocrResult && (
+            <>
+              {/* Confidence badge */}
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium ${confColor(ocrResult.confidence)}`}>
+                <CheckCircle className="w-3.5 h-3.5"/>
+                Confidence: {ocrResult.confidence.charAt(0).toUpperCase() + ocrResult.confidence.slice(1)}
+                {ocrResult._provider && <span className="opacity-60">· via {ocrResult._provider}</span>}
+              </div>
+
+              {/* Illegible warnings */}
+              {ocrResult.illegible_sections?.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                  <span className="font-semibold">Could not read:</span> {ocrResult.illegible_sections.join(', ')}
+                </div>
+              )}
+
+              {/* Transcription */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Transcription</h4>
+                <pre className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">
+                  {ocrResult.transcription || ocrResult.raw_text || 'No text extracted.'}
+                </pre>
+              </div>
+
+              {/* Structured extraction */}
+              {ocrResult.structured && Object.keys(ocrResult.structured).length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Extracted Clinical Data</h4>
+                  <div className="space-y-2">
+                    {(Object.entries(ocrResult.structured) as [string, any][])
+                      .filter(([, v]) => v && (typeof v === 'string' ? v.trim() : Array.isArray(v) ? v.length > 0 : true))
+                      .map(([key, val]) => {
+                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                        return (
+                          <div key={key} className="bg-white border border-gray-100 rounded-lg px-3 py-2">
+                            <div className="text-xs font-semibold text-gray-500 mb-0.5">{label}</div>
+                            {Array.isArray(val) ? (
+                              <ul className="text-sm text-gray-800 space-y-0.5">
+                                {val.map((item: any, i: number) => (
+                                  <li key={i} className="text-xs">
+                                    {typeof item === 'object'
+                                      ? Object.entries(item).filter(([,v]) => v).map(([k,v]) => `${k}: ${v}`).join(' · ')
+                                      : String(item)
+                                    }
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-gray-800">{String(val)}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Raw toggle */}
+              <button
+                onClick={() => setShowOcrRaw(v => !v)}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
+              >
+                {showOcrRaw ? <ChevronUp className="w-3.5 h-3.5"/> : <ChevronDown className="w-3.5 h-3.5"/>}
+                {showOcrRaw ? 'Hide' : 'Show'} raw response
+              </button>
+              {showOcrRaw && (
+                <pre className="bg-gray-900 text-green-400 text-xs rounded-lg p-3 overflow-x-auto">
+                  {JSON.stringify(ocrResult, null, 2)}
+                </pre>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center">
+          <p className="text-xs text-gray-400">Results are AI-generated — verify before recording in chart</p>
+          <button onClick={closeOcr} className="btn-secondary text-xs">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Preview modal ─────────────────────────────────────────
   if (preview) return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -277,6 +479,14 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
             {previewUrl && (
               <a href={previewUrl} download={preview.file_name} target="_blank" rel="noreferrer"
                 className="btn-secondary text-xs flex items-center gap-1"><Download className="w-3.5 h-3.5"/> Download</a>
+            )}
+            {preview.file_type.startsWith('image/') && (
+              <button
+                onClick={() => { setPreview(null); setPreviewUrl(''); readDoctorNote(preview) }}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+              >
+                <BookOpen className="w-3.5 h-3.5"/> Read Handwriting
+              </button>
             )}
             <button onClick={() => { setPreview(null); setPreviewUrl('') }} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
           </div>
@@ -294,6 +504,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
     </div>
   )
 
+  // ── Main UI ───────────────────────────────────────────────
   return (
     <div className={compact ? '' : 'card p-5'}>
       {!compact && <h2 className="section-title flex items-center gap-2 mb-4"><Paperclip className="w-4 h-4"/> Files & Photos</h2>}
@@ -312,6 +523,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
         </div>
       )}
 
+      {/* Upload area */}
       <div className="mb-4">
         <input id={fileId} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
           onChange={handleFileChange}
@@ -330,7 +542,10 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
             <Camera className="w-3.5 h-3.5"/> Camera
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-1.5">JPG, PNG, WebP photos · PDF documents · Max {storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB</p>
+        <p className="text-xs text-gray-400 mt-1.5">
+          JPG, PNG, WebP photos · PDF documents · Max {storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB
+          <span className="ml-2 text-blue-500">· Image uploads: tap <BookOpen className="w-3 h-3 inline"/> to read handwriting (cursive OK)</span>
+        </p>
       </div>
 
       {error && (
@@ -347,7 +562,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
         <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
           <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30"/>
           <p className="text-sm">No files uploaded yet</p>
-          <p className="text-xs mt-1">Upload photos, lab reports, or documents</p>
+          <p className="text-xs mt-1">Upload photos of handwritten notes — AI can read cursive too</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -364,8 +579,17 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => openPreview(att)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Preview"><Eye className="w-3.5 h-3.5"/></button>
-                <button onClick={() => deleteAttachment(att)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg" title="Delete"><Trash2 className="w-3.5 h-3.5"/></button>
+                <button onClick={() => openPreview(att)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Preview">
+                  <Eye className="w-3.5 h-3.5"/>
+                </button>
+                {att.file_type.startsWith('image/') && (
+                  <button onClick={() => readDoctorNote(att)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg" title="Read handwriting with AI">
+                    <BookOpen className="w-3.5 h-3.5"/>
+                  </button>
+                )}
+                <button onClick={() => deleteAttachment(att)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg" title="Delete">
+                  <Trash2 className="w-3.5 h-3.5"/>
+                </button>
               </div>
             </div>
           ))}

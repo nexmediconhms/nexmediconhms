@@ -141,10 +141,16 @@ export default function RemindersPage() {
     else         setRefreshing(true)
     try {
       const res  = await fetch('/api/reminders')
-      const data = await res.json()
-      setReminders(data.reminders || [])
-      setGeneratedAt(data.generatedAt || '')
-    } catch {}
+      if (!res.ok) {
+        console.error('[Reminders] API returned', res.status, res.statusText)
+      } else {
+        const data = await res.json()
+        setReminders(data.reminders || [])
+        setGeneratedAt(data.generatedAt || '')
+      }
+    } catch (err) {
+      console.error('[Reminders] fetch error:', err)
+    }
     setLoading(false)
     setRefreshing(false)
   }, [])
