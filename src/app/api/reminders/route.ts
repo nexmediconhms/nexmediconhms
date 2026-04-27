@@ -436,28 +436,46 @@ export async function GET(_req: NextRequest) {
 
 // ── PATCH — mark a reminder as sent ──────────────────────────
 export async function PATCH(req: NextRequest) {
-  const { sourceTable, sourceId } = await req.json()
+  const { sourceTable, sourceId, patientId, patientName, mobile, reminderType } = await req.json()
   if (!sourceTable || !sourceId) {
     return NextResponse.json({ error: 'sourceTable and sourceId required' }, { status: 400 })
   }
 
+  const now = new Date().toISOString()
+
   // Only update tables that have reminder_sent_at
   const allowed = ['appointments', 'prescriptions', 'discharge_summaries']
-  if (!allowed.includes(sourceTable)) {
-    return NextResponse.json({ ok: true }) // bills / encounters don't track sent_at
+  if (allowed.includes(sourceTable)) {
+    await supabase
+      .from(sourceTable)
+      .update({ reminder_sent_at: now })
+      .eq('id', sourceId)
+
+    // Also mark appointments reminder_sent = true (existing field)
+    if (sourceTable === 'appointments') {
+      await supabase
+        .from('appointments')
+        .update({ reminder_sent: true })
+        .eq('id', sourceId)
+    }
   }
 
-  await supabase
-    .from(sourceTable)
-    .update({ reminder_sent_at: new Date().toISOString() })
-    .eq('id', sourceId)
-
-  // Also mark appointments reminder_sent = true (existing field)
-  if (sourceTable === 'appointments') {
-    await supabase
-      .from('appointments')
-      .update({ reminder_sent: true })
-      .eq('id', sourceId)
+  // Log to reminder_log (best-effort, don't fail if table doesn't exist)
+  try {
+    await supabase.from('reminder_log').insert({
+      patient_id: patientId || null,
+      patient_name: patientName || null,
+      mobile: mobile || null,
+      reminder_type: reminderType || 'unknown',
+      source_table: sourceTable,
+      source_id: sourceId,
+      channel: 'whatsapp',
+      status: 'sent',
+      sent_at: now,
+      sent_by: 'manual',
+    })
+  } catch {
+    // reminder_log table may not exist yet — that's OK
   }
 
   return NextResponse.json({ ok: true })

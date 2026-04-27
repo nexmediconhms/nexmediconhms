@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { getHospitalSettings } from '@/lib/utils'
 import { whatsAppUrl } from '@/lib/whatsapp-templates'
@@ -7,6 +7,7 @@ import {
   MessageCircle, RefreshCw, CheckCircle, Clock, AlertTriangle,
   Baby, Calendar, Pill, IndianRupee, Syringe, Loader2,
   Filter, BellRing, Send, ChevronDown, ChevronUp,
+  Zap, PlayCircle, StopCircle, History, Users,
 } from 'lucide-react'
 
 // ── Types (mirrors the API response) ─────────────────────────
@@ -132,7 +133,23 @@ export default function RemindersPage() {
   const [sent,         setSent]         = useState<Set<string>>(new Set())
   const [expanded,     setExpanded]     = useState<string | null>(null)
   const [generatedAt,  setGeneratedAt]  = useState<string>('')
-  const [sendingAll,   setSendingAll]   = useState(false)
+
+  // ── Bulk send state ─────────────────────────────────────────
+  const [sendingAll,     setSendingAll]     = useState(false)
+  const [bulkProgress,   setBulkProgress]   = useState(0)
+  const [bulkTotal,      setBulkTotal]      = useState(0)
+  const [bulkResult,     setBulkResult]     = useState<{ sent: number; failed: number } | null>(null)
+  const [showBulkPanel,  setShowBulkPanel]  = useState(false)
+  const bulkAbortRef     = useRef(false)
+
+  // ── Auto-send state ─────────────────────────────────────────
+  const [autoSending,    setAutoSending]    = useState(false)
+  const [autoResult,     setAutoResult]     = useState<{ total: number; reminders: any[] } | null>(null)
+
+  // ── Send history state ──────────────────────────────────────
+  const [showHistory,    setShowHistory]    = useState(false)
+  const [history,        setHistory]        = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
@@ -160,14 +177,19 @@ export default function RemindersPage() {
   // Mark a single reminder as sent in Supabase + local state
   async function markSent(r: ReminderItem) {
     setSent(prev => new Set(Array.from(prev).concat(r.id)))
-    // Only tables with reminder_sent_at column need a PATCH
-    if (['appointments', 'prescriptions', 'discharge_summaries'].includes(r.sourceTable)) {
-      await fetch('/api/reminders', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceTable: r.sourceTable, sourceId: r.sourceId }),
-      })
-    }
+    // PATCH updates source table + logs to reminder_log
+    await fetch('/api/reminders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceTable: r.sourceTable,
+        sourceId: r.sourceId,
+        patientId: r.patientId,
+        patientName: r.patientName,
+        mobile: r.mobile,
+        reminderType: r.type,
+      }),
+    })
   }
 
   const filtered   = filter === 'all' ? reminders : reminders.filter(r => r.type === filter)
@@ -184,6 +206,113 @@ export default function RemindersPage() {
     ])
   )
   const urgentCount = reminders.filter(r => r.priority === 'urgent' && !sent.has(r.id)).length
+
+  // ── Bulk Send All — opens WhatsApp for each pending reminder sequentially ──
+  async function handleSendAll() {
+    const toSend = pending.filter(r => r.mobile)
+    if (toSend.length === 0) return
+
+    setSendingAll(true)
+    setBulkProgress(0)
+    setBulkTotal(toSend.length)
+    setBulkResult(null)
+    bulkAbortRef.current = false
+
+    const batchReminders: any[] = []
+    let sentCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < toSend.length; i++) {
+      if (bulkAbortRef.current) break
+
+      const r = toSend[i]
+      const msg = buildWAMessage(r, hs)
+
+      try {
+        // Open WhatsApp for this patient
+        const url = whatsAppUrl(r.mobile, msg)
+        window.open(url, '_blank')
+
+        // Mark as sent locally
+        setSent(prev => new Set(Array.from(prev).concat(r.id)))
+
+        batchReminders.push({
+          id: r.id,
+          type: r.type,
+          patientId: r.patientId,
+          patientName: r.patientName,
+          mobile: r.mobile,
+          sourceId: r.sourceId,
+          sourceTable: r.sourceTable,
+          messagePreview: msg.slice(0, 200),
+        })
+
+        sentCount++
+      } catch {
+        failCount++
+      }
+
+      setBulkProgress(i + 1)
+
+      // Small delay between opens to avoid browser blocking popups
+      if (i < toSend.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
+    }
+
+    // Log all sent reminders to the server
+    if (batchReminders.length > 0) {
+      try {
+        await fetch('/api/reminders/send-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reminders: batchReminders, sentBy: 'bulk' }),
+        })
+      } catch (e) {
+        console.error('[Bulk Send] Failed to log:', e)
+      }
+    }
+
+    setBulkResult({ sent: sentCount, failed: failCount })
+    setSendingAll(false)
+  }
+
+  function handleAbortBulk() {
+    bulkAbortRef.current = true
+  }
+
+  // ── Auto-Generate & Send (cron-like manual trigger) ─────────
+  async function handleAutoSend() {
+    setAutoSending(true)
+    setAutoResult(null)
+    try {
+      const res = await fetch('/api/reminders/auto-generate')
+      if (res.ok) {
+        const data = await res.json()
+        setAutoResult({ total: data.total, reminders: data.reminders || [] })
+        // Refresh the main list
+        await load(true)
+      }
+    } catch (e) {
+      console.error('[Auto-Send] Error:', e)
+    }
+    setAutoSending(false)
+  }
+
+  // ── Load send history ───────────────────────────────────────
+  async function loadHistory() {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch('/api/reminders/history')
+      if (res.ok) {
+        const data = await res.json()
+        setHistory(data.logs || [])
+      }
+    } catch (e) {
+      console.error('[History] Error:', e)
+    }
+    setHistoryLoading(false)
+  }
 
   return (
     <AppShell>
@@ -219,6 +348,215 @@ export default function RemindersPage() {
             </button>
           </div>
         </div>
+
+        {/* ── Action Bar: Send All + Auto-Send + History ──────── */}
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-2xl p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-3">
+
+            {/* Send All Button */}
+            <button
+              onClick={() => setShowBulkPanel(p => !p)}
+              disabled={pending.length === 0}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm py-2.5 px-5 rounded-xl transition-colors shadow-sm shadow-green-200"
+            >
+              <Users className="w-4 h-4"/>
+              Send All Reminders ({pending.length})
+            </button>
+
+            {/* Auto-Generate & Send */}
+            <button
+              onClick={handleAutoSend}
+              disabled={autoSending}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-sm py-2.5 px-5 rounded-xl transition-colors shadow-sm shadow-blue-200"
+            >
+              {autoSending ? (
+                <Loader2 className="w-4 h-4 animate-spin"/>
+              ) : (
+                <Zap className="w-4 h-4"/>
+              )}
+              {autoSending ? 'Auto-Sending...' : 'Auto-Send Today\'s Reminders'}
+            </button>
+
+            {/* History */}
+            <button
+              onClick={() => {
+                setShowHistory(h => !h)
+                if (!showHistory) loadHistory()
+              }}
+              className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-sm py-2.5 px-4 rounded-xl border border-gray-200 transition-colors"
+            >
+              <History className="w-4 h-4"/>
+              Send History
+            </button>
+          </div>
+
+          {/* Auto-send result */}
+          {autoResult && (
+            <div className="mt-3 bg-white rounded-xl border border-blue-100 p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="w-4 h-4 text-green-500"/>
+                <span className="font-semibold text-gray-700">
+                  Auto-send complete: {autoResult.total} reminders processed
+                </span>
+              </div>
+              {autoResult.total === 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  All reminders for today have already been sent. No duplicates created.
+                </p>
+              )}
+              {autoResult.total > 0 && (
+                <div className="mt-2 space-y-1">
+                  {autoResult.reminders.slice(0, 5).map((r: any, i: number) => (
+                    <div key={i} className="text-xs text-gray-600 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"/>
+                      <span className="font-medium">{r.patientName}</span>
+                      <span className="text-gray-400">·</span>
+                      <span>{r.type}</span>
+                      <span className="text-gray-400">·</span>
+                      <span className="font-mono">{r.mobile}</span>
+                    </div>
+                  ))}
+                  {autoResult.reminders.length > 5 && (
+                    <p className="text-xs text-gray-400">...and {autoResult.reminders.length - 5} more</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bulk send panel */}
+          {showBulkPanel && (
+            <div className="mt-3 bg-white rounded-xl border border-green-100 p-4">
+              {!sendingAll && !bulkResult && (
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-green-600"/>
+                    Bulk Send via WhatsApp
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    This will open WhatsApp for each of the <strong>{pending.length}</strong> pending patients
+                    one by one (1.5s delay between each). Each message will be pre-filled — you just need to tap Send in WhatsApp.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSendAll}
+                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors"
+                    >
+                      <PlayCircle className="w-4 h-4"/>
+                      Start Sending ({pending.length} patients)
+                    </button>
+                    <button
+                      onClick={() => setShowBulkPanel(false)}
+                      className="text-sm text-gray-500 hover:text-gray-700 px-3"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {sendingAll && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 text-green-600 animate-spin"/>
+                      Sending reminders... ({bulkProgress}/{bulkTotal})
+                    </h3>
+                    <button
+                      onClick={handleAbortBulk}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-semibold"
+                    >
+                      <StopCircle className="w-3.5 h-3.5"/>
+                      Stop
+                    </button>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                    <div
+                      className="bg-green-500 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${bulkTotal > 0 ? (bulkProgress / bulkTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Opening WhatsApp for each patient. Please don&apos;t close this tab.
+                  </p>
+                </div>
+              )}
+
+              {bulkResult && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-green-500"/>
+                    <h3 className="text-sm font-bold text-green-700">Bulk Send Complete!</h3>
+                  </div>
+                  <div className="flex gap-4 text-sm mb-3">
+                    <span className="text-green-600 font-semibold">✅ {bulkResult.sent} sent</span>
+                    {bulkResult.failed > 0 && (
+                      <span className="text-red-600 font-semibold">❌ {bulkResult.failed} failed</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setBulkResult(null); setShowBulkPanel(false) }}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Send History Panel ──────────────────────────────── */}
+        {showHistory && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <History className="w-4 h-4 text-gray-500"/>
+                Recent Send History
+              </h3>
+              <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600">
+                Close
+              </button>
+            </div>
+            {historyLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 text-blue-500 animate-spin"/>
+              </div>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No reminders sent yet today.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {history.map((log: any, i: number) => (
+                  <div key={log.id || i} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg text-xs">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>
+                    <span className="font-medium text-gray-700 min-w-[120px]">{log.patient_name}</span>
+                    <span className="text-gray-400">·</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      log.reminder_type === 'appointment' ? 'bg-blue-50 text-blue-700' :
+                      log.reminder_type === 'anc' ? 'bg-pink-50 text-pink-700' :
+                      log.reminder_type === 'follow_up' ? 'bg-orange-50 text-orange-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {log.reminder_type}
+                    </span>
+                    <span className="text-gray-400">·</span>
+                    <span className="font-mono text-gray-500">{log.mobile}</span>
+                    <span className="ml-auto text-gray-400">
+                      {log.sent_at ? new Date(log.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                      log.sent_by === 'auto' ? 'bg-blue-100 text-blue-700' :
+                      log.sent_by === 'bulk' ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {log.sent_by || 'manual'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Summary tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
