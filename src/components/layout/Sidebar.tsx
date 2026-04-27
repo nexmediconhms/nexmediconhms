@@ -82,6 +82,7 @@ export default function Sidebar() {
       emoji: '💰',
       items: [
         { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'        },
+        { href: '/analytics',        icon: Activity,    label: 'Analytics',        permission: 'reports.view'        },
         { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'        },
         { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'        },
         { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'   },
