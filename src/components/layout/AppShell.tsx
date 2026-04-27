@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AuthContext, loadClinicUser, isFirstTimeSetup, hasPermission } from '@/lib/auth'
 import type { ClinicUser, AuthContextType, Permission } from '@/lib/auth'
+import { initSettings, migrateLocalStorageToSupabase } from '@/lib/settings'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import { AlertTriangle, X } from 'lucide-react'
@@ -38,6 +39,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setLoading(false)
       return
     }
+
+    // Initialize hospital settings from Supabase (+ migrate localStorage if needed)
+    await migrateLocalStorageToSupabase()
+    await initSettings()
 
     setClinicUser(user)
     setLoading(false)

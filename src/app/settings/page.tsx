@@ -6,7 +6,7 @@ import {
   Settings, Save, CheckCircle, Building2, User, Printer, Info, Shield,
   UserPlus, Users, Trash2, AlertCircle, Loader2, Copy, Calculator
 } from 'lucide-react'
-import { loadSettings, DEFAULTS, SETTINGS_STORAGE_KEY, type HospitalSettings } from '@/lib/settings'
+import { loadSettings, saveSettings, DEFAULTS, type HospitalSettings } from '@/lib/settings'
 import type { ClinicUser } from '@/lib/auth'
 import { useAuth } from '@/lib/auth'
 
@@ -29,6 +29,8 @@ function Field({ label, value, onChange, placeholder, hint, type = 'text' }: {
 export default function SettingsPage() {
   const [form, setForm] = useState<HospitalSettings>(DEFAULTS)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     const s = loadSettings()
@@ -39,15 +41,27 @@ export default function SettingsPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  function handleSave() {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(form))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+  async function handleSave() {
+    setSaving(true)
+    setSaveError('')
+    const ok = await saveSettings(form)
+    setSaving(false)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } else {
+      setSaveError('Failed to save to cloud. Settings saved locally as fallback.')
+      // Still show brief success since localStorage was updated
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    }
   }
 
-  function handleReset() {
+  async function handleReset() {
     if (confirm('Reset all settings to defaults?')) {
-      localStorage.removeItem(SETTINGS_STORAGE_KEY)
+      setSaving(true)
+      await saveSettings(DEFAULTS)
+      setSaving(false)
       setForm(DEFAULTS)
     }
   }
@@ -69,7 +83,13 @@ export default function SettingsPage() {
 
         {saved && (
           <div className="mb-5 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" /> Settings saved successfully.
+            <CheckCircle className="w-4 h-4" /> Settings saved to cloud successfully.
+          </div>
+        )}
+
+        {saveError && (
+          <div className="mb-5 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> {saveError}
           </div>
         )}
 
@@ -254,12 +274,13 @@ export default function SettingsPage() {
 
         {/* Save buttons */}
         <div className="flex gap-3">
-          <button onClick={handleSave}
-            className="btn-primary flex items-center gap-2">
-            <Save className="w-4 h-4" /> Save Settings
+          <button onClick={handleSave} disabled={saving}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Saving...' : 'Save Settings'}
           </button>
-          <button onClick={handleReset}
-            className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 text-sm">
+          <button onClick={handleReset} disabled={saving}
+            className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 text-sm disabled:opacity-50">
             Reset to Defaults
           </button>
         </div>

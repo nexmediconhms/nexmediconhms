@@ -60,27 +60,13 @@ export function ageFromDOB(dob: string | undefined | null): number | null {
 }
 
 // ── Live hospital settings ────────────────────────────────────
-// Reads from localStorage (set in /settings page).
-// Falls back to HOSPITAL constants if nothing saved yet.
+// Reads from Supabase-backed in-memory cache (populated by initSettings() in AppShell).
+// Falls back to localStorage → DEFAULTS if cache not yet initialized.
 // Call this inside components that need print-header values.
+import { getSettingsCache } from './settings'
+
 export function getHospitalSettings() {
-  const FALLBACK = {
-    hospitalName: 'NexMedicon Demo Hospital',
-    address:      '123 Hospital Road, City',
-    phone:        '+91 98765 43210',
-    regNo:        'MH/12345',
-    gstin:        '27ABCDE1234F1Z5',
-    doctorName:   'Dr. Demo',
-    doctorQual:   'MBBS, MD (OBG)',
-    doctorReg:    'MH/12345',
-    footerNote:   'Thank you for visiting. Please follow the advice given above.',
-  }
-  if (typeof window === 'undefined') return FALLBACK
-  try {
-    const raw = localStorage.getItem('nexmedicon_settings')
-    if (raw) return { ...FALLBACK, ...JSON.parse(raw) }
-  } catch {}
-  return FALLBACK
+  return getSettingsCache()
 }
 
 // ── Sunday / Holiday helpers ─────────────────────────────────

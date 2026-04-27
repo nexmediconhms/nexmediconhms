@@ -5,6 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
 import { getHospitalSettings, normalizePhone } from '@/lib/utils'
+import type { HospitalSettings } from '@/lib/settings'
 import {
   Printer, ScanLine, FileText, ExternalLink, CheckCircle,
   Download, Copy, Globe, Star, ChevronRight, ArrowRight,
@@ -154,7 +155,7 @@ function FormsContent() {
   const [done,      setDone]     = useState<Record<string, boolean>>({})
   const [copied,    setCopied]   = useState(false)
   const [siteUrl,   setSiteUrl]  = useState('')
-  const [hs,        setHs]       = useState<Record<string, string>>({})
+  const [hs,        setHs]       = useState<HospitalSettings>({} as HospitalSettings)
 
   // Send-to-patient state
   const [sendPhone,   setSendPhone]   = useState('')
