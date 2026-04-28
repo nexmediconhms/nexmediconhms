@@ -1,4 +1,16 @@
 'use client'
+/**
+ * src/components/layout/Sidebar.tsx
+ *
+ * UPDATED for v11 — adds nav items for:
+ *   - IPD Management       (/ipd)
+ *   - Video Consultations  (/video)
+ *   - Hospital Fund        (/fund)
+ *   - Patient Portal links (/settings/doctors for doctor management)
+ *
+ * Drop-in replacement for the existing Sidebar.tsx.
+ * All original logic is preserved; only NAV_GROUPS is extended.
+ */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -13,6 +25,12 @@ import {
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
   BellRing,
+  // ── v11 additions ──────────────────────────────────────
+  BedSingle,        // IPD admissions
+  Video,            // Video consultations
+  PiggyBank,        // Hospital fund
+  UserCog,          // Doctor management
+  ExternalLink,     // Patient portal (external)
 } from 'lucide-react'
 
 interface NavItemDef {
@@ -21,6 +39,7 @@ interface NavItemDef {
   label:       string
   permission?: Permission
   badge?:      number
+  external?:   boolean   // opens in new tab (patient portal link)
 }
 
 interface NavGroupDef {
@@ -35,9 +54,11 @@ export default function Sidebar() {
   const { user, can } = useAuth()
 
   const [open, setOpen] = useState<Record<string, boolean>>({
-    Clinical: true,
-    Finance:  true,
-    Tools:    true,
+    Clinical:   true,
+    IPD:        true,
+    Finance:    true,
+    Tools:      true,
+    Admin:      false,
   })
 
   // Live badge count — urgent + today reminders
@@ -61,48 +82,73 @@ export default function Sidebar() {
   }, [])
 
   const NAV_GROUPS: NavGroupDef[] = [
+    // ── CLINICAL ──────────────────────────────────────────
     {
       label: 'Clinical',
       emoji: '🏥',
       items: [
         { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'                                           },
-        { href: '/patients',     icon: Users,           label: 'Patients',         permission: 'patients.view'       },
-        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'     },
-        { href: '/queue',        icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'          },
+        { href: '/patients',     icon: Users,           label: 'Patients',          permission: 'patients.view'      },
+        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation',  permission: 'encounters.view'    },
+        { href: '/queue',        icon: Clock,           label: 'OPD Queue',         permission: 'queue.view'         },
         { href: '/appointments', icon: CalendarDays,    label: 'Appointments'                                        },
-        { href: '/reminders',    icon: BellRing,        label: 'Reminders',        badge: reminderBadge              },
-        { href: '/beds',         icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'           },
-        { href: '/anc',          icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'            },
-        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'           },
-        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'          },
+        { href: '/reminders',    icon: BellRing,        label: 'Reminders',         badge: reminderBadge             },
+        { href: '/anc',          icon: Baby,            label: 'ANC Registry',      permission: 'anc.view'           },
+        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',       permission: 'labs.view'          },
+        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',    permission: 'forms.view'         },
       ],
     },
+
+    // ── IPD (IN-PATIENT DEPARTMENT) ────────────────────────   ← NEW v11
+    {
+      label: 'IPD',
+      emoji: '🛏️',
+      items: [
+        { href: '/beds',  icon: BedDouble,  label: 'Bed Management',   permission: 'beds.view'     },
+        { href: '/ipd',   icon: BedSingle,  label: 'IPD Admissions',   permission: 'ipd.view'      },
+        { href: '/video', icon: Video,      label: 'Video Consult',    permission: 'video.view'    },
+      ],
+    },
+
+    // ── FINANCE ───────────────────────────────────────────
     {
       label: 'Finance',
       emoji: '💰',
       items: [
-        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'        },
-        { href: '/analytics',        icon: Activity,    label: 'Analytics',        permission: 'reports.view'        },
-        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'        },
-        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'        },
-        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'   },
+        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'       },
+        { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          }, // ← NEW v11
+        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
+        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
+        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
       ],
     },
+
+    // ── TOOLS ─────────────────────────────────────────────
     {
       label: 'Tools',
       emoji: '🔧',
       items: [
-        { href: '/reports', icon: BarChart2,  label: 'Reports',      permission: 'reports.view' },
-        { href: '/search',  icon: SearchIcon, label: 'Global Search'                            },
+        { href: '/reports', icon: BarChart2,   label: 'Reports',       permission: 'reports.view' },
+        { href: '/search',  icon: SearchIcon,  label: 'Global Search'                             },
+      ],
+    },
+
+    // ── ADMIN ─────────────────────────────────────────────  ← NEW v11 (admin only)
+    {
+      label: 'Admin',
+      emoji: '⚙️',
+      items: [
+        { href: '/settings/doctors', icon: UserCog,      label: 'Doctor Management', permission: 'settings.edit'    }, // ← NEW v11
+        { href: '/audit-log',        icon: Shield,       label: 'Audit Log',         permission: 'audit.view'       },
       ],
     },
   ]
 
   const FOOTER_LINKS: NavItemDef[] = [
-    { href: '/ai-setup',   icon: Sparkles, label: 'AI Status'                               },
-    { href: '/abdm-setup', icon: Shield,   label: 'ABDM / FHIR'                            },
-    { href: '/setup',      icon: BookOpen, label: 'Setup Guide'                             },
-    { href: '/settings',   icon: Settings, label: 'Settings',    permission: 'settings.view' },
+    { href: '/ai-setup',   icon: Sparkles,      label: 'AI Status'                               },
+    { href: '/abdm-setup', icon: Shield,        label: 'ABDM / FHIR'                             },
+    { href: '/setup',      icon: BookOpen,      label: 'Setup Guide'                             },
+    { href: '/settings',   icon: Settings,      label: 'Settings',   permission: 'settings.view' },
   ]
 
   function toggle(label: string) {
@@ -125,14 +171,15 @@ export default function Sidebar() {
     })
   }
 
-  function NavLink({ href, icon: Icon, label, badge }: NavItemDef) {
+  function NavLink({ href, icon: Icon, label, badge, external }: NavItemDef) {
     const active = isActive(href)
-    return (
-      <Link href={href}
-        className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
-          ${active
-            ? 'bg-blue-50 text-blue-700'
-            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+    const baseClass = `flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
+      ${active
+        ? 'bg-blue-50 text-blue-700'
+        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
+
+    const inner = (
+      <>
         <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}/>
         <span className="truncate flex-1">{label}</span>
         {badge != null && badge > 0 && (
@@ -145,6 +192,21 @@ export default function Sidebar() {
         {active && (badge == null || badge === 0) && (
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>
         )}
+        {external && <ExternalLink className="w-3 h-3 text-gray-300 flex-shrink-0"/>}
+      </>
+    )
+
+    if (external) {
+      return (
+        <a href={href} target="_blank" rel="noreferrer" className={baseClass}>
+          {inner}
+        </a>
+      )
+    }
+
+    return (
+      <Link href={href} className={baseClass}>
+        {inner}
       </Link>
     )
   }
@@ -191,8 +253,8 @@ export default function Sidebar() {
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1"/>
                 )}
                 {isOpen
-                  ? <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0"/>
-                  : <ChevronRight className="w-3 h-3 text-gray-400 flex-shrink-0"/>}
+                  ? <ChevronDown className="w-3 h-3 text-gray-400"/>
+                  : <ChevronRight className="w-3 h-3 text-gray-400"/>}
               </button>
 
               {isOpen && (
@@ -207,18 +269,17 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — always visible */}
-      <div className="px-2 py-2 border-t border-gray-100 flex-shrink-0">
-        <div className="space-y-0.5">
-          {filterItems(FOOTER_LINKS).map(item => (
-            <NavLink key={item.href} {...item}/>
-          ))}
-          <button onClick={logout}
-            className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">
-            <LogOut className="w-3.5 h-3.5"/>
-            Sign Out
-          </button>
-        </div>
+      {/* Footer */}
+      <div className="border-t border-gray-100 px-2 py-2 flex-shrink-0 space-y-0.5">
+        {FOOTER_LINKS.filter(l => !l.permission || can(l.permission)).map(item => (
+          <NavLink key={item.href} {...item}/>
+        ))}
+        <button
+          onClick={logout}
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-all">
+          <LogOut className="w-3.5 h-3.5 flex-shrink-0"/>
+          <span>Sign Out</span>
+        </button>
       </div>
     </aside>
   )

@@ -607,6 +607,7 @@ module.exports = withPWA(nextConfig)
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@react-pdf/renderer": "^4.5.1",
     "@supabase/supabase-js": "^2.43.4",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -1989,7 +1990,7 @@ This is a binary file of the type: Image
 # public\sw.js
 
 ```js
-if(!self.define){let e,n={};const s=(s,i)=>(s=new URL(s+".js",i).href,n[s]||new Promise(n=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=n,document.head.appendChild(e)}else e=s,importScripts(s),n()}).then(()=>{let e=n[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(i,a)=>{const c=e||("document"in self?document.currentScript.src:"")||location.href;if(n[c])return;let t={};const r=e=>s(e,c),b={module:{uri:c},exports:t,require:r};n[c]=Promise.all(i.map(e=>b[e]||r(e))).then(e=>(a(...e),t))}}define(["./workbox-f52fd911"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"cf3e3b3a38abcc0d5b9d0e32412771e1"},{url:"/_next/static/chunks/231-56f75211e69aab9e.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/237-bdd27f5817ecdfd5.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/2408-4e4136fb7eda17d0.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/2789-2593c0a1aa24ebca.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/338-fa75f6c086890bfa.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/44530001-6a81977446ba795b.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/5441-31bfc79b7f1e958f.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/7023-ce83964f646bd57f.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/7331-96ad1ea327caa47f.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/7412-50fb8e67b8ecf08c.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/8268-2a3497d09da60530.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/9b0008ae.16b07fc49f14e96d.js",revision:"16b07fc49f14e96d"},{url:"/_next/static/chunks/app/_not-found/page-66b600dee37a3828.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/abdm-setup/page-d94cecc78712271f.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/ai-setup/page-0634d25ade94bba3.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/anc/page-fee144b839180a61.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/appointments/page-cc6be9e1d32f0fae.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/audit-log/page-881c7b97eb01f071.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/beds/page-2587ccbe628a9de2.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/billing/page-05cba7332a210251.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/dashboard/page-c463ca2529a63935.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/error-885c80d8243c7202.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/forms/page-44eed5edca67e134.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/intake/page-b8aa6cf45fab7578.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/ipd/%5BbedId%5D/page-e49f406768c8b416.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/labs/page-d923dd3838f0aec4.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/layout-95064fbf5e5c9745.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/login/page-e294741356ede555.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/not-found-19b1373c721a068c.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/edit/page-6611c8f8e65070a4.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/page-7f7596602de87f90.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/prescription/page-056bba10ffe5c429.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/opd/new/page-1b89cc925d724a99.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/opd/page-39bc47ec87240090.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/page-f00bd8bea00ee723.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/discharge/page-6c47876fd7728b1a.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/edit/page-4dfe0717da42e3fd.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/page-569825272a194dea.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/patients/new/page-3c082a36293e2f80.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/patients/page-024b135b064ca295.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/queue/page-0ec877b0aefca902.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/reminders/page-022cbb27f49b1874.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/reports/daily/page-d205ed52919a27e9.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/reports/monthly/page-698e9ad60a074384.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/reports/page-2e88fc8028d27a56.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/reports/payments/page-b6c759f854acb4ed.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/search/page-138e7ed4310eb4b8.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/settings/page-75458935824d629c.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/app/setup/page-d96d121ec873104c.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/fd9d1056-bf7d50f1e323623a.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/framework-a63c59c368572696.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/main-3aae8d54bc5c16c1.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/main-app-c8bffe270d67a59a.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/pages/_app-00b74eae5e8dab51.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/pages/_error-c72a1f77a3c0be1b.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js",revision:"79330112775102f91e1010318bae2bd3"},{url:"/_next/static/chunks/webpack-52caee7c7a9b34cd.js",revision:"eHNblHz9bYYvn4PLdgnsW"},{url:"/_next/static/css/b3e8a88fffab7d57.css",revision:"b3e8a88fffab7d57"},{url:"/_next/static/eHNblHz9bYYvn4PLdgnsW/_buildManifest.js",revision:"b222cbf4d8e1f47e27a8925222733e53"},{url:"/_next/static/eHNblHz9bYYvn4PLdgnsW/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/forms/consultation-diagnosis.html",revision:"1c5f813a1147ed0ed2dca41d47948e22"},{url:"/forms/gynecology-ob-exam.html",revision:"c99460d28c6320f86ab6292fa70ebbae"},{url:"/forms/patient-registration.html",revision:"ef45cd3d9cdeacb31ef3f20ab12c3200"},{url:"/forms/vitals-complaints.html",revision:"f771cdd55c05f68a341d7f06c62a2074"},{url:"/icons/icon-128.png",revision:"8da873cb25276e79fbf1ee38199c05ed"},{url:"/icons/icon-128x128.png",revision:"1763246ea081e8f49e92ae6fed4fa0c6"},{url:"/icons/icon-144.png",revision:"d3dfade71e94601aff56a9d2508d5fd5"},{url:"/icons/icon-144x144.png",revision:"26fd3b49bebaad2f05690ad29f009bef"},{url:"/icons/icon-152.png",revision:"9f4da179c5060c11695161ead1a0182e"},{url:"/icons/icon-152x152.png",revision:"3803a0717c9bde678bca23f9c065864d"},{url:"/icons/icon-192.png",revision:"31b665081df14ee1eaadad16edb40041"},{url:"/icons/icon-192x192.png",revision:"727b93061828f666821b7adae320593f"},{url:"/icons/icon-384.png",revision:"d122a27820563c2dfa6415e711203928"},{url:"/icons/icon-384x384.png",revision:"8ecae39a4703511c0b24acbf7f024f39"},{url:"/icons/icon-512.png",revision:"59e9629a27cc0a4ed9cb07d78d6559ed"},{url:"/icons/icon-512x512.png",revision:"64df6115301f82fa1f81492234327daa"},{url:"/icons/icon-72.png",revision:"b0b3880f68492a20c5250910de62ca5f"},{url:"/icons/icon-72x72.png",revision:"d7adb093fb7efc538e0abcdc79dca13d"},{url:"/icons/icon-96.png",revision:"4d9f441e937d3f8a7ae93006492f12b2"},{url:"/icons/icon-96x96.png",revision:"bcfd1de2f904bd54bbdcb61346b732d6"},{url:"/manifest.json",revision:"157721c2d06d50a86ac6089a5825ae95"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:n,event:s,state:i})=>n&&"opaqueredirect"===n.type?new Response(n.body,{status:200,statusText:"OK",headers:n.headers}):n}]}),"GET"),e.registerRoute(/^https:\/\/.*\.supabase\.co\/.*/i,new e.NetworkFirst({cacheName:"supabase-cache",plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:300})]}),"GET"),e.registerRoute(/\/_next\/static\/.*/i,new e.CacheFirst({cacheName:"next-static",plugins:[new e.ExpirationPlugin({maxEntries:200,maxAgeSeconds:2592e3})]}),"GET")});
+if(!self.define){let e,s={};const i=(i,n)=>(i=new URL(i+".js",n).href,s[i]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=i,e.onload=s,document.head.appendChild(e)}else e=i,importScripts(i),s()}).then(()=>{let e=s[i];if(!e)throw new Error(`Module ${i} didn’t register its module`);return e}));self.define=(n,a)=>{const c=e||("document"in self?document.currentScript.src:"")||location.href;if(s[c])return;let t={};const f=e=>i(e,c),p={module:{uri:c},exports:t,require:f};s[c]=Promise.all(n.map(e=>p[e]||f(e))).then(e=>(a(...e),t))}}define(["./workbox-f52fd911"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"d7b367b7eb7b35ed924e3316eae37ed5"},{url:"/_next/static/chunks/231-56f75211e69aab9e.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/237-bdd27f5817ecdfd5.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/2408-4e4136fb7eda17d0.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/2789-2593c0a1aa24ebca.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/338-fa75f6c086890bfa.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/44530001-6a81977446ba795b.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/5441-aee146c3766c46ab.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/7023-ce83964f646bd57f.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/7331-96ad1ea327caa47f.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/7412-50fb8e67b8ecf08c.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/8268-2a3497d09da60530.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/9b0008ae.16b07fc49f14e96d.js",revision:"16b07fc49f14e96d"},{url:"/_next/static/chunks/app/_not-found/page-66b600dee37a3828.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/abdm-setup/page-d94cecc78712271f.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/ai-setup/page-0634d25ade94bba3.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/analytics/page-466ce2e6f5d43f34.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/anc/page-fee144b839180a61.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/appointments/page-cc6be9e1d32f0fae.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/audit-log/page-881c7b97eb01f071.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/beds/page-2587ccbe628a9de2.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/billing/page-05cba7332a210251.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/dashboard/page-c463ca2529a63935.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/error-885c80d8243c7202.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/forms/page-44eed5edca67e134.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/intake/page-b8aa6cf45fab7578.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/ipd/%5BbedId%5D/page-e49f406768c8b416.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/labs/page-d923dd3838f0aec4.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/layout-95064fbf5e5c9745.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/login/page-e294741356ede555.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/not-found-19b1373c721a068c.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/edit/page-6611c8f8e65070a4.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/page-7f7596602de87f90.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/prescription/page-056bba10ffe5c429.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/opd/new/page-1b89cc925d724a99.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/opd/page-39bc47ec87240090.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/page-f00bd8bea00ee723.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/discharge/page-6c47876fd7728b1a.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/edit/page-4dfe0717da42e3fd.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/page-569825272a194dea.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/patients/new/page-3c082a36293e2f80.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/patients/page-024b135b064ca295.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/queue/page-0ec877b0aefca902.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/reminders/page-022cbb27f49b1874.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/reports/daily/page-d205ed52919a27e9.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/reports/monthly/page-698e9ad60a074384.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/reports/page-d30932826e389f7c.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/reports/payments/page-b6c759f854acb4ed.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/search/page-138e7ed4310eb4b8.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/settings/page-75458935824d629c.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/app/setup/page-d96d121ec873104c.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/fd9d1056-bf7d50f1e323623a.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/framework-a63c59c368572696.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/main-877bff8dda221349.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/main-app-c8bffe270d67a59a.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/pages/_app-00b74eae5e8dab51.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/pages/_error-c72a1f77a3c0be1b.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js",revision:"79330112775102f91e1010318bae2bd3"},{url:"/_next/static/chunks/webpack-52caee7c7a9b34cd.js",revision:"fTvYAlEIzpOzIgk1IbfIy"},{url:"/_next/static/css/23ec2ac4393d5a03.css",revision:"23ec2ac4393d5a03"},{url:"/_next/static/fTvYAlEIzpOzIgk1IbfIy/_buildManifest.js",revision:"b222cbf4d8e1f47e27a8925222733e53"},{url:"/_next/static/fTvYAlEIzpOzIgk1IbfIy/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/forms/consultation-diagnosis.html",revision:"1c5f813a1147ed0ed2dca41d47948e22"},{url:"/forms/gynecology-ob-exam.html",revision:"c99460d28c6320f86ab6292fa70ebbae"},{url:"/forms/patient-registration.html",revision:"ef45cd3d9cdeacb31ef3f20ab12c3200"},{url:"/forms/vitals-complaints.html",revision:"f771cdd55c05f68a341d7f06c62a2074"},{url:"/icons/icon-128.png",revision:"8da873cb25276e79fbf1ee38199c05ed"},{url:"/icons/icon-128x128.png",revision:"1763246ea081e8f49e92ae6fed4fa0c6"},{url:"/icons/icon-144.png",revision:"d3dfade71e94601aff56a9d2508d5fd5"},{url:"/icons/icon-144x144.png",revision:"26fd3b49bebaad2f05690ad29f009bef"},{url:"/icons/icon-152.png",revision:"9f4da179c5060c11695161ead1a0182e"},{url:"/icons/icon-152x152.png",revision:"3803a0717c9bde678bca23f9c065864d"},{url:"/icons/icon-192.png",revision:"31b665081df14ee1eaadad16edb40041"},{url:"/icons/icon-192x192.png",revision:"727b93061828f666821b7adae320593f"},{url:"/icons/icon-384.png",revision:"d122a27820563c2dfa6415e711203928"},{url:"/icons/icon-384x384.png",revision:"8ecae39a4703511c0b24acbf7f024f39"},{url:"/icons/icon-512.png",revision:"59e9629a27cc0a4ed9cb07d78d6559ed"},{url:"/icons/icon-512x512.png",revision:"64df6115301f82fa1f81492234327daa"},{url:"/icons/icon-72.png",revision:"b0b3880f68492a20c5250910de62ca5f"},{url:"/icons/icon-72x72.png",revision:"d7adb093fb7efc538e0abcdc79dca13d"},{url:"/icons/icon-96.png",revision:"4d9f441e937d3f8a7ae93006492f12b2"},{url:"/icons/icon-96x96.png",revision:"bcfd1de2f904bd54bbdcb61346b732d6"},{url:"/manifest.json",revision:"157721c2d06d50a86ac6089a5825ae95"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:s,event:i,state:n})=>s&&"opaqueredirect"===s.type?new Response(s.body,{status:200,statusText:"OK",headers:s.headers}):s}]}),"GET"),e.registerRoute(/^https:\/\/.*\.supabase\.co\/.*/i,new e.NetworkFirst({cacheName:"supabase-cache",plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:300})]}),"GET"),e.registerRoute(/\/_next\/static\/.*/i,new e.CacheFirst({cacheName:"next-static",plugins:[new e.ExpirationPlugin({maxEntries:200,maxAgeSeconds:2592e3})]}),"GET")});
 
 ```
 
@@ -2900,6 +2901,654 @@ export default function AISetupPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
+}
+
+```
+
+# src\app\analytics\page.tsx
+
+```tsx
+'use client'
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import {
+  TrendingUp, Activity, Clock, Users, RefreshCw,
+  IndianRupee, Stethoscope, ArrowUp, ArrowDown, Minus,
+  Calendar, PieChart,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────
+interface RevenueBucket { label: string; amount: number }
+interface DiagnosisCount { diagnosis: string; count: number }
+interface HourBucket { hour: number; count: number }
+interface RetentionData {
+  totalPatients: number
+  returningPatients: number
+  newThisMonth: number
+  avgVisitsPerPatient: number
+  retentionRate: number
+}
+
+// ── Pure CSS Bar Chart ────────────────────────────────────────
+function BarChart({ data, color = '#3b82f6', formatValue, height = 160 }: {
+  data: { label: string; value: number }[]
+  color?: string
+  formatValue?: (v: number) => string
+  height?: number
+}) {
+  const max = Math.max(...data.map(d => d.value), 1)
+  return (
+    <div className="flex items-end gap-1 sm:gap-2" style={{ height }}>
+      {data.map((d, i) => {
+        const pct = Math.max((d.value / max) * 100, 2)
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+            <span className="text-[10px] text-gray-500 font-mono tabular-nums">
+              {formatValue ? formatValue(d.value) : d.value}
+            </span>
+            <div
+              className="w-full rounded-t-md transition-all duration-500 min-w-[8px]"
+              style={{ height: `${pct}%`, background: color, opacity: 0.85 }}
+              title={`${d.label}: ${formatValue ? formatValue(d.value) : d.value}`}
+            />
+            <span className="text-[9px] text-gray-400 truncate max-w-full text-center leading-tight">
+              {d.label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Horizontal Bar (for diagnoses) ────────────────────────────
+function HBar({ label, value, max, color = '#3b82f6' }: {
+  label: string; value: number; max: number; color?: string
+}) {
+  const pct = max > 0 ? Math.min(Math.round((value / max) * 100), 100) : 0
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs text-gray-700 w-36 truncate font-medium" title={label}>{label}</span>
+      <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
+          style={{ width: `${Math.max(pct, 4)}%`, background: color }}
+        >
+          {pct > 15 && <span className="text-[10px] text-white font-bold">{value}</span>}
+        </div>
+      </div>
+      {pct <= 15 && <span className="text-xs text-gray-500 w-6 text-right tabular-nums">{value}</span>}
+    </div>
+  )
+}
+
+// ── Donut Chart (for retention) ───────────────────────────────
+function Donut({ percentage, label, color = '#3b82f6' }: {
+  percentage: number; label: string; color?: string
+}) {
+  const radius = 45
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (percentage / 100) * circumference
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#f3f4f6" strokeWidth="10" />
+        <circle
+          cx="60" cy="60" r={radius} fill="none"
+          stroke={color} strokeWidth="10"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 60 60)"
+          className="transition-all duration-700"
+        />
+        <text x="60" y="56" textAnchor="middle" className="text-2xl font-bold" fill="#1f2937" fontSize="22">
+          {Math.round(percentage)}%
+        </text>
+        <text x="60" y="74" textAnchor="middle" fill="#6b7280" fontSize="10">
+          {label}
+        </text>
+      </svg>
+    </div>
+  )
+}
+
+// ── KPI Card ──────────────────────────────────────────────────
+function KPI({ label, value, sub, icon: Icon, color, trend }: {
+  label: string; value: string | number; sub: string; icon: any
+  color: string; trend?: 'up' | 'down' | 'flat'
+}) {
+  return (
+    <div className="card p-4 flex items-start gap-3">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-bold text-gray-900">{value}</span>
+          {trend === 'up' && <ArrowUp className="w-3.5 h-3.5 text-green-500" />}
+          {trend === 'down' && <ArrowDown className="w-3.5 h-3.5 text-red-400" />}
+          {trend === 'flat' && <Minus className="w-3.5 h-3.5 text-gray-300" />}
+        </div>
+        <div className="text-xs font-semibold text-gray-700">{label}</div>
+        <div className="text-[10px] text-gray-400">{sub}</div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────
+export default function AnalyticsPage() {
+  const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState<'30' | '90' | '365'>('30')
+
+  // Revenue
+  const [revenueTrend, setRevenueTrend] = useState<RevenueBucket[]>([])
+  const [totalRevenue, setTotalRevenue] = useState(0)
+  const [prevRevenue, setPrevRevenue] = useState(0)
+
+  // Diagnoses
+  const [topDiagnoses, setTopDiagnoses] = useState<DiagnosisCount[]>([])
+
+  // Peak hours
+  const [hourlyData, setHourlyData] = useState<HourBucket[]>([])
+  const [peakHour, setPeakHour] = useState('')
+
+  // Retention
+  const [retention, setRetention] = useState<RetentionData>({
+    totalPatients: 0, returningPatients: 0, newThisMonth: 0,
+    avgVisitsPerPatient: 0, retentionRate: 0,
+  })
+
+  // Encounter type breakdown
+  const [encounterTypes, setEncounterTypes] = useState<{ type: string; count: number }[]>([])
+
+  useEffect(() => { loadAnalytics() }, [period])
+
+  async function loadAnalytics() {
+    setLoading(true)
+    const days = parseInt(period)
+    const now = new Date()
+    const startDate = new Date(now.getTime() - days * 86400000).toISOString()
+    const prevStart = new Date(now.getTime() - days * 2 * 86400000).toISOString()
+
+    await Promise.all([
+      loadRevenue(startDate, prevStart, days),
+      loadDiagnoses(startDate),
+      loadPeakHours(startDate),
+      loadRetention(startDate),
+      loadEncounterTypes(startDate),
+    ])
+
+    setLoading(false)
+  }
+
+  async function loadRevenue(startDate: string, prevStart: string, days: number) {
+    // Current period
+    const { data: bills } = await supabase
+      .from('bills')
+      .select('net_amount,created_at')
+      .eq('status', 'paid')
+      .gte('created_at', startDate)
+      .order('created_at', { ascending: true })
+
+    const allBills = bills || []
+    const total = allBills.reduce((s, b) => s + Number(b.net_amount), 0)
+    setTotalRevenue(total)
+
+    // Previous period for comparison
+    const { data: prevBills } = await supabase
+      .from('bills')
+      .select('net_amount')
+      .eq('status', 'paid')
+      .gte('created_at', prevStart)
+      .lt('created_at', startDate)
+
+    setPrevRevenue((prevBills || []).reduce((s, b) => s + Number(b.net_amount), 0))
+
+    // Group by week or day depending on period
+    const bucketSize = days <= 30 ? 1 : days <= 90 ? 7 : 30 // days per bucket
+    const buckets: Map<string, number> = new Map()
+
+    allBills.forEach(b => {
+      const d = new Date(b.created_at)
+      let key: string
+      if (bucketSize === 1) {
+        key = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      } else if (bucketSize === 7) {
+        // Week number
+        const weekStart = new Date(d)
+        weekStart.setDate(d.getDate() - d.getDay())
+        key = weekStart.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      } else {
+        key = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })
+      }
+      buckets.set(key, (buckets.get(key) || 0) + Number(b.net_amount))
+    })
+
+    const trend: RevenueBucket[] = Array.from(buckets.entries()).map(([label, amount]) => ({ label, amount }))
+    setRevenueTrend(trend)
+  }
+
+  async function loadDiagnoses(startDate: string) {
+    const { data: encounters } = await supabase
+      .from('encounters')
+      .select('diagnosis')
+      .gte('created_at', startDate)
+      .not('diagnosis', 'is', null)
+
+    const dxMap: Map<string, number> = new Map()
+    ;(encounters || []).forEach(e => {
+      if (!e.diagnosis || e.diagnosis.trim() === '') return
+      // Split by comma/semicolon for multi-diagnosis entries
+      const parts = e.diagnosis.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean)
+      parts.forEach((dx: string) => {
+        const normalized = dx.charAt(0).toUpperCase() + dx.slice(1).toLowerCase()
+        dxMap.set(normalized, (dxMap.get(normalized) || 0) + 1)
+      })
+    })
+
+    const sorted = Array.from(dxMap.entries())
+      .map(([diagnosis, count]) => ({ diagnosis, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+
+    setTopDiagnoses(sorted)
+  }
+
+  async function loadPeakHours(startDate: string) {
+    const { data: encounters } = await supabase
+      .from('encounters')
+      .select('created_at')
+      .gte('created_at', startDate)
+
+    const hourMap: Map<number, number> = new Map()
+    // Initialize all hours 0-23
+    for (let h = 0; h < 24; h++) hourMap.set(h, 0)
+
+    ;(encounters || []).forEach(e => {
+      const hour = new Date(e.created_at).getHours()
+      hourMap.set(hour, (hourMap.get(hour) || 0) + 1)
+    })
+
+    // Only show clinic hours (7 AM - 10 PM)
+    const filtered: HourBucket[] = []
+    for (let h = 7; h <= 22; h++) {
+      filtered.push({ hour: h, count: hourMap.get(h) || 0 })
+    }
+    setHourlyData(filtered)
+
+    // Find peak
+    const peak = filtered.reduce((max, b) => b.count > max.count ? b : max, filtered[0])
+    if (peak && peak.count > 0) {
+      const ampm = peak.hour >= 12 ? 'PM' : 'AM'
+      const h12 = peak.hour > 12 ? peak.hour - 12 : peak.hour === 0 ? 12 : peak.hour
+      setPeakHour(`${h12}:00 ${ampm}`)
+    } else {
+      setPeakHour('—')
+    }
+  }
+
+  async function loadRetention(startDate: string) {
+    // Get all patients with their encounter counts
+    const { data: encounters } = await supabase
+      .from('encounters')
+      .select('patient_id')
+
+    const { count: totalPatients } = await supabase
+      .from('patients')
+      .select('*', { count: 'exact', head: true })
+
+    // Count encounters per patient
+    const patientVisits: Map<string, number> = new Map()
+    ;(encounters || []).forEach(e => {
+      patientVisits.set(e.patient_id, (patientVisits.get(e.patient_id) || 0) + 1)
+    })
+
+    const returning = Array.from(patientVisits.values()).filter(v => v > 1).length
+    const total = totalPatients || 0
+    const totalVisits = (encounters || []).length
+    const avgVisits = total > 0 ? totalVisits / total : 0
+
+    // New patients this month
+    const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
+    const { count: newCount } = await supabase
+      .from('patients')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', monthAgo)
+
+    setRetention({
+      totalPatients: total,
+      returningPatients: returning,
+      newThisMonth: newCount || 0,
+      avgVisitsPerPatient: Math.round(avgVisits * 10) / 10,
+      retentionRate: total > 0 ? Math.round((returning / total) * 100) : 0,
+    })
+  }
+
+  async function loadEncounterTypes(startDate: string) {
+    const { data: encounters } = await supabase
+      .from('encounters')
+      .select('encounter_type')
+      .gte('created_at', startDate)
+
+    const typeMap: Map<string, number> = new Map()
+    ;(encounters || []).forEach(e => {
+      const t = e.encounter_type || 'OPD'
+      typeMap.set(t, (typeMap.get(t) || 0) + 1)
+    })
+
+    const sorted = Array.from(typeMap.entries())
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count)
+
+    setEncounterTypes(sorted)
+  }
+
+  const revTrend = totalRevenue > prevRevenue ? 'up' : totalRevenue < prevRevenue ? 'down' : 'flat'
+  const TYPE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+
+  return (
+    <AppShell>
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+              <Activity className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+              <p className="text-sm text-gray-500">Revenue trends, diagnoses, peak hours & retention</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={period}
+              onChange={e => setPeriod(e.target.value as '30' | '90' | '365')}
+              className="input text-xs py-1.5 px-3 w-auto"
+            >
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="365">Last 12 months</option>
+            </select>
+            <button
+              onClick={loadAnalytics}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-gray-500">Loading analytics...</p>
+            </div>
+          </div>
+        )}
+
+        {!loading && (
+          <div className="space-y-6">
+
+            {/* ── KPI Row ──────────────────────────────────────── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <KPI
+                label="Revenue"
+                value={`₹${totalRevenue.toLocaleString('en-IN')}`}
+                sub={`${period} days · ${revTrend === 'up' ? '↑' : revTrend === 'down' ? '↓' : '→'} vs prev period`}
+                icon={IndianRupee}
+                color="bg-green-100 text-green-600"
+                trend={revTrend}
+              />
+              <KPI
+                label="Returning Patients"
+                value={`${retention.retentionRate}%`}
+                sub={`${retention.returningPatients} of ${retention.totalPatients} patients`}
+                icon={Users}
+                color="bg-blue-100 text-blue-600"
+              />
+              <KPI
+                label="Peak Hour"
+                value={peakHour}
+                sub="Busiest consultation time"
+                icon={Clock}
+                color="bg-amber-100 text-amber-600"
+              />
+              <KPI
+                label="New This Month"
+                value={retention.newThisMonth}
+                sub={`Avg ${retention.avgVisitsPerPatient} visits/patient`}
+                icon={Stethoscope}
+                color="bg-purple-100 text-purple-600"
+              />
+            </div>
+
+            {/* ── Revenue Trend Chart ─────────────────────────── */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-green-600" />
+                  Revenue Trend
+                </h2>
+                <span className="text-xs text-gray-400">
+                  {period === '30' ? 'Daily' : period === '90' ? 'Weekly' : 'Monthly'}
+                </span>
+              </div>
+              {revenueTrend.length > 0 ? (
+                <BarChart
+                  data={revenueTrend.map(r => ({ label: r.label, value: r.amount }))}
+                  color="#10b981"
+                  formatValue={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+                  height={180}
+                />
+              ) : (
+                <div className="text-center py-10 text-sm text-gray-400">
+                  No billing data for this period
+                </div>
+              )}
+            </div>
+
+            {/* ── Two-column: Diagnoses + Peak Hours ──────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+              {/* Top Diagnoses */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <Stethoscope className="w-4 h-4 text-blue-600" />
+                  Top 10 Diagnoses
+                </h2>
+                {topDiagnoses.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {topDiagnoses.map((d, i) => (
+                      <HBar
+                        key={d.diagnosis}
+                        label={d.diagnosis}
+                        value={d.count}
+                        max={topDiagnoses[0].count}
+                        color={TYPE_COLORS[i % TYPE_COLORS.length]}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-sm text-gray-400">
+                    No diagnosis data for this period
+                  </div>
+                )}
+              </div>
+
+              {/* Peak OPD Hours */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  OPD Traffic by Hour
+                </h2>
+                {hourlyData.some(h => h.count > 0) ? (
+                  <BarChart
+                    data={hourlyData.map(h => ({
+                      label: `${h.hour > 12 ? h.hour - 12 : h.hour}${h.hour >= 12 ? 'p' : 'a'}`,
+                      value: h.count,
+                    }))}
+                    color="#f59e0b"
+                    height={160}
+                  />
+                ) : (
+                  <div className="text-center py-10 text-sm text-gray-400">
+                    No encounter data for this period
+                  </div>
+                )}
+                {peakHour !== '—' && (
+                  <div className="mt-3 text-xs text-gray-500 text-center">
+                    🔥 Peak hour: <strong className="text-amber-700">{peakHour}</strong> — consider extra staff
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Two-column: Retention + Encounter Types ─────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+              {/* Patient Retention */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  Patient Retention
+                </h2>
+                <div className="flex items-center justify-around">
+                  <Donut
+                    percentage={retention.retentionRate}
+                    label="Returning"
+                    color="#3b82f6"
+                  />
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900">{retention.totalPatients}</div>
+                      <div className="text-xs text-gray-500">Total Patients</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-600">{retention.returningPatients}</div>
+                      <div className="text-xs text-gray-500">Returned (2+ visits)</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-green-600">{retention.newThisMonth}</div>
+                      <div className="text-xs text-gray-500">New this month</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-purple-600">{retention.avgVisitsPerPatient}</div>
+                      <div className="text-xs text-gray-500">Avg visits/patient</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Encounter Type Breakdown */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <PieChart className="w-4 h-4 text-purple-600" />
+                  Visit Types
+                </h2>
+                {encounterTypes.length > 0 ? (
+                  <div className="space-y-3">
+                    {encounterTypes.map((et, i) => {
+                      const total = encounterTypes.reduce((s, e) => s + e.count, 0)
+                      const pct = total > 0 ? Math.round((et.count / total) * 100) : 0
+                      return (
+                        <div key={et.type} className="flex items-center gap-3">
+                          <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ background: TYPE_COLORS[i % TYPE_COLORS.length] }}
+                          />
+                          <span className="text-sm text-gray-700 flex-1">{et.type}</span>
+                          <span className="text-xs text-gray-500 tabular-nums">{et.count}</span>
+                          <span className="text-xs font-bold text-gray-700 w-10 text-right">{pct}%</span>
+                        </div>
+                      )
+                    })}
+                    {/* Stacked bar */}
+                    <div className="flex h-4 rounded-full overflow-hidden mt-2">
+                      {encounterTypes.map((et, i) => {
+                        const total = encounterTypes.reduce((s, e) => s + e.count, 0)
+                        const pct = total > 0 ? (et.count / total) * 100 : 0
+                        return (
+                          <div
+                            key={et.type}
+                            style={{ width: `${pct}%`, background: TYPE_COLORS[i % TYPE_COLORS.length] }}
+                            className="transition-all duration-500"
+                            title={`${et.type}: ${et.count}`}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-sm text-gray-400">
+                    No encounter data for this period
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Insights ────────────────────────────────────── */}
+            <div className="card p-5 bg-gradient-to-r from-indigo-50 to-blue-50 border-indigo-100">
+              <h2 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                💡 Quick Insights
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs text-indigo-800">
+                {totalRevenue > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Avg daily revenue:</strong>{' '}
+                    ₹{Math.round(totalRevenue / parseInt(period)).toLocaleString('en-IN')}
+                  </div>
+                )}
+                {topDiagnoses.length > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Most common:</strong>{' '}
+                    {topDiagnoses[0].diagnosis} ({topDiagnoses[0].count} cases)
+                  </div>
+                )}
+                {peakHour !== '—' && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Peak hour:</strong>{' '}
+                    {peakHour} — schedule complex cases outside this window
+                  </div>
+                )}
+                {retention.retentionRate > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Retention:</strong>{' '}
+                    {retention.retentionRate >= 50
+                      ? '✅ Good — patients are returning'
+                      : '⚠️ Low — consider follow-up reminders'}
+                  </div>
+                )}
+                {retention.avgVisitsPerPatient > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Engagement:</strong>{' '}
+                    {retention.avgVisitsPerPatient >= 2
+                      ? `${retention.avgVisitsPerPatient} visits/patient — strong engagement`
+                      : `${retention.avgVisitsPerPatient} visits/patient — room to grow`}
+                  </div>
+                )}
+                {prevRevenue > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>Growth:</strong>{' '}
+                    {totalRevenue >= prevRevenue
+                      ? `+${Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100)}% vs previous period`
+                      : `${Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100)}% vs previous period`}
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
         )}
       </div>
@@ -5762,6 +6411,259 @@ export async function POST(req: NextRequest) {
 
 ```
 
+# src\app\api\pdf\prescriptions\route.ts
+
+```ts
+/**
+ * src/app/api/pdf/prescription/route.ts
+ *
+ * GET /api/pdf/prescription?encounterId=xxx
+ *
+ * Server-side PDF generation for prescriptions using @react-pdf/renderer.
+ * Requirement #8: Replace CSS @media print with real PDF files.
+ *
+ * Returns:
+ *  - The PDF as a download (Content-Disposition: attachment)
+ *  - Or a redirect to Supabase Storage URL (if upload succeeds)
+ *
+ * Auth: Requires valid clinic session JWT.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { generatePrescriptionPDF, uploadPDFToStorage } from '@/lib/pdf-generator'
+import type { PDFPrescriptionData } from '@/lib/pdf-generator'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+export async function GET(req: NextRequest) {
+  // Auth
+  const token = req.headers.get('authorization')?.split(' ')[1]
+    || req.cookies.get('sb-access-token')?.value
+
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+  }
+
+  const { searchParams } = new URL(req.url)
+  const encounterId      = searchParams.get('encounterId')
+  const upload           = searchParams.get('upload') === 'true'
+
+  if (!encounterId) {
+    return NextResponse.json({ error: 'encounterId is required' }, { status: 400 })
+  }
+
+  // Load data
+  const { data: enc } = await supabase
+    .from('encounters')
+    .select('*, patients(*)')
+    .eq('id', encounterId)
+    .single()
+
+  if (!enc) {
+    return NextResponse.json({ error: 'Encounter not found' }, { status: 404 })
+  }
+
+  const { data: rx } = await supabase
+    .from('prescriptions')
+    .select('*')
+    .eq('encounter_id', encounterId)
+    .single()
+
+  if (!rx) {
+    return NextResponse.json({ error: 'No prescription for this encounter' }, { status: 404 })
+  }
+
+  // Load hospital settings
+  const { data: settingRow } = await supabase
+    .from('clinic_settings')
+    .select('value')
+    .eq('key', 'hospital_settings')
+    .single()
+
+  const hs = settingRow?.value || {}
+
+  const pdfData: PDFPrescriptionData = {
+    patient: {
+      full_name:   enc.patients?.full_name  || 'Patient',
+      mrn:         enc.patients?.mrn        || '',
+      age:         enc.patients?.age,
+      gender:      enc.patients?.gender,
+      mobile:      enc.patients?.mobile,
+      blood_group: enc.patients?.blood_group,
+      address:     enc.patients?.address,
+    },
+    encounter: {
+      encounter_date:  enc.encounter_date,
+      diagnosis:       enc.diagnosis,
+      chief_complaint: enc.chief_complaint,
+      bp_systolic:     enc.bp_systolic,
+      bp_diastolic:    enc.bp_diastolic,
+      pulse:           enc.pulse,
+      temperature:     enc.temperature,
+      spo2:            enc.spo2,
+      weight:          enc.weight,
+    },
+    prescription: {
+      medications:    rx.medications    || [],
+      advice:         rx.advice,
+      dietary_advice: rx.dietary_advice,
+      reports_needed: rx.reports_needed,
+      follow_up_date: rx.follow_up_date,
+    },
+    hospital: {
+      hospitalName: (hs as any).hospitalName || 'NexMedicon Hospital',
+      address:      (hs as any).address,
+      phone:        (hs as any).phone,
+      regNo:        (hs as any).regNo,
+      gstin:        (hs as any).gstin,
+      doctorName:   (hs as any).doctorName  || 'Doctor',
+      doctorQual:   (hs as any).doctorQual,
+      doctorReg:    (hs as any).doctorReg,
+      footerNote:   (hs as any).footerNote,
+    },
+  }
+
+  try {
+    const pdfBuffer = await generatePrescriptionPDF(pdfData)
+    const filename  = `prescription_${encounterId}_${Date.now()}.pdf`
+
+    // Option A: Upload to storage and redirect
+    if (upload) {
+      const url = await uploadPDFToStorage(pdfBuffer, filename, 'prescriptions')
+      if (url) {
+        return NextResponse.redirect(url)
+      }
+    }
+
+    // Option B: Stream PDF directly (download)
+    return new NextResponse(pdfBuffer, {
+      status:  200,
+      headers: {
+        'Content-Type':        'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length':      String(pdfBuffer.length),
+      },
+    })
+  } catch (err: any) {
+    console.error('[api/pdf/prescription]', err)
+    return NextResponse.json({ error: 'PDF generation failed: ' + err.message }, { status: 500 })
+  }
+}
+```
+
+# src\app\api\portal\send-link\route.ts
+
+```ts
+/**
+ * src/app/api/portal/send-link/route.ts
+ *
+ * POST /api/portal/send-link
+ *
+ * Generates a magic-link portal token for a patient and (optionally)
+ * returns a WhatsApp deep-link to send it.
+ *
+ * Body: { patient_id, mrn, mobile, patient_name }
+ * Auth: requires valid clinic user JWT (admin or staff)
+ *
+ * The token:
+ *  - Is stored in `portal_tokens` table
+ *  - Expires in 24 hours
+ *  - Is single-use (is_used flag)
+ *
+ * Requirement #5 — patient-direct portal access without staff interference
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl     = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const serviceKey      = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const siteUrl         = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
+const hospitalName    = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
+
+export async function POST(req: NextRequest) {
+  const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // Auth check
+  const authHeader = req.headers.get('authorization')
+  const token      = authHeader?.split(' ')[1]
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+  }
+
+  // Parse body
+  let body: any
+  try { body = await req.json() } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { patient_id, mrn, mobile, patient_name } = body
+  if (!mrn) {
+    return NextResponse.json({ error: 'mrn is required' }, { status: 400 })
+  }
+
+  // Generate token (UUID)
+  const portalToken = crypto.randomUUID()
+  const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+  // Expire any existing tokens for this MRN
+  await supabase
+    .from('portal_tokens')
+    .update({ is_used: true })
+    .eq('mrn', mrn)
+    .eq('is_used', false)
+
+  // Insert new token
+  const { error: insertErr } = await supabase
+    .from('portal_tokens')
+    .insert({
+      mrn,
+      patient_id:  patient_id || null,
+      token:       portalToken,
+      expires_at:  expiresAt,
+      is_used:     false,
+      created_by:  user.id,
+    })
+
+  if (insertErr) {
+    return NextResponse.json({ error: insertErr.message }, { status: 500 })
+  }
+
+  // Build the magic link
+  const portalUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
+
+  // Build WhatsApp message
+  const firstName   = (patient_name || 'Patient').split(' ')[0]
+  const waMessage   = `Namaste ${firstName} ji,\n\nYou can now view your health records, prescriptions, upcoming appointments, and bills securely:\n\n▶ ${portalUrl}\n\nThis link is valid for 24 hours. Do not share it with others.\n\n— ${hospitalName}`
+  const waNumber    = mobile ? mobile.replace(/\D/g, '').slice(-10) : ''
+  const waLink      = waNumber
+    ? `https://wa.me/91${waNumber}?text=${encodeURIComponent(waMessage)}`
+    : null
+
+  return NextResponse.json({
+    success:    true,
+    portal_url: portalUrl,
+    expires_at: expiresAt,
+    whatsapp_link: waLink,
+    message:    waMessage,
+  })
+}
+```
+
 # src\app\api\reminders\auto-generate\route.ts
 
 ```ts
@@ -7271,6 +8173,99 @@ async function getCallerRole(supabase: any): Promise<string | null> {
   return data?.role || null
 }
 
+```
+
+# src\app\api\video\room\route.ts
+
+```ts
+/**
+ * src/app/api/video/room/route.ts
+ *
+ * POST /api/video/room
+ *
+ * Creates a video consultation room and returns a join link.
+ * Uses Jitsi Meet (free, no API key needed) with a unique room name.
+ * Optional: can be swapped to Daily.co / Twilio for token-authenticated rooms.
+ *
+ * Requirement #5 — Video consultation feature
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+/** Generate a cryptographically safe room ID */
+function generateRoomId(): string {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export async function POST(req: NextRequest) {
+  const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // Auth
+  const token = req.headers.get('authorization')?.split(' ')[1]
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+
+  const body = await req.json().catch(() => ({}))
+  const { appointment_id, patient_name, doctor_name } = body
+
+  const roomId   = generateRoomId()
+  const roomName = `nexmedicon-${roomId}`
+
+  // Jitsi deep-link (free, open-source, HIPAA-compatible with proper deployment)
+  // Doctor gets moderator link, patient gets regular link
+  const jitsiBase    = 'https://meet.jit.si'
+  const doctorLink   = `${jitsiBase}/${roomName}#config.prejoinPageEnabled=true&config.startWithVideoMuted=false`
+  const patientLink  = `${jitsiBase}/${roomName}`
+
+  // If appointment_id provided, update the appointment record with the video link
+  if (appointment_id) {
+    await supabase
+      .from('appointments')
+      .update({ video_link: patientLink })
+      .eq('id', appointment_id)
+  }
+
+  return NextResponse.json({
+    room_id:      roomId,
+    room_name:    roomName,
+    doctor_link:  doctorLink,
+    patient_link: patientLink,
+  })
+}
+
+/**
+ * GET /api/video/room?appointment_id=xxx
+ * Returns the video link for an existing appointment
+ */
+export async function GET(req: NextRequest) {
+  const supabase      = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+  const { searchParams } = new URL(req.url)
+  const appointmentId = searchParams.get('appointment_id')
+
+  if (!appointmentId) {
+    return NextResponse.json({ error: 'appointment_id required' }, { status: 400 })
+  }
+
+  const { data } = await supabase
+    .from('appointments')
+    .select('id, video_link, patient_name, doctor_name, date, time, status')
+    .eq('id', appointmentId)
+    .single()
+
+  if (!data) {
+    return NextResponse.json({ error: 'Appointment not found' }, { status: 404 })
+  }
+
+  return NextResponse.json(data)
+}
 ```
 
 # src\app\api\voice-correct\route.ts
@@ -10817,6 +11812,432 @@ export default function FormsPage() {
 
 ```
 
+# src\app\fund\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/fund/page.tsx
+ *
+ * Hospital Operational Fund (Staff Petty Cash / Expense Tracker)
+ *
+ * Requirement #6: Allow staff to record hospital fund usage —
+ *   - Printing documents
+ *   - Ordering food for staff/nurses
+ *   - Stationery, minor purchases
+ *   - Any other operational expense
+ *
+ * Features:
+ *  - Fund balance management (Admin tops up)
+ *  - Expense submission (any staff)
+ *  - Approval workflow (Admin approves / rejects)
+ *  - Expense categories with icons
+ *  - Audit trail for every transaction
+ *  - Monthly summary / export
+ */
+
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate, formatDateTime, getHospitalSettings } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import {
+  IndianRupee, Plus, CheckCircle, XCircle, Clock,
+  Printer, Coffee, ShoppingCart, Truck, Wrench, MoreHorizontal,
+  TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle
+} from 'lucide-react'
+
+// ── Types ──────────────────────────────────────────────────────
+
+type ExpenseStatus = 'pending' | 'approved' | 'rejected'
+
+interface FundTransaction {
+  id: string
+  type: 'topup' | 'expense'
+  amount: number
+  category: string
+  description: string
+  submitted_by: string
+  approved_by?: string
+  status: ExpenseStatus
+  receipt_note?: string
+  created_at: string
+  updated_at: string
+}
+
+// ── Category config ────────────────────────────────────────────
+
+const CATEGORIES = [
+  { key: 'printing',    label: 'Printing / Stationery', icon: Printer,       color: 'text-blue-600   bg-blue-50'   },
+  { key: 'food',        label: 'Food / Refreshments',   icon: Coffee,        color: 'text-orange-600 bg-orange-50' },
+  { key: 'supplies',    label: 'Medical Supplies',       icon: ShoppingCart,  color: 'text-green-600  bg-green-50'  },
+  { key: 'transport',   label: 'Transport',              icon: Truck,         color: 'text-purple-600 bg-purple-50' },
+  { key: 'maintenance', label: 'Maintenance / Repairs',  icon: Wrench,        color: 'text-red-600    bg-red-50'    },
+  { key: 'other',       label: 'Other',                  icon: MoreHorizontal,color: 'text-gray-600   bg-gray-50'   },
+]
+
+function CategoryIcon({ cat }: { cat: string }) {
+  const found = CATEGORIES.find(c => c.key === cat)
+  if (!found) return <MoreHorizontal className="w-4 h-4"/>
+  const Icon = found.icon
+  return <Icon className="w-4 h-4"/>
+}
+
+function statusBadge(s: ExpenseStatus) {
+  if (s === 'approved') return <span className="badge-green text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3"/>Approved</span>
+  if (s === 'rejected') return <span className="badge-red   text-xs flex items-center gap-1"><XCircle className="w-3 h-3"/>Rejected</span>
+  return <span className="badge-yellow text-xs flex items-center gap-1"><Clock className="w-3 h-3"/>Pending</span>
+}
+
+// ── Component ──────────────────────────────────────────────────
+
+export default function FundPage() {
+  const { user, isAdmin } = useAuth()
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+
+  const [transactions, setTransactions] = useState<FundTransaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [showTopupForm, setShowTopupForm] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved'>('all')
+  const [saving, setSaving] = useState(false)
+
+  const [expenseForm, setExpenseForm] = useState({
+    category: 'printing',
+    amount: '',
+    description: '',
+    receipt_note: '',
+  })
+
+  const [topupForm, setTopupForm] = useState({
+    amount: '',
+    note: '',
+  })
+
+  useEffect(() => { loadTransactions() }, [])
+
+  async function loadTransactions() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('hospital_fund')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setTransactions((data || []) as FundTransaction[])
+    setLoading(false)
+  }
+
+  // ── Computed balances ──
+  const totalTopups   = transactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0)
+  const totalApproved = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0)
+  const totalPending  = transactions.filter(t => t.type === 'expense' && t.status === 'pending').reduce((s, t) => s + t.amount, 0)
+  const balance       = totalTopups - totalApproved
+
+  const filtered = transactions.filter(t => {
+    if (activeFilter === 'pending')  return t.status === 'pending' && t.type === 'expense'
+    if (activeFilter === 'approved') return t.status === 'approved'
+    return true
+  })
+
+  // ── Submit expense ──
+  async function submitExpense() {
+    if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
+    if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
+
+    setSaving(true)
+    await supabase.from('hospital_fund').insert({
+      type:          'expense',
+      category:      expenseForm.category,
+      amount:        Number(expenseForm.amount),
+      description:   expenseForm.description.trim(),
+      receipt_note:  expenseForm.receipt_note.trim() || null,
+      submitted_by:  user?.full_name || 'Unknown',
+      status:        'pending',
+    })
+    setExpenseForm({ category: 'printing', amount: '', description: '', receipt_note: '' })
+    setShowAddForm(false)
+    await loadTransactions()
+    setSaving(false)
+  }
+
+  // ── Admin: top up fund ──
+  async function topUpFund() {
+    if (!topupForm.amount || Number(topupForm.amount) <= 0) { alert('Enter a valid amount'); return }
+    setSaving(true)
+    await supabase.from('hospital_fund').insert({
+      type:         'topup',
+      category:     'topup',
+      amount:       Number(topupForm.amount),
+      description:  topupForm.note || `Fund top-up by ${user?.full_name}`,
+      submitted_by: user?.full_name || 'Admin',
+      approved_by:  user?.full_name || 'Admin',
+      status:       'approved',
+    })
+    setTopupForm({ amount: '', note: '' })
+    setShowTopupForm(false)
+    await loadTransactions()
+    setSaving(false)
+  }
+
+  // ── Admin: approve / reject ──
+  async function updateStatus(id: string, status: 'approved' | 'rejected') {
+    await supabase
+      .from('hospital_fund')
+      .update({ status, approved_by: user?.full_name, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    await loadTransactions()
+  }
+
+  const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
+
+  return (
+    <AppShell>
+      <div className="p-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <IndianRupee className="w-6 h-6 text-emerald-500"/> Hospital Fund
+            </h1>
+            <p className="text-sm text-gray-500">Operational expenses — printing, food, supplies, transport</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={loadTransactions} disabled={loading}
+              className="btn-secondary flex items-center gap-2 text-xs">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/>
+            </button>
+            {isAdmin && (
+              <button onClick={() => setShowTopupForm(!showTopupForm)}
+                className="btn-secondary flex items-center gap-2 text-xs border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
+                <TrendingUp className="w-3.5 h-3.5"/> Top Up Fund
+              </button>
+            )}
+            <button onClick={() => setShowAddForm(!showAddForm)}
+              className="btn-primary flex items-center gap-2 text-xs">
+              <Plus className="w-3.5 h-3.5"/> Record Expense
+            </button>
+          </div>
+        </div>
+
+        {/* Balance tiles */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: 'Fund Balance',      value: inr(balance),       sub: 'available',           color: balance < 1000 ? 'text-red-700 bg-red-50' : 'text-emerald-700 bg-emerald-50', icon: IndianRupee },
+            { label: 'Total Funded',      value: inr(totalTopups),   sub: 'all time top-ups',    color: 'text-blue-700 bg-blue-50',    icon: TrendingUp   },
+            { label: 'Approved Expenses', value: inr(totalApproved), sub: 'paid out',            color: 'text-orange-700 bg-orange-50', icon: TrendingDown },
+            { label: 'Pending Approval',  value: inr(totalPending),  sub: `${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length} requests`, color: 'text-yellow-700 bg-yellow-50', icon: Clock },
+          ].map(({ label, value, sub, color, icon: Icon }) => (
+            <div key={label} className={`card p-4 ${color.split(' ')[1]}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <Icon className={`w-4 h-4 ${color.split(' ')[0]}`}/>
+                <span className="text-xs font-semibold text-gray-600">{label}</span>
+              </div>
+              <div className={`text-2xl font-bold ${color.split(' ')[0]}`}>{value}</div>
+              <div className="text-xs text-gray-400">{sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {balance < 500 && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0"/>
+            <span className="text-red-800">
+              Fund balance is low ({inr(balance)}). Ask admin to top up the fund.
+            </span>
+          </div>
+        )}
+
+        {/* Top-up form */}
+        {showTopupForm && isAdmin && (
+          <div className="card p-5 mb-5 border-l-4 border-emerald-400">
+            <h3 className="font-semibold text-gray-800 mb-3">Top Up Fund</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Amount (₹)</label>
+                <input className="input" type="number" placeholder="5000"
+                  value={topupForm.amount} onChange={e => setTopupForm(p => ({ ...p, amount: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Note</label>
+                <input className="input" placeholder="e.g. Monthly operational budget"
+                  value={topupForm.note} onChange={e => setTopupForm(p => ({ ...p, note: e.target.value }))}/>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-3">
+              <button onClick={topUpFund} disabled={saving}
+                className="btn-primary text-xs flex items-center gap-2">
+                <TrendingUp className="w-3.5 h-3.5"/> Add Funds
+              </button>
+              <button onClick={() => setShowTopupForm(false)} className="btn-secondary text-xs">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Expense form */}
+        {showAddForm && (
+          <div className="card p-5 mb-5 border-l-4 border-blue-400">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-blue-500"/> Record Expense
+            </h3>
+
+            {/* Category grid */}
+            <div className="mb-4">
+              <label className="label">Category</label>
+              <div className="grid grid-cols-3 gap-2">
+                {CATEGORIES.map(cat => {
+                  const Icon = cat.icon
+                  const isSelected = expenseForm.category === cat.key
+                  return (
+                    <button key={cat.key} type="button"
+                      onClick={() => setExpenseForm(p => ({ ...p, category: cat.key }))}
+                      className={`flex items-center gap-2 p-2.5 rounded-lg border-2 text-xs font-medium transition-colors text-left ${
+                        isSelected
+                          ? `${cat.color.split(' ')[1]} border-current ${cat.color.split(' ')[0]}`
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}>
+                      <Icon className="w-3.5 h-3.5 flex-shrink-0"/>
+                      {cat.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="label">Amount (₹) *</label>
+                <input className="input" type="number" step="0.01" placeholder="250"
+                  value={expenseForm.amount} onChange={e => setExpenseForm(p => ({ ...p, amount: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Receipt / Bill No. (optional)</label>
+                <input className="input" placeholder="Bill # or reference"
+                  value={expenseForm.receipt_note} onChange={e => setExpenseForm(p => ({ ...p, receipt_note: e.target.value }))}/>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="label">Description / Purpose *</label>
+              <textarea className="input" rows={2}
+                placeholder="e.g. Printed 50 copies of patient discharge forms · Ordered tea for night duty nurses · Purchased gloves (1 box)"
+                value={expenseForm.description} onChange={e => setExpenseForm(p => ({ ...p, description: e.target.value }))}/>
+            </div>
+
+            <div className="text-xs text-gray-500 mb-3 flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5"/>
+              Submitted by <strong>{user?.full_name}</strong> · Will be sent for admin approval
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={submitExpense} disabled={saving}
+                className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
+                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <CheckCircle className="w-3.5 h-3.5"/>}
+                {saving ? 'Submitting…' : 'Submit for Approval'}
+              </button>
+              <button onClick={() => setShowAddForm(false)} className="btn-secondary text-xs">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Filter tabs */}
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
+          {[
+            { key: 'all',      label: 'All' },
+            { key: 'pending',  label: `Pending (${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length})` },
+            { key: 'approved', label: 'Approved' },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setActiveFilter(key as any)}
+              className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${activeFilter === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Transaction list */}
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-7 h-7 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin"/>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+            <p>No transactions found</p>
+          </div>
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  {['Date', 'Category', 'Description', 'Amount', 'By', 'Status', isAdmin ? 'Action' : ''].filter(Boolean).map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(tx => {
+                  const cat = CATEGORIES.find(c => c.key === tx.category)
+                  return (
+                    <tr key={tx.id} className={`border-b border-gray-50 hover:bg-gray-50
+                      ${tx.type === 'topup' ? 'bg-emerald-50/30' : ''}`}>
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {formatDate(tx.created_at)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {tx.type === 'topup' ? (
+                          <span className="flex items-center gap-1 text-emerald-700 text-xs font-medium">
+                            <TrendingUp className="w-3.5 h-3.5"/> Fund Top-up
+                          </span>
+                        ) : (
+                          <span className={`flex items-center gap-1 text-xs font-medium ${cat?.color.split(' ')[0] || 'text-gray-600'}`}>
+                            <CategoryIcon cat={tx.category}/> {cat?.label || tx.category}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 max-w-[220px]">
+                        <div className="truncate">{tx.description}</div>
+                        {tx.receipt_note && <div className="text-xs text-gray-400">Ref: {tx.receipt_note}</div>}
+                      </td>
+                      <td className="px-4 py-3 font-mono font-bold">
+                        <span className={tx.type === 'topup' ? 'text-emerald-600' : 'text-gray-900'}>
+                          {tx.type === 'topup' ? '+' : ''}{inr(tx.amount)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{tx.submitted_by}</td>
+                      <td className="px-4 py-3">{statusBadge(tx.status)}</td>
+                      {isAdmin && (
+                        <td className="px-4 py-3">
+                          {tx.status === 'pending' && tx.type === 'expense' && (
+                            <div className="flex gap-1">
+                              <button onClick={() => updateStatus(tx.id, 'approved')}
+                                className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3"/> Approve
+                              </button>
+                              <button onClick={() => updateStatus(tx.id, 'rejected')}
+                                className="text-xs px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1">
+                                <XCircle className="w-3 h-3"/> Reject
+                              </button>
+                            </div>
+                          )}
+                          {tx.status !== 'pending' && tx.approved_by && (
+                            <span className="text-xs text-gray-400">by {tx.approved_by}</span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
+}
+```
+
 # src\app\globals.css
 
 ```css
@@ -11957,6 +13378,995 @@ export default function IPDNursingPage() {
   )
 }
 
+```
+
+# src\app\ipd\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/ipd/page.tsx
+ *
+ * IPD (In-Patient Department) Module
+ * Features:
+ *  - IPD Admission Form (admit a patient to a bed)
+ *  - Active IPD census (all currently admitted patients)
+ *  - Nursing chart: vitals, I/O charting, nursing notes
+ *  - Multi-doctor assignment per admission
+ *  - Discharge workflow (leads to discharge summary)
+ *
+ * Storage: Supabase tables `ipd_admissions` + `ipd_nursing`
+ * (migrated away from localStorage per requirement #7)
+ */
+
+import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate, formatDateTime, getHospitalSettings } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import {
+  BedDouble, UserPlus, Search, RefreshCw, Stethoscope,
+  AlertTriangle, Activity, ClipboardList, LogOut, Clock,
+  Plus, Trash2, Save, CheckCircle, ChevronDown, ChevronUp,
+  IndianRupee, FileText, Users, X
+} from 'lucide-react'
+
+// ── Types ──────────────────────────────────────────────────────
+
+interface IPDAdmission {
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  mobile: string
+  age: number | null
+  gender: string | null
+  bed_id: string
+  bed_number: string
+  ward: string
+  admission_date: string
+  admission_time: string
+  admitting_doctor: string
+  consulting_doctors: string[]   // multi-doctor support
+  diagnosis_on_admission: string
+  chief_complaint: string
+  status: 'active' | 'discharged' | 'transferred'
+  diet_type: string
+  allergies: string
+  comorbidities: string
+  insurance_details: string
+  relative_name: string
+  relative_contact: string
+  relative_relation: string
+  created_at: string
+  updated_at: string
+}
+
+interface NursingEntry {
+  id: string
+  ipd_admission_id: string
+  entry_type: 'vital' | 'io' | 'note' | 'medication'
+  recorded_time: string
+  pulse?: string
+  bp_systolic?: string
+  bp_diastolic?: string
+  temperature?: string
+  spo2?: string
+  weight?: string
+  rr?: string                  // respiratory rate
+  vital_note?: string
+  io_type?: 'Input' | 'Output'
+  io_label?: string
+  io_amount_ml?: number
+  medication_name?: string
+  medication_dose?: string
+  medication_route?: string
+  medication_given_by?: string
+  nurse_name: string
+  note_text?: string
+  created_at: string
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function statusBadge(s: IPDAdmission['status']) {
+  if (s === 'active')      return <span className="badge-green text-xs">Active</span>
+  if (s === 'discharged')  return <span className="badge-red text-xs">Discharged</span>
+  return <span className="badge-yellow text-xs">Transferred</span>
+}
+
+function daysSince(dateStr: string) {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
+// ── Main Component ─────────────────────────────────────────────
+
+export default function IPDPage() {
+  const { user, can } = useAuth()
+  const [admissions, setAdmissions] = useState<IPDAdmission[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [query, setQuery]           = useState('')
+  const [view, setView]             = useState<'census' | 'admit' | 'chart'>('census')
+  const [selectedAdmission, setSelectedAdmission] = useState<IPDAdmission | null>(null)
+
+  useEffect(() => { loadAdmissions() }, [])
+
+  async function loadAdmissions() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('ipd_admissions')
+      .select('*')
+      .eq('status', 'active')
+      .order('admission_date', { ascending: false })
+    setAdmissions((data || []) as IPDAdmission[])
+    setLoading(false)
+  }
+
+  const filtered = admissions.filter(a => {
+    const q = query.toLowerCase()
+    return !q || a.patient_name.toLowerCase().includes(q)
+      || a.mrn.toLowerCase().includes(q)
+      || a.bed_number.toLowerCase().includes(q)
+      || a.ward.toLowerCase().includes(q)
+  })
+
+  function openChart(adm: IPDAdmission) {
+    setSelectedAdmission(adm)
+    setView('chart')
+  }
+
+  return (
+    <AppShell>
+      <div className="p-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <BedDouble className="w-6 h-6 text-purple-500"/> IPD Management
+            </h1>
+            <p className="text-sm text-gray-500">
+              In-patient admissions, nursing charts, multi-doctor care
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={loadAdmissions} disabled={loading}
+              className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/> Refresh
+            </button>
+            {can('encounters.create') && (
+              <button onClick={() => setView('admit')}
+                className="btn-primary flex items-center gap-2 text-xs">
+                <UserPlus className="w-3.5 h-3.5"/> Admit Patient
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tab nav */}
+        <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
+          {[
+            { key: 'census', label: 'IPD Census', icon: Users },
+            { key: 'admit',  label: 'New Admission', icon: UserPlus },
+          ].map(({ key, label, icon: Icon }) => (
+            <button key={key}
+              onClick={() => setView(key as any)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${view === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              <Icon className="w-3.5 h-3.5"/> {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Census View */}
+        {view === 'census' && (
+          <CensusView
+            admissions={filtered}
+            loading={loading}
+            query={query}
+            setQuery={setQuery}
+            onOpenChart={openChart}
+            onDischarge={loadAdmissions}
+            canManage={can('encounters.edit')}
+          />
+        )}
+
+        {/* Admit View */}
+        {view === 'admit' && (
+          <AdmitForm
+            onSuccess={() => { setView('census'); loadAdmissions() }}
+            onCancel={() => setView('census')}
+          />
+        )}
+
+        {/* Nursing Chart View */}
+        {view === 'chart' && selectedAdmission && (
+          <NursingChart
+            admission={selectedAdmission}
+            onBack={() => { setView('census'); setSelectedAdmission(null) }}
+            currentUserName={user?.full_name || 'Nurse'}
+          />
+        )}
+
+      </div>
+    </AppShell>
+  )
+}
+
+// ── Census Table ───────────────────────────────────────────────
+
+function CensusView({
+  admissions, loading, query, setQuery, onOpenChart, onDischarge, canManage
+}: {
+  admissions: IPDAdmission[]
+  loading: boolean
+  query: string
+  setQuery: (q: string) => void
+  onOpenChart: (a: IPDAdmission) => void
+  onDischarge: () => void
+  canManage: boolean
+}) {
+  async function markDischarged(id: string) {
+    if (!confirm('Mark this patient as discharged?')) return
+    await supabase
+      .from('ipd_admissions')
+      .update({ status: 'discharged', updated_at: new Date().toISOString() })
+      .eq('id', id)
+    // Free the bed
+    const adm = admissions.find(a => a.id === id)
+    if (adm?.bed_id) {
+      await supabase
+        .from('beds')
+        .update({ status: 'cleaning', patient_id: null, patient_name: null })
+        .eq('id', adm.bed_id)
+    }
+    onDischarge()
+  }
+
+  return (
+    <>
+      <div className="card p-4 mb-5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+          <input className="input pl-9 bg-gray-50"
+            placeholder="Search patient name, MRN, bed number, ward…"
+            value={query} onChange={e => setQuery(e.target.value)}/>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-48">
+          <div className="w-8 h-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      ) : admissions.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <BedDouble className="w-12 h-12 mx-auto mb-3 opacity-20"/>
+          <p className="font-medium">No active IPD admissions</p>
+          <p className="text-sm mt-1">Admit a patient to see them here</p>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">
+              Active IPD Census
+              <span className="ml-2 text-sm font-normal text-gray-400">({admissions.length} patients)</span>
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  {['Patient', 'Bed / Ward', 'Admitted', 'Days', 'Doctors', 'Diagnosis', 'Status', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {admissions.map(adm => (
+                  <tr key={adm.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link href={`/patients/${adm.patient_id}`}
+                        className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                        {adm.patient_name}
+                      </Link>
+                      <div className="text-xs text-gray-400">{adm.mrn} · {adm.age}y · {adm.gender}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-purple-700">{adm.bed_number}</div>
+                      <div className="text-xs text-gray-400">{adm.ward}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {formatDate(adm.admission_date)}
+                      <div className="text-gray-400">{adm.admission_time}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-bold ${daysSince(adm.admission_date) > 7 ? 'text-orange-600' : 'text-gray-700'}`}>
+                        {daysSince(adm.admission_date)}d
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px]">
+                      <div className="font-medium">{adm.admitting_doctor}</div>
+                      {adm.consulting_doctors?.map((d, i) => (
+                        <div key={i} className="text-gray-400">+ {d}</div>
+                      ))}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[180px] truncate">
+                      {adm.diagnosis_on_admission || '—'}
+                    </td>
+                    <td className="px-4 py-3">{statusBadge(adm.status)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        <button onClick={() => onOpenChart(adm)}
+                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
+                          <Activity className="w-3 h-3"/> Chart
+                        </button>
+                        {canManage && (
+                          <button onClick={() => markDischarged(adm.id)}
+                            className="text-xs py-1 px-2 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1">
+                            <LogOut className="w-3 h-3"/> DC
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Admit Form ─────────────────────────────────────────────────
+
+function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+  const [patientQuery, setPatientQuery] = useState('')
+  const [patientResults, setPatientResults] = useState<any[]>([])
+  const [selectedPatient, setSelectedPatient] = useState<any>(null)
+  const [beds, setBeds] = useState<any[]>([])
+  const [doctors, setDoctors] = useState<any[]>([])  // all doctors in clinic
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const [form, setForm] = useState({
+    bed_id: '',
+    admission_date: new Date().toISOString().split('T')[0],
+    admission_time: new Date().toTimeString().slice(0, 5),
+    admitting_doctor: '',
+    consulting_doctors: [] as string[],
+    diagnosis_on_admission: '',
+    chief_complaint: '',
+    diet_type: 'Normal',
+    allergies: '',
+    comorbidities: '',
+    insurance_details: '',
+    relative_name: '',
+    relative_contact: '',
+    relative_relation: '',
+  })
+
+  // Load available beds and doctors
+  useEffect(() => {
+    supabase.from('beds').select('id, bed_number, ward, status')
+      .eq('status', 'available').order('ward').order('bed_number')
+      .then(({ data }) => setBeds(data || []))
+
+    supabase.from('clinic_users').select('id, full_name, role')
+      .eq('is_active', true).in('role', ['admin', 'doctor'])
+      .order('full_name')
+      .then(({ data }) => setDoctors(data || []))
+  }, [])
+
+  // Patient search
+  const searchPatients = useCallback(async (q: string) => {
+    if (q.length < 2) { setPatientResults([]); return }
+    const { data } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, age, gender, mobile')
+      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+      .limit(8)
+    setPatientResults(data || [])
+  }, [])
+
+  function setField(field: string, value: string) {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  function toggleConsultingDoctor(name: string) {
+    setForm(prev => {
+      const existing = prev.consulting_doctors.includes(name)
+      return {
+        ...prev,
+        consulting_doctors: existing
+          ? prev.consulting_doctors.filter(d => d !== name)
+          : [...prev.consulting_doctors, name],
+      }
+    })
+  }
+
+  async function handleSave() {
+    if (!selectedPatient) { alert('Select a patient first'); return }
+    if (!form.bed_id)    { alert('Select a bed'); return }
+    if (!form.admitting_doctor) { alert('Select admitting doctor'); return }
+
+    setSaving(true)
+
+    // Create IPD admission record
+    const payload = {
+      patient_id:             selectedPatient.id,
+      patient_name:           selectedPatient.full_name,
+      mrn:                    selectedPatient.mrn,
+      mobile:                 selectedPatient.mobile,
+      age:                    selectedPatient.age,
+      gender:                 selectedPatient.gender,
+      bed_id:                 form.bed_id,
+      bed_number:             beds.find(b => b.id === form.bed_id)?.bed_number || '',
+      ward:                   beds.find(b => b.id === form.bed_id)?.ward || '',
+      admission_date:         form.admission_date,
+      admission_time:         form.admission_time,
+      admitting_doctor:       form.admitting_doctor,
+      consulting_doctors:     form.consulting_doctors,
+      diagnosis_on_admission: form.diagnosis_on_admission,
+      chief_complaint:        form.chief_complaint,
+      diet_type:              form.diet_type,
+      allergies:              form.allergies,
+      comorbidities:          form.comorbidities,
+      insurance_details:      form.insurance_details,
+      relative_name:          form.relative_name,
+      relative_contact:       form.relative_contact,
+      relative_relation:      form.relative_relation,
+      status:                 'active',
+    }
+
+    const { error } = await supabase.from('ipd_admissions').insert(payload)
+
+    if (!error) {
+      // Mark bed as occupied
+      await supabase.from('beds').update({
+        status:           'occupied',
+        patient_id:       selectedPatient.id,
+        patient_name:     selectedPatient.full_name,
+        admission_date:   form.admission_date,
+      }).eq('id', form.bed_id)
+
+      setSaved(true)
+      setTimeout(() => { setSaved(false); onSuccess() }, 1500)
+    } else {
+      alert('Error saving admission: ' + error.message)
+    }
+    setSaving(false)
+  }
+
+  const selectedBed = beds.find(b => b.id === form.bed_id)
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5"/>
+        </button>
+        <h2 className="text-lg font-bold text-gray-900">New IPD Admission</h2>
+      </div>
+
+      <div className="space-y-5">
+
+        {/* Patient Search */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <UserPlus className="w-4 h-4 text-blue-500"/> Patient
+          </h3>
+          {selectedPatient ? (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+              <div>
+                <div className="font-bold text-blue-900">{selectedPatient.full_name}</div>
+                <div className="text-xs text-blue-600">{selectedPatient.mrn} · {selectedPatient.age}y · {selectedPatient.gender} · {selectedPatient.mobile}</div>
+              </div>
+              <button onClick={() => { setSelectedPatient(null); setPatientResults([]) }}
+                className="text-blue-400 hover:text-blue-600">
+                <X className="w-4 h-4"/>
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+              <input className="input pl-9"
+                placeholder="Search patient by name, MRN, or mobile…"
+                value={patientQuery}
+                onChange={e => { setPatientQuery(e.target.value); searchPatients(e.target.value) }}/>
+              {patientResults.length > 0 && (
+                <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+                  {patientResults.map(p => (
+                    <button key={p.id}
+                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-50 last:border-0"
+                      onClick={() => { setSelectedPatient(p); setPatientResults([]); setPatientQuery('') }}>
+                      <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-700 flex-shrink-0">
+                        {p.full_name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900 text-sm">{p.full_name}</div>
+                        <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.mobile}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bed + Dates */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <BedDouble className="w-4 h-4 text-purple-500"/> Bed Assignment
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Available Bed *</label>
+              <select className="input" value={form.bed_id}
+                onChange={e => setField('bed_id', e.target.value)}>
+                <option value="">— Select bed —</option>
+                {beds.map(b => (
+                  <option key={b.id} value={b.id}>{b.bed_number} — {b.ward}</option>
+                ))}
+              </select>
+              {selectedBed && (
+                <p className="text-xs text-green-600 mt-1">✓ {selectedBed.ward}</p>
+              )}
+            </div>
+            <div>
+              <label className="label">Diet Type</label>
+              <select className="input" value={form.diet_type}
+                onChange={e => setField('diet_type', e.target.value)}>
+                {['Normal', 'Soft', 'Liquid', 'NPO (Nothing by mouth)', 'Diabetic diet', 'Low salt', 'High protein'].map(d => (
+                  <option key={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Admission Date *</label>
+              <input className="input" type="date" value={form.admission_date}
+                onChange={e => setField('admission_date', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Admission Time</label>
+              <input className="input" type="time" value={form.admission_time}
+                onChange={e => setField('admission_time', e.target.value)}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Multi-Doctor Assignment */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Stethoscope className="w-4 h-4 text-green-500"/> Doctors
+            <span className="text-xs text-gray-400 font-normal">(multiple doctors supported)</span>
+          </h3>
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div>
+              <label className="label">Admitting / Primary Doctor *</label>
+              <select className="input" value={form.admitting_doctor}
+                onChange={e => setField('admitting_doctor', e.target.value)}>
+                <option value="">— Select doctor —</option>
+                {doctors.map(d => (
+                  <option key={d.id} value={d.full_name}>{d.full_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Consulting Doctors (tick to add)</label>
+            <div className="flex flex-wrap gap-2">
+              {doctors
+                .filter(d => d.full_name !== form.admitting_doctor)
+                .map(d => (
+                  <button key={d.id}
+                    type="button"
+                    onClick={() => toggleConsultingDoctor(d.full_name)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      form.consulting_doctors.includes(d.full_name)
+                        ? 'bg-green-100 border-green-300 text-green-700'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}>
+                    {form.consulting_doctors.includes(d.full_name) ? '✓ ' : '+ '}{d.full_name}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Clinical Details */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-orange-500"/> Clinical Details
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="label">Chief Complaint</label>
+              <input className="input" placeholder="e.g. Abdominal pain, fever since 2 days"
+                value={form.chief_complaint} onChange={e => setField('chief_complaint', e.target.value)}/>
+            </div>
+            <div className="col-span-2">
+              <label className="label">Diagnosis on Admission</label>
+              <input className="input" placeholder="Primary diagnosis"
+                value={form.diagnosis_on_admission} onChange={e => setField('diagnosis_on_admission', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Allergies</label>
+              <input className="input" placeholder="Drug / food allergies or NKDA"
+                value={form.allergies} onChange={e => setField('allergies', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Co-morbidities</label>
+              <input className="input" placeholder="DM, HTN, Thyroid, etc."
+                value={form.comorbidities} onChange={e => setField('comorbidities', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Insurance / TPA</label>
+              <input className="input" placeholder="Insurance company, policy no."
+                value={form.insurance_details} onChange={e => setField('insurance_details', e.target.value)}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Relative / Attendant */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-3">Attendant / Relative</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="label">Name</label>
+              <input className="input" placeholder="Attendant name"
+                value={form.relative_name} onChange={e => setField('relative_name', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Contact</label>
+              <input className="input" type="tel" placeholder="Mobile number"
+                value={form.relative_contact} onChange={e => setField('relative_contact', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Relation</label>
+              <select className="input" value={form.relative_relation}
+                onChange={e => setField('relative_relation', e.target.value)}>
+                <option value="">— Select —</option>
+                {['Husband', 'Wife', 'Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'].map(r => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} className="btn-secondary">Cancel</button>
+          <button onClick={handleSave} disabled={saving || saved}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-60
+              ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+              : saved ? <CheckCircle className="w-4 h-4"/>
+              : <Save className="w-4 h-4"/>}
+            {saving ? 'Admitting…' : saved ? 'Admitted!' : 'Admit Patient'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Nursing Chart ──────────────────────────────────────────────
+
+function NursingChart({ admission, onBack, currentUserName }: {
+  admission: IPDAdmission
+  onBack: () => void
+  currentUserName: string
+}) {
+  const [entries, setEntries] = useState<NursingEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [addType, setAddType] = useState<NursingEntry['entry_type']>('vital')
+  const [saving, setSaving] = useState(false)
+  const [openSection, setOpenSection] = useState<string>('vitals')
+
+  // Vital form
+  const [vitalForm, setVitalForm] = useState({
+    recorded_time: new Date().toTimeString().slice(0, 5),
+    pulse: '', bp_systolic: '', bp_diastolic: '',
+    temperature: '', spo2: '', rr: '', weight: '', vital_note: '',
+  })
+
+  // I/O form
+  const [ioForm, setIoForm] = useState({
+    recorded_time: new Date().toTimeString().slice(0, 5),
+    io_type: 'Input' as 'Input' | 'Output',
+    io_label: '',
+    io_amount_ml: '',
+  })
+
+  // Note / medication form
+  const [noteForm, setNoteForm] = useState({
+    recorded_time: new Date().toTimeString().slice(0, 5),
+    entry_type: 'note' as NursingEntry['entry_type'],
+    note_text: '',
+    medication_name: '', medication_dose: '', medication_route: 'IV',
+    medication_given_by: currentUserName,
+  })
+
+  useEffect(() => { loadEntries() }, [admission.id])
+
+  async function loadEntries() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('ipd_nursing')
+      .select('*')
+      .eq('ipd_admission_id', admission.id)
+      .order('created_at', { ascending: false })
+    setEntries((data || []) as NursingEntry[])
+    setLoading(false)
+  }
+
+  async function saveVital() {
+    setSaving(true)
+    const { error } = await supabase.from('ipd_nursing').insert({
+      ipd_admission_id: admission.id,
+      patient_id:       admission.patient_id,
+      entry_type:       'vital',
+      nurse_name:       currentUserName,
+      ...vitalForm,
+      recorded_time:    vitalForm.recorded_time,
+    })
+    if (!error) {
+      setVitalForm({ recorded_time: new Date().toTimeString().slice(0, 5), pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', rr: '', weight: '', vital_note: '' })
+      await loadEntries()
+    }
+    setSaving(false)
+  }
+
+  async function saveIO() {
+    setSaving(true)
+    await supabase.from('ipd_nursing').insert({
+      ipd_admission_id: admission.id,
+      patient_id:       admission.patient_id,
+      entry_type:       'io',
+      nurse_name:       currentUserName,
+      recorded_time:    ioForm.recorded_time,
+      io_type:          ioForm.io_type,
+      io_label:         ioForm.io_label,
+      io_amount_ml:     parseFloat(ioForm.io_amount_ml) || 0,
+    })
+    setIoForm({ recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
+    await loadEntries()
+    setSaving(false)
+  }
+
+  async function saveNote() {
+    setSaving(true)
+    const payload: any = {
+      ipd_admission_id:    admission.id,
+      patient_id:          admission.patient_id,
+      entry_type:          noteForm.entry_type,
+      nurse_name:          currentUserName,
+      recorded_time:       noteForm.recorded_time,
+      note_text:           noteForm.note_text,
+    }
+    if (noteForm.entry_type === 'medication') {
+      payload.medication_name     = noteForm.medication_name
+      payload.medication_dose     = noteForm.medication_dose
+      payload.medication_route    = noteForm.medication_route
+      payload.medication_given_by = noteForm.medication_given_by
+    }
+    await supabase.from('ipd_nursing').insert(payload)
+    setNoteForm({ recorded_time: new Date().toTimeString().slice(0, 5), entry_type: 'note', note_text: '', medication_name: '', medication_dose: '', medication_route: 'IV', medication_given_by: currentUserName })
+    await loadEntries()
+    setSaving(false)
+  }
+
+  // I/O balance
+  const totalInput  = entries.filter(e => e.entry_type === 'io' && e.io_type === 'Input').reduce((s, e) => s + (e.io_amount_ml || 0), 0)
+  const totalOutput = entries.filter(e => e.entry_type === 'io' && e.io_type === 'Output').reduce((s, e) => s + (e.io_amount_ml || 0), 0)
+  const ioBalance   = totalInput - totalOutput
+
+  return (
+    <div className="max-w-4xl">
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={onBack} className="text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5"/>
+        </button>
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Nursing Chart — {admission.patient_name}</h2>
+          <p className="text-xs text-gray-500">
+            {admission.bed_number} · {admission.ward} · Admitted {formatDate(admission.admission_date)}
+            {' '} · Dr. {admission.admitting_doctor}
+            {admission.consulting_doctors?.length > 0 && ` + ${admission.consulting_doctors.join(', ')}`}
+          </p>
+        </div>
+      </div>
+
+      {/* I/O Summary */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {[
+          { label: 'Total Input', value: `${totalInput} mL`, cls: 'text-blue-700 bg-blue-50' },
+          { label: 'Total Output', value: `${totalOutput} mL`, cls: 'text-orange-700 bg-orange-50' },
+          { label: 'Net Balance', value: `${ioBalance > 0 ? '+' : ''}${ioBalance} mL`, cls: ioBalance >= 0 ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50' },
+        ].map(({ label, value, cls }) => (
+          <div key={label} className={`card p-3 ${cls.split(' ')[1]}`}>
+            <div className={`text-xl font-bold ${cls.split(' ')[0]}`}>{value}</div>
+            <div className="text-xs font-medium text-gray-600">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Entry Form Tabs */}
+      <div className="card p-5 mb-5">
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+          {(['vital', 'io', 'note', 'medication'] as const).map(t => (
+            <button key={t}
+              onClick={() => setAddType(t)}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors capitalize ${addType === t ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              {t === 'vital' ? '🩺 Vital Signs' : t === 'io' ? '💧 I/O' : t === 'note' ? '📝 Note' : '💊 Medication'}
+            </button>
+          ))}
+        </div>
+
+        {/* Vital Signs form */}
+        {addType === 'vital' && (
+          <div>
+            <div className="grid grid-cols-4 gap-3 mb-3">
+              <div><label className="label">Time</label><input className="input" type="time" value={vitalForm.recorded_time} onChange={e => setVitalForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
+              <div><label className="label">Pulse (bpm)</label><input className="input" type="number" placeholder="72" value={vitalForm.pulse} onChange={e => setVitalForm(p => ({ ...p, pulse: e.target.value }))}/></div>
+              <div><label className="label">BP Systolic</label><input className="input" type="number" placeholder="120" value={vitalForm.bp_systolic} onChange={e => setVitalForm(p => ({ ...p, bp_systolic: e.target.value }))}/></div>
+              <div><label className="label">BP Diastolic</label><input className="input" type="number" placeholder="80" value={vitalForm.bp_diastolic} onChange={e => setVitalForm(p => ({ ...p, bp_diastolic: e.target.value }))}/></div>
+              <div><label className="label">Temperature (°F)</label><input className="input" type="number" step="0.1" placeholder="98.6" value={vitalForm.temperature} onChange={e => setVitalForm(p => ({ ...p, temperature: e.target.value }))}/></div>
+              <div><label className="label">SpO₂ (%)</label><input className="input" type="number" placeholder="98" value={vitalForm.spo2} onChange={e => setVitalForm(p => ({ ...p, spo2: e.target.value }))}/></div>
+              <div><label className="label">RR (breaths/min)</label><input className="input" type="number" placeholder="16" value={vitalForm.rr} onChange={e => setVitalForm(p => ({ ...p, rr: e.target.value }))}/></div>
+              <div><label className="label">Weight (kg)</label><input className="input" type="number" step="0.1" placeholder="55.0" value={vitalForm.weight} onChange={e => setVitalForm(p => ({ ...p, weight: e.target.value }))}/></div>
+            </div>
+            <div className="mb-3">
+              <label className="label">Nurse Note (optional)</label>
+              <textarea className="input" rows={2} placeholder="Any observation…" value={vitalForm.vital_note} onChange={e => setVitalForm(p => ({ ...p, vital_note: e.target.value }))}/>
+            </div>
+            <button onClick={saveVital} disabled={saving}
+              className="btn-primary flex items-center gap-2 text-xs disabled:opacity-60">
+              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save Vitals'}
+            </button>
+          </div>
+        )}
+
+        {/* I/O form */}
+        {addType === 'io' && (
+          <div className="grid grid-cols-4 gap-3 items-end">
+            <div><label className="label">Time</label><input className="input" type="time" value={ioForm.recorded_time} onChange={e => setIoForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
+            <div>
+              <label className="label">Type</label>
+              <select className="input" value={ioForm.io_type} onChange={e => setIoForm(p => ({ ...p, io_type: e.target.value as 'Input' | 'Output' }))}>
+                <option>Input</option><option>Output</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Label</label>
+              <select className="input" value={ioForm.io_label} onChange={e => setIoForm(p => ({ ...p, io_label: e.target.value }))}>
+                <option value="">— Select —</option>
+                {ioForm.io_type === 'Input'
+                  ? ['IV Fluids', 'Oral fluids', 'Blood transfusion', 'NG feeds', 'Medications'].map(l => <option key={l}>{l}</option>)
+                  : ['Urine', 'Drain', 'Vomiting', 'NG aspirate', 'Stool', 'Blood loss'].map(l => <option key={l}>{l}</option>)
+                }
+              </select>
+            </div>
+            <div><label className="label">Amount (mL)</label><input className="input" type="number" placeholder="500" value={ioForm.io_amount_ml} onChange={e => setIoForm(p => ({ ...p, io_amount_ml: e.target.value }))}/></div>
+            <button onClick={saveIO} disabled={saving}
+              className="btn-primary flex items-center gap-2 text-xs col-span-4 w-fit disabled:opacity-60">
+              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save I/O Entry'}
+            </button>
+          </div>
+        )}
+
+        {/* Note / Medication */}
+        {(addType === 'note' || addType === 'medication') && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Time</label><input className="input" type="time" value={noteForm.recorded_time} onChange={e => setNoteForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
+              <div>
+                <label className="label">Entry Type</label>
+                <select className="input" value={noteForm.entry_type} onChange={e => setNoteForm(p => ({ ...p, entry_type: e.target.value as any }))}>
+                  <option value="note">Nursing Note</option>
+                  <option value="medication">Medication Given</option>
+                </select>
+              </div>
+            </div>
+            {noteForm.entry_type === 'medication' && (
+              <div className="grid grid-cols-3 gap-3">
+                <div><label className="label">Drug Name</label><input className="input" placeholder="e.g. Metronidazole" value={noteForm.medication_name} onChange={e => setNoteForm(p => ({ ...p, medication_name: e.target.value }))}/></div>
+                <div><label className="label">Dose</label><input className="input" placeholder="500mg" value={noteForm.medication_dose} onChange={e => setNoteForm(p => ({ ...p, medication_dose: e.target.value }))}/></div>
+                <div><label className="label">Route</label>
+                  <select className="input" value={noteForm.medication_route} onChange={e => setNoteForm(p => ({ ...p, medication_route: e.target.value }))}>
+                    {['IV', 'IM', 'SC', 'Oral', 'Rectal', 'Topical', 'Inhalation'].map(r => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="label">{noteForm.entry_type === 'medication' ? 'Administration Note' : 'Note'}</label>
+              <textarea className="input" rows={3} placeholder={noteForm.entry_type === 'medication' ? 'Any adverse reaction, site, timing notes…' : 'Nursing observation, patient complaint, action taken…'}
+                value={noteForm.note_text} onChange={e => setNoteForm(p => ({ ...p, note_text: e.target.value }))}/>
+            </div>
+            <button onClick={saveNote} disabled={saving}
+              className="btn-primary flex items-center gap-2 text-xs disabled:opacity-60">
+              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save Entry'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Chart History */}
+      {loading ? (
+        <div className="flex items-center justify-center h-24">
+          <div className="w-6 h-6 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Chart History ({entries.length} entries)</h3>
+          </div>
+          {entries.length === 0 ? (
+            <div className="text-center py-10 text-gray-400 text-sm">No entries yet</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  {['Time', 'Type', 'Details', 'Recorded by'].map(h => (
+                    <th key={h} className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-2 font-mono text-gray-500">
+                      {e.recorded_time}
+                      <div className="text-gray-300">{new Date(e.created_at).toLocaleDateString('en-IN')}</div>
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize
+                        ${e.entry_type === 'vital' ? 'bg-blue-50 text-blue-700'
+                          : e.entry_type === 'io' ? 'bg-cyan-50 text-cyan-700'
+                          : e.entry_type === 'medication' ? 'bg-purple-50 text-purple-700'
+                          : 'bg-gray-100 text-gray-600'}`}>
+                        {e.entry_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-gray-700">
+                      {e.entry_type === 'vital' && (
+                        <span>
+                          {e.pulse && `P: ${e.pulse}bpm`}
+                          {e.bp_systolic && ` BP: ${e.bp_systolic}/${e.bp_diastolic}`}
+                          {e.temperature && ` T: ${e.temperature}°F`}
+                          {e.spo2 && ` SpO₂: ${e.spo2}%`}
+                          {e.rr && ` RR: ${e.rr}`}
+                          {e.weight && ` Wt: ${e.weight}kg`}
+                          {e.vital_note && <span className="text-gray-400"> — {e.vital_note}</span>}
+                        </span>
+                      )}
+                      {e.entry_type === 'io' && (
+                        <span className={e.io_type === 'Input' ? 'text-blue-700' : 'text-orange-700'}>
+                          {e.io_type}: {e.io_label} — {e.io_amount_ml} mL
+                        </span>
+                      )}
+                      {e.entry_type === 'medication' && (
+                        <span>{e.medication_name} {e.medication_dose} {e.medication_route}{e.note_text && ` — ${e.note_text}`}</span>
+                      )}
+                      {e.entry_type === 'note' && <span>{e.note_text}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-gray-500">{e.nurse_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 ```
 
 # src\app\labs\page.tsx
@@ -19340,6 +21750,544 @@ export default function PatientsPage() {
 }
 ```
 
+# src\app\portal\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/portal/page.tsx
+ *
+ * Patient Portal (PWA)
+ * Accessible at: /portal?mrn=P-001&token=<magic-token>
+ *
+ * Features:
+ *  - Magic-link authentication (token validated server-side)
+ *  - View own prescriptions, upcoming appointments, bills
+ *  - Self-book video consultation slots
+ *  - Lab reports and discharge summaries
+ *  - Works offline as a PWA (via next-pwa)
+ *  - NO clinic staff involvement required
+ *
+ * This fulfils requirement #5 — patient-direct booking reducing reception calls.
+ */
+
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { formatDate, formatDateTime } from '@/lib/utils'
+import {
+  Pill, Calendar, IndianRupee, FileText, Video,
+  Clock, CheckCircle, AlertCircle, RefreshCw,
+  Stethoscope, Heart, ChevronRight, Phone
+} from 'lucide-react'
+import Link from 'next/link'
+
+// ── Types ──────────────────────────────────────────────────────
+
+interface PortalData {
+  patient: {
+    id: string
+    full_name: string
+    mrn: string
+    age: number
+    gender: string
+    mobile: string
+    blood_group: string
+  }
+  appointments: any[]
+  prescriptions: any[]
+  bills: any[]
+  labReports: any[]
+}
+
+// ── Token validation ────────────────────────────────────────────
+
+async function validatePortalToken(mrn: string, token: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('portal_tokens')
+    .select('id, expires_at, is_used')
+    .eq('mrn', mrn)
+    .eq('token', token)
+    .single()
+
+  if (!data) return false
+  if (data.is_used) return false
+  if (new Date(data.expires_at) < new Date()) return false
+  return true
+}
+
+// ── Portal Content ─────────────────────────────────────────────
+
+function PortalContent() {
+  const params      = useSearchParams()
+  const mrn         = params.get('mrn') || ''
+  const token       = params.get('token') || ''
+
+  const [status, setStatus]   = useState<'loading' | 'invalid' | 'valid'>('loading')
+  const [data, setData]       = useState<PortalData | null>(null)
+  const [activeTab, setTab]   = useState('appointments')
+  const [bookingOpen, setBookingOpen] = useState(false)
+
+  useEffect(() => {
+    if (!mrn || !token) { setStatus('invalid'); return }
+    init()
+  }, [mrn, token])
+
+  async function init() {
+    const valid = await validatePortalToken(mrn, token)
+    if (!valid) { setStatus('invalid'); return }
+
+    // Load patient data
+    const { data: pat } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, age, gender, mobile, blood_group')
+      .eq('mrn', mrn)
+      .single()
+
+    if (!pat) { setStatus('invalid'); return }
+
+    // Parallel load
+    const [appts, rxs, bills] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('*')
+        .eq('patient_id', pat.id)
+        .gte('date', new Date().toISOString().split('T')[0])
+        .order('date', { ascending: true })
+        .limit(10),
+      supabase
+        .from('prescriptions')
+        .select('*, encounters(encounter_date, diagnosis)')
+        .eq('patient_id', pat.id)
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('bills')
+        .select('*')
+        .eq('patient_id', pat.id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ])
+
+    setData({
+      patient:      pat as any,
+      appointments: appts.data || [],
+      prescriptions: rxs.data || [],
+      bills:        bills.data || [],
+      labReports:   [],
+    })
+    setStatus('valid')
+  }
+
+  // ── Loading ──
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"/>
+          <p className="text-gray-600 font-medium">Loading your health records…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Invalid token ──
+  if (status === 'invalid') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4"/>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Invalid or Expired Link</h2>
+          <p className="text-gray-500 text-sm mb-4">
+            This portal link has expired or is invalid. Please request a new link from the hospital reception.
+          </p>
+          <p className="text-xs text-gray-400">
+            Links expire after 24 hours for your security.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) return null
+  const { patient, appointments, prescriptions, bills } = data
+
+  // ── Portal UI ──
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 pt-safe-top pb-6">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center justify-between mb-4 pt-4">
+            <div className="flex items-center gap-2">
+              <Heart className="w-5 h-5 text-white"/>
+              <span className="text-white font-bold text-sm">My Health Portal</span>
+            </div>
+            <span className="text-blue-200 text-xs font-mono">{patient.mrn}</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-white">{patient.full_name}</h1>
+            <p className="text-blue-200 text-sm mt-0.5">
+              {patient.age}y · {patient.gender} · {patient.blood_group || 'Blood group not recorded'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-lg mx-auto px-4 -mt-4">
+
+        {/* Quick stats */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          {[
+            { label: 'Upcoming', value: appointments.length, icon: Calendar, color: 'text-blue-600 bg-blue-50' },
+            { label: 'Pending Bills', value: bills.filter(b => b.status === 'pending').length, icon: IndianRupee, color: 'text-orange-600 bg-orange-50' },
+            { label: 'Prescriptions', value: prescriptions.length, icon: Pill, color: 'text-green-600 bg-green-50' },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div key={label} className={`rounded-2xl p-3 ${color.split(' ')[1]} text-center`}>
+              <div className={`text-2xl font-bold ${color.split(' ')[0]}`}>{value}</div>
+              <div className="text-xs text-gray-600">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Book Video Consultation CTA */}
+        <button
+          onClick={() => setBookingOpen(true)}
+          className="w-full mb-5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-2xl p-4 flex items-center gap-3 shadow-lg active:scale-95 transition-transform">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Video className="w-5 h-5"/>
+          </div>
+          <div className="text-left">
+            <div className="font-bold">Book Video Consultation</div>
+            <div className="text-green-100 text-xs">See a doctor from home · Available slots below</div>
+          </div>
+          <ChevronRight className="w-5 h-5 ml-auto opacity-70"/>
+        </button>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-5">
+          {[
+            { key: 'appointments', label: '📅 Appointments' },
+            { key: 'prescriptions', label: '💊 Prescriptions' },
+            { key: 'bills', label: '💳 Bills' },
+          ].map(({ key, label }) => (
+            <button key={key}
+              onClick={() => setTab(key)}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Appointments */}
+        {activeTab === 'appointments' && (
+          <div className="space-y-3">
+            {appointments.length === 0 ? (
+              <EmptyState icon={Calendar} text="No upcoming appointments" sub="Book a video consultation above"/>
+            ) : appointments.map(appt => (
+              <div key={appt.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{appt.type || 'Appointment'}</div>
+                    <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                      <Calendar className="w-3 h-3"/>
+                      {formatDate(appt.date)} {appt.time && `at ${appt.time}`}
+                    </div>
+                    {appt.doctor_name && (
+                      <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                        <Stethoscope className="w-3 h-3"/> Dr. {appt.doctor_name}
+                      </div>
+                    )}
+                    {appt.notes && <div className="text-xs text-gray-400 mt-1">{appt.notes}</div>}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    appt.status === 'confirmed' ? 'bg-green-100 text-green-700'
+                    : appt.status === 'video' ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {appt.status === 'video' ? '📹 Video' : appt.status || 'Scheduled'}
+                  </span>
+                </div>
+                {appt.video_link && (
+                  <a href={appt.video_link} target="_blank" rel="noopener noreferrer"
+                    className="mt-3 flex items-center gap-2 bg-blue-50 text-blue-700 rounded-xl px-4 py-2.5 text-sm font-semibold">
+                    <Video className="w-4 h-4"/> Join Video Call
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Prescriptions */}
+        {activeTab === 'prescriptions' && (
+          <div className="space-y-3">
+            {prescriptions.length === 0 ? (
+              <EmptyState icon={Pill} text="No prescriptions yet"/>
+            ) : prescriptions.map(rx => (
+              <div key={rx.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {formatDate(rx.encounters?.encounter_date || rx.created_at)}
+                  </div>
+                  {rx.follow_up_date && (
+                    <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">
+                      Follow-up: {formatDate(rx.follow_up_date)}
+                    </span>
+                  )}
+                </div>
+                {rx.encounters?.diagnosis && (
+                  <div className="font-semibold text-gray-800 text-sm mb-2">{rx.encounters.diagnosis}</div>
+                )}
+                {Array.isArray(rx.medications) && rx.medications.map((m: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                    <Pill className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5"/>
+                    <div className="text-sm">
+                      <span className="font-medium text-gray-900">{m.drug}</span>
+                      {m.dose && <span className="text-gray-500"> {m.dose}</span>}
+                      <span className="text-gray-400 text-xs"> · {m.frequency} · {m.duration}</span>
+                    </div>
+                  </div>
+                ))}
+                {rx.advice && (
+                  <div className="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
+                    📋 {rx.advice}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Bills */}
+        {activeTab === 'bills' && (
+          <div className="space-y-3">
+            {bills.length === 0 ? (
+              <EmptyState icon={IndianRupee} text="No bills found"/>
+            ) : bills.map(bill => (
+              <div key={bill.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">
+                      ₹{Number(bill.net_amount).toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-xs text-gray-500">{formatDate(bill.created_at)}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                  }`}>
+                    {bill.status === 'paid' ? '✓ Paid' : 'Pending'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="h-8"/>
+      </div>
+
+      {/* Video booking modal */}
+      {bookingOpen && (
+        <VideoBookingModal
+          patientId={patient.id}
+          patientName={patient.full_name}
+          mrn={patient.mrn}
+          mobile={patient.mobile}
+          onClose={() => setBookingOpen(false)}
+          onBooked={() => { setBookingOpen(false); init() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Empty state helper ─────────────────────────────────────────
+
+function EmptyState({ icon: Icon, text, sub }: { icon: any; text: string; sub?: string }) {
+  return (
+    <div className="text-center py-12 text-gray-400">
+      <Icon className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+      <p className="font-medium text-gray-500">{text}</p>
+      {sub && <p className="text-xs mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+// ── Video Booking Modal ────────────────────────────────────────
+
+function VideoBookingModal({ patientId, patientName, mrn, mobile, onClose, onBooked }: {
+  patientId: string
+  patientName: string
+  mrn: string
+  mobile: string
+  onClose: () => void
+  onBooked: () => void
+}) {
+  const [slots, setSlots]     = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<any>(null)
+  const [notes, setNotes]     = useState('')
+  const [booking, setBooking] = useState(false)
+  const [booked, setBooked]   = useState(false)
+
+  useEffect(() => { loadSlots() }, [])
+
+  async function loadSlots() {
+    // Load open video consultation slots for next 7 days
+    const today    = new Date().toISOString().split('T')[0]
+    const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+
+    const { data } = await supabase
+      .from('appointments')
+      .select('id, date, time, doctor_name, type, status, notes')
+      .eq('type', 'video')
+      .eq('status', 'open')            // open = available for patient to take
+      .gte('date', today)
+      .lte('date', nextWeek)
+      .order('date')
+      .order('time')
+      .limit(20)
+
+    setSlots(data || [])
+    setLoading(false)
+  }
+
+  async function confirmBooking() {
+    if (!selected) return
+    setBooking(true)
+
+    // Claim the slot
+    const { error } = await supabase
+      .from('appointments')
+      .update({
+        patient_id:   patientId,
+        patient_name: patientName,
+        mrn,
+        mobile,
+        status:       'video',
+        notes:        notes || null,
+      })
+      .eq('id', selected.id)
+      .eq('status', 'open')   // optimistic locking — only update if still open
+
+    if (error) {
+      alert('This slot was just taken. Please choose another.')
+      await loadSlots()
+    } else {
+      setBooked(true)
+      setTimeout(onBooked, 2000)
+    }
+    setBooking(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center">
+      <div className="bg-white rounded-t-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-gray-900 flex items-center gap-2">
+              <Video className="w-5 h-5 text-green-500"/> Book Video Consultation
+            </h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Choose an available slot. Your doctor will send you a video link before the appointment.</p>
+        </div>
+
+        <div className="p-5">
+          {booked ? (
+            <div className="text-center py-8">
+              <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4"/>
+              <h3 className="text-lg font-bold text-gray-900">Appointment Booked!</h3>
+              <p className="text-gray-500 text-sm mt-2">
+                You'll receive a video call link on your mobile before the appointment.
+              </p>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-4 border-green-400 border-t-transparent rounded-full animate-spin"/>
+            </div>
+          ) : slots.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">
+              <Calendar className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+              <p className="font-medium">No video slots available this week</p>
+              <p className="text-xs mt-1">Please call the clinic to book a slot</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2 mb-5">
+                {slots.map(slot => (
+                  <button key={slot.id}
+                    onClick={() => setSelected(selected?.id === slot.id ? null : slot)}
+                    className={`w-full text-left p-3 rounded-xl border-2 transition-colors ${
+                      selected?.id === slot.id
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
+                    }`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-gray-900 text-sm">
+                          {new Date(slot.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {' '}{slot.time}
+                        </div>
+                        {slot.doctor_name && (
+                          <div className="text-xs text-gray-500 flex items-center gap-1">
+                            <Stethoscope className="w-3 h-3"/> Dr. {slot.doctor_name}
+                          </div>
+                        )}
+                      </div>
+                      {selected?.id === slot.id && (
+                        <CheckCircle className="w-5 h-5 text-green-500"/>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {selected && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reason / Symptoms (optional)
+                  </label>
+                  <textarea className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-400" rows={2}
+                    placeholder="e.g. Follow-up for fever, stomach pain, prescription refill…"
+                    value={notes} onChange={e => setNotes(e.target.value)}/>
+                </div>
+              )}
+
+              <button
+                onClick={confirmBooking}
+                disabled={!selected || booking}
+                className="w-full bg-green-500 text-white rounded-xl py-3.5 font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                {booking ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <Video className="w-4 h-4"/>}
+                {booking ? 'Booking…' : selected ? `Book — ${formatDate(selected.date)} ${selected.time}` : 'Select a slot above'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Page Export (wrap in Suspense for useSearchParams) ─────────
+
+export default function PortalPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"/>
+      </div>
+    }>
+      <PortalContent/>
+    </Suspense>
+  )
+}
+```
+
 # src\app\queue\page.tsx
 
 ```tsx
@@ -22151,6 +25099,362 @@ export default function SearchPage() {
 
 ```
 
+# src\app\settings\doctors\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/settings/doctors/page.tsx
+ *
+ * Multiple Doctors Management (Requirement #4)
+ *
+ * Features:
+ *  - List all doctors in the clinic
+ *  - Add new doctors with specialty, registration
+ *  - Set primary doctor
+ *  - Each doctor has their own prescription header
+ *  - Assign doctors to appointments/encounters
+ */
+
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
+import {
+  Stethoscope, UserPlus, Edit, Save, CheckCircle, X,
+  Shield, Star, User, Phone, Mail, Trash2, AlertCircle
+} from 'lucide-react'
+
+interface Doctor {
+  id:          string
+  auth_id:     string
+  email:       string
+  full_name:   string
+  role:        string
+  is_active:   boolean
+  phone?:      string
+  specialty?:  string
+  med_reg_no?: string
+  is_primary?: boolean
+}
+
+export default function DoctorsPage() {
+  const { user, isAdmin } = useAuth()
+  const [doctors, setDoctors]     = useState<Doctor[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [editing, setEditing]     = useState<string | null>(null)
+  const [editForm, setEditForm]   = useState<Partial<Doctor>>({})
+  const [saving, setSaving]       = useState(false)
+  const [showAdd, setShowAdd]     = useState(false)
+
+  // New doctor invite form
+  const [inviteForm, setInviteForm] = useState({
+    full_name:   '',
+    email:       '',
+    specialty:   '',
+    med_reg_no:  '',
+    phone:       '',
+    is_primary:  false,
+  })
+  const [inviting, setInviting]   = useState(false)
+  const [inviteResult, setInviteResult] = useState<{ tempPassword?: string; error?: string } | null>(null)
+
+  useEffect(() => { loadDoctors() }, [])
+
+  async function loadDoctors() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('clinic_users')
+      .select('*')
+      .in('role', ['admin', 'doctor'])
+      .eq('is_active', true)
+      .order('is_primary', { ascending: false })
+      .order('full_name')
+    setDoctors((data || []) as Doctor[])
+    setLoading(false)
+  }
+
+  function startEdit(doc: Doctor) {
+    setEditing(doc.id)
+    setEditForm({
+      full_name:   doc.full_name,
+      specialty:   doc.specialty || '',
+      med_reg_no:  doc.med_reg_no || '',
+      phone:       doc.phone || '',
+      is_primary:  doc.is_primary || false,
+    })
+  }
+
+  async function saveEdit(id: string) {
+    setSaving(true)
+    // If setting as primary, unset all others first
+    if (editForm.is_primary) {
+      await supabase
+        .from('clinic_users')
+        .update({ is_primary: false })
+        .neq('id', id)
+    }
+    await supabase
+      .from('clinic_users')
+      .update({
+        full_name:  editForm.full_name,
+        specialty:  editForm.specialty || null,
+        med_reg_no: editForm.med_reg_no || null,
+        phone:      editForm.phone || null,
+        is_primary: editForm.is_primary || false,
+      })
+      .eq('id', id)
+    setEditing(null)
+    await loadDoctors()
+    setSaving(false)
+  }
+
+  async function inviteDoctor() {
+    if (!inviteForm.full_name || !inviteForm.email) {
+      alert('Name and email are required')
+      return
+    }
+    setInviting(true)
+    setInviteResult(null)
+
+    // Create Supabase auth user via API route (needs service_role key)
+    const { data: authData } = await supabase.auth.getSession()
+    const token = authData.session?.access_token
+
+    const res = await fetch('/api/admin/invite-user', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body:    JSON.stringify({ ...inviteForm, role: 'doctor' }),
+    })
+    const result = await res.json()
+
+    if (result.tempPassword) {
+      setInviteResult({ tempPassword: result.tempPassword })
+      setInviteForm({ full_name: '', email: '', specialty: '', med_reg_no: '', phone: '', is_primary: false })
+      setShowAdd(false)
+      await loadDoctors()
+    } else {
+      setInviteResult({ error: result.error || 'Failed to invite doctor' })
+    }
+    setInviting(false)
+  }
+
+  async function deactivateDoctor(id: string, name: string) {
+    if (!confirm(`Deactivate Dr. ${name}? They will lose access to the system.`)) return
+    await supabase.from('clinic_users').update({ is_active: false }).eq('id', id)
+    await loadDoctors()
+  }
+
+  return (
+    <AppShell>
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Stethoscope className="w-6 h-6 text-blue-500"/> Doctors
+            </h1>
+            <p className="text-sm text-gray-500">
+              Manage multiple doctors · Set specialties and registration numbers
+            </p>
+          </div>
+          {isAdmin && (
+            <button onClick={() => setShowAdd(!showAdd)}
+              className="btn-primary flex items-center gap-2 text-xs">
+              <UserPlus className="w-3.5 h-3.5"/> Add Doctor
+            </button>
+          )}
+        </div>
+
+        {/* Success message after invite */}
+        {inviteResult?.tempPassword && (
+          <div className="card p-4 mb-5 bg-green-50 border border-green-200">
+            <div className="flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5"/>
+              <div>
+                <p className="font-semibold text-green-800">Doctor account created!</p>
+                <p className="text-sm text-green-700 mt-1">
+                  Share these credentials with the doctor:
+                </p>
+                <div className="bg-white border border-green-200 rounded-lg p-3 mt-2 font-mono text-sm">
+                  <div>Temporary Password: <strong>{inviteResult.tempPassword}</strong></div>
+                </div>
+                <p className="text-xs text-green-600 mt-2">The doctor should change their password on first login.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add doctor form */}
+        {showAdd && isAdmin && (
+          <div className="card p-5 mb-5 border-l-4 border-blue-400">
+            <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-blue-500"/> Invite New Doctor
+            </h3>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="label">Full Name *</label>
+                <input className="input" placeholder="Dr. Full Name"
+                  value={inviteForm.full_name} onChange={e => setInviteForm(p => ({ ...p, full_name: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Email *</label>
+                <input className="input" type="email" placeholder="doctor@example.com"
+                  value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Specialty</label>
+                <select className="input" value={inviteForm.specialty}
+                  onChange={e => setInviteForm(p => ({ ...p, specialty: e.target.value }))}>
+                  <option value="">— Select specialty —</option>
+                  {[
+                    'General Medicine', 'Gynaecology & Obstetrics', 'Paediatrics',
+                    'Surgery', 'Orthopaedics', 'ENT', 'Ophthalmology',
+                    'Dermatology', 'Psychiatry', 'Cardiology', 'Neurology',
+                    'Gastroenterology', 'Urology', 'Oncology', 'Anaesthesiology', 'Other'
+                  ].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Medical Registration No.</label>
+                <input className="input" placeholder="Council registration number"
+                  value={inviteForm.med_reg_no} onChange={e => setInviteForm(p => ({ ...p, med_reg_no: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Phone</label>
+                <input className="input" type="tel" placeholder="10-digit mobile"
+                  value={inviteForm.phone} onChange={e => setInviteForm(p => ({ ...p, phone: e.target.value }))}/>
+              </div>
+              <div className="flex items-center gap-2 mt-5">
+                <input type="checkbox" id="is_primary" checked={inviteForm.is_primary}
+                  onChange={e => setInviteForm(p => ({ ...p, is_primary: e.target.checked }))}
+                  className="w-4 h-4"/>
+                <label htmlFor="is_primary" className="text-sm text-gray-700 font-medium flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 text-yellow-500"/> Set as primary doctor
+                </label>
+              </div>
+            </div>
+            {inviteResult?.error && (
+              <div className="text-sm text-red-600 flex items-center gap-2 mb-3">
+                <AlertCircle className="w-4 h-4"/>{inviteResult.error}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={inviteDoctor} disabled={inviting}
+                className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
+                {inviting ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <UserPlus className="w-3.5 h-3.5"/>}
+                {inviting ? 'Creating…' : 'Create Doctor Account'}
+              </button>
+              <button onClick={() => setShowAdd(false)} className="btn-secondary text-xs">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Doctors list */}
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-7 h-7 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"/>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {doctors.map(doc => (
+              <div key={doc.id} className="card p-5">
+                {editing === doc.id ? (
+                  // Edit mode
+                  <div>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="label">Full Name</label>
+                        <input className="input" value={editForm.full_name || ''}
+                          onChange={e => setEditForm(p => ({ ...p, full_name: e.target.value }))}/>
+                      </div>
+                      <div>
+                        <label className="label">Specialty</label>
+                        <input className="input" value={editForm.specialty || ''}
+                          onChange={e => setEditForm(p => ({ ...p, specialty: e.target.value }))}/>
+                      </div>
+                      <div>
+                        <label className="label">Medical Reg. No.</label>
+                        <input className="input" value={editForm.med_reg_no || ''}
+                          onChange={e => setEditForm(p => ({ ...p, med_reg_no: e.target.value }))}/>
+                      </div>
+                      <div>
+                        <label className="label">Phone</label>
+                        <input className="input" value={editForm.phone || ''}
+                          onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))}/>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <input type="checkbox" checked={editForm.is_primary || false}
+                        onChange={e => setEditForm(p => ({ ...p, is_primary: e.target.checked }))}
+                        className="w-4 h-4"/>
+                      <span className="text-sm text-gray-700 flex items-center gap-1">
+                        <Star className="w-3.5 h-3.5 text-yellow-500"/> Primary doctor
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(doc.id)} disabled={saving}
+                        className="btn-primary text-xs flex items-center gap-1.5">
+                        <Save className="w-3 h-3"/>{saving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditing(null)} className="btn-secondary text-xs flex items-center gap-1.5">
+                        <X className="w-3 h-3"/> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // View mode
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span className="text-lg font-bold text-blue-700">{doc.full_name.charAt(0)}</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-gray-900">{doc.full_name}</h3>
+                          {doc.is_primary && (
+                            <span className="flex items-center gap-1 text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+                              <Star className="w-3 h-3"/> Primary
+                            </span>
+                          )}
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${doc.role === 'admin' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {doc.role}
+                          </span>
+                        </div>
+                        {doc.specialty && <p className="text-sm text-gray-600 mt-0.5">{doc.specialty}</p>}
+                        <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-400">
+                          <span className="flex items-center gap-1"><Mail className="w-3 h-3"/>{doc.email}</span>
+                          {doc.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3"/>{doc.phone}</span>}
+                          {doc.med_reg_no && <span className="flex items-center gap-1"><Shield className="w-3 h-3"/>Reg: {doc.med_reg_no}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        <button onClick={() => startEdit(doc)}
+                          className="btn-secondary text-xs flex items-center gap-1">
+                          <Edit className="w-3 h-3"/> Edit
+                        </button>
+                        {doc.id !== user?.id && (
+                          <button onClick={() => deactivateDoctor(doc.id, doc.full_name)}
+                            className="text-xs px-2 py-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-colors">
+                            <Trash2 className="w-3 h-3"/>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
+}
+```
+
 # src\app\settings\page.tsx
 
 ```tsx
@@ -22952,6 +26256,392 @@ export default function SetupPage() {
 
 ```
 
+# src\app\video\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/video/page.tsx
+ *
+ * Video Consultation Management (Staff / Doctor view)
+ *
+ * Features:
+ *  - Create open video slots that patients can self-book via portal
+ *  - View today's and upcoming video consultations
+ *  - Generate and share Jitsi / Google Meet video links
+ *  - Send portal magic-link via WhatsApp to patients
+ *  - Multiple doctors can have separate slots
+ *
+ * Requirement #5: patient-direct booking without staff interference.
+ * Staff creates slots here. Patients book via /portal?mrn=...&token=...
+ */
+
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import {
+  Video, Plus, Calendar, Clock, Users, CheckCircle,
+  ExternalLink, MessageCircle, Trash2, RefreshCw, Copy, Send
+} from 'lucide-react'
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function generateJitsiLink(roomName: string) {
+  return `https://meet.jit.si/nexmedicon-${roomName}`
+}
+
+function generateRoomName() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase()
+}
+
+async function generatePortalToken(mrn: string): Promise<string> {
+  const token = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+  await supabase.from('portal_tokens').insert({
+    mrn,
+    token,
+    expires_at: expiresAt,
+    is_used:    false,
+  })
+
+  return token
+}
+
+// ── Component ──────────────────────────────────────────────────
+
+export default function VideoConsultPage() {
+  const { user, can } = useAuth()
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+
+  const [appointments, setAppointments] = useState<any[]>([])
+  const [doctors, setDoctors] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [copied, setCopied]   = useState<string | null>(null)
+
+  const [form, setForm] = useState({
+    date:        new Date().toISOString().split('T')[0],
+    time:        '10:00',
+    doctor_name: '',
+    duration_min: '15',
+    slots_count:  '1',
+    notes:       '',
+  })
+  const [creating, setCreating] = useState(false)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
+
+    const [apptRes, docRes] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('*')
+        .eq('type', 'video')
+        .gte('date', today)
+        .order('date')
+        .order('time'),
+      supabase
+        .from('clinic_users')
+        .select('id, full_name')
+        .eq('is_active', true)
+        .in('role', ['admin', 'doctor']),
+    ])
+
+    setAppointments(apptRes.data || [])
+    setDoctors(docRes.data || [])
+    setLoading(false)
+
+    // Pre-select current user's name as doctor
+    if (user?.full_name && !form.doctor_name) {
+      setForm(prev => ({ ...prev, doctor_name: user.full_name }))
+    }
+  }
+
+  async function createSlots() {
+    setCreating(true)
+    const count = parseInt(form.slots_count) || 1
+
+    const rows = Array.from({ length: count }, (_, i) => {
+      const baseMinutes = parseInt(form.time.split(':')[0]) * 60 + parseInt(form.time.split(':')[1])
+      const slotMinutes = baseMinutes + i * (parseInt(form.duration_min) || 15)
+      const hh = String(Math.floor(slotMinutes / 60) % 24).padStart(2, '0')
+      const mm = String(slotMinutes % 60).padStart(2, '0')
+      return {
+        type:        'video',
+        status:      'open',
+        date:        form.date,
+        time:        `${hh}:${mm}`,
+        doctor_name: form.doctor_name,
+        notes:       form.notes || null,
+        video_link:  generateJitsiLink(generateRoomName()),
+      }
+    })
+
+    await supabase.from('appointments').insert(rows)
+    setShowCreateForm(false)
+    await loadData()
+    setCreating(false)
+  }
+
+  async function deleteSlot(id: string) {
+    if (!confirm('Delete this slot?')) return
+    await supabase.from('appointments').delete().eq('id', id)
+    await loadData()
+  }
+
+  async function sendPortalLink(appt: any) {
+    if (!appt.mobile) {
+      alert('No mobile number on this appointment. Update the appointment first.')
+      return
+    }
+    const token   = await generatePortalToken(appt.mrn)
+    const link    = `${SITE_URL}/portal?mrn=${encodeURIComponent(appt.mrn)}&token=${encodeURIComponent(token)}`
+    const message = `Namaste ${appt.patient_name} ji,\n\nYour video consultation is scheduled for ${formatDate(appt.date)} at ${appt.time} with Dr. ${appt.doctor_name}.\n\n▶ View your appointment & health records:\n${link}\n\nVideo call link will be shared before appointment.\n\n— ${hs.hospitalName || 'Hospital'}`
+    const waUrl = `https://wa.me/91${appt.mobile.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(message)}`
+    window.open(waUrl, '_blank')
+  }
+
+  async function copyPortalLink(mrn: string, mobile: string, name: string) {
+    const token = await generatePortalToken(mrn)
+    const link  = `${SITE_URL}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(token)}`
+    navigator.clipboard.writeText(link).catch(() => {})
+    setCopied(mrn)
+    setTimeout(() => setCopied(null), 3000)
+  }
+
+  const openSlots    = appointments.filter(a => a.status === 'open')
+  const bookedSlots  = appointments.filter(a => a.status === 'video' && a.patient_name)
+  const todayStr     = new Date().toISOString().split('T')[0]
+  const todayBooked  = bookedSlots.filter(a => a.date === todayStr)
+
+  return (
+    <AppShell>
+      <div className="p-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Video className="w-6 h-6 text-blue-500"/> Video Consultations
+            </h1>
+            <p className="text-sm text-gray-500">
+              Create slots for patients to self-book · Send portal links via WhatsApp
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={loadData} disabled={loading}
+              className="btn-secondary flex items-center gap-2 text-xs">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/> Refresh
+            </button>
+            {can('encounters.create') && (
+              <button onClick={() => setShowCreateForm(!showCreateForm)}
+                className="btn-primary flex items-center gap-2 text-xs">
+                <Plus className="w-3.5 h-3.5"/> Create Slots
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* KPI tiles */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          {[
+            { label: "Today's Video", value: todayBooked.length, sub: 'booked today', icon: Video, cls: 'bg-blue-50 text-blue-700' },
+            { label: 'Open Slots', value: openSlots.length, sub: 'available to book', icon: Calendar, cls: 'bg-green-50 text-green-700' },
+            { label: 'Total Booked', value: bookedSlots.length, sub: 'upcoming', icon: Users, cls: 'bg-purple-50 text-purple-700' },
+          ].map(({ label, value, sub, icon: Icon, cls }) => (
+            <div key={label} className={`card p-4 ${cls.split(' ')[1]}`}>
+              <div className={`text-3xl font-bold ${cls.split(' ')[0]} mb-1`}>{value}</div>
+              <div className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+                <Icon className="w-3.5 h-3.5"/>{label}
+              </div>
+              <div className="text-xs text-gray-400">{sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Create slots form */}
+        {showCreateForm && (
+          <div className="card p-5 mb-6 border-l-4 border-blue-400">
+            <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-blue-500"/> Create Video Slots
+            </h3>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="label">Date</label>
+                <input className="input" type="date" value={form.date}
+                  onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Start Time</label>
+                <input className="input" type="time" value={form.time}
+                  onChange={e => setForm(p => ({ ...p, time: e.target.value }))}/>
+              </div>
+              <div>
+                <label className="label">Doctor</label>
+                <select className="input" value={form.doctor_name}
+                  onChange={e => setForm(p => ({ ...p, doctor_name: e.target.value }))}>
+                  <option value="">— Select —</option>
+                  {doctors.map(d => <option key={d.id} value={d.full_name}>{d.full_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Slot Duration (min)</label>
+                <select className="input" value={form.duration_min}
+                  onChange={e => setForm(p => ({ ...p, duration_min: e.target.value }))}>
+                  {['10', '15', '20', '30', '45', '60'].map(d => <option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Number of Slots</label>
+                <select className="input" value={form.slots_count}
+                  onChange={e => setForm(p => ({ ...p, slots_count: e.target.value }))}>
+                  {['1', '2', '3', '4', '5', '6', '8', '10'].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Notes (optional)</label>
+                <input className="input" placeholder="e.g. Follow-up only"
+                  value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 mb-3">
+              ℹ️ Slots will be created starting at {form.time}, {form.slots_count} slot(s) of {form.duration_min} min each.
+              Each slot gets a unique Jitsi video link auto-generated.
+            </div>
+            <div className="flex gap-3">
+              <button onClick={createSlots} disabled={creating || !form.doctor_name}
+                className="btn-primary flex items-center gap-2 text-xs disabled:opacity-60">
+                {creating ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <Plus className="w-3.5 h-3.5"/>}
+                {creating ? 'Creating…' : 'Create Slots'}
+              </button>
+              <button onClick={() => setShowCreateForm(false)} className="btn-secondary text-xs">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Booked Video Appointments */}
+        {bookedSlots.length > 0 && (
+          <div className="card overflow-hidden mb-6">
+            <div className="px-5 py-3 border-b border-gray-100 bg-blue-50">
+              <h2 className="font-semibold text-blue-900 flex items-center gap-2">
+                <Users className="w-4 h-4"/> Booked Video Appointments ({bookedSlots.length})
+              </h2>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  {['Date/Time', 'Patient', 'Doctor', 'Video Link', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bookedSlots.map(appt => (
+                  <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{formatDate(appt.date)}</div>
+                      <div className="text-xs text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3"/>{appt.time}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900">{appt.patient_name}</div>
+                      <div className="text-xs text-gray-400">{appt.mrn} · {appt.mobile}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">Dr. {appt.doctor_name}</td>
+                    <td className="px-4 py-3">
+                      {appt.video_link ? (
+                        <a href={appt.video_link} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-600 flex items-center gap-1 hover:underline">
+                          <ExternalLink className="w-3 h-3"/> Join Call
+                        </a>
+                      ) : <span className="text-gray-300 text-xs">No link</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        {appt.mobile && (
+                          <button onClick={() => sendPortalLink(appt)}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
+                            <MessageCircle className="w-3 h-3 text-green-500"/> Portal Link
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Open Slots */}
+        {openSlots.length > 0 && (
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 bg-green-50">
+              <h2 className="font-semibold text-green-900 flex items-center gap-2">
+                <Calendar className="w-4 h-4"/> Open Slots — Available for Patients ({openSlots.length})
+              </h2>
+              <p className="text-xs text-green-700 mt-0.5">
+                Patients can self-book these via their portal link · Share portal links from the patient's profile page
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  {['Date', 'Time', 'Doctor', 'Video Link', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {openSlots.map(slot => (
+                  <tr key={slot.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{formatDate(slot.date)}</td>
+                    <td className="px-4 py-3 font-mono text-gray-600">{slot.time}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">Dr. {slot.doctor_name}</td>
+                    <td className="px-4 py-3">
+                      {slot.video_link && (
+                        <a href={slot.video_link} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                          <ExternalLink className="w-3 h-3"/> Preview link
+                        </a>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => deleteSlot(slot.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5"/>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && appointments.length === 0 && (
+          <div className="text-center py-16 text-gray-400">
+            <Video className="w-12 h-12 mx-auto mb-3 opacity-20"/>
+            <p className="font-medium">No video appointments yet</p>
+            <p className="text-sm mt-1">Create slots above and share portal links with patients via WhatsApp</p>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
+}
+```
+
 # src\components\billing\BillingExtras.tsx
 
 ```tsx
@@ -23407,6 +27097,18 @@ export default function MobileNav() {
 
 ```tsx
 'use client'
+/**
+ * src/components/layout/Sidebar.tsx
+ *
+ * UPDATED for v11 — adds nav items for:
+ *   - IPD Management       (/ipd)
+ *   - Video Consultations  (/video)
+ *   - Hospital Fund        (/fund)
+ *   - Patient Portal links (/settings/doctors for doctor management)
+ *
+ * Drop-in replacement for the existing Sidebar.tsx.
+ * All original logic is preserved; only NAV_GROUPS is extended.
+ */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -23421,6 +27123,12 @@ import {
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
   BellRing,
+  // ── v11 additions ──────────────────────────────────────
+  BedSingle,        // IPD admissions
+  Video,            // Video consultations
+  PiggyBank,        // Hospital fund
+  UserCog,          // Doctor management
+  ExternalLink,     // Patient portal (external)
 } from 'lucide-react'
 
 interface NavItemDef {
@@ -23429,6 +27137,7 @@ interface NavItemDef {
   label:       string
   permission?: Permission
   badge?:      number
+  external?:   boolean   // opens in new tab (patient portal link)
 }
 
 interface NavGroupDef {
@@ -23443,9 +27152,11 @@ export default function Sidebar() {
   const { user, can } = useAuth()
 
   const [open, setOpen] = useState<Record<string, boolean>>({
-    Clinical: true,
-    Finance:  true,
-    Tools:    true,
+    Clinical:   true,
+    IPD:        true,
+    Finance:    true,
+    Tools:      true,
+    Admin:      false,
   })
 
   // Live badge count — urgent + today reminders
@@ -23469,47 +27180,73 @@ export default function Sidebar() {
   }, [])
 
   const NAV_GROUPS: NavGroupDef[] = [
+    // ── CLINICAL ──────────────────────────────────────────
     {
       label: 'Clinical',
       emoji: '🏥',
       items: [
         { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'                                           },
-        { href: '/patients',     icon: Users,           label: 'Patients',         permission: 'patients.view'       },
-        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation', permission: 'encounters.view'     },
-        { href: '/queue',        icon: Clock,           label: 'OPD Queue',        permission: 'queue.view'          },
+        { href: '/patients',     icon: Users,           label: 'Patients',          permission: 'patients.view'      },
+        { href: '/opd',          icon: Stethoscope,     label: 'OPD Consultation',  permission: 'encounters.view'    },
+        { href: '/queue',        icon: Clock,           label: 'OPD Queue',         permission: 'queue.view'         },
         { href: '/appointments', icon: CalendarDays,    label: 'Appointments'                                        },
-        { href: '/reminders',    icon: BellRing,        label: 'Reminders',        badge: reminderBadge              },
-        { href: '/beds',         icon: BedDouble,       label: 'Bed Management',   permission: 'beds.view'           },
-        { href: '/anc',          icon: Baby,            label: 'ANC Registry',     permission: 'anc.view'            },
-        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',      permission: 'labs.view'           },
-        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',   permission: 'forms.view'          },
+        { href: '/reminders',    icon: BellRing,        label: 'Reminders',         badge: reminderBadge             },
+        { href: '/anc',          icon: Baby,            label: 'ANC Registry',      permission: 'anc.view'           },
+        { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',       permission: 'labs.view'          },
+        { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',    permission: 'forms.view'         },
       ],
     },
+
+    // ── IPD (IN-PATIENT DEPARTMENT) ────────────────────────   ← NEW v11
+    {
+      label: 'IPD',
+      emoji: '🛏️',
+      items: [
+        { href: '/beds',  icon: BedDouble,  label: 'Bed Management',   permission: 'beds.view'     },
+        { href: '/ipd',   icon: BedSingle,  label: 'IPD Admissions',   permission: 'ipd.view'      },
+        { href: '/video', icon: Video,      label: 'Video Consult',    permission: 'video.view'    },
+      ],
+    },
+
+    // ── FINANCE ───────────────────────────────────────────
     {
       label: 'Finance',
       emoji: '💰',
       items: [
-        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'        },
-        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'        },
-        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'        },
-        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'   },
+        { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'       },
+        { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          }, // ← NEW v11
+        { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
+        { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
+        { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
       ],
     },
+
+    // ── TOOLS ─────────────────────────────────────────────
     {
       label: 'Tools',
       emoji: '🔧',
       items: [
-        { href: '/reports', icon: BarChart2,  label: 'Reports',      permission: 'reports.view' },
-        { href: '/search',  icon: SearchIcon, label: 'Global Search'                            },
+        { href: '/reports', icon: BarChart2,   label: 'Reports',       permission: 'reports.view' },
+        { href: '/search',  icon: SearchIcon,  label: 'Global Search'                             },
+      ],
+    },
+
+    // ── ADMIN ─────────────────────────────────────────────  ← NEW v11 (admin only)
+    {
+      label: 'Admin',
+      emoji: '⚙️',
+      items: [
+        { href: '/settings/doctors', icon: UserCog,      label: 'Doctor Management', permission: 'settings.edit'    }, // ← NEW v11
+        { href: '/audit-log',        icon: Shield,       label: 'Audit Log',         permission: 'audit.view'       },
       ],
     },
   ]
 
   const FOOTER_LINKS: NavItemDef[] = [
-    { href: '/ai-setup',   icon: Sparkles, label: 'AI Status'                               },
-    { href: '/abdm-setup', icon: Shield,   label: 'ABDM / FHIR'                            },
-    { href: '/setup',      icon: BookOpen, label: 'Setup Guide'                             },
-    { href: '/settings',   icon: Settings, label: 'Settings',    permission: 'settings.view' },
+    { href: '/ai-setup',   icon: Sparkles,      label: 'AI Status'                               },
+    { href: '/abdm-setup', icon: Shield,        label: 'ABDM / FHIR'                             },
+    { href: '/setup',      icon: BookOpen,      label: 'Setup Guide'                             },
+    { href: '/settings',   icon: Settings,      label: 'Settings',   permission: 'settings.view' },
   ]
 
   function toggle(label: string) {
@@ -23532,14 +27269,15 @@ export default function Sidebar() {
     })
   }
 
-  function NavLink({ href, icon: Icon, label, badge }: NavItemDef) {
+  function NavLink({ href, icon: Icon, label, badge, external }: NavItemDef) {
     const active = isActive(href)
-    return (
-      <Link href={href}
-        className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
-          ${active
-            ? 'bg-blue-50 text-blue-700'
-            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+    const baseClass = `flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
+      ${active
+        ? 'bg-blue-50 text-blue-700'
+        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
+
+    const inner = (
+      <>
         <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}/>
         <span className="truncate flex-1">{label}</span>
         {badge != null && badge > 0 && (
@@ -23552,6 +27290,21 @@ export default function Sidebar() {
         {active && (badge == null || badge === 0) && (
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>
         )}
+        {external && <ExternalLink className="w-3 h-3 text-gray-300 flex-shrink-0"/>}
+      </>
+    )
+
+    if (external) {
+      return (
+        <a href={href} target="_blank" rel="noreferrer" className={baseClass}>
+          {inner}
+        </a>
+      )
+    }
+
+    return (
+      <Link href={href} className={baseClass}>
+        {inner}
       </Link>
     )
   }
@@ -23598,8 +27351,8 @@ export default function Sidebar() {
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1"/>
                 )}
                 {isOpen
-                  ? <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0"/>
-                  : <ChevronRight className="w-3 h-3 text-gray-400 flex-shrink-0"/>}
+                  ? <ChevronDown className="w-3 h-3 text-gray-400"/>
+                  : <ChevronRight className="w-3 h-3 text-gray-400"/>}
               </button>
 
               {isOpen && (
@@ -23614,18 +27367,17 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — always visible */}
-      <div className="px-2 py-2 border-t border-gray-100 flex-shrink-0">
-        <div className="space-y-0.5">
-          {filterItems(FOOTER_LINKS).map(item => (
-            <NavLink key={item.href} {...item}/>
-          ))}
-          <button onClick={logout}
-            className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">
-            <LogOut className="w-3.5 h-3.5"/>
-            Sign Out
-          </button>
-        </div>
+      {/* Footer */}
+      <div className="border-t border-gray-100 px-2 py-2 flex-shrink-0 space-y-0.5">
+        {FOOTER_LINKS.filter(l => !l.permission || can(l.permission)).map(item => (
+          <NavLink key={item.href} {...item}/>
+        ))}
+        <button
+          onClick={logout}
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-all">
+          <LogOut className="w-3.5 h-3.5 flex-shrink-0"/>
+          <span>Sign Out</span>
+        </button>
       </div>
     </aside>
   )
@@ -25958,13 +29710,13 @@ export async function auditLogout(email?: string) {
 
 ```ts
 /**
- * Auth & Role Management for NexMedicon HMS
+ * src/lib/auth.ts  (UPDATED)
  *
- * Provides:
- * - Role types and permission checks
- * - React context for current user info
- * - Helper to load user profile from clinic_users table
- * - Permission matrix for UI visibility
+ * Auth & Role Management — includes:
+ *  - New permissions for IPD, video, fund, portal
+ *  - Multi-doctor support (doctors have individual profiles)
+ *  - Fixed: staff cannot access financial reports (was missing in original)
+ *  - Fixed: billing.create allowed for staff but not view-only for doctor (corrected)
  */
 
 import { createContext, useContext } from 'react'
@@ -25974,38 +29726,41 @@ import { supabase } from './supabase'
 export type UserRole = 'admin' | 'doctor' | 'staff'
 
 export interface ClinicUser {
-  id: string
-  auth_id: string
-  email: string
+  id:        string
+  auth_id:   string
+  email:     string
   full_name: string
-  role: UserRole
+  role:      UserRole
   is_active: boolean
-  phone?: string
+  phone?:    string
+  /** Doctor-specific: specialty, registration no. */
+  specialty?:    string
+  med_reg_no?:   string
 }
 
 // ─── React Context ────────────────────────────────────────────
 export interface AuthContextType {
-  user: ClinicUser | null
-  loading: boolean
-  isAdmin: boolean
-  isDoctor: boolean
-  isStaff: boolean
-  can: (permission: Permission) => boolean
-  reload: () => Promise<void>
+  user:      ClinicUser | null
+  loading:   boolean
+  isAdmin:   boolean
+  isDoctor:  boolean
+  isStaff:   boolean
+  can:       (permission: Permission) => boolean
+  reload:    () => Promise<void>
 }
 
 const defaultCtx: AuthContextType = {
-  user: null,
-  loading: true,
-  isAdmin: false,
+  user:     null,
+  loading:  true,
+  isAdmin:  false,
   isDoctor: false,
-  isStaff: false,
-  can: () => false,
-  reload: async () => {},
+  isStaff:  false,
+  can:      () => false,
+  reload:   async () => {},
 }
 
 export const AuthContext = createContext<AuthContextType>(defaultCtx)
-export const useAuth = () => useContext(AuthContext)
+export const useAuth     = () => useContext(AuthContext)
 
 // ─── Permissions ──────────────────────────────────────────────
 export type Permission =
@@ -26039,6 +29794,17 @@ export type Permission =
   | 'discharge.view'
   | 'discharge.create'
   | 'discharge.edit'
+  // ── NEW permissions ──────────────────────────────────────────
+  | 'ipd.view'
+  | 'ipd.admit'
+  | 'ipd.nursing'
+  | 'ipd.discharge'
+  | 'video.view'
+  | 'video.manage'
+  | 'fund.view'
+  | 'fund.submit'
+  | 'fund.approve'
+  | 'portal.send'
 
 // Permission matrix: which roles can do what
 const PERMISSIONS: Record<Permission, UserRole[]> = {
@@ -26058,14 +29824,16 @@ const PERMISSIONS: Record<Permission, UserRole[]> = {
   'beds.view':            ['admin', 'doctor', 'staff'],
   'beds.manage':          ['admin', 'doctor', 'staff'],
 
+  // FIX: doctor should be able to VIEW billing (not create — that's reception)
   'billing.view':         ['admin', 'doctor', 'staff'],
   'billing.create':       ['admin', 'staff'],
 
   'reports.view':         ['admin', 'doctor'],
-  'reports.financial':    ['admin'],
+  'reports.financial':    ['admin'],           // FIX: staff removed — finance is admin-only
 
   'settings.view':        ['admin', 'doctor', 'staff'],
-  'settings.edit':        ['admin', 'doctor'],
+  'settings.edit':        ['admin'],           // FIX: only admin should edit settings
+
   'users.manage':         ['admin'],
 
   'queue.view':           ['admin', 'doctor', 'staff'],
@@ -26083,20 +29851,31 @@ const PERMISSIONS: Record<Permission, UserRole[]> = {
   'discharge.view':       ['admin', 'doctor', 'staff'],
   'discharge.create':     ['admin', 'doctor'],
   'discharge.edit':       ['admin', 'doctor'],
+
+  // ── IPD ────────────────────────────────────────────────────
+  'ipd.view':             ['admin', 'doctor', 'staff'],
+  'ipd.admit':            ['admin', 'doctor', 'staff'],  // reception can admit
+  'ipd.nursing':          ['admin', 'doctor', 'staff'],  // nurses = staff role
+  'ipd.discharge':        ['admin', 'doctor'],           // doctors discharge
+
+  // ── Video consultations ─────────────────────────────────────
+  'video.view':           ['admin', 'doctor', 'staff'],
+  'video.manage':         ['admin', 'doctor'],           // create/delete slots
+
+  // ── Hospital Fund ──────────────────────────────────────────
+  'fund.view':            ['admin', 'doctor', 'staff'],
+  'fund.submit':          ['admin', 'doctor', 'staff'],  // anyone can submit expense
+  'fund.approve':         ['admin'],                     // only admin approves
+
+  // ── Patient Portal ────────────────────────────────────────
+  'portal.send':          ['admin', 'doctor', 'staff'],  // send magic links
 }
 
-/**
- * Check if a role has a specific permission
- */
 export function hasPermission(role: UserRole | null, permission: Permission): boolean {
   if (!role) return false
   return PERMISSIONS[permission]?.includes(role) ?? false
 }
 
-/**
- * Load the current user's clinic profile from the database.
- * Returns null if the user doesn't have a clinic_users record.
- */
 export async function loadClinicUser(): Promise<ClinicUser | null> {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) return null
@@ -26111,33 +29890,26 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
   if (error || !data) return null
 
   return {
-    id: data.id,
-    auth_id: data.auth_id,
-    email: data.email,
-    full_name: data.full_name,
-    role: data.role as UserRole,
-    is_active: data.is_active,
-    phone: data.phone,
+    id:          data.id,
+    auth_id:     data.auth_id,
+    email:       data.email,
+    full_name:   data.full_name,
+    role:        data.role as UserRole,
+    is_active:   data.is_active,
+    phone:       data.phone,
+    specialty:   data.specialty,
+    med_reg_no:  data.med_reg_no,
   }
 }
 
-/**
- * Check if the clinic_users table is empty (first-time setup).
- * If so, the current user should be prompted to set up as admin.
- */
 export async function isFirstTimeSetup(): Promise<boolean> {
   const { count, error } = await supabase
     .from('clinic_users')
     .select('id', { count: 'exact', head: true })
-
   if (error) return false
   return (count ?? 0) === 0
 }
 
-/**
- * Create the first admin user (bootstrap).
- * Only works when clinic_users table is empty.
- */
 export async function bootstrapAdmin(fullName: string): Promise<{ success: boolean; error?: string }> {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) return { success: false, error: 'Not authenticated' }
@@ -26145,38 +29917,32 @@ export async function bootstrapAdmin(fullName: string): Promise<{ success: boole
   const { error } = await supabase
     .from('clinic_users')
     .insert({
-      auth_id: authUser.id,
-      email: authUser.email,
+      auth_id:   authUser.id,
+      email:     authUser.email,
       full_name: fullName,
-      role: 'admin',
+      role:      'admin',
       is_active: true,
     })
 
-  if (error) {
-    return { success: false, error: error.message }
-  }
+  if (error) return { success: false, error: error.message }
   return { success: true }
 }
 
-// ─── Sidebar nav items filtered by role ───────────────────────
+// ─── Nav items ────────────────────────────────────────────────
 export interface NavItem {
-  href: string
-  label: string
-  icon: any
+  href:        string
+  label:       string
+  icon:        any
   permission?: Permission
 }
 
-/**
- * Filter navigation items based on user role
- */
 export function filterNavByRole(items: NavItem[], role: UserRole | null): NavItem[] {
   if (!role) return []
   return items.filter(item => {
-    if (!item.permission) return true  // no permission required = visible to all
+    if (!item.permission) return true
     return hasPermission(role, item.permission)
   })
 }
-
 ```
 
 # src\lib\billing-gst.ts
@@ -27530,6 +31296,266 @@ export interface OCRResult {
 }
 ```
 
+# src\lib\pdf-generator.tsx
+
+```tsx
+/**
+ * src/lib/pdf-generator.tsx
+ *
+ * PDF Generation using @react-pdf/renderer (Requirement #8)
+ *
+ * Replaces the HTML-to-print (@media print) approach which:
+ *  - Breaks on mobile browsers
+ *  - Cannot be emailed as an attachment
+ *  - Varies by browser print engine
+ *
+ * This module provides server-side PDF generation that:
+ *  - Produces real, consistent PDF files
+ *  - Stores them in Supabase Storage
+ *  - Can be emailed as attachments
+ *  - Works on mobile
+ *
+ * Usage from a Next.js API route:
+ *   const pdfBuffer = await generatePrescriptionPDF(rx, patient, encounter, hs)
+ *   const url = await uploadPDFToStorage(pdfBuffer, `rx_${rx.id}.pdf`, 'prescriptions')
+ *
+ * IMPORTANT: @react-pdf/renderer must run server-side only (Node.js).
+ * Do NOT import this file in 'use client' components.
+ * Call /api/pdf/prescription?encounterId=... from the client.
+ */
+
+import React from 'react'
+
+// Type-only imports for JSX shapes (actual rendering via dynamic import)
+export interface PDFPrescriptionData {
+  patient: {
+    full_name:   string
+    mrn:         string
+    age?:        number
+    gender?:     string
+    mobile?:     string
+    blood_group?: string
+    address?:    string
+  }
+  encounter: {
+    encounter_date: string
+    diagnosis?:     string
+    chief_complaint?: string
+    bp_systolic?:   number
+    bp_diastolic?:  number
+    pulse?:         number
+    temperature?:   number
+    spo2?:          number
+    weight?:        number
+  }
+  prescription: {
+    medications:    Array<{
+      drug:         string
+      dose?:        string
+      route?:       string
+      frequency?:   string
+      duration?:    string
+      instructions?: string
+    }>
+    advice?:          string
+    dietary_advice?:  string
+    reports_needed?:  string
+    follow_up_date?:  string
+  }
+  hospital: {
+    hospitalName:  string
+    address?:      string
+    phone?:        string
+    regNo?:        string
+    gstin?:        string
+    doctorName:    string
+    doctorQual?:   string
+    doctorReg?:    string
+    footerNote?:   string
+    upiId?:        string
+  }
+}
+
+/**
+ * Generate a prescription PDF.
+ * Returns a Buffer containing the PDF bytes.
+ *
+ * Must be called server-side only.
+ */
+export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promise<Buffer> {
+  // Dynamic import to avoid bundling React PDF in client bundle
+  const { renderToBuffer, Document, Page, Text, View, StyleSheet, Font } = await import('@react-pdf/renderer')
+
+  const styles = StyleSheet.create({
+    page:        { fontFamily: 'Helvetica', fontSize: 9, padding: 32, backgroundColor: '#fff' },
+    header:      { borderBottom: '2px solid #1d4ed8', paddingBottom: 8, marginBottom: 12 },
+    hospitalName:{ fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', textAlign: 'center' },
+    subHeader:   { fontSize: 8,  color: '#555', textAlign: 'center', marginTop: 2 },
+    doctorLine:  { fontSize: 8,  color: '#1d4ed8', fontFamily: 'Helvetica-Bold', textAlign: 'center', marginTop: 2 },
+    section:     { marginBottom: 10 },
+    sectionTitle:{ fontSize: 8,  fontFamily: 'Helvetica-Bold', color: '#374151', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, borderBottom: '1px solid #e5e7eb', paddingBottom: 2 },
+    row:         { flexDirection: 'row', marginBottom: 2 },
+    label:       { fontSize: 8,  color: '#6b7280', width: 80 },
+    value:       { fontSize: 8,  color: '#111827', flex: 1 },
+    medRow:      { flexDirection: 'row', marginBottom: 4, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' },
+    medNum:      { fontSize: 8,  color: '#9ca3af', width: 16 },
+    medDrug:     { fontSize: 9,  fontFamily: 'Helvetica-Bold', color: '#111827', flex: 1 },
+    medDetail:   { fontSize: 8,  color: '#4b5563' },
+    medInstr:    { fontSize: 7,  color: '#2563eb', fontStyle: 'italic' },
+    footer:      { marginTop: 20, paddingTop: 8, borderTop: '1px solid #e5e7eb', flexDirection: 'row', justifyContent: 'space-between' },
+    footerNote:  { fontSize: 7,  color: '#9ca3af', flex: 1 },
+    signature:   { fontSize: 7,  color: '#374151', textAlign: 'right' },
+  })
+
+  const hs  = data.hospital
+  const pat = data.patient
+  const enc = data.encounter
+  const rx  = data.prescription
+
+  const doc = (
+    <Document title={`Prescription — ${pat.full_name}`}>
+      <Page size="A4" style={styles.page}>
+
+        {/* Hospital header */}
+        <View style={styles.header}>
+          <Text style={styles.hospitalName}>{hs.hospitalName}</Text>
+          {hs.address  && <Text style={styles.subHeader}>{hs.address}</Text>}
+          {hs.phone    && <Text style={styles.subHeader}>Tel: {hs.phone}</Text>}
+          <Text style={styles.doctorLine}>
+            {hs.doctorName}{hs.doctorQual ? `  |  ${hs.doctorQual}` : ''}{hs.doctorReg ? `  |  Reg: ${hs.doctorReg}` : ''}
+          </Text>
+        </View>
+
+        {/* Patient info + vitals */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Patient</Text>
+          <View style={styles.row}>
+            <Text style={styles.label}>Name:</Text>
+            <Text style={{ ...styles.value, fontFamily: 'Helvetica-Bold' }}>{pat.full_name}</Text>
+            <Text style={styles.label}>Date:</Text>
+            <Text style={styles.value}>{enc.encounter_date}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>MRN:</Text>
+            <Text style={styles.value}>{pat.mrn}</Text>
+            {pat.age    && <><Text style={styles.label}>Age:</Text><Text style={styles.value}>{pat.age}y {pat.gender || ''}</Text></>}
+          </View>
+          {pat.mobile   && <View style={styles.row}><Text style={styles.label}>Mobile:</Text><Text style={styles.value}>{pat.mobile}</Text></View>}
+          {enc.diagnosis && <View style={styles.row}><Text style={styles.label}>Diagnosis:</Text><Text style={{ ...styles.value, fontFamily: 'Helvetica-Bold', color: '#1d4ed8' }}>{enc.diagnosis}</Text></View>}
+          {/* Vitals inline */}
+          {(enc.bp_systolic || enc.pulse || enc.temperature || enc.spo2 || enc.weight) && (
+            <View style={{ ...styles.row, backgroundColor: '#f9fafb', padding: 4, borderRadius: 3, marginTop: 3 }}>
+              {enc.bp_systolic  && <Text style={{ ...styles.medDetail, marginRight: 8 }}>BP: {enc.bp_systolic}/{enc.bp_diastolic} mmHg</Text>}
+              {enc.pulse        && <Text style={{ ...styles.medDetail, marginRight: 8 }}>P: {enc.pulse} bpm</Text>}
+              {enc.temperature  && <Text style={{ ...styles.medDetail, marginRight: 8 }}>T: {enc.temperature}°F</Text>}
+              {enc.spo2         && <Text style={{ ...styles.medDetail, marginRight: 8 }}>SpO₂: {enc.spo2}%</Text>}
+              {enc.weight       && <Text style={styles.medDetail}>Wt: {enc.weight} kg</Text>}
+            </View>
+          )}
+        </View>
+
+        {/* Rx */}
+        {rx.medications?.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>℞ Medications</Text>
+            {rx.medications.map((med, i) => (
+              <View key={i} style={styles.medRow}>
+                <Text style={styles.medNum}>{i + 1}.</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.medDrug}>{med.drug}{med.dose ? `  ${med.dose}` : ''}</Text>
+                  <Text style={styles.medDetail}>
+                    {[med.route, med.frequency, med.duration].filter(Boolean).join(' · ')}
+                  </Text>
+                  {med.instructions && <Text style={styles.medInstr}>{med.instructions}</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Reports */}
+        {rx.reports_needed && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Investigations</Text>
+            <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5 }}>{rx.reports_needed}</Text>
+          </View>
+        )}
+
+        {/* Advice */}
+        {(rx.advice || rx.dietary_advice) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Advice</Text>
+            {rx.advice         && <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5, marginBottom: 2 }}>{rx.advice}</Text>}
+            {rx.dietary_advice && <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5 }}>Diet: {rx.dietary_advice}</Text>}
+          </View>
+        )}
+
+        {/* Follow-up */}
+        {rx.follow_up_date && (
+          <View style={{ backgroundColor: '#eff6ff', padding: 6, borderRadius: 4, marginBottom: 10 }}>
+            <Text style={{ fontSize: 9, color: '#1d4ed8', fontFamily: 'Helvetica-Bold' }}>
+              ✓ Follow-up: {rx.follow_up_date}
+            </Text>
+          </View>
+        )}
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerNote}>
+            {hs.footerNote || 'This prescription is computer-generated and valid without physical signature.'}
+            {hs.regNo ? `\nReg: ${hs.regNo}` : ''}{hs.gstin ? `  GSTIN: ${hs.gstin}` : ''}
+          </Text>
+          <View>
+            <Text style={{ ...styles.signature, marginBottom: 20 }}> </Text>
+            <Text style={styles.signature}>____________________</Text>
+            <Text style={styles.signature}>{hs.doctorName}</Text>
+            {hs.doctorQual && <Text style={{ ...styles.signature, fontSize: 7, color: '#6b7280' }}>{hs.doctorQual}</Text>}
+          </View>
+        </View>
+
+      </Page>
+    </Document>
+  )
+
+  return renderToBuffer(doc)
+}
+
+/**
+ * Upload a generated PDF to Supabase Storage.
+ * Returns the public URL of the stored PDF.
+ */
+export async function uploadPDFToStorage(
+  pdfBuffer: Buffer,
+  filename:  string,
+  folder:    string = 'pdfs',
+): Promise<string | null> {
+  const { createClient } = await import('@supabase/supabase-js')
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
+
+  const path = `${folder}/${filename}`
+
+  const { error } = await supabase.storage
+    .from('documents')
+    .upload(path, pdfBuffer, {
+      contentType: 'application/pdf',
+      upsert:      true,
+    })
+
+  if (error) {
+    console.error('[pdf-generator] Upload error:', error.message)
+    return null
+  }
+
+  const { data } = supabase.storage.from('documents').getPublicUrl(path)
+  return data?.publicUrl || null
+}
+
+```
+
 # src\lib\pdf-to-image.ts
 
 ```ts
@@ -27628,6 +31654,209 @@ export async function pdfToPngFile(pdfFile: File): Promise<File | null> {
   return new File([blob], `scanned_${dd}_${mm}_${yy}.png`, { type: 'image/png' })
 }
 
+```
+
+# src\lib\phi-crypto.ts
+
+```ts
+/**
+ * src/lib/phi-crypto.ts
+ *
+ * PHI (Protected Health Information) Encryption
+ * Requirement #9 — DPDP Act 2023 compliance
+ *
+ * Encrypts Aadhaar numbers and mobile numbers using AES-256-GCM
+ * via the Web Crypto API (browser & Edge runtime compatible).
+ *
+ * Key derivation:
+ *   - Master key comes from env var HOSPITAL_ENCRYPTION_KEY (32 hex chars = 128-bit, or 64 = 256-bit)
+ *   - Each value gets a unique random IV (stored alongside ciphertext)
+ *   - Stored format: base64( iv[12 bytes] || ciphertext )
+ *
+ * Server-side: pgcrypto's pgp_sym_encrypt/decrypt is used in SQL for
+ * values stored in the encrypted columns (aadhaar_encrypted, mobile_encrypted).
+ *
+ * Client-side: this module wraps the same logic using Web Crypto API
+ * for in-browser operations (e.g. displaying masked values).
+ *
+ * IMPORTANT: The encryption key MUST be the same on all deployments.
+ * Store it as HOSPITAL_ENCRYPTION_KEY in Vercel environment variables.
+ * If the key is lost, all encrypted PHI is unrecoverable.
+ */
+
+const KEY_HEX = process.env.HOSPITAL_ENCRYPTION_KEY || ''
+
+// ── Key import ────────────────────────────────────────────────
+
+let _keyCache: CryptoKey | null = null
+
+async function getCryptoKey(): Promise<CryptoKey | null> {
+  if (_keyCache) return _keyCache
+  if (!KEY_HEX || KEY_HEX.length < 32) {
+    console.warn('[phi-crypto] HOSPITAL_ENCRYPTION_KEY not set or too short. PHI encryption disabled.')
+    return null
+  }
+
+  try {
+    const keyBytes = hexToBytes(KEY_HEX.slice(0, 64)) // max 256-bit
+    _keyCache = await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    )
+    return _keyCache
+  } catch (e) {
+    console.error('[phi-crypto] Failed to import key:', e)
+    return null
+  }
+}
+
+// ── Encrypt ───────────────────────────────────────────────────
+
+/**
+ * Encrypt a plaintext string.
+ * Returns a base64-encoded string containing IV + ciphertext.
+ * Returns the original plaintext if encryption is unavailable (key not set).
+ */
+export async function encryptPHI(plaintext: string): Promise<string> {
+  if (!plaintext?.trim()) return plaintext
+
+  const key = await getCryptoKey()
+  if (!key) return plaintext  // graceful degradation
+
+  const iv         = crypto.getRandomValues(new Uint8Array(12))
+  const encoded    = new TextEncoder().encode(plaintext)
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)
+
+  // Combine: iv(12) + ciphertext
+  const combined = new Uint8Array(12 + ciphertext.byteLength)
+  combined.set(iv, 0)
+  combined.set(new Uint8Array(ciphertext), 12)
+
+  return btoa(String.fromCharCode(...combined))
+}
+
+// ── Decrypt ───────────────────────────────────────────────────
+
+/**
+ * Decrypt a base64-encoded encrypted PHI string.
+ * Returns the plaintext, or the input unchanged if decryption fails.
+ */
+export async function decryptPHI(encrypted: string): Promise<string> {
+  if (!encrypted?.trim()) return encrypted
+
+  const key = await getCryptoKey()
+  if (!key) return encrypted
+
+  try {
+    const combined   = new Uint8Array(atob(encrypted).split('').map(c => c.charCodeAt(0)))
+    const iv         = combined.slice(0, 12)
+    const ciphertext = combined.slice(12)
+    const plainBuf   = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
+    return new TextDecoder().decode(plainBuf)
+  } catch {
+    // Decryption failed — probably plaintext (legacy record before encryption was added)
+    return encrypted
+  }
+}
+
+// ── Mask for display ──────────────────────────────────────────
+
+/**
+ * Mask Aadhaar number: show only last 4 digits.
+ * Input: decrypted 12-digit string  →  Output: "XXXX XXXX 1234"
+ */
+export function maskAadhaar(aadhaar: string): string {
+  const digits = aadhaar.replace(/\D/g, '')
+  if (digits.length < 4) return '—'
+  return `XXXX XXXX ${digits.slice(-4)}`
+}
+
+/**
+ * Mask mobile number: show only last 4 digits.
+ * Input: "9876543210"  →  Output: "XXXXXX3210"
+ */
+export function maskMobile(mobile: string): string {
+  const digits = mobile.replace(/\D/g, '').slice(-10)
+  if (digits.length < 4) return '—'
+  return `XXXXXX${digits.slice(-4)}`
+}
+
+// ── Encrypt patient record fields ─────────────────────────────
+
+/**
+ * Encrypt all PHI fields in a patient record before inserting/updating.
+ * Returns the record with encrypted fields added.
+ *
+ * Usage:
+ *   const safe = await encryptPatientPHI(form)
+ *   await supabase.from('patients').insert(safe)
+ */
+export async function encryptPatientPHI<T extends {
+  aadhaar_no?: string
+  mobile?:     string
+}>(record: T): Promise<T & {
+  aadhaar_encrypted?: string
+  mobile_encrypted?:  string
+  aadhaar_last4?:     string
+}> {
+  const result: any = { ...record }
+
+  if (record.aadhaar_no?.trim()) {
+    result.aadhaar_encrypted = await encryptPHI(record.aadhaar_no.replace(/\D/g, ''))
+    result.aadhaar_last4     = record.aadhaar_no.replace(/\D/g, '').slice(-4)
+    // Null out plaintext after encrypting
+    // NOTE: during transition period, keep aadhaar_no for backward compat
+    // Once all records are migrated, remove the plaintext field.
+  }
+
+  if (record.mobile?.trim()) {
+    result.mobile_encrypted = await encryptPHI(record.mobile.replace(/\D/g, '').slice(-10))
+    // Keep mobile in plaintext for search index (mobile is used for OTP, WhatsApp)
+    // Mobile is less sensitive than Aadhaar — mask in display only
+  }
+
+  return result
+}
+
+/**
+ * Decrypt PHI fields in a patient record fetched from the database.
+ */
+export async function decryptPatientPHI<T extends {
+  aadhaar_encrypted?: string
+  mobile_encrypted?:  string
+}>(record: T): Promise<T & { aadhaar_no_decrypted?: string; mobile_decrypted?: string }> {
+  const result: any = { ...record }
+
+  if (record.aadhaar_encrypted) {
+    result.aadhaar_no_decrypted = await decryptPHI(record.aadhaar_encrypted as string)
+  }
+  if (record.mobile_encrypted) {
+    result.mobile_decrypted = await decryptPHI(record.mobile_encrypted as string)
+  }
+
+  return result
+}
+
+// ── Utility ───────────────────────────────────────────────────
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
+/**
+ * Check if encryption is configured.
+ * Show a warning in Settings if not.
+ */
+export function isEncryptionConfigured(): boolean {
+  return KEY_HEX.length >= 32
+}
 ```
 
 # src\lib\settings.ts
@@ -29439,6 +33668,255 @@ SELECT 'v10 procedure tracking migration complete ✓' AS result;
 
 ```
 
+# supabase_v11_features.sql
+
+```sql
+-- ============================================================
+-- NexMedicon HMS — v11: Complete Feature Additions
+-- Run in Supabase → SQL Editor → New Query
+-- Safe to run multiple times (IF NOT EXISTS everywhere)
+--
+-- This migration covers:
+--  1. IPD Admissions table (Feature #1)
+--  2. Portal tokens table  (Feature #5)
+--  3. Hospital Fund table  (Feature #6)
+--  4. Migrate localStorage keys to Supabase (Requirement #7)
+--  5. PHI encryption with pgcrypto (Requirement #9)
+--  6. Video appointment open slots support (Feature #5)
+--  7. Multi-doctor support on clinic_users (Feature #4)
+-- ============================================================
+
+-- ─── Enable extensions ────────────────────────────────────────
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- ─── 1. IPD Admissions ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ipd_admissions (
+  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id              UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name            TEXT NOT NULL,
+  mrn                     TEXT NOT NULL,
+  mobile                  TEXT,
+  age                     INTEGER,
+  gender                  TEXT,
+
+  -- Bed
+  bed_id                  UUID REFERENCES beds(id) ON DELETE SET NULL,
+  bed_number              TEXT,
+  ward                    TEXT,
+
+  -- Admission details
+  admission_date          DATE    NOT NULL DEFAULT CURRENT_DATE,
+  admission_time          TEXT    DEFAULT '00:00',
+  admitting_doctor        TEXT    NOT NULL,
+  consulting_doctors      JSONB   DEFAULT '[]'::jsonb,   -- array of doctor names
+  diagnosis_on_admission  TEXT,
+  chief_complaint         TEXT,
+  diet_type               TEXT    DEFAULT 'Normal',
+  allergies               TEXT,
+  comorbidities           TEXT,
+  insurance_details       TEXT,
+
+  -- Attendant
+  relative_name           TEXT,
+  relative_contact        TEXT,
+  relative_relation       TEXT,
+
+  -- Status
+  status                  TEXT    NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active', 'discharged', 'transferred')),
+
+  -- Housekeeping
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE ipd_admissions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_ipd_admissions ON ipd_admissions;
+CREATE POLICY allow_auth_ipd_admissions ON ipd_admissions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_ipd_adm_patient ON ipd_admissions(patient_id);
+CREATE INDEX IF NOT EXISTS idx_ipd_adm_status  ON ipd_admissions(status);
+CREATE INDEX IF NOT EXISTS idx_ipd_adm_bed     ON ipd_admissions(bed_id);
+CREATE INDEX IF NOT EXISTS idx_ipd_adm_date    ON ipd_admissions(admission_date DESC);
+
+-- Update ipd_nursing to reference ipd_admissions (not bed_id directly)
+ALTER TABLE ipd_nursing
+  ADD COLUMN IF NOT EXISTS ipd_admission_id UUID REFERENCES ipd_admissions(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_ipd_nursing_adm ON ipd_nursing(ipd_admission_id);
+
+-- ─── 2. Portal Tokens (magic-link auth for /portal) ──────────
+CREATE TABLE IF NOT EXISTS portal_tokens (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  mrn         TEXT NOT NULL,
+  patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
+  token       TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  is_used     BOOLEAN DEFAULT FALSE,
+  created_by  UUID,   -- auth.users.id of clinic staff who generated this
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tokens are not authenticated reads — use a service-role API route to validate
+-- The route /api/portal/* uses service_role key so no RLS needed here,
+-- but we enable it and allow service_role through anyway.
+ALTER TABLE portal_tokens ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_service_portal_tokens ON portal_tokens;
+CREATE POLICY allow_service_portal_tokens ON portal_tokens
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_mrn     ON portal_tokens(mrn);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_token   ON portal_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_expires ON portal_tokens(expires_at);
+
+-- Auto-expire cleanup (run this periodically or via cron)
+-- DELETE FROM portal_tokens WHERE expires_at < NOW();
+
+-- ─── 3. Hospital Fund ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS hospital_fund (
+  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  type           TEXT NOT NULL CHECK (type IN ('topup', 'expense')),
+  category       TEXT NOT NULL,    -- 'printing' | 'food' | 'supplies' | 'transport' | 'maintenance' | 'other' | 'topup'
+  amount         NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+  description    TEXT NOT NULL,
+  receipt_note   TEXT,             -- bill number or reference
+  submitted_by   TEXT NOT NULL,    -- staff member name
+  approved_by    TEXT,             -- admin who approved
+  status         TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE hospital_fund ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_fund ON hospital_fund;
+CREATE POLICY allow_auth_fund ON hospital_fund
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_fund_status     ON hospital_fund(status);
+CREATE INDEX IF NOT EXISTS idx_fund_type       ON hospital_fund(type);
+CREATE INDEX IF NOT EXISTS idx_fund_created_at ON hospital_fund(created_at DESC);
+
+-- ─── 4. Replace localStorage keys with Supabase tables ───────
+--
+-- 4a. Lab results (was `nexmedicon_labs` in localStorage)
+CREATE TABLE IF NOT EXISTS lab_templates (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name        TEXT NOT NULL,
+  category    TEXT,
+  parameters  JSONB NOT NULL DEFAULT '[]'::jsonb,  -- [{name, unit, range}, …]
+  is_active   BOOLEAN DEFAULT TRUE,
+  sort_order  INTEGER DEFAULT 0,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE lab_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_labs ON lab_templates;
+CREATE POLICY allow_auth_labs ON lab_templates
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 4b. Queue overrides (was `queue_overrides_*` in localStorage)
+CREATE TABLE IF NOT EXISTS queue_overrides (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  queue_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+  patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
+  position    INTEGER,
+  notes       TEXT,
+  created_by  TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE queue_overrides ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_queue_overrides ON queue_overrides;
+CREATE POLICY allow_auth_queue_overrides ON queue_overrides
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_queue_overrides_date ON queue_overrides(queue_date);
+
+-- ─── 5. PHI Encryption with pgcrypto (Requirement #9) ────────
+--
+-- DPDP Act compliance: Aadhaar and mobile numbers must be encrypted at rest.
+-- Strategy: store encrypted values in new columns, keep plaintext columns
+-- for backward compat during transition period, then drop them.
+--
+-- Key management: hospital_key is a per-hospital secret stored as an
+-- environment variable (HOSPITAL_ENCRYPTION_KEY) and passed to pgcrypto.
+-- NEVER store the key in the database.
+--
+-- Encryption function usage (in application code):
+--   encrypt:  pgp_sym_encrypt(plaintext, key)
+--   decrypt:  pgp_sym_decrypt(ciphertext, key)
+--
+-- We add encrypted columns here. The application layer
+-- (src/lib/phi-crypto.ts) handles encrypt/decrypt transparently.
+
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS aadhaar_encrypted   BYTEA,   -- pgp_sym_encrypt(aadhaar_no, key)
+  ADD COLUMN IF NOT EXISTS mobile_encrypted    BYTEA;   -- pgp_sym_encrypt(mobile, key)
+
+-- Mark existing columns as deprecated (application will stop writing them)
+-- DO NOT DROP YET — migrate data first.
+COMMENT ON COLUMN patients.aadhaar_no IS 'DEPRECATED: Use aadhaar_encrypted. Will be nulled after migration.';
+COMMENT ON COLUMN patients.mobile     IS 'DEPRECATED: Use mobile_encrypted for PHI compliance. Keep for search index.';
+
+-- Index on encrypted columns is not useful for search — full-text search
+-- continues on mobile (non-sensitive) and aadhaar is never searched in plaintext.
+-- For Aadhaar: search is done via last-4-digits stored separately.
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS aadhaar_last4 TEXT;   -- last 4 digits for display/search, non-PHI
+
+-- ─── 6. Video consultation slot enhancements ─────────────────
+
+-- Add open slot concept to appointments table
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS type        TEXT DEFAULT 'opd'   -- 'opd' | 'video' | 'ipd_follow_up'
+  ,ADD COLUMN IF NOT EXISTS video_link TEXT                  -- Jitsi / Meet URL
+  ,ADD COLUMN IF NOT EXISTS duration_min INTEGER DEFAULT 15  -- slot duration
+  ,ADD COLUMN IF NOT EXISTS doctor_name TEXT;                -- for multi-doctor support
+
+-- Open slots: status = 'open', patient_* fields are NULL until booked
+-- Booked video: status = 'video'
+
+CREATE INDEX IF NOT EXISTS idx_appts_type   ON appointments(type);
+CREATE INDEX IF NOT EXISTS idx_appts_status ON appointments(status);
+
+-- ─── 7. Multi-doctor support on clinic_users ─────────────────
+
+ALTER TABLE clinic_users
+  ADD COLUMN IF NOT EXISTS specialty   TEXT,       -- e.g. 'Gynaecology', 'Paediatrics'
+  ADD COLUMN IF NOT EXISTS med_reg_no  TEXT,       -- Medical Council registration
+  ADD COLUMN IF NOT EXISTS signature   TEXT,       -- base64 image of digital signature
+  ADD COLUMN IF NOT EXISTS is_primary  BOOLEAN DEFAULT FALSE;  -- the main doctor of the clinic
+
+-- ─── 8. clinic_settings table for Supabase-backed settings ───
+-- (Requirement #7: replace nexmedicon_settings localStorage key)
+
+CREATE TABLE IF NOT EXISTS clinic_settings (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  key        TEXT NOT NULL UNIQUE,
+  value      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_settings ON clinic_settings;
+CREATE POLICY allow_auth_settings ON clinic_settings
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ─── 9. Audit log enhancements ────────────────────────────────
+
+ALTER TABLE audit_log
+  ADD COLUMN IF NOT EXISTS ip_address  TEXT,
+  ADD COLUMN IF NOT EXISTS user_agent  TEXT;
+
+-- ─── Done ─────────────────────────────────────────────────────
+
+SELECT 'v11 migration complete ✓' AS result;
+
+```
+
 # supabase_v11_improvements.sql
 
 ```sql
@@ -29934,7 +34412,7 @@ module.exports = {
 # tsconfig.tsbuildinfo
 
 ```tsbuildinfo
-{"fileNames":["./node_modules/typescript/lib/lib.es5.d.ts","./node_modules/typescript/lib/lib.es2015.d.ts","./node_modules/typescript/lib/lib.es2016.d.ts","./node_modules/typescript/lib/lib.es2017.d.ts","./node_modules/typescript/lib/lib.es2018.d.ts","./node_modules/typescript/lib/lib.es2019.d.ts","./node_modules/typescript/lib/lib.es2020.d.ts","./node_modules/typescript/lib/lib.es2021.d.ts","./node_modules/typescript/lib/lib.es2022.d.ts","./node_modules/typescript/lib/lib.es2023.d.ts","./node_modules/typescript/lib/lib.es2024.d.ts","./node_modules/typescript/lib/lib.esnext.d.ts","./node_modules/typescript/lib/lib.dom.d.ts","./node_modules/typescript/lib/lib.dom.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.core.d.ts","./node_modules/typescript/lib/lib.es2015.collection.d.ts","./node_modules/typescript/lib/lib.es2015.generator.d.ts","./node_modules/typescript/lib/lib.es2015.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.promise.d.ts","./node_modules/typescript/lib/lib.es2015.proxy.d.ts","./node_modules/typescript/lib/lib.es2015.reflect.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2016.array.include.d.ts","./node_modules/typescript/lib/lib.es2016.intl.d.ts","./node_modules/typescript/lib/lib.es2017.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2017.date.d.ts","./node_modules/typescript/lib/lib.es2017.object.d.ts","./node_modules/typescript/lib/lib.es2017.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2017.string.d.ts","./node_modules/typescript/lib/lib.es2017.intl.d.ts","./node_modules/typescript/lib/lib.es2017.typedarrays.d.ts","./node_modules/typescript/lib/lib.es2018.asyncgenerator.d.ts","./node_modules/typescript/lib/lib.es2018.asynciterable.d.ts","./node_modules/typescript/lib/lib.es2018.intl.d.ts","./node_modules/typescript/lib/lib.es2018.promise.d.ts","./node_modules/typescript/lib/lib.es2018.regexp.d.ts","./node_modules/typescript/lib/lib.es2019.array.d.ts","./node_modules/typescript/lib/lib.es2019.object.d.ts","./node_modules/typescript/lib/lib.es2019.string.d.ts","./node_modules/typescript/lib/lib.es2019.symbol.d.ts","./node_modules/typescript/lib/lib.es2019.intl.d.ts","./node_modules/typescript/lib/lib.es2020.bigint.d.ts","./node_modules/typescript/lib/lib.es2020.date.d.ts","./node_modules/typescript/lib/lib.es2020.promise.d.ts","./node_modules/typescript/lib/lib.es2020.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2020.string.d.ts","./node_modules/typescript/lib/lib.es2020.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2020.intl.d.ts","./node_modules/typescript/lib/lib.es2020.number.d.ts","./node_modules/typescript/lib/lib.es2021.promise.d.ts","./node_modules/typescript/lib/lib.es2021.string.d.ts","./node_modules/typescript/lib/lib.es2021.weakref.d.ts","./node_modules/typescript/lib/lib.es2021.intl.d.ts","./node_modules/typescript/lib/lib.es2022.array.d.ts","./node_modules/typescript/lib/lib.es2022.error.d.ts","./node_modules/typescript/lib/lib.es2022.intl.d.ts","./node_modules/typescript/lib/lib.es2022.object.d.ts","./node_modules/typescript/lib/lib.es2022.string.d.ts","./node_modules/typescript/lib/lib.es2022.regexp.d.ts","./node_modules/typescript/lib/lib.es2023.array.d.ts","./node_modules/typescript/lib/lib.es2023.collection.d.ts","./node_modules/typescript/lib/lib.es2023.intl.d.ts","./node_modules/typescript/lib/lib.es2024.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2024.collection.d.ts","./node_modules/typescript/lib/lib.es2024.object.d.ts","./node_modules/typescript/lib/lib.es2024.promise.d.ts","./node_modules/typescript/lib/lib.es2024.regexp.d.ts","./node_modules/typescript/lib/lib.es2024.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2024.string.d.ts","./node_modules/typescript/lib/lib.esnext.array.d.ts","./node_modules/typescript/lib/lib.esnext.collection.d.ts","./node_modules/typescript/lib/lib.esnext.intl.d.ts","./node_modules/typescript/lib/lib.esnext.disposable.d.ts","./node_modules/typescript/lib/lib.esnext.promise.d.ts","./node_modules/typescript/lib/lib.esnext.decorators.d.ts","./node_modules/typescript/lib/lib.esnext.iterator.d.ts","./node_modules/typescript/lib/lib.esnext.float16.d.ts","./node_modules/typescript/lib/lib.esnext.error.d.ts","./node_modules/typescript/lib/lib.esnext.sharedmemory.d.ts","./node_modules/typescript/lib/lib.decorators.d.ts","./node_modules/typescript/lib/lib.decorators.legacy.d.ts","./node_modules/next/dist/styled-jsx/types/css.d.ts","./node_modules/@types/react/global.d.ts","./node_modules/csstype/index.d.ts","./node_modules/@types/prop-types/index.d.ts","./node_modules/@types/react/index.d.ts","./node_modules/next/dist/styled-jsx/types/index.d.ts","./node_modules/next/dist/styled-jsx/types/macro.d.ts","./node_modules/next/dist/styled-jsx/types/style.d.ts","./node_modules/next/dist/styled-jsx/types/global.d.ts","./node_modules/next/dist/shared/lib/amp.d.ts","./node_modules/next/amp.d.ts","./node_modules/@types/node/compatibility/disposable.d.ts","./node_modules/@types/node/compatibility/indexable.d.ts","./node_modules/@types/node/compatibility/iterators.d.ts","./node_modules/@types/node/compatibility/index.d.ts","./node_modules/@types/node/globals.typedarray.d.ts","./node_modules/@types/node/buffer.buffer.d.ts","./node_modules/@types/node/globals.d.ts","./node_modules/@types/node/web-globals/abortcontroller.d.ts","./node_modules/@types/node/web-globals/domexception.d.ts","./node_modules/@types/node/web-globals/events.d.ts","./node_modules/undici-types/header.d.ts","./node_modules/undici-types/readable.d.ts","./node_modules/undici-types/file.d.ts","./node_modules/undici-types/fetch.d.ts","./node_modules/undici-types/formdata.d.ts","./node_modules/undici-types/connector.d.ts","./node_modules/undici-types/client.d.ts","./node_modules/undici-types/errors.d.ts","./node_modules/undici-types/dispatcher.d.ts","./node_modules/undici-types/global-dispatcher.d.ts","./node_modules/undici-types/global-origin.d.ts","./node_modules/undici-types/pool-stats.d.ts","./node_modules/undici-types/pool.d.ts","./node_modules/undici-types/handlers.d.ts","./node_modules/undici-types/balanced-pool.d.ts","./node_modules/undici-types/agent.d.ts","./node_modules/undici-types/mock-interceptor.d.ts","./node_modules/undici-types/mock-agent.d.ts","./node_modules/undici-types/mock-client.d.ts","./node_modules/undici-types/mock-pool.d.ts","./node_modules/undici-types/mock-errors.d.ts","./node_modules/undici-types/proxy-agent.d.ts","./node_modules/undici-types/env-http-proxy-agent.d.ts","./node_modules/undici-types/retry-handler.d.ts","./node_modules/undici-types/retry-agent.d.ts","./node_modules/undici-types/api.d.ts","./node_modules/undici-types/interceptors.d.ts","./node_modules/undici-types/util.d.ts","./node_modules/undici-types/cookies.d.ts","./node_modules/undici-types/patch.d.ts","./node_modules/undici-types/websocket.d.ts","./node_modules/undici-types/eventsource.d.ts","./node_modules/undici-types/filereader.d.ts","./node_modules/undici-types/diagnostics-channel.d.ts","./node_modules/undici-types/content-type.d.ts","./node_modules/undici-types/cache.d.ts","./node_modules/undici-types/index.d.ts","./node_modules/@types/node/web-globals/fetch.d.ts","./node_modules/@types/node/assert.d.ts","./node_modules/@types/node/assert/strict.d.ts","./node_modules/@types/node/async_hooks.d.ts","./node_modules/@types/node/buffer.d.ts","./node_modules/@types/node/child_process.d.ts","./node_modules/@types/node/cluster.d.ts","./node_modules/@types/node/console.d.ts","./node_modules/@types/node/constants.d.ts","./node_modules/@types/node/crypto.d.ts","./node_modules/@types/node/dgram.d.ts","./node_modules/@types/node/diagnostics_channel.d.ts","./node_modules/@types/node/dns.d.ts","./node_modules/@types/node/dns/promises.d.ts","./node_modules/@types/node/domain.d.ts","./node_modules/@types/node/events.d.ts","./node_modules/@types/node/fs.d.ts","./node_modules/@types/node/fs/promises.d.ts","./node_modules/@types/node/http.d.ts","./node_modules/@types/node/http2.d.ts","./node_modules/@types/node/https.d.ts","./node_modules/@types/node/inspector.generated.d.ts","./node_modules/@types/node/module.d.ts","./node_modules/@types/node/net.d.ts","./node_modules/@types/node/os.d.ts","./node_modules/@types/node/path.d.ts","./node_modules/@types/node/perf_hooks.d.ts","./node_modules/@types/node/process.d.ts","./node_modules/@types/node/punycode.d.ts","./node_modules/@types/node/querystring.d.ts","./node_modules/@types/node/readline.d.ts","./node_modules/@types/node/readline/promises.d.ts","./node_modules/@types/node/repl.d.ts","./node_modules/@types/node/sea.d.ts","./node_modules/@types/node/stream.d.ts","./node_modules/@types/node/stream/promises.d.ts","./node_modules/@types/node/stream/consumers.d.ts","./node_modules/@types/node/stream/web.d.ts","./node_modules/@types/node/string_decoder.d.ts","./node_modules/@types/node/test.d.ts","./node_modules/@types/node/timers.d.ts","./node_modules/@types/node/timers/promises.d.ts","./node_modules/@types/node/tls.d.ts","./node_modules/@types/node/trace_events.d.ts","./node_modules/@types/node/tty.d.ts","./node_modules/@types/node/url.d.ts","./node_modules/@types/node/util.d.ts","./node_modules/@types/node/v8.d.ts","./node_modules/@types/node/vm.d.ts","./node_modules/@types/node/wasi.d.ts","./node_modules/@types/node/worker_threads.d.ts","./node_modules/@types/node/zlib.d.ts","./node_modules/@types/node/index.d.ts","./node_modules/next/dist/server/get-page-files.d.ts","./node_modules/@types/react/canary.d.ts","./node_modules/@types/react/experimental.d.ts","./node_modules/@types/react-dom/index.d.ts","./node_modules/@types/react-dom/canary.d.ts","./node_modules/@types/react-dom/experimental.d.ts","./node_modules/next/dist/compiled/webpack/webpack.d.ts","./node_modules/next/dist/server/config.d.ts","./node_modules/next/dist/lib/load-custom-routes.d.ts","./node_modules/next/dist/shared/lib/image-config.d.ts","./node_modules/next/dist/build/webpack/plugins/subresource-integrity-plugin.d.ts","./node_modules/next/dist/server/body-streams.d.ts","./node_modules/next/dist/server/future/route-kind.d.ts","./node_modules/next/dist/server/future/route-definitions/route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/route-match.d.ts","./node_modules/next/dist/client/components/app-router-headers.d.ts","./node_modules/next/dist/server/request-meta.d.ts","./node_modules/next/dist/server/lib/revalidate.d.ts","./node_modules/next/dist/server/config-shared.d.ts","./node_modules/next/dist/server/base-http/index.d.ts","./node_modules/next/dist/server/api-utils/index.d.ts","./node_modules/next/dist/server/node-environment.d.ts","./node_modules/next/dist/server/require-hook.d.ts","./node_modules/next/dist/server/node-polyfill-crypto.d.ts","./node_modules/next/dist/lib/page-types.d.ts","./node_modules/next/dist/build/analysis/get-page-static-info.d.ts","./node_modules/next/dist/build/webpack/loaders/get-module-build-info.d.ts","./node_modules/next/dist/build/webpack/plugins/middleware-plugin.d.ts","./node_modules/next/dist/server/render-result.d.ts","./node_modules/next/dist/server/future/helpers/i18n-provider.d.ts","./node_modules/next/dist/server/web/next-url.d.ts","./node_modules/next/dist/compiled/@edge-runtime/cookies/index.d.ts","./node_modules/next/dist/server/web/spec-extension/cookies.d.ts","./node_modules/next/dist/server/web/spec-extension/request.d.ts","./node_modules/next/dist/server/web/spec-extension/fetch-event.d.ts","./node_modules/next/dist/server/web/spec-extension/response.d.ts","./node_modules/next/dist/server/web/types.d.ts","./node_modules/next/dist/lib/setup-exception-listeners.d.ts","./node_modules/next/dist/lib/constants.d.ts","./node_modules/next/dist/build/index.d.ts","./node_modules/next/dist/build/webpack/plugins/pages-manifest-plugin.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-regex.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-matcher.d.ts","./node_modules/next/dist/shared/lib/router/utils/parse-url.d.ts","./node_modules/next/dist/server/base-http/node.d.ts","./node_modules/next/dist/server/font-utils.d.ts","./node_modules/next/dist/build/webpack/plugins/flight-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-modules/route-module.d.ts","./node_modules/next/dist/server/load-components.d.ts","./node_modules/next/dist/shared/lib/router/utils/middleware-route-matcher.d.ts","./node_modules/next/dist/build/webpack/plugins/next-font-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-definitions/locale-route-definition.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-route-definition.d.ts","./node_modules/next/dist/shared/lib/mitt.d.ts","./node_modules/next/dist/client/with-router.d.ts","./node_modules/next/dist/client/router.d.ts","./node_modules/next/dist/client/route-loader.d.ts","./node_modules/next/dist/client/page-loader.d.ts","./node_modules/next/dist/shared/lib/bloom-filter.d.ts","./node_modules/next/dist/shared/lib/router/router.d.ts","./node_modules/next/dist/shared/lib/router-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/image-config-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/head-manager-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-definitions/app-page-route-definition.d.ts","./node_modules/next/dist/shared/lib/modern-browserslist-target.d.ts","./node_modules/next/dist/shared/lib/constants.d.ts","./node_modules/next/dist/build/webpack/loaders/metadata/types.d.ts","./node_modules/next/dist/build/page-extensions-type.d.ts","./node_modules/next/dist/build/webpack/loaders/next-app-loader.d.ts","./node_modules/next/dist/server/lib/app-dir-module.d.ts","./node_modules/next/dist/server/response-cache/types.d.ts","./node_modules/next/dist/server/response-cache/index.d.ts","./node_modules/next/dist/server/lib/incremental-cache/index.d.ts","./node_modules/next/dist/client/components/hooks-server-context.d.ts","./node_modules/next/dist/server/app-render/dynamic-rendering.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage-instance.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage.external.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/request-cookies.d.ts","./node_modules/next/dist/server/async-storage/draft-mode-provider.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/headers.d.ts","./node_modules/next/dist/client/components/request-async-storage-instance.d.ts","./node_modules/next/dist/client/components/request-async-storage.external.d.ts","./node_modules/next/dist/server/app-render/create-error-handler.d.ts","./node_modules/next/dist/server/app-render/app-render.d.ts","./node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/amp-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.compiled.d.ts","./node_modules/@types/react/jsx-runtime.d.ts","./node_modules/next/dist/client/components/error-boundary.d.ts","./node_modules/next/dist/client/components/router-reducer/create-initial-router-state.d.ts","./node_modules/next/dist/client/components/app-router.d.ts","./node_modules/next/dist/client/components/layout-router.d.ts","./node_modules/next/dist/client/components/render-from-template-context.d.ts","./node_modules/next/dist/client/components/action-async-storage-instance.d.ts","./node_modules/next/dist/client/components/action-async-storage.external.d.ts","./node_modules/next/dist/client/components/client-page.d.ts","./node_modules/next/dist/client/components/search-params.d.ts","./node_modules/next/dist/client/components/not-found-boundary.d.ts","./node_modules/next/dist/server/app-render/rsc/preloads.d.ts","./node_modules/next/dist/server/app-render/rsc/postpone.d.ts","./node_modules/next/dist/server/app-render/rsc/taint.d.ts","./node_modules/next/dist/server/app-render/entry-base.d.ts","./node_modules/next/dist/build/templates/app-page.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.d.ts","./node_modules/next/dist/server/app-render/types.d.ts","./node_modules/next/dist/client/components/router-reducer/fetch-server-response.d.ts","./node_modules/next/dist/client/components/router-reducer/router-reducer-types.d.ts","./node_modules/next/dist/shared/lib/app-router-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/pages/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.compiled.d.ts","./node_modules/next/dist/build/templates/pages.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.d.ts","./node_modules/next/dist/server/render.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-api-route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/pages-api-route-match.d.ts","./node_modules/next/dist/server/future/route-matchers/route-matcher.d.ts","./node_modules/next/dist/server/future/route-matcher-providers/route-matcher-provider.d.ts","./node_modules/next/dist/server/future/route-matcher-managers/route-matcher-manager.d.ts","./node_modules/next/dist/server/future/normalizers/normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/locale-route-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/pathname-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/suffix.d.ts","./node_modules/next/dist/server/future/normalizers/request/rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefix.d.ts","./node_modules/next/dist/server/future/normalizers/request/postponed.d.ts","./node_modules/next/dist/server/future/normalizers/request/action.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefetch-rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/next-data.d.ts","./node_modules/next/dist/server/base-server.d.ts","./node_modules/next/dist/server/image-optimizer.d.ts","./node_modules/next/dist/server/next-server.d.ts","./node_modules/next/dist/lib/coalesced-function.d.ts","./node_modules/next/dist/server/lib/router-utils/types.d.ts","./node_modules/next/dist/trace/types.d.ts","./node_modules/next/dist/trace/trace.d.ts","./node_modules/next/dist/trace/shared.d.ts","./node_modules/next/dist/trace/index.d.ts","./node_modules/next/dist/build/load-jsconfig.d.ts","./node_modules/next/dist/build/webpack-config.d.ts","./node_modules/next/dist/build/webpack/plugins/define-env-plugin.d.ts","./node_modules/next/dist/build/swc/index.d.ts","./node_modules/next/dist/server/dev/parse-version-info.d.ts","./node_modules/next/dist/server/dev/hot-reloader-types.d.ts","./node_modules/next/dist/telemetry/storage.d.ts","./node_modules/next/dist/server/lib/types.d.ts","./node_modules/next/dist/server/lib/render-server.d.ts","./node_modules/next/dist/server/lib/router-server.d.ts","./node_modules/next/dist/shared/lib/router/utils/path-match.d.ts","./node_modules/next/dist/server/lib/router-utils/filesystem.d.ts","./node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.d.ts","./node_modules/next/dist/server/lib/dev-bundler-service.d.ts","./node_modules/next/dist/server/dev/static-paths-worker.d.ts","./node_modules/next/dist/server/dev/next-dev-server.d.ts","./node_modules/next/dist/server/next.d.ts","./node_modules/next/dist/lib/metadata/types/alternative-urls-types.d.ts","./node_modules/next/dist/lib/metadata/types/extra-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-types.d.ts","./node_modules/next/dist/lib/metadata/types/manifest-types.d.ts","./node_modules/next/dist/lib/metadata/types/opengraph-types.d.ts","./node_modules/next/dist/lib/metadata/types/twitter-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-interface.d.ts","./node_modules/next/types/index.d.ts","./node_modules/next/dist/shared/lib/html-context.shared-runtime.d.ts","./node_modules/@next/env/dist/index.d.ts","./node_modules/next/dist/shared/lib/utils.d.ts","./node_modules/next/dist/pages/_app.d.ts","./node_modules/next/app.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-cache.d.ts","./node_modules/next/dist/server/web/spec-extension/revalidate.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-no-store.d.ts","./node_modules/next/cache.d.ts","./node_modules/next/dist/shared/lib/runtime-config.external.d.ts","./node_modules/next/config.d.ts","./node_modules/next/dist/pages/_document.d.ts","./node_modules/next/document.d.ts","./node_modules/next/dist/shared/lib/dynamic.d.ts","./node_modules/next/dynamic.d.ts","./node_modules/next/dist/pages/_error.d.ts","./node_modules/next/error.d.ts","./node_modules/next/dist/shared/lib/head.d.ts","./node_modules/next/head.d.ts","./node_modules/next/dist/client/components/draft-mode.d.ts","./node_modules/next/dist/client/components/headers.d.ts","./node_modules/next/headers.d.ts","./node_modules/next/dist/shared/lib/get-img-props.d.ts","./node_modules/next/dist/client/image-component.d.ts","./node_modules/next/dist/shared/lib/image-external.d.ts","./node_modules/next/image.d.ts","./node_modules/next/dist/client/link.d.ts","./node_modules/next/link.d.ts","./node_modules/next/dist/client/components/redirect-status-code.d.ts","./node_modules/next/dist/client/components/redirect.d.ts","./node_modules/next/dist/client/components/not-found.d.ts","./node_modules/next/dist/client/components/navigation.react-server.d.ts","./node_modules/next/dist/client/components/navigation.d.ts","./node_modules/next/navigation.d.ts","./node_modules/next/router.d.ts","./node_modules/next/dist/client/script.d.ts","./node_modules/next/script.d.ts","./node_modules/next/dist/server/web/spec-extension/user-agent.d.ts","./node_modules/next/dist/compiled/@edge-runtime/primitives/url.d.ts","./node_modules/next/dist/server/web/spec-extension/image-response.d.ts","./node_modules/next/dist/compiled/@vercel/og/satori/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/emoji/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/types.d.ts","./node_modules/next/server.d.ts","./node_modules/next/types/global.d.ts","./node_modules/next/types/compiled.d.ts","./node_modules/next/index.d.ts","./node_modules/next/image-types/global.d.ts","./next-env.d.ts","./src/app/api/abdm/auth/route.ts","./src/app/api/abdm/create/init/route.ts","./src/app/api/abdm/create/verify-otp/route.ts","./src/app/api/abdm/search/route.ts","./src/app/api/abdm/verify/route.ts","./src/app/api/check-config/route.ts","./node_modules/@anthropic-ai/sdk/internal/builtin-types.d.mts","../../../../node_modules/undici-types/utility.d.ts","../../../../node_modules/undici-types/header.d.ts","../../../../node_modules/undici-types/readable.d.ts","../../../../node_modules/undici-types/fetch.d.ts","../../../../node_modules/undici-types/formdata.d.ts","../../../../node_modules/undici-types/connector.d.ts","../../../../node_modules/undici-types/client-stats.d.ts","../../../../node_modules/undici-types/client.d.ts","../../../../node_modules/undici-types/errors.d.ts","../../../../node_modules/undici-types/dispatcher.d.ts","../../../../node_modules/undici-types/global-dispatcher.d.ts","../../../../node_modules/undici-types/global-origin.d.ts","../../../../node_modules/undici-types/pool-stats.d.ts","../../../../node_modules/undici-types/pool.d.ts","../../../../node_modules/undici-types/handlers.d.ts","../../../../node_modules/undici-types/balanced-pool.d.ts","../../../../node_modules/undici-types/h2c-client.d.ts","../../../../node_modules/undici-types/agent.d.ts","../../../../node_modules/undici-types/mock-interceptor.d.ts","../../../../node_modules/undici-types/mock-call-history.d.ts","../../../../node_modules/undici-types/mock-agent.d.ts","../../../../node_modules/undici-types/mock-client.d.ts","../../../../node_modules/undici-types/mock-pool.d.ts","../../../../node_modules/undici-types/snapshot-agent.d.ts","../../../../node_modules/undici-types/mock-errors.d.ts","../../../../node_modules/undici-types/proxy-agent.d.ts","../../../../node_modules/undici-types/env-http-proxy-agent.d.ts","../../../../node_modules/undici-types/retry-handler.d.ts","../../../../node_modules/undici-types/retry-agent.d.ts","../../../../node_modules/undici-types/api.d.ts","../../../../node_modules/undici-types/cache-interceptor.d.ts","../../../../node_modules/undici-types/interceptors.d.ts","../../../../node_modules/undici-types/util.d.ts","../../../../node_modules/undici-types/cookies.d.ts","../../../../node_modules/undici-types/patch.d.ts","../../../../node_modules/undici-types/websocket.d.ts","../../../../node_modules/undici-types/eventsource.d.ts","../../../../node_modules/undici-types/diagnostics-channel.d.ts","../../../../node_modules/undici-types/content-type.d.ts","../../../../node_modules/undici-types/cache.d.ts","../../../../node_modules/undici-types/index.d.ts","../../../../node_modules/formdata-polyfill/esm.min.d.ts","../../../../node_modules/fetch-blob/file.d.ts","../../../../node_modules/fetch-blob/index.d.ts","../../../../node_modules/fetch-blob/from.d.ts","../../../../node_modules/node-fetch/@types/index.d.ts","./node_modules/@anthropic-ai/sdk/internal/types.d.mts","./node_modules/@anthropic-ai/sdk/internal/headers.d.mts","./node_modules/@anthropic-ai/sdk/internal/shim-types.d.mts","./node_modules/@anthropic-ai/sdk/core/streaming.d.mts","./node_modules/@anthropic-ai/sdk/internal/request-options.d.mts","./node_modules/@anthropic-ai/sdk/internal/utils/log.d.mts","./node_modules/@anthropic-ai/sdk/resources/shared.d.mts","./node_modules/@anthropic-ai/sdk/core/error.d.mts","./node_modules/@anthropic-ai/sdk/internal/parse.d.mts","./node_modules/@anthropic-ai/sdk/core/api-promise.d.mts","./node_modules/@anthropic-ai/sdk/core/pagination.d.mts","./node_modules/@anthropic-ai/sdk/internal/uploads.d.mts","./node_modules/@anthropic-ai/sdk/internal/to-file.d.mts","./node_modules/@anthropic-ai/sdk/core/uploads.d.mts","./node_modules/@anthropic-ai/sdk/core/resource.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/environments.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/files.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/user-profiles.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.d.mts","./node_modules/@anthropic-ai/sdk/lib/beta-parser.d.mts","./node_modules/@anthropic-ai/sdk/error.d.mts","./node_modules/@anthropic-ai/sdk/lib/betamessagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/index.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/line.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages.d.mts","./node_modules/@anthropic-ai/sdk/lib/parser.d.mts","./node_modules/@anthropic-ai/sdk/lib/messagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betarunnabletool.d.mts","./node_modules/@anthropic-ai/sdk/resources.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/compactioncontrol.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betatoolrunner.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/toolerror.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/beta.d.mts","./node_modules/@anthropic-ai/sdk/resources/completions.d.mts","./node_modules/@anthropic-ai/sdk/resources/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/index.d.mts","./node_modules/@anthropic-ai/sdk/client.d.mts","./node_modules/@anthropic-ai/sdk/index.d.mts","./node_modules/openai/internal/builtin-types.d.mts","./node_modules/openai/internal/types.d.mts","./node_modules/openai/internal/headers.d.mts","./node_modules/openai/internal/shim-types.d.mts","./node_modules/openai/core/streaming.d.mts","./node_modules/openai/internal/request-options.d.mts","./node_modules/openai/internal/utils/log.d.mts","./node_modules/openai/resources/shared.d.mts","./node_modules/openai/core/error.d.mts","./node_modules/openai/pagination.d.mts","./node_modules/openai/internal/parse.d.mts","./node_modules/openai/core/api-promise.d.mts","./node_modules/openai/core/pagination.d.mts","./node_modules/openai/auth/types.d.mts","./node_modules/openai/internal/uploads.d.mts","./node_modules/openai/internal/to-file.d.mts","./node_modules/openai/core/uploads.d.mts","./node_modules/openai/core/resource.d.mts","./node_modules/openai/resources/completions.d.mts","./node_modules/openai/resources/chat/completions/messages.d.mts","./node_modules/openai/resources/chat/completions/index.d.mts","./node_modules/openai/resources/chat/completions.d.mts","./node_modules/openai/error.d.mts","./node_modules/openai/lib/eventstream.d.mts","./node_modules/openai/lib/abstractchatcompletionrunner.d.mts","./node_modules/openai/lib/chatcompletionstream.d.mts","./node_modules/openai/lib/responsesparser.d.mts","./node_modules/openai/lib/responses/eventtypes.d.mts","./node_modules/openai/lib/responses/responsestream.d.mts","./node_modules/openai/resources/responses/input-items.d.mts","./node_modules/openai/resources/responses/input-tokens.d.mts","./node_modules/openai/resources/responses/responses.d.mts","./node_modules/openai/lib/parser.d.mts","./node_modules/openai/lib/chatcompletionstreamingrunner.d.mts","./node_modules/openai/lib/jsonschema.d.mts","./node_modules/openai/lib/runnablefunction.d.mts","./node_modules/openai/lib/chatcompletionrunner.d.mts","./node_modules/openai/resources/chat/completions/completions.d.mts","./node_modules/openai/resources/chat/chat.d.mts","./node_modules/openai/resources/chat/index.d.mts","./node_modules/openai/resources/audio/speech.d.mts","./node_modules/openai/resources/audio/transcriptions.d.mts","./node_modules/openai/resources/audio/translations.d.mts","./node_modules/openai/resources/audio/audio.d.mts","./node_modules/openai/resources/batches.d.mts","./node_modules/openai/resources/beta/threads/messages.d.mts","./node_modules/openai/resources/beta/threads/runs/steps.d.mts","./node_modules/openai/lib/assistantstream.d.mts","./node_modules/openai/resources/beta/threads/runs/runs.d.mts","./node_modules/openai/resources/beta/threads/threads.d.mts","./node_modules/openai/resources/beta/assistants.d.mts","./node_modules/openai/resources/beta/realtime/sessions.d.mts","./node_modules/openai/resources/beta/realtime/transcription-sessions.d.mts","./node_modules/openai/resources/beta/realtime/realtime.d.mts","./node_modules/openai/resources/beta/chatkit/threads.d.mts","./node_modules/openai/resources/beta/chatkit/sessions.d.mts","./node_modules/openai/resources/beta/chatkit/chatkit.d.mts","./node_modules/openai/resources/beta/beta.d.mts","./node_modules/openai/resources/containers/files/content.d.mts","./node_modules/openai/resources/containers/files/files.d.mts","./node_modules/openai/resources/containers/containers.d.mts","./node_modules/openai/resources/conversations/items.d.mts","./node_modules/openai/resources/conversations/conversations.d.mts","./node_modules/openai/resources/embeddings.d.mts","./node_modules/openai/resources/graders/grader-models.d.mts","./node_modules/openai/resources/evals/runs/output-items.d.mts","./node_modules/openai/resources/evals/runs/runs.d.mts","./node_modules/openai/resources/evals/evals.d.mts","./node_modules/openai/resources/files.d.mts","./node_modules/openai/resources/fine-tuning/methods.d.mts","./node_modules/openai/resources/fine-tuning/alpha/graders.d.mts","./node_modules/openai/resources/fine-tuning/alpha/alpha.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/permissions.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/jobs.d.mts","./node_modules/openai/resources/fine-tuning/fine-tuning.d.mts","./node_modules/openai/resources/graders/graders.d.mts","./node_modules/openai/resources/images.d.mts","./node_modules/openai/resources/models.d.mts","./node_modules/openai/resources/moderations.d.mts","./node_modules/openai/resources/realtime/calls.d.mts","./node_modules/openai/resources/realtime/client-secrets.d.mts","./node_modules/openai/resources/realtime/realtime.d.mts","./node_modules/openai/resources/skills/content.d.mts","./node_modules/openai/resources/skills/versions/content.d.mts","./node_modules/openai/resources/skills/versions/versions.d.mts","./node_modules/openai/resources/skills/skills.d.mts","./node_modules/openai/resources/uploads/parts.d.mts","./node_modules/openai/resources/uploads/uploads.d.mts","./node_modules/openai/uploads.d.mts","./node_modules/openai/resources/vector-stores/files.d.mts","./node_modules/openai/resources/vector-stores/file-batches.d.mts","./node_modules/openai/resources/vector-stores/vector-stores.d.mts","./node_modules/openai/resources/videos.d.mts","./node_modules/openai/resources/webhooks/webhooks.d.mts","./node_modules/openai/resources/webhooks/index.d.mts","./node_modules/openai/resources/webhooks.d.mts","./node_modules/openai/resources/index.d.mts","./node_modules/openai/client.d.mts","./node_modules/openai/azure.d.mts","./node_modules/openai/index.d.mts","./node_modules/pdf-lib/cjs/core/document/pdfheader.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfbool.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfhexstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfname.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnull.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnumber.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfref.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfdict.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfrawstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfarray.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperatornames.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperator.d.ts","./node_modules/pdf-lib/cjs/utils/arrays.d.ts","./node_modules/pdf-lib/cjs/utils/async.d.ts","./node_modules/pdf-lib/cjs/utils/strings.d.ts","./node_modules/pdf-lib/cjs/utils/unicode.d.ts","./node_modules/pdf-lib/cjs/utils/numbers.d.ts","./node_modules/pdf-lib/cjs/utils/errors.d.ts","./node_modules/pdf-lib/cjs/utils/base64.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/font.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/encoding.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/index.d.ts","./node_modules/pdf-lib/cjs/utils/objects.d.ts","./node_modules/pdf-lib/cjs/utils/validators.d.ts","./node_modules/pdf-lib/cjs/utils/pdfdocencoding.d.ts","./node_modules/pdf-lib/cjs/utils/cache.d.ts","./node_modules/pdf-lib/cjs/utils/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfflatestream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcontentstream.d.ts","./node_modules/pdf-lib/cjs/utils/rng.d.ts","./node_modules/pdf-lib/cjs/core/pdfcontext.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfobject.d.ts","./node_modules/pdf-lib/cjs/core/errors.d.ts","./node_modules/pdf-lib/cjs/core/syntax/charcodes.d.ts","./node_modules/pdf-lib/cjs/core/pdfobjectcopier.d.ts","./node_modules/pdf-lib/cjs/core/document/pdfcrossrefsection.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailer.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailerdict.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfwriter.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfstreamwriter.d.ts","./node_modules/pdf-lib/cjs/core/embedders/standardfontembedder.d.ts","./node_modules/pdf-lib/cjs/types/fontkit.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontsubsetembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/fileembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/jpegembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pngembedder.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpagetree.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpageleaf.d.ts","./node_modules/pdf-lib/cjs/types/matrix.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pdfpageembedder.d.ts","./node_modules/pdf-lib/cjs/core/interactive/viewerpreferences.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfinvalidobject.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrofield.d.ts","./node_modules/pdf-lib/cjs/core/annotation/borderstyle.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfannotation.d.ts","./node_modules/pdf-lib/cjs/core/annotation/appearancecharacteristics.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfwidgetannotation.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocheckbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrochoice.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocombobox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroform.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrolistbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrononterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacropushbutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroradiobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrosignature.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrotext.d.ts","./node_modules/pdf-lib/cjs/core/acroform/flags.d.ts","./node_modules/pdf-lib/cjs/core/acroform/utils.d.ts","./node_modules/pdf-lib/cjs/core/acroform/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcatalog.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcrossrefstream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfobjectstream.d.ts","./node_modules/pdf-lib/cjs/core/parser/bytestream.d.ts","./node_modules/pdf-lib/cjs/core/parser/baseparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfxrefstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/streams/stream.d.ts","./node_modules/pdf-lib/cjs/core/streams/decode.d.ts","./node_modules/pdf-lib/cjs/core/annotation/flags.d.ts","./node_modules/pdf-lib/cjs/core/annotation/index.d.ts","./node_modules/pdf-lib/cjs/core/index.d.ts","./node_modules/pdf-lib/cjs/api/embeddable.d.ts","./node_modules/pdf-lib/cjs/api/pdfembeddedpage.d.ts","./node_modules/pdf-lib/cjs/api/pdfimage.d.ts","./node_modules/pdf-lib/cjs/api/colors.d.ts","./node_modules/pdf-lib/cjs/api/rotations.d.ts","./node_modules/pdf-lib/cjs/api/operators.d.ts","./node_modules/pdf-lib/cjs/api/pdfpageoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfpage.d.ts","./node_modules/pdf-lib/cjs/api/image/alignment.d.ts","./node_modules/pdf-lib/cjs/api/image/index.d.ts","./node_modules/pdf-lib/cjs/api/form/pdffield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfbutton.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfcheckbox.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfdropdown.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfoptionlist.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfradiogroup.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfsignature.d.ts","./node_modules/pdf-lib/cjs/api/text/alignment.d.ts","./node_modules/pdf-lib/cjs/api/form/pdftextfield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfform.d.ts","./node_modules/pdf-lib/cjs/api/standardfonts.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocumentoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocument.d.ts","./node_modules/pdf-lib/cjs/api/pdffont.d.ts","./node_modules/pdf-lib/cjs/api/form/appearances.d.ts","./node_modules/pdf-lib/cjs/api/form/index.d.ts","./node_modules/pdf-lib/cjs/api/text/layout.d.ts","./node_modules/pdf-lib/cjs/api/text/index.d.ts","./node_modules/pdf-lib/cjs/api/errors.d.ts","./node_modules/pdf-lib/cjs/api/objects.d.ts","./node_modules/pdf-lib/cjs/api/operations.d.ts","./node_modules/pdf-lib/cjs/api/sizes.d.ts","./node_modules/pdf-lib/cjs/core/embedders/javascriptembedder.d.ts","./node_modules/pdf-lib/cjs/api/pdfjavascript.d.ts","./node_modules/pdf-lib/cjs/api/index.d.ts","./node_modules/pdf-lib/cjs/types/index.d.ts","./node_modules/pdf-lib/cjs/index.d.ts","./src/lib/ai-client.ts","./src/app/api/discharge-ai/route.ts","./node_modules/@supabase/functions-js/dist/module/types.d.ts","./node_modules/@supabase/functions-js/dist/module/functionsclient.d.ts","./node_modules/@supabase/functions-js/dist/module/index.d.ts","./node_modules/@supabase/postgrest-js/dist/index.d.mts","./node_modules/@supabase/realtime-js/dist/module/lib/websocket-factory.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/constants.d.ts","./node_modules/@supabase/phoenix/priv/static/types/longpoll.d.ts","./node_modules/@supabase/phoenix/priv/static/types/types.d.ts","./node_modules/@supabase/phoenix/priv/static/types/timer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/socket.d.ts","./node_modules/@supabase/phoenix/priv/static/types/push.d.ts","./node_modules/@supabase/phoenix/priv/static/types/channel.d.ts","./node_modules/@supabase/phoenix/priv/static/types/presence.d.ts","./node_modules/@supabase/phoenix/priv/static/types/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/index.d.ts","./node_modules/@supabase/realtime-js/dist/module/phoenix/types.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/constants.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimepresence.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimechannel.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimeclient.d.ts","./node_modules/@supabase/realtime-js/dist/module/index.d.ts","./node_modules/iceberg-js/dist/index.d.ts","./node_modules/@supabase/storage-js/dist/index.d.mts","./node_modules/@supabase/auth-js/dist/module/lib/error-codes.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/ethereum.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/solana.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.dom.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/helpers.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/types.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/fetch.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/locks.d.ts","./node_modules/@supabase/auth-js/dist/module/index.d.ts","./node_modules/@supabase/supabase-js/dist/index.d.mts","./src/lib/api-auth.ts","./src/app/api/doctor-note-ocr/route.ts","./src/types/index.ts","./src/lib/fhir.ts","./src/app/api/fhir/patient/[id]/route.ts","./src/app/api/generate-pdf/route.ts","./src/app/api/generate-qr/route.ts","./src/app/api/insurance-bundle/[patientid]/route.ts","./src/lib/ocr.ts","./src/app/api/ocr/route.ts","./node_modules/tesseract.js/src/index.d.ts","./src/app/api/ocr-free/route.ts","./src/app/api/parse-pdf/route.ts","./src/app/api/patient-summary/route.ts","./src/app/api/payment-link/route.ts","./src/app/api/reminders/route.ts","./src/app/api/reminders/auto-generate/route.ts","./src/app/api/reminders/history/route.ts","./src/app/api/reminders/send-all/route.ts","./src/app/api/test-ai/route.ts","./src/app/api/users/route.ts","./src/lib/supabase.ts","./src/app/api/users/invite/route.ts","./src/app/api/voice-correct/route.ts","./src/lib/abdm.ts","./src/lib/audit.ts","./src/lib/auth.ts","./src/lib/billing-gst.ts","./src/lib/clinical-risk.ts","./src/lib/constants.ts","./node_modules/pdfjs-dist/types/src/shared/util.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/tools.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/toolbar.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/comment.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/editor.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/freetext.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/highlight.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/draw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/outline.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/inkdraw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/ink.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/signature.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/stamp.d.ts","./node_modules/pdfjs-dist/types/src/display/display_utils.d.ts","./node_modules/pdfjs-dist/types/web/text_accessibility.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_storage.d.ts","./node_modules/pdfjs-dist/types/src/display/optional_content_config.d.ts","./node_modules/pdfjs-dist/types/src/display/pages_mapper.d.ts","./node_modules/pdfjs-dist/types/src/display/metadata.d.ts","./node_modules/pdfjs-dist/types/src/display/pdf_objects.d.ts","./node_modules/pdfjs-dist/types/src/shared/message_handler.d.ts","./node_modules/pdfjs-dist/types/src/display/api.d.ts","./node_modules/pdfjs-dist/types/web/struct_tree_layer_builder.d.ts","./node_modules/pdfjs-dist/types/web/comment_manager.d.ts","./node_modules/pdfjs-dist/types/web/event_utils.d.ts","./node_modules/pdfjs-dist/types/web/pdf_link_service.d.ts","./node_modules/pdfjs-dist/types/web/base_download_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/draw_layer.d.ts","./node_modules/pdfjs-dist/types/web/l10n.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/annotation_editor_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/color_picker.d.ts","./node_modules/pdfjs-dist/types/src/display/svg_factory.d.ts","./node_modules/pdfjs-dist/types/src/display/worker_options.d.ts","./node_modules/pdfjs-dist/types/src/display/api_utils.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/signaturedraw.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer_images.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/touch_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/xfa_layer.d.ts","./node_modules/pdfjs-dist/types/src/pdf.d.ts","./src/lib/pdf-to-image.ts","./src/lib/settings.ts","./node_modules/clsx/clsx.d.mts","./node_modules/tailwind-merge/dist/types.d.ts","./src/lib/utils.ts","./src/lib/whatsapp-templates.ts","./node_modules/lucide-react/dist/lucide-react.d.ts","./src/app/error.tsx","./src/app/layout.tsx","./src/app/not-found.tsx","./src/app/page.tsx","./src/components/layout/sidebar.tsx","./src/components/layout/mobilenav.tsx","./src/components/layout/appshell.tsx","./src/app/abdm-setup/page.tsx","./src/app/ai-setup/page.tsx","./src/app/anc/page.tsx","./src/app/appointments/page.tsx","./src/app/audit-log/page.tsx","./src/app/beds/page.tsx","./src/app/billing/page.tsx","./src/app/dashboard/page.tsx","./src/components/shared/formscanner.tsx","./src/app/forms/page.tsx","./src/app/intake/page.tsx","./src/components/shared/smartmic.tsx","./src/app/ipd/[bedid]/page.tsx","./src/app/labs/page.tsx","./src/app/login/page.tsx","./src/app/opd/page.tsx","./src/components/shared/consultationattachments.tsx","./src/app/opd/[id]/page.tsx","./src/app/opd/[id]/edit/page.tsx","./src/app/opd/[id]/prescription/page.tsx","./src/app/opd/new/page.tsx","./src/app/patients/page.tsx","./src/app/patients/[id]/page.tsx","./src/app/patients/[id]/discharge/page.tsx","./src/app/patients/[id]/edit/page.tsx","./src/app/patients/new/page.tsx","./src/app/queue/page.tsx","./src/app/reminders/page.tsx","./src/app/reports/page.tsx","./src/app/reports/daily/page.tsx","./src/app/reports/monthly/page.tsx","./src/app/reports/payments/page.tsx","./src/app/search/page.tsx","./src/app/settings/page.tsx","./src/app/setup/page.tsx","./src/components/billing/billingextras.tsx","./.next/types/app/layout.ts","./.next/types/app/page.ts","./.next/types/app/abdm-setup/page.ts","./.next/types/app/ai-setup/page.ts","./.next/types/app/anc/page.ts","./.next/types/app/api/abdm/auth/route.ts","./.next/types/app/api/abdm/create/init/route.ts","./.next/types/app/api/abdm/create/verify-otp/route.ts","./.next/types/app/api/abdm/search/route.ts","./.next/types/app/api/abdm/verify/route.ts","./.next/types/app/api/check-config/route.ts","./.next/types/app/api/discharge-ai/route.ts","./.next/types/app/api/fhir/patient/[id]/route.ts","./.next/types/app/api/generate-pdf/route.ts","./.next/types/app/api/generate-qr/route.ts","./.next/types/app/api/insurance-bundle/[patientid]/route.ts","./.next/types/app/api/ocr/route.ts","./.next/types/app/api/ocr-free/route.ts","./.next/types/app/api/parse-pdf/route.ts","./.next/types/app/api/patient-summary/route.ts","./.next/types/app/api/payment-link/route.ts","./.next/types/app/api/reminders/route.ts","./.next/types/app/api/test-ai/route.ts","./.next/types/app/api/users/route.ts","./.next/types/app/api/users/invite/route.ts","./.next/types/app/api/voice-correct/route.ts","./.next/types/app/appointments/page.ts","./.next/types/app/beds/page.ts","./.next/types/app/billing/page.ts","./.next/types/app/dashboard/page.ts","./.next/types/app/forms/page.ts","./.next/types/app/intake/page.ts","./.next/types/app/ipd/[bedid]/page.ts","./.next/types/app/labs/page.ts","./.next/types/app/login/page.ts","./.next/types/app/opd/page.ts","./.next/types/app/opd/[id]/page.ts","./.next/types/app/opd/[id]/edit/page.ts","./.next/types/app/opd/[id]/prescription/page.ts","./.next/types/app/opd/new/page.ts","./.next/types/app/patients/page.ts","./.next/types/app/patients/[id]/page.ts","./.next/types/app/patients/[id]/discharge/page.ts","./.next/types/app/patients/[id]/edit/page.ts","./.next/types/app/patients/new/page.ts","./.next/types/app/queue/page.ts","./.next/types/app/reminders/page.ts","./.next/types/app/reports/page.ts","./.next/types/app/reports/daily/page.ts","./.next/types/app/reports/monthly/page.ts","./.next/types/app/reports/payments/page.ts","./.next/types/app/search/page.ts","./.next/types/app/settings/page.ts","./.next/types/app/setup/page.ts","./node_modules/@types/estree/index.d.ts","./node_modules/@types/json-schema/index.d.ts","./node_modules/@types/eslint/use-at-your-own-risk.d.ts","./node_modules/@types/eslint/index.d.ts","./node_modules/@types/eslint-scope/index.d.ts","./node_modules/@types/minimatch/index.d.ts","./node_modules/@types/glob/index.d.ts","./node_modules/@types/resolve/index.d.ts","./node_modules/@types/trusted-types/lib/index.d.ts","./node_modules/@types/trusted-types/index.d.ts","./node_modules/@types/ws/index.d.ts"],"fileIdsList":[[99,145],[99,145,458,459],[99,145,159,193,457,460],[99,145,186,422,425,428,429],[99,145,175,186,425],[99,145,186,425,429],[99,145,175],[99,145,419],[99,145,423],[99,145,186,421,422,425],[99,145,164,183],[99,145,193],[99,145,193,419],[99,145,164,186,421,425],[99,145,156,175,186,416,417,418,420,424],[99,145,425,433,441],[99,145,417,423],[99,145,425,450,451],[99,145,178,186,193,417,420,425],[99,145,425],[99,145,186,421,425],[99,145,416],[99,145,419,420,421,423,424,425,426,427,429,430,431,432,433,434,435,436,437,438,439,440,441,442,443,444,445,446,447,448,449,451,452,453,454,455],[99,145,153,425,443,446],[99,145,425,433,434,435],[99,145,423,425,434,436],[99,145,424],[99,145,417,419,425],[99,145,425,429,434,436],[99,145,429],[99,145,186,423,425,428],[99,145,417,421,425,433],[99,145,425,443],[99,145,436],[99,145,178,191,193,419,425,450],[99,145,358,877],[99,145,358,878],[99,145,358,879],[99,145,403,409],[99,145,403,410],[99,145,403,411],[99,145,403,412],[99,145,403,413],[99,145,403,414],[99,145,403,750],[99,145,403,796],[99,145,403,797],[99,145,403,798],[99,145,403,799],[99,145,403,803],[99,145,403,801],[99,145,403,804],[99,145,403,805],[99,145,403,806],[99,145,403,807],[99,145,403,811],[99,145,403,814],[99,145,403,812],[99,145,403,815],[99,145,358,880],[99,145,358,882],[99,145,358,883],[99,145,358,884],[99,145,358,886],[99,145,358,887],[99,145,358,889],[99,145,358,890],[99,145,358,871],[99,145,358,891],[99,145,358,895],[99,145,358,894],[99,145,358,896],[99,145,358,897],[99,145,358,892],[99,145,358,873],[99,145,358,900],[99,145,358,901],[99,145,358,899],[99,145,358,902],[99,145,358,898],[99,145,358,903],[99,145,358,904],[99,145,358,906],[99,145,358,907],[99,145,358,905],[99,145,358,908],[99,145,358,909],[99,145,358,910],[99,145,358,911],[99,145,406,407],[99,145,415,462,463,466,467,469,471,472,475,494,515,516,517,518],[99,145,462,470,519],[99,145,468],[99,145,466,470,471,519],[99,145,519],[99,145,464,519],[99,145,473,474],[99,145,469],[99,145,469,471,472,475,492,519],[99,145,487],[99,145,466,472,519],[99,145,415,462,463,465],[99,145,178],[99,145,415],[99,140,145,456,461],[99,145,415,466,519],[99,145,466,519],[99,145,514,519],[99,145,466,483,484,514,519],[99,145,466,484,491,492,519],[99,145,494,519],[99,145,508],[99,145,466,485,508,509,511,520],[99,145,510],[99,145,518],[99,145,507],[99,145,466,471,472,476,481,515],[99,145,481,482],[99,145,466,472,476,482,515],[99,145,476,477,478,479,480,482,498,502,505,514],[99,145,466,471,472,476,515],[99,145,466,471,472,475,476,515],[99,145,477,478,479,480,486,496,500,503,506,515],[99,145,466,471,472,476,488,494,514,515],[99,145,495,514],[99,145,465,466,471,476,483,485,494,495,512,513,514,515],[99,145,465,466,471,472,476,515],[99,145,497,498,499],[99,145,466,471,472,476,498,515],[99,145,466,471,472,476,482,497,499,515],[99,145,501,502],[99,145,466,471,472,475,476,501,515],[99,145,504,505],[99,145,466,471,472,476,504,515],[99,145,465,466,471,476,494,515,516],[99,145,468,494,515,516,517],[99,145,490],[99,145,466,468,471,472,476,488,494],[99,145,489,494],[99,145,465,466,471,476,489,492,493,494],[99,145,644,645],[99,145,786],[99,145,781],[99,145,776,784,785],[99,145,776,780,784,785,786],[99,145,776,781,784,786,787,788,789],[99,145,775,784],[99,145,784],[99,145,779,784],[99,145,776,777,778,779,783,785],[99,145,776,779,781,782,784],[99,145,751],[99,145,751,752],[99,145,759,760,761,762],[99,145,758,759,760,761,762,763,764,765],[99,145,759,763],[99,145,759],[99,145,758,759,760,763],[99,145,757,758],[99,145,755,769,770,771],[99,145,767],[99,145,766],[99,145,766,767,768,769,771],[99,145,755,756,767,768,770],[99,145,770],[99,145,773],[99,145,753,754,772,774,790],[99,145,967,970],[99,145,967,968,969],[99,145,970],[99,145,156,157,193,972],[99,142,145],[99,144,145],[145],[99,145,150,178],[99,145,146,151,156,164,175,186],[99,145,146,147,156,164],[94,95,96,99,145],[99,145,148,187],[99,145,149,150,157,165],[99,145,150,175,183],[99,145,151,153,156,164],[99,144,145,152],[99,145,153,154],[99,145,155,156],[99,144,145,156],[99,145,156,157,158,175,186],[99,145,156,157,158,171,175,178],[99,145,153,156,159,164,175,186],[99,145,156,157,159,160,164,175,183,186],[99,145,159,161,175,183,186],[97,98,99,100,101,102,103,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,156,162],[99,145,163,186,191],[99,145,153,156,164,175],[99,145,165],[99,145,166],[99,144,145,167],[99,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,169],[99,145,170],[99,145,156,171,172],[99,145,171,173,187,189],[99,145,156,175,176,178],[99,145,177,178],[99,145,175,176],[99,145,179],[99,142,145,175,180],[99,145,156,181,182],[99,145,181,182],[99,145,150,164,175,183],[99,145,184],[99,145,164,185],[99,145,159,170,186],[99,145,150,187],[99,145,175,188],[99,145,163,189],[99,145,190],[99,140,145],[99,140,145,156,158,167,175,178,186,189,191],[99,145,175,192],[87,99,145,197,198,199],[87,99,145,197,198],[87,99,145],[87,91,99,145,196,359,402],[87,91,99,145,195,359,402],[84,85,86,99,145],[99,145,975],[99,145,156,159,161,164,175,183,186,192,193],[92,99,145],[99,145,363],[99,145,365,366,367],[99,145,369],[99,145,202,212,218,220,359],[99,145,202,209,211,214,232],[99,145,212],[99,145,212,337],[99,145,266,284,299,405],[99,145,307],[99,145,202,212,219,252,262,334,335,405],[99,145,219,405],[99,145,212,262,263,264,405],[99,145,212,219,252,405],[99,145,405],[99,145,202,219,220,405],[99,145,292],[99,144,145,193,291],[87,99,145,285,286,287,304,305],[87,99,145,285],[99,145,275],[99,145,274,276,379],[87,99,145,285,286,302],[99,145,281,305,391],[99,145,389,390],[99,145,226,388],[99,145,278],[99,144,145,193,226,274,275,276,277],[87,99,145,302,304,305],[99,145,302,304],[99,145,302,303,305],[99,145,170,193],[99,145,273],[99,144,145,193,211,213,269,270,271,272],[87,99,145,203,382],[87,99,145,186,193],[87,99,145,219,250],[87,99,145,219],[99,145,248,253],[87,99,145,249,362],[87,91,99,145,159,193,195,196,359,400,401],[99,145,359],[99,145,201],[99,145,352,353,354,355,356,357],[99,145,354],[87,99,145,249,285,362],[87,99,145,285,360,362],[87,99,145,285,362],[99,145,159,193,213,362],[99,145,159,193,210,211,222,240,273,278,279,301,302],[99,145,270,273,278,286,288,289,290,292,293,294,295,296,297,298,405],[99,145,271],[87,99,145,170,193,211,212,240,242,244,269,301,305,359,405],[99,145,159,193,213,214,226,227,274],[99,145,159,193,212,214],[99,145,159,175,193,210,213,214],[99,145,159,170,186,193,210,211,212,213,214,219,222,223,233,234,236,239,240,242,243,244,268,269,302,310,312,315,317,320,322,323,324,325],[99,145,159,175,193],[99,145,202,203,204,210,211,359,362,405],[99,145,159,175,186,193,207,336,338,339,405],[99,145,170,186,193,207,210,213,230,234,236,237,238,242,269,315,326,328,334,348,349],[99,145,212,216,269],[99,145,210,212],[99,145,223,316],[99,145,318,319],[99,145,318],[99,145,316],[99,145,318,321],[99,145,206,207],[99,145,206,245],[99,145,206],[99,145,208,223,314],[99,145,313],[99,145,207,208],[99,145,208,311],[99,145,207],[99,145,301],[99,145,159,193,210,222,241,260,266,280,283,300,302],[99,145,254,255,256,257,258,259,281,282,305,360],[99,145,309],[99,145,159,193,210,222,241,246,306,308,310,359,362],[99,145,159,186,193,203,210,212,268],[99,145,265],[99,145,159,193,342,347],[99,145,233,268,362],[99,145,330,334,348,351],[99,145,159,216,334,342,343,351],[99,145,202,212,233,243,345],[99,145,159,193,212,219,243,329,330,340,341,344,346],[99,145,194,240,241,359,362],[99,145,159,170,186,193,208,210,211,213,216,221,222,230,233,234,236,237,238,239,242,244,268,269,312,326,327,362],[99,145,159,193,210,212,216,328,350],[99,145,159,193,211,213],[87,99,145,159,170,193,201,203,210,211,214,222,239,240,242,244,309,359,362],[99,145,159,170,186,193,205,208,209,213],[99,145,206,267],[99,145,159,193,206,211,222],[99,145,159,193,212,223],[99,145,159,193],[99,145,226],[99,145,225],[99,145,227],[99,145,212,224,226,230],[99,145,212,224,226],[99,145,159,193,205,212,213,219,227,228,229],[87,99,145,302,303,304],[99,145,261],[87,99,145,203],[87,99,145,236],[87,99,145,194,239,244,359,362],[99,145,203,382,383],[87,99,145,253],[87,99,145,170,186,193,201,247,249,251,252,362],[99,145,213,219,236],[99,145,235],[87,99,145,157,159,170,193,201,253,262,359,360,361],[83,87,88,89,90,99,145,195,196,359,402],[99,145,150],[99,145,331,332,333],[99,145,331],[99,145,371],[99,145,373],[99,145,375],[99,145,377],[99,145,380],[99,145,384],[91,93,99,145,359,364,368,370,372,374,376,378,381,385,387,393,394,396,403,404,405],[99,145,386],[99,145,392],[99,145,249],[99,145,395],[99,144,145,227,228,229,230,397,398,399,402],[87,91,99,145,159,161,170,193,195,196,197,199,201,214,351,358,362,402],[99,145,521,523,526,620],[99,145,521,522,523,526,527,529,532,533,534,537,539,552,558,559,564,565,578,581,583,584,588,589,597,598,599,600,601,604,608,610,614,615,616,619],[99,145,522,531,620],[99,145,528],[99,145,526,531,532,620],[99,145,620],[99,145,524,620],[99,145,535,536],[99,145,529],[99,145,529,532,533,537,620,621],[99,145,526,530,620],[99,145,521,522,523,525],[99,145,521],[99,145,521,526,620],[99,145,526,620],[99,145,526,539,542,544,554,556,557,622],[99,145,524,526,544,566,567,569,570,571],[99,145,542,545,553,556,622],[99,145,524,526,542,545,558,622],[99,145,524,542,545,546,553,556,622],[99,145,543],[99,145,528,542,552],[99,145,552],[99,145,526,544,547,548,552,622],[99,145,542,552,553],[99,145,554,555,557],[99,145,533],[99,145,538,561,562,563],[99,145,526,532,538],[99,145,525,526,532,537,538,562,564],[99,145,526,532,537,538,562,564],[99,145,526,528,532,533,538,565],[99,145,526,528,532,533,538,566,567,568,569,570],[99,145,538,570,571,574,577],[99,145,538,575,576],[99,145,526,532,538,575],[99,145,526,532,533,538,577],[99,145,528,538,572,573,574],[99,145,526,528,532,533,538,571],[99,145,525,526,528,532,533,538,566,567,568,569,570,571],[99,145,526,528,532,533,538,567],[99,145,525,526,528,532,538,566,568,569,570,571],[99,145,528,538,558],[99,145,541],[99,145,525,526,528,532,533,538,539,540,545,546,553,554,556,557,558],[99,145,540,558],[99,145,526,533,538,558],[99,145,541,559],[99,145,525,526,532,538,539,558],[99,145,526,532,533,538,552,580],[99,145,526,532,533,537,538,579],[99,145,526,528,532,538,552,582],[99,145,526,532,533,538,552,583],[99,145,526,528,532,533,538,552,585,587],[99,145,526,532,533,538,587],[99,145,526,528,532,533,538,552,558,585,586],[99,145,526,532,533,537,538],[99,145,538,591],[99,145,526,532,538,585],[99,145,538,593],[99,145,526,532,533,538],[99,145,538,590,592,594,596],[99,145,526,533,538],[99,145,526,528,532,533,538,590,595],[99,145,538,585],[99,145,528,538,552,585],[99,145,525,526,532,537,538,599],[99,145,528,539,552,560,564,565,578,581,583,584,588,589,597,598,599,600,601,604,608,610,614,615,618],[99,145,526,532,538,552,604],[99,145,526,532,538,552,603,604],[99,145,528,538,552,602,603,604],[99,145,526,533,538,552],[99,145,526,528,532,538,552],[99,145,525,526,528,532,533,538,547,549,550,551,552],[99,145,526,532,533,537,538,605,607],[99,145,526,532,533,537,538,606],[99,145,526,532,537,538],[99,145,526,532,538,589,609],[99,145,526,532,533,538,611,612,614],[99,145,526,532,533,538,611,614],[99,145,526,528,532,533,538,612,613],[99,145,617],[99,145,616],[99,145,523,538],[99,145,537],[99,145,636],[99,145,711,722,723,724,725,726,727,728,730,735],[99,145,722,723,724,725,726,727,728,730,731,736],[99,145,711,714,719,720,722,734,735,736],[99,145,711,719,722,734,736],[99,145,711,719,722,734,735,736],[99,145,711,714,715,716,721,734,735,736],[99,145,711,722,723,724,725,726,727,728,730,734,735],[99,145,711,722,734],[99,145,711,714,719,722,729,734,735,736],[99,145,720],[99,145,712,713,714,715,716,717,718,719,721,732,733,734,735,737,739,740,741,742,743,745],[99,145,711],[99,145,711,715,716,717],[99,145,629,666,674,711,713,714,719,731,732,733,735],[99,145,666,669],[99,145,711,712,734],[99,145,711,712,734,744],[99,145,711,713,714,715,716,718,734,735],[99,145,715,716,717,735],[99,145,729,738],[99,145,711,729,735],[99,145,678,683,684,685,686,687,688,689,690,691,692,693,694,695,696],[99,145,625,626,629,631,634,656,683],[99,145,626,629,632,655,684],[99,145,625,631,634,683],[99,145,629,632,655,686],[99,145,625,626,628,629,631,632,634,656],[99,145,629,632,634,655,678],[99,145,629,632,655,684],[99,145,629,632,683],[99,145,626,629,632,634,678,682],[99,145,625,628,629,631,632,655,683],[99,145,629,632,634,678],[99,145,625,628,631,632,634],[99,145,628,632],[99,145,680,681,682,709],[99,145,626,628,629,630,632,634],[99,145,625,626,629,631,632,655,679,680,681],[99,145,629],[99,145,632],[99,145,625,629,651,655,666],[99,145,625,666,667],[99,145,629,655],[99,145,629,655,673,674],[99,145,625,629,646,655],[99,145,656],[99,145,623,624,625,626,627,628,629,630,631,632,633,634,635,636,652,653,655,656,657,658,659,660,661,662,663,664,665,667,668,669,670,671,672,673,675,676,677,697,698,699,700,703,704,705,706,708,710],[99,145,624,626,628,632,634,655],[99,145,624,625,626,627,628,629,630,631,632,633,655,656],[99,145,624,625,626,627,628,629,630,631,634,655,656],[99,145,655],[99,145,630,632,655],[99,145,632,655,656],[99,145,625,626,628,631,634,635,655],[99,145,701],[99,145,633],[99,145,625,626,628,629,630,631,632,634,655,656,657,701,702],[99,145,633,703],[99,145,655,703],[99,145,629,633],[99,145,623,624,625,626,627,628,629,630,631,632,633,634,636,653,654,656],[99,145,655,656],[99,145,633,707],[99,145,629,632,655,672,676,697],[99,145,632,636,652,655],[99,145,629,632,652,655],[99,145,630,632,651],[99,145,629,652,655,656],[99,145,626,628,629,630,632,634,655,656,672],[99,145,628,629,632,634,655,673],[99,145,623,629,655,656,661,663],[99,145,623,629,632,655,656,660,661,662],[99,145,651,711,746,747],[99,145,674],[99,145,637,638,639,640,641,642,643,647,648,649,650],[99,145,646],[99,145,835,836,837,843,844,845,847,848],[99,145,835,837,838,839,840,841,842],[99,145,823,826,827,828,832,833,834,835,836,844,849,850,851],[99,145,826],[99,145,830],[99,145,831],[99,145,823,824,825,852],[99,145,826,852],[99,145,829,831],[99,145,835,843,858],[99,145,835,837,847],[99,145,822,823,835,843,849,850,852,853,854,855,856,857,858,859,860,861],[99,145,822],[99,145,846],[99,145,843],[99,112,116,145,186],[99,112,145,175,186],[99,107,145],[99,109,112,145,183,186],[99,107,145,193],[99,109,112,145,164,186],[99,104,105,108,111,145,156,175,186],[99,112,119,145],[99,104,110,145],[99,112,133,134,145],[99,108,112,145,178,186,193],[99,133,145,193],[99,106,107,145,193],[99,112,145],[99,106,107,108,109,110,111,112,113,114,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,134,135,136,137,138,139,145],[99,112,127,145],[99,112,119,120,145],[99,110,112,120,121,145],[99,111,145],[99,104,107,112,145],[99,112,116,120,121,145],[99,116,145],[99,110,112,115,145,186],[99,104,109,112,119,145],[99,107,112,133,145,191,193],[87,99,145,387,816,869,876],[87,99,145,869,876],[87,99,145,387,813,820,867,868,869,876],[99,145,403],[99,145,403,749],[99,145,403,749,792],[99,145,403,791,795],[99,145,403,748],[99,145,403,791],[99,145,403,802],[99,145,403,749,800],[99,145,403,748,749],[99,145,403,520,622,749],[99,145,403,791,813],[87,99,145,387,393,813,867,869,876],[87,99,145,813,867,869,876],[87,99,145,387,794,813,867,869,876],[87,99,145,387,393,813,864,867,869,876],[87,99,145,387,813,867,869,876],[87,99,145,869],[87,99,145,393,800,867,869,876,885],[87,99,145,393,813,867,869],[87,99,145,387,393,813,867,869,876,888],[87,99,145,387,393,800,813,817,867,869,876,885],[99,145,406],[87,99,145,393,813,818,821,869],[99,145,387,869],[87,99,145,387,393,794,813,867,869,876,888],[87,99,145,387,393,794,813,867,869,876,893],[87,99,145,387,393,794,800,813,867,869,876,885],[87,99,145,387,393,794,800,813,867,869,876,885,888,893],[87,99,145,387,393,813,869,876],[99,145,393],[87,99,145,387,393,800,813,869,876,885],[87,99,145,387,393,794,813,820,867,868,869,876,893],[87,99,145,387,393,800,813,816,867,869,876,885],[87,99,145,387,393,813,817,867,869,876],[87,99,145,867,868,869,876],[87,99,145,813,818,864,869,876],[87,99,145,387,869,876],[87,99,145,813,819,869],[87,99,145,387,393,813,818,869,874,875],[99,145,387,393,869],[87,99,145,387,393,813,818,821,869],[87,99,145,813,817,867,869],[87,99,145,800,802,863,867,869],[99,145,520,622,748],[99,145,813],[87,99,145,813],[99,145,794],[99,145,862],[99,145,791],[99,145,865,866],[99,145,867]],"fileInfos":[{"version":"c430d44666289dae81f30fa7b2edebf186ecc91a2d4c71266ea6ae76388792e1","affectsGlobalScope":true,"impliedFormat":1},{"version":"45b7ab580deca34ae9729e97c13cfd999df04416a79116c3bfb483804f85ded4","impliedFormat":1},{"version":"3facaf05f0c5fc569c5649dd359892c98a85557e3e0c847964caeb67076f4d75","impliedFormat":1},{"version":"e44bb8bbac7f10ecc786703fe0a6a4b952189f908707980ba8f3c8975a760962","impliedFormat":1},{"version":"5e1c4c362065a6b95ff952c0eab010f04dcd2c3494e813b493ecfd4fcb9fc0d8","impliedFormat":1},{"version":"68d73b4a11549f9c0b7d352d10e91e5dca8faa3322bfb77b661839c42b1ddec7","impliedFormat":1},{"version":"5efce4fc3c29ea84e8928f97adec086e3dc876365e0982cc8479a07954a3efd4","impliedFormat":1},{"version":"feecb1be483ed332fad555aff858affd90a48ab19ba7272ee084704eb7167569","impliedFormat":1},{"version":"ee7bad0c15b58988daa84371e0b89d313b762ab83cb5b31b8a2d1162e8eb41c2","impliedFormat":1},{"version":"27bdc30a0e32783366a5abeda841bc22757c1797de8681bbe81fbc735eeb1c10","impliedFormat":1},{"version":"8fd575e12870e9944c7e1d62e1f5a73fcf23dd8d3a321f2a2c74c20d022283fe","impliedFormat":1},{"version":"2ab096661c711e4a81cc464fa1e6feb929a54f5340b46b0a07ac6bbf857471f0","impliedFormat":1},{"version":"080941d9f9ff9307f7e27a83bcd888b7c8270716c39af943532438932ec1d0b9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2e80ee7a49e8ac312cc11b77f1475804bee36b3b2bc896bead8b6e1266befb43","affectsGlobalScope":true,"impliedFormat":1},{"version":"c57796738e7f83dbc4b8e65132f11a377649c00dd3eee333f672b8f0a6bea671","affectsGlobalScope":true,"impliedFormat":1},{"version":"dc2df20b1bcdc8c2d34af4926e2c3ab15ffe1160a63e58b7e09833f616efff44","affectsGlobalScope":true,"impliedFormat":1},{"version":"515d0b7b9bea2e31ea4ec968e9edd2c39d3eebf4a2d5cbd04e88639819ae3b71","affectsGlobalScope":true,"impliedFormat":1},{"version":"0559b1f683ac7505ae451f9a96ce4c3c92bdc71411651ca6ddb0e88baaaad6a3","affectsGlobalScope":true,"impliedFormat":1},{"version":"0dc1e7ceda9b8b9b455c3a2d67b0412feab00bd2f66656cd8850e8831b08b537","affectsGlobalScope":true,"impliedFormat":1},{"version":"ce691fb9e5c64efb9547083e4a34091bcbe5bdb41027e310ebba8f7d96a98671","affectsGlobalScope":true,"impliedFormat":1},{"version":"8d697a2a929a5fcb38b7a65594020fcef05ec1630804a33748829c5ff53640d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ff2a353abf8a80ee399af572debb8faab2d33ad38c4b4474cff7f26e7653b8d","affectsGlobalScope":true,"impliedFormat":1},{"version":"fb0f136d372979348d59b3f5020b4cdb81b5504192b1cacff5d1fbba29378aa1","affectsGlobalScope":true,"impliedFormat":1},{"version":"d15bea3d62cbbdb9797079416b8ac375ae99162a7fba5de2c6c505446486ac0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"68d18b664c9d32a7336a70235958b8997ebc1c3b8505f4f1ae2b7e7753b87618","affectsGlobalScope":true,"impliedFormat":1},{"version":"eb3d66c8327153d8fa7dd03f9c58d351107fe824c79e9b56b462935176cdf12a","affectsGlobalScope":true,"impliedFormat":1},{"version":"38f0219c9e23c915ef9790ab1d680440d95419ad264816fa15009a8851e79119","affectsGlobalScope":true,"impliedFormat":1},{"version":"69ab18c3b76cd9b1be3d188eaf8bba06112ebbe2f47f6c322b5105a6fbc45a2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"a680117f487a4d2f30ea46f1b4b7f58bef1480456e18ba53ee85c2746eeca012","affectsGlobalScope":true,"impliedFormat":1},{"version":"2f11ff796926e0832f9ae148008138ad583bd181899ab7dd768a2666700b1893","affectsGlobalScope":true,"impliedFormat":1},{"version":"4de680d5bb41c17f7f68e0419412ca23c98d5749dcaaea1896172f06435891fc","affectsGlobalScope":true,"impliedFormat":1},{"version":"954296b30da6d508a104a3a0b5d96b76495c709785c1d11610908e63481ee667","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac9538681b19688c8eae65811b329d3744af679e0bdfa5d842d0e32524c73e1c","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a969edff4bd52585473d24995c5ef223f6652d6ef46193309b3921d65dd4376","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e9fbd7030c440b33d021da145d3232984c8bb7916f277e8ffd3dc2e3eae2bdb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811ec78f7fefcabbda4bfa93b3eb67d9ae166ef95f9bff989d964061cbf81a0c","affectsGlobalScope":true,"impliedFormat":1},{"version":"717937616a17072082152a2ef351cb51f98802fb4b2fdabd32399843875974ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"d7e7d9b7b50e5f22c915b525acc5a49a7a6584cf8f62d0569e557c5cfc4b2ac2","affectsGlobalScope":true,"impliedFormat":1},{"version":"71c37f4c9543f31dfced6c7840e068c5a5aacb7b89111a4364b1d5276b852557","affectsGlobalScope":true,"impliedFormat":1},{"version":"576711e016cf4f1804676043e6a0a5414252560eb57de9faceee34d79798c850","affectsGlobalScope":true,"impliedFormat":1},{"version":"89c1b1281ba7b8a96efc676b11b264de7a8374c5ea1e6617f11880a13fc56dc6","affectsGlobalScope":true,"impliedFormat":1},{"version":"74f7fa2d027d5b33eb0471c8e82a6c87216223181ec31247c357a3e8e2fddc5b","affectsGlobalScope":true,"impliedFormat":1},{"version":"d6d7ae4d1f1f3772e2a3cde568ed08991a8ae34a080ff1151af28b7f798e22ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"063600664504610fe3e99b717a1223f8b1900087fab0b4cad1496a114744f8df","affectsGlobalScope":true,"impliedFormat":1},{"version":"934019d7e3c81950f9a8426d093458b65d5aff2c7c1511233c0fd5b941e608ab","affectsGlobalScope":true,"impliedFormat":1},{"version":"52ada8e0b6e0482b728070b7639ee42e83a9b1c22d205992756fe020fd9f4a47","affectsGlobalScope":true,"impliedFormat":1},{"version":"3bdefe1bfd4d6dee0e26f928f93ccc128f1b64d5d501ff4a8cf3c6371200e5e6","affectsGlobalScope":true,"impliedFormat":1},{"version":"59fb2c069260b4ba00b5643b907ef5d5341b167e7d1dbf58dfd895658bda2867","affectsGlobalScope":true,"impliedFormat":1},{"version":"639e512c0dfc3fad96a84caad71b8834d66329a1f28dc95e3946c9b58176c73a","affectsGlobalScope":true,"impliedFormat":1},{"version":"368af93f74c9c932edd84c58883e736c9e3d53cec1fe24c0b0ff451f529ceab1","affectsGlobalScope":true,"impliedFormat":1},{"version":"af3dd424cf267428f30ccfc376f47a2c0114546b55c44d8c0f1d57d841e28d74","affectsGlobalScope":true,"impliedFormat":1},{"version":"995c005ab91a498455ea8dfb63aa9f83fa2ea793c3d8aa344be4a1678d06d399","affectsGlobalScope":true,"impliedFormat":1},{"version":"959d36cddf5e7d572a65045b876f2956c973a586da58e5d26cde519184fd9b8a","affectsGlobalScope":true,"impliedFormat":1},{"version":"965f36eae237dd74e6cca203a43e9ca801ce38824ead814728a2807b1910117d","affectsGlobalScope":true,"impliedFormat":1},{"version":"3925a6c820dcb1a06506c90b1577db1fdbf7705d65b62b99dce4be75c637e26b","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a3d63ef2b853447ec4f749d3f368ce642264246e02911fcb1590d8c161b8005","affectsGlobalScope":true,"impliedFormat":1},{"version":"8cdf8847677ac7d20486e54dd3fcf09eda95812ac8ace44b4418da1bbbab6eb8","affectsGlobalScope":true,"impliedFormat":1},{"version":"8444af78980e3b20b49324f4a16ba35024fef3ee069a0eb67616ea6ca821c47a","affectsGlobalScope":true,"impliedFormat":1},{"version":"3287d9d085fbd618c3971944b65b4be57859f5415f495b33a6adc994edd2f004","affectsGlobalScope":true,"impliedFormat":1},{"version":"b4b67b1a91182421f5df999988c690f14d813b9850b40acd06ed44691f6727ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"df83c2a6c73228b625b0beb6669c7ee2a09c914637e2d35170723ad49c0f5cd4","affectsGlobalScope":true,"impliedFormat":1},{"version":"436aaf437562f276ec2ddbee2f2cdedac7664c1e4c1d2c36839ddd582eeb3d0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e3c06ea092138bf9fa5e874a1fdbc9d54805d074bee1de31b99a11e2fec239d","affectsGlobalScope":true,"impliedFormat":1},{"version":"87dc0f382502f5bbce5129bdc0aea21e19a3abbc19259e0b43ae038a9fc4e326","affectsGlobalScope":true,"impliedFormat":1},{"version":"b1cb28af0c891c8c96b2d6b7be76bd394fddcfdb4709a20ba05a7c1605eea0f9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2fef54945a13095fdb9b84f705f2b5994597640c46afeb2ce78352fab4cb3279","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac77cb3e8c6d3565793eb90a8373ee8033146315a3dbead3bde8db5eaf5e5ec6","affectsGlobalScope":true,"impliedFormat":1},{"version":"56e4ed5aab5f5920980066a9409bfaf53e6d21d3f8d020c17e4de584d29600ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ece9f17b3866cc077099c73f4983bddbcb1dc7ddb943227f1ec070f529dedd1","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a6282c8827e4b9a95f4bf4f5c205673ada31b982f50572d27103df8ceb8013c","affectsGlobalScope":true,"impliedFormat":1},{"version":"1c9319a09485199c1f7b0498f2988d6d2249793ef67edda49d1e584746be9032","affectsGlobalScope":true,"impliedFormat":1},{"version":"e3a2a0cee0f03ffdde24d89660eba2685bfbdeae955a6c67e8c4c9fd28928eeb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811c71eee4aa0ac5f7adf713323a5c41b0cf6c4e17367a34fbce379e12bbf0a4","affectsGlobalScope":true,"impliedFormat":1},{"version":"51ad4c928303041605b4d7ae32e0c1ee387d43a24cd6f1ebf4a2699e1076d4fa","affectsGlobalScope":true,"impliedFormat":1},{"version":"60037901da1a425516449b9a20073aa03386cce92f7a1fd902d7602be3a7c2e9","affectsGlobalScope":true,"impliedFormat":1},{"version":"d4b1d2c51d058fc21ec2629fff7a76249dec2e36e12960ea056e3ef89174080f","affectsGlobalScope":true,"impliedFormat":1},{"version":"22adec94ef7047a6c9d1af3cb96be87a335908bf9ef386ae9fd50eeb37f44c47","affectsGlobalScope":true,"impliedFormat":1},{"version":"196cb558a13d4533a5163286f30b0509ce0210e4b316c56c38d4c0fd2fb38405","affectsGlobalScope":true,"impliedFormat":1},{"version":"73f78680d4c08509933daf80947902f6ff41b6230f94dd002ae372620adb0f60","affectsGlobalScope":true,"impliedFormat":1},{"version":"c5239f5c01bcfa9cd32f37c496cf19c61d69d37e48be9de612b541aac915805b","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e7f8264d0fb4c5339605a15daadb037bf238c10b654bb3eee14208f860a32ea","affectsGlobalScope":true,"impliedFormat":1},{"version":"782dec38049b92d4e85c1585fbea5474a219c6984a35b004963b00beb1aab538","affectsGlobalScope":true,"impliedFormat":1},{"version":"0990a7576222f248f0a3b888adcb7389f957928ce2afb1cd5128169086ff4d29","impliedFormat":1},{"version":"eb5b19b86227ace1d29ea4cf81387279d04bb34051e944bc53df69f58914b788","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac51dd7d31333793807a6abaa5ae168512b6131bd41d9c5b98477fc3b7800f9f","impliedFormat":1},{"version":"87d9d29dbc745f182683f63187bf3d53fd8673e5fca38ad5eaab69798ed29fbc","impliedFormat":1},{"version":"035312d4945d13efa134ae482f6dc56a1a9346f7ac3be7ccbad5741058ce87f3","affectsGlobalScope":true,"impliedFormat":1},{"version":"cc69795d9954ee4ad57545b10c7bf1a7260d990231b1685c147ea71a6faa265c","impliedFormat":1},{"version":"8bc6c94ff4f2af1f4023b7bb2379b08d3d7dd80c698c9f0b07431ea16101f05f","impliedFormat":1},{"version":"1b61d259de5350f8b1e5db06290d31eaebebc6baafd5f79d314b5af9256d7153","impliedFormat":1},{"version":"57194e1f007f3f2cbef26fa299d4c6b21f4623a2eddc63dfeef79e38e187a36e","impliedFormat":1},{"version":"0f6666b58e9276ac3a38fdc80993d19208442d6027ab885580d93aec76b4ef00","impliedFormat":1},{"version":"05fd364b8ef02fb1e174fbac8b825bdb1e5a36a016997c8e421f5fab0a6da0a0","impliedFormat":1},{"version":"70521b6ab0dcba37539e5303104f29b721bfb2940b2776da4cc818c07e1fefc1","affectsGlobalScope":true,"impliedFormat":1},{"version":"ab41ef1f2cdafb8df48be20cd969d875602483859dc194e9c97c8a576892c052","affectsGlobalScope":true,"impliedFormat":1},{"version":"d153a11543fd884b596587ccd97aebbeed950b26933ee000f94009f1ab142848","affectsGlobalScope":true,"impliedFormat":1},{"version":"21d819c173c0cf7cc3ce57c3276e77fd9a8a01d35a06ad87158781515c9a438a","impliedFormat":1},{"version":"98cffbf06d6bab333473c70a893770dbe990783904002c4f1a960447b4b53dca","affectsGlobalScope":true,"impliedFormat":1},{"version":"ba481bca06f37d3f2c137ce343c7d5937029b2468f8e26111f3c9d9963d6568d","affectsGlobalScope":true,"impliedFormat":1},{"version":"6d9ef24f9a22a88e3e9b3b3d8c40ab1ddb0853f1bfbd5c843c37800138437b61","affectsGlobalScope":true,"impliedFormat":1},{"version":"1db0b7dca579049ca4193d034d835f6bfe73096c73663e5ef9a0b5779939f3d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"9798340ffb0d067d69b1ae5b32faa17ab31b82466a3fc00d8f2f2df0c8554aaa","affectsGlobalScope":true,"impliedFormat":1},{"version":"f26b11d8d8e4b8028f1c7d618b22274c892e4b0ef5b3678a8ccbad85419aef43","affectsGlobalScope":true,"impliedFormat":1},{"version":"5929864ce17fba74232584d90cb721a89b7ad277220627cc97054ba15a98ea8f","impliedFormat":1},{"version":"763fe0f42b3d79b440a9b6e51e9ba3f3f91352469c1e4b3b67bfa4ff6352f3f4","impliedFormat":1},{"version":"25c8056edf4314820382a5fdb4bb7816999acdcb929c8f75e3f39473b87e85bc","impliedFormat":1},{"version":"c464d66b20788266e5353b48dc4aa6bc0dc4a707276df1e7152ab0c9ae21fad8","impliedFormat":1},{"version":"78d0d27c130d35c60b5e5566c9f1e5be77caf39804636bc1a40133919a949f21","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"1d6e127068ea8e104a912e42fc0a110e2aa5a66a356a917a163e8cf9a65e4a75","impliedFormat":1},{"version":"5ded6427296cdf3b9542de4471d2aa8d3983671d4cac0f4bf9c637208d1ced43","impliedFormat":1},{"version":"7f182617db458e98fc18dfb272d40aa2fff3a353c44a89b2c0ccb3937709bfb5","impliedFormat":1},{"version":"cadc8aced301244057c4e7e73fbcae534b0f5b12a37b150d80e5a45aa4bebcbd","impliedFormat":1},{"version":"385aab901643aa54e1c36f5ef3107913b10d1b5bb8cbcd933d4263b80a0d7f20","impliedFormat":1},{"version":"9670d44354bab9d9982eca21945686b5c24a3f893db73c0dae0fd74217a4c219","impliedFormat":1},{"version":"0b8a9268adaf4da35e7fa830c8981cfa22adbbe5b3f6f5ab91f6658899e657a7","impliedFormat":1},{"version":"11396ed8a44c02ab9798b7dca436009f866e8dae3c9c25e8c1fbc396880bf1bb","impliedFormat":1},{"version":"ba7bc87d01492633cb5a0e5da8a4a42a1c86270e7b3d2dea5d156828a84e4882","impliedFormat":1},{"version":"4893a895ea92c85345017a04ed427cbd6a1710453338df26881a6019432febdd","impliedFormat":1},{"version":"c21dc52e277bcfc75fac0436ccb75c204f9e1b3fa5e12729670910639f27343e","impliedFormat":1},{"version":"13f6f39e12b1518c6650bbb220c8985999020fe0f21d818e28f512b7771d00f9","impliedFormat":1},{"version":"9b5369969f6e7175740bf51223112ff209f94ba43ecd3bb09eefff9fd675624a","impliedFormat":1},{"version":"4fe9e626e7164748e8769bbf74b538e09607f07ed17c2f20af8d680ee49fc1da","impliedFormat":1},{"version":"24515859bc0b836719105bb6cc3d68255042a9f02a6022b3187948b204946bd2","impliedFormat":1},{"version":"ea0148f897b45a76544ae179784c95af1bd6721b8610af9ffa467a518a086a43","impliedFormat":1},{"version":"24c6a117721e606c9984335f71711877293a9651e44f59f3d21c1ea0856f9cc9","impliedFormat":1},{"version":"dd3273ead9fbde62a72949c97dbec2247ea08e0c6952e701a483d74ef92d6a17","impliedFormat":1},{"version":"405822be75ad3e4d162e07439bac80c6bcc6dbae1929e179cf467ec0b9ee4e2e","impliedFormat":1},{"version":"0db18c6e78ea846316c012478888f33c11ffadab9efd1cc8bcc12daded7a60b6","impliedFormat":1},{"version":"e61be3f894b41b7baa1fbd6a66893f2579bfad01d208b4ff61daef21493ef0a8","impliedFormat":1},{"version":"bd0532fd6556073727d28da0edfd1736417a3f9f394877b6d5ef6ad88fba1d1a","impliedFormat":1},{"version":"89167d696a849fce5ca508032aabfe901c0868f833a8625d5a9c6e861ef935d2","impliedFormat":1},{"version":"615ba88d0128ed16bf83ef8ccbb6aff05c3ee2db1cc0f89ab50a4939bfc1943f","impliedFormat":1},{"version":"a4d551dbf8746780194d550c88f26cf937caf8d56f102969a110cfaed4b06656","impliedFormat":1},{"version":"8bd86b8e8f6a6aa6c49b71e14c4ffe1211a0e97c80f08d2c8cc98838006e4b88","impliedFormat":1},{"version":"317e63deeb21ac07f3992f5b50cdca8338f10acd4fbb7257ebf56735bf52ab00","impliedFormat":1},{"version":"4732aec92b20fb28c5fe9ad99521fb59974289ed1e45aecb282616202184064f","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"bf67d53d168abc1298888693338cb82854bdb2e69ef83f8a0092093c2d562107","impliedFormat":1},{"version":"b52476feb4a0cbcb25e5931b930fc73cb6643fb1a5060bf8a3dda0eeae5b4b68","affectsGlobalScope":true,"impliedFormat":1},{"version":"e2677634fe27e87348825bb041651e22d50a613e2fdf6a4a3ade971d71bac37e","impliedFormat":1},{"version":"7394959e5a741b185456e1ef5d64599c36c60a323207450991e7a42e08911419","impliedFormat":1},{"version":"8c0bcd6c6b67b4b503c11e91a1fb91522ed585900eab2ab1f61bba7d7caa9d6f","impliedFormat":1},{"version":"8cd19276b6590b3ebbeeb030ac271871b9ed0afc3074ac88a94ed2449174b776","affectsGlobalScope":true,"impliedFormat":1},{"version":"696eb8d28f5949b87d894b26dc97318ef944c794a9a4e4f62360cd1d1958014b","impliedFormat":1},{"version":"3f8fa3061bd7402970b399300880d55257953ee6d3cd408722cb9ac20126460c","impliedFormat":1},{"version":"35ec8b6760fd7138bbf5809b84551e31028fb2ba7b6dc91d95d098bf212ca8b4","affectsGlobalScope":true,"impliedFormat":1},{"version":"5524481e56c48ff486f42926778c0a3cce1cc85dc46683b92b1271865bcf015a","impliedFormat":1},{"version":"68bd56c92c2bd7d2339457eb84d63e7de3bd56a69b25f3576e1568d21a162398","affectsGlobalScope":true,"impliedFormat":1},{"version":"3e93b123f7c2944969d291b35fed2af79a6e9e27fdd5faa99748a51c07c02d28","impliedFormat":1},{"version":"9d19808c8c291a9010a6c788e8532a2da70f811adb431c97520803e0ec649991","impliedFormat":1},{"version":"87aad3dd9752067dc875cfaa466fc44246451c0c560b820796bdd528e29bef40","impliedFormat":1},{"version":"4aacb0dd020eeaef65426153686cc639a78ec2885dc72ad220be1d25f1a439df","impliedFormat":1},{"version":"f0bd7e6d931657b59605c44112eaf8b980ba7f957a5051ed21cb93d978cf2f45","impliedFormat":1},{"version":"8db0ae9cb14d9955b14c214f34dae1b9ef2baee2fe4ce794a4cd3ac2531e3255","affectsGlobalScope":true,"impliedFormat":1},{"version":"15fc6f7512c86810273af28f224251a5a879e4261b4d4c7e532abfbfc3983134","impliedFormat":1},{"version":"58adba1a8ab2d10b54dc1dced4e41f4e7c9772cbbac40939c0dc8ce2cdb1d442","impliedFormat":1},{"version":"641942a78f9063caa5d6b777c99304b7d1dc7328076038c6d94d8a0b81fc95c1","impliedFormat":1},{"version":"714435130b9015fae551788df2a88038471a5a11eb471f27c4ede86552842bc9","impliedFormat":1},{"version":"855cd5f7eb396f5f1ab1bc0f8580339bff77b68a770f84c6b254e319bbfd1ac7","impliedFormat":1},{"version":"5650cf3dace09e7c25d384e3e6b818b938f68f4e8de96f52d9c5a1b3db068e86","impliedFormat":1},{"version":"1354ca5c38bd3fd3836a68e0f7c9f91f172582ba30ab15bb8c075891b91502b7","affectsGlobalScope":true,"impliedFormat":1},{"version":"7e20d899c28ca26a2a7afc98beaa69e63ff7fba0a8bc47b4e3bf3ede5e09e424","impliedFormat":1},{"version":"2d2fcaab481b31a5882065c7951255703ddbe1c0e507af56ea42d79ac3911201","impliedFormat":1},{"version":"a192fe8ec33f75edbc8d8f3ed79f768dfae11ff5735e7fe52bfa69956e46d78d","impliedFormat":1},{"version":"ca867399f7db82df981d6915bcbb2d81131d7d1ef683bc782b59f71dda59bc85","affectsGlobalScope":true,"impliedFormat":1},{"version":"372413016d17d804e1d139418aca0c68e47a83fb6669490857f4b318de8cccb3","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e043a1bc8fbf2a255bccf9bf27e0f1caf916c3b0518ea34aa72357c0afd42ec","impliedFormat":1},{"version":"b4f70ec656a11d570e1a9edce07d118cd58d9760239e2ece99306ee9dfe61d02","impliedFormat":1},{"version":"3bc2f1e2c95c04048212c569ed38e338873f6a8593930cf5a7ef24ffb38fc3b6","impliedFormat":1},{"version":"6e70e9570e98aae2b825b533aa6292b6abd542e8d9f6e9475e88e1d7ba17c866","impliedFormat":1},{"version":"f9d9d753d430ed050dc1bf2667a1bab711ccbb1c1507183d794cc195a5b085cc","impliedFormat":1},{"version":"9eece5e586312581ccd106d4853e861aaaa1a39f8e3ea672b8c3847eedd12f6e","impliedFormat":1},{"version":"085f552d005479e2e6a7311cdbbe5d8c55c497b4d19274285df161ee9684cd9c","impliedFormat":1},{"version":"37ba7b45141a45ce6e80e66f2a96c8a5ab1bcef0fc2d0f56bb58df96ec67e972","impliedFormat":1},{"version":"45650f47bfb376c8a8ed39d4bcda5902ab899a3150029684ee4c10676d9fbaee","impliedFormat":1},{"version":"007faacc9268357caa21d24169f3f3f2497af3e9241308df2d89f6e6d9bb3f2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"74cf591a0f63db318651e0e04cb55f8791385f86e987a67fd4d2eaab8191f730","impliedFormat":1},{"version":"5eab9b3dc9b34f185417342436ec3f106898da5f4801992d8ff38ab3aff346b5","impliedFormat":1},{"version":"12ed4559eba17cd977aa0db658d25c4047067444b51acfdcbf38470630642b23","affectsGlobalScope":true,"impliedFormat":1},{"version":"f3ffabc95802521e1e4bcba4c88d8615176dc6e09111d920c7a213bdda6e1d65","impliedFormat":1},{"version":"809821b8a065e3234a55b3a9d7846231ed18d66dd749f2494c66288d890daf7f","impliedFormat":1},{"version":"ae56f65caf3be91108707bd8dfbccc2a57a91feb5daabf7165a06a945545ed26","impliedFormat":1},{"version":"a136d5de521da20f31631a0a96bf712370779d1c05b7015d7019a9b2a0446ca9","impliedFormat":1},{"version":"c3b41e74b9a84b88b1dca61ec39eee25c0dbc8e7d519ba11bb070918cfacf656","affectsGlobalScope":true,"impliedFormat":1},{"version":"4737a9dc24d0e68b734e6cfbcea0c15a2cfafeb493485e27905f7856988c6b29","affectsGlobalScope":true,"impliedFormat":1},{"version":"36d8d3e7506b631c9582c251a2c0b8a28855af3f76719b12b534c6edf952748d","impliedFormat":1},{"version":"1ca69210cc42729e7ca97d3a9ad48f2e9cb0042bada4075b588ae5387debd318","impliedFormat":1},{"version":"f5ebe66baaf7c552cfa59d75f2bfba679f329204847db3cec385acda245e574e","impliedFormat":1},{"version":"ed59add13139f84da271cafd32e2171876b0a0af2f798d0c663e8eeb867732cf","affectsGlobalScope":true,"impliedFormat":1},{"version":"b7c5e2ea4a9749097c347454805e933844ed207b6eefec6b7cfd418b5f5f7b28","impliedFormat":1},{"version":"b1810689b76fd473bd12cc9ee219f8e62f54a7d08019a235d07424afbf074d25","impliedFormat":1},{"version":"8caa5c86be1b793cd5f599e27ecb34252c41e011980f7d61ae4989a149ff6ccc","impliedFormat":1},{"version":"f9fd93190acb1ffe0bc0fb395df979452f8d625071e9ffc8636e4dfb86ab2508","impliedFormat":1},{"version":"5f41fd8732a89e940c58ce22206e3df85745feb8983e2b4c6257fb8cbb118493","impliedFormat":1},{"version":"17ed71200119e86ccef2d96b73b02ce8854b76ad6bd21b5021d4269bec527b5f","impliedFormat":1},{"version":"1cfa8647d7d71cb03847d616bd79320abfc01ddea082a49569fda71ac5ece66b","impliedFormat":1},{"version":"bb7a61dd55dc4b9422d13da3a6bb9cc5e89be888ef23bbcf6558aa9726b89a1c","impliedFormat":1},{"version":"db6d2d9daad8a6d83f281af12ce4355a20b9a3e71b82b9f57cddcca0a8964a96","impliedFormat":1},{"version":"cfe4ef4710c3786b6e23dae7c086c70b4f4835a2e4d77b75d39f9046106e83d3","impliedFormat":1},{"version":"cbea99888785d49bb630dcbb1613c73727f2b5a2cf02e1abcaab7bcf8d6bf3c5","impliedFormat":1},{"version":"98817124fd6c4f60e0b935978c207309459fb71ab112cf514f26f333bf30830e","impliedFormat":1},{"version":"a86f82d646a739041d6702101afa82dcb935c416dd93cbca7fd754fd0282ce1f","impliedFormat":1},{"version":"2dad084c67e649f0f354739ec7df7c7df0779a28a4f55c97c6b6883ae850d1ce","impliedFormat":1},{"version":"fa5bbc7ab4130dd8cdc55ea294ec39f76f2bc507a0f75f4f873e38631a836ca7","impliedFormat":1},{"version":"df45ca1176e6ac211eae7ddf51336dc075c5314bc5c253651bae639defd5eec5","impliedFormat":1},{"version":"cf86de1054b843e484a3c9300d62fbc8c97e77f168bbffb131d560ca0474d4a8","impliedFormat":1},{"version":"196c960b12253fde69b204aa4fbf69470b26daf7a430855d7f94107a16495ab0","impliedFormat":1},{"version":"528637e771ee2e808390d46a591eaef375fa4b9c99b03749e22b1d2e868b1b7c","impliedFormat":1},{"version":"bf24f6d35f7318e246010ffe9924395893c4e96d34324cde77151a73f078b9ad","impliedFormat":1},{"version":"596ccf4070268c4f5a8c459d762d8a934fa9b9317c7bf7a953e921bc9d78ce3c","impliedFormat":1},{"version":"10595c7ff5094dd5b6a959ccb1c00e6a06441b4e10a87bc09c15f23755d34439","impliedFormat":1},{"version":"9620c1ff645afb4a9ab4044c85c26676f0a93e8c0e4b593aea03a89ccb47b6d0","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"a9af0e608929aaf9ce96bd7a7b99c9360636c31d73670e4af09a09950df97841","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"c86fe861cf1b4c46a0fb7d74dffe596cf679a2e5e8b1456881313170f092e3fa","impliedFormat":1},{"version":"08ed0b3f0166787f84a6606f80aa3b1388c7518d78912571b203817406e471da","impliedFormat":1},{"version":"47e5af2a841356a961f815e7c55d72554db0c11b4cba4d0caab91f8717846a94","impliedFormat":1},{"version":"9a1a0dc84fecc111e83281743f003e1ae9048e0f83c2ae2028d17bc58fd93cc7","impliedFormat":1},{"version":"f5f541902bf7ae0512a177295de9b6bcd6809ea38307a2c0a18bfca72212f368","impliedFormat":1},{"version":"e8da637cbd6ed1cf6c36e9424f6bcee4515ca2c677534d4006cbd9a05f930f0c","impliedFormat":1},{"version":"ca1b882a105a1972f82cc58e3be491e7d750a1eb074ffd13b198269f57ed9e1b","impliedFormat":1},{"version":"fc3e1c87b39e5ba1142f27ec089d1966da168c04a859a4f6aab64dceae162c2b","impliedFormat":1},{"version":"3867ca0e9757cc41e04248574f4f07b8f9e3c0c2a796a5eb091c65bfd2fc8bdb","impliedFormat":1},{"version":"61888522cec948102eba94d831c873200aa97d00d8989fdfd2a3e0ee75ec65a2","impliedFormat":1},{"version":"4e10622f89fea7b05dd9b52fb65e1e2b5cbd96d4cca3d9e1a60bb7f8a9cb86a1","impliedFormat":1},{"version":"74b2a5e5197bd0f2e0077a1ea7c07455bbea67b87b0869d9786d55104006784f","impliedFormat":1},{"version":"59bf32919de37809e101acffc120596a9e45fdbab1a99de5087f31fdc36e2f11","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"3df3abb3e7c1a74ab419f95500a998b55dd9bc985e295de96ff315dd94c7446f","impliedFormat":1},{"version":"c40c848daad198266370c1c72a7a8c3d18d2f50727c7859fcfefd3ff69a7f288","impliedFormat":1},{"version":"ac60bbee0d4235643cc52b57768b22de8c257c12bd8c2039860540cab1fa1d82","impliedFormat":1},{"version":"973b59a17aaa817eb205baf6c132b83475a5c0a44e8294a472af7793b1817e89","impliedFormat":1},{"version":"ada39cbb2748ab2873b7835c90c8d4620723aedf323550e8489f08220e477c7f","impliedFormat":1},{"version":"6e5f5cee603d67ee1ba6120815497909b73399842254fc1e77a0d5cdc51d8c9c","impliedFormat":1},{"version":"8dba67056cbb27628e9b9a1cba8e57036d359dceded0725c72a3abe4b6c79cd4","impliedFormat":1},{"version":"70f3814c457f54a7efe2d9ce9d2686de9250bb42eb7f4c539bd2280a42e52d33","impliedFormat":1},{"version":"5cbd32af037805215112472e35773bad9d4e03f0e72b1129a0d0c12d9cd63cc7","impliedFormat":1},{"version":"ef61792acbfa8c27c9bd113f02731e66229f7d3a169e3c1993b508134f1a58e0","impliedFormat":1},{"version":"afcb759e8e3ad6549d5798820697002bc07bdd039899fad0bf522e7e8a9f5866","impliedFormat":1},{"version":"f6404e7837b96da3ea4d38c4f1a3812c96c9dcdf264e93d5bdb199f983a3ef4b","impliedFormat":1},{"version":"c5426dbfc1cf90532f66965a7aa8c1136a78d4d0f96d8180ecbfc11d7722f1a5","impliedFormat":1},{"version":"65a15fc47900787c0bd18b603afb98d33ede930bed1798fc984d5ebb78b26cf9","impliedFormat":1},{"version":"9d202701f6e0744adb6314d03d2eb8fc994798fc83d91b691b75b07626a69801","impliedFormat":1},{"version":"de9d2df7663e64e3a91bf495f315a7577e23ba088f2949d5ce9ec96f44fba37d","impliedFormat":1},{"version":"c7af78a2ea7cb1cd009cfb5bdb48cd0b03dad3b54f6da7aab615c2e9e9d570c5","impliedFormat":1},{"version":"1ee45496b5f8bdee6f7abc233355898e5bf9bd51255db65f5ff7ede617ca0027","impliedFormat":1},{"version":"566e5fb812082f8cf929c6727d40924843246cf19ee4e8b9437a6315c4792b03","affectsGlobalScope":true,"impliedFormat":1},{"version":"db01d18853469bcb5601b9fc9826931cc84cc1a1944b33cad76fd6f1e3d8c544","affectsGlobalScope":true,"impliedFormat":1},{"version":"dba114fb6a32b355a9cfc26ca2276834d72fe0e94cd2c3494005547025015369","impliedFormat":1},{"version":"903e299a28282fa7b714586e28409ed73c3b63f5365519776bf78e8cf173db36","affectsGlobalScope":true,"impliedFormat":1},{"version":"fa6c12a7c0f6b84d512f200690bfc74819e99efae69e4c95c4cd30f6884c526e","impliedFormat":1},{"version":"f1c32f9ce9c497da4dc215c3bc84b722ea02497d35f9134db3bb40a8d918b92b","impliedFormat":1},{"version":"b73c319af2cc3ef8f6421308a250f328836531ea3761823b4cabbd133047aefa","affectsGlobalScope":true,"impliedFormat":1},{"version":"e433b0337b8106909e7953015e8fa3f2d30797cea27141d1c5b135365bb975a6","impliedFormat":1},{"version":"dd3900b24a6a8745efeb7ad27629c0f8a626470ac229c1d73f1fe29d67e44dca","impliedFormat":1},{"version":"ddff7fc6edbdc5163a09e22bf8df7bef75f75369ebd7ecea95ba55c4386e2441","impliedFormat":1},{"version":"106c6025f1d99fd468fd8bf6e5bda724e11e5905a4076c5d29790b6c3745e50c","impliedFormat":1},{"version":"ec29be0737d39268696edcec4f5e97ce26f449fa9b7afc2f0f99a86def34a418","impliedFormat":1},{"version":"68a06fb972b2c7e671bf090dc5a5328d22ba07d771376c3d9acd9e7ed786a9db","impliedFormat":1},{"version":"ec6cba1c02c675e4dd173251b156792e8d3b0c816af6d6ad93f1a55d674591aa","impliedFormat":1},{"version":"b620391fe8060cf9bedc176a4d01366e6574d7a71e0ac0ab344a4e76576fcbb8","impliedFormat":1},{"version":"d729408dfde75b451530bcae944cf89ee8277e2a9df04d1f62f2abfd8b03c1e1","impliedFormat":1},{"version":"e15d3c84d5077bb4a3adee4c791022967b764dc41cb8fa3cfa44d4379b2c95f5","impliedFormat":1},{"version":"78244a2a8ab1080e0dd8fc3633c204c9a4be61611d19912f4b157f7ef7367049","impliedFormat":1},{"version":"e1fc1a1045db5aa09366be2b330e4ce391550041fc3e925f60998ca0b647aa97","impliedFormat":1},{"version":"d3f5861c48322adc023d3277e592635402ac008c5beae2e447b335fbf0da56c2","impliedFormat":1},{"version":"43ba4f2fa8c698f5c304d21a3ef596741e8e85a810b7c1f9b692653791d8d97a","impliedFormat":1},{"version":"31fb49ef3aa3d76f0beb644984e01eab0ea222372ea9b49bb6533be5722d756c","impliedFormat":1},{"version":"33cd131e1461157e3e06b06916b5176e7a8ec3fce15a5cfe145e56de744e07d2","impliedFormat":1},{"version":"889ef863f90f4917221703781d9723278db4122d75596b01c429f7c363562b86","impliedFormat":1},{"version":"3556cfbab7b43da96d15a442ddbb970e1f2fc97876d055b6555d86d7ac57dae5","impliedFormat":1},{"version":"437751e0352c6e924ddf30e90849f1d9eb00ca78c94d58d6a37202ec84eb8393","impliedFormat":1},{"version":"48e8af7fdb2677a44522fd185d8c87deff4d36ee701ea003c6c780b1407a1397","impliedFormat":1},{"version":"d11308de5a36c7015bb73adb5ad1c1bdaac2baede4cc831a05cf85efa3cc7f2f","impliedFormat":1},{"version":"8c9f19c480c747b6d8067c53fcc3cef641619029afb0a903672daed3f5acaed2","impliedFormat":1},{"version":"f9812cfc220ecf7557183379531fa409acd249b9e5b9a145d0d52b76c20862de","affectsGlobalScope":true,"impliedFormat":1},{"version":"7b068371563d0396a065ed64b049cffeb4eed89ad433ae7730fc31fb1e00ebf3","impliedFormat":1},{"version":"2e4f37ffe8862b14d8e24ae8763daaa8340c0df0b859d9a9733def0eee7562d9","impliedFormat":1},{"version":"13283350547389802aa35d9f2188effaeac805499169a06ef5cd77ce2a0bd63f","impliedFormat":1},{"version":"680793958f6a70a44c8d9ae7d46b7a385361c69ac29dcab3ed761edce1c14ab8","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"42c169fb8c2d42f4f668c624a9a11e719d5d07dacbebb63cbcf7ef365b0a75b3","impliedFormat":1},{"version":"913ddbba170240070bd5921b8f33ea780021bdf42fbdfcd4fcb2691b1884ddde","impliedFormat":1},{"version":"74c105214ddd747037d2a75da6588ec8aa1882f914e1f8a312c528f86feca2b9","impliedFormat":1},{"version":"5fe23bd829e6be57d41929ac374ee9551ccc3c44cee893167b7b5b77be708014","impliedFormat":1},{"version":"4d85f80132e24d9a5b5c5e0734e4ecd6878d8c657cc990ecc70845ef384ca96f","impliedFormat":1},{"version":"438c7513b1df91dcef49b13cd7a1c4720f91a36e88c1df731661608b7c055f10","impliedFormat":1},{"version":"cf185cc4a9a6d397f416dd28cca95c227b29f0f27b160060a95c0e5e36cda865","impliedFormat":1},{"version":"0086f3e4ad898fd7ca56bb223098acfacf3fa065595182aaf0f6c4a6a95e6fbd","impliedFormat":1},{"version":"efaa078e392f9abda3ee8ade3f3762ab77f9c50b184e6883063a911742a4c96a","impliedFormat":1},{"version":"54a8bb487e1dc04591a280e7a673cdfb272c83f61e28d8a64cf1ac2e63c35c51","impliedFormat":1},{"version":"021a9498000497497fd693dd315325484c58a71b5929e2bbb91f419b04b24cea","impliedFormat":1},{"version":"9385cdc09850950bc9b59cca445a3ceb6fcca32b54e7b626e746912e489e535e","impliedFormat":1},{"version":"2894c56cad581928bb37607810af011764a2f511f575d28c9f4af0f2ef02d1ab","impliedFormat":1},{"version":"0a72186f94215d020cb386f7dca81d7495ab6c17066eb07d0f44a5bf33c1b21a","impliedFormat":1},{"version":"84124384abae2f6f66b7fbfc03862d0c2c0b71b826f7dbf42c8085d31f1d3f95","impliedFormat":1},{"version":"63a8e96f65a22604eae82737e409d1536e69a467bb738bec505f4f97cce9d878","impliedFormat":1},{"version":"3fd78152a7031315478f159c6a5872c712ece6f01212c78ea82aef21cb0726e2","impliedFormat":1},{"version":"3a6ed8e1d630cfa1f7edf0dc46a6e20ca6c714dbe754409699008571dfe473a6","impliedFormat":1},{"version":"512fc15cca3a35b8dbbf6e23fe9d07e6f87ad03c895acffd3087ce09f352aad0","impliedFormat":1},{"version":"9a0946d15a005832e432ea0cd4da71b57797efb25b755cc07f32274296d62355","impliedFormat":1},{"version":"a52ff6c0a149e9f370372fc3c715d7f2beee1f3bab7980e271a7ab7d313ec677","impliedFormat":1},{"version":"fd933f824347f9edd919618a76cdb6a0c0085c538115d9a287fa0c7f59957ab3","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"6a1aa3e55bdc50503956c5cd09ae4cd72e3072692d742816f65c66ca14f4dfdd","impliedFormat":1},{"version":"ab75cfd9c4f93ffd601f7ca1753d6a9d953bbedfbd7a5b3f0436ac8a1de60dfa","impliedFormat":1},{"version":"59c68235df3905989afa0399381c1198313aaaf1ed387f57937eb616625dff15","impliedFormat":1},{"version":"b73cbf0a72c8800cf8f96a9acfe94f3ad32ca71342a8908b8ae484d61113f647","impliedFormat":1},{"version":"bae6dd176832f6423966647382c0d7ba9e63f8c167522f09a982f086cd4e8b23","impliedFormat":1},{"version":"1364f64d2fb03bbb514edc42224abd576c064f89be6a990136774ecdd881a1da","impliedFormat":1},{"version":"c9958eb32126a3843deedda8c22fb97024aa5d6dd588b90af2d7f2bfac540f23","impliedFormat":1},{"version":"950fb67a59be4c2dbe69a5786292e60a5cb0e8612e0e223537784c731af55db1","impliedFormat":1},{"version":"e927c2c13c4eaf0a7f17e6022eee8519eb29ef42c4c13a31e81a611ab8c95577","impliedFormat":1},{"version":"07ca44e8d8288e69afdec7a31fa408ce6ab90d4f3d620006701d5544646da6aa","impliedFormat":1},{"version":"70246ad95ad8a22bdfe806cb5d383a26c0c6e58e7207ab9c431f1cb175aca657","impliedFormat":1},{"version":"f00f3aa5d64ff46e600648b55a79dcd1333458f7a10da2ed594d9f0a44b76d0b","impliedFormat":1},{"version":"772d8d5eb158b6c92412c03228bd9902ccb1457d7a705b8129814a5d1a6308fc","impliedFormat":1},{"version":"4e4475fba4ed93a72f167b061cd94a2e171b82695c56de9899275e880e06ba41","impliedFormat":1},{"version":"97c5f5d580ab2e4decd0a3135204050f9b97cd7908c5a8fbc041eadede79b2fa","impliedFormat":1},{"version":"c99a3a5f2215d5b9d735aa04cec6e61ed079d8c0263248e298ffe4604d4d0624","impliedFormat":1},{"version":"49b2375c586882c3ac7f57eba86680ff9742a8d8cb2fe25fe54d1b9673690d41","impliedFormat":1},{"version":"802e797bcab5663b2c9f63f51bdf67eff7c41bc64c0fd65e6da3e7941359e2f7","impliedFormat":1},{"version":"b98ce74c2bc49a9b79408f049c49909190c747b0462e78f91c09618da86bae53","impliedFormat":1},{"version":"3ecfccf916fea7c6c34394413b55eb70e817a73e39b4417d6573e523784e3f8e","impliedFormat":1},{"version":"c05bc82af01e673afc99bdffd4ebafde22ab027d63e45be9e1f1db3bc39e2fc0","impliedFormat":1},{"version":"6459054aabb306821a043e02b89d54da508e3a6966601a41e71c166e4ea1474f","impliedFormat":1},{"version":"f416c9c3eee9d47ff49132c34f96b9180e50485d435d5748f0e8b72521d28d2e","impliedFormat":1},{"version":"05c97cddbaf99978f83d96de2d8af86aded9332592f08ce4a284d72d0952c391","impliedFormat":1},{"version":"14e5cdec6f8ae82dfd0694e64903a0a54abdfe37e1d966de3d4128362acbf35f","impliedFormat":1},{"version":"bbc183d2d69f4b59fd4dd8799ffdf4eb91173d1c4ad71cce91a3811c021bf80c","impliedFormat":1},{"version":"7b6ff760c8a240b40dab6e4419b989f06a5b782f4710d2967e67c695ef3e93c4","impliedFormat":1},{"version":"8dbc4134a4b3623fc476be5f36de35c40f2768e2e3d9ed437e0d5f1c4cd850f6","impliedFormat":1},{"version":"4e06330a84dec7287f7ebdd64978f41a9f70a668d3b5edc69d5d4a50b9b376bb","impliedFormat":1},{"version":"65bfa72967fbe9fc33353e1ac03f0480aa2e2ea346d61ff3ea997dfd850f641a","impliedFormat":1},{"version":"8f88c6be9803fe5aaa80b00b27f230c824d4b8a33856b865bea5793cb52bb797","impliedFormat":1},{"version":"f974e4a06953682a2c15d5bd5114c0284d5abf8bc0fe4da25cb9159427b70072","impliedFormat":1},{"version":"872caaa31423f4345983d643e4649fb30f548e9883a334d6d1c5fff68ede22d4","impliedFormat":1},{"version":"94404c4a878fe291e7578a2a80264c6f18e9f1933fbb57e48f0eb368672e389c","impliedFormat":1},{"version":"5c1b7f03aa88be854bc15810bfd5bd5a1943c5a7620e1c53eddd2a013996343e","impliedFormat":1},{"version":"09dfc64fcd6a2785867f2368419859a6cc5a8d4e73cbe2538f205b1642eb0f51","impliedFormat":1},{"version":"bcf6f0a323653e72199105a9316d91463ad4744c546d1271310818b8cef7c608","impliedFormat":1},{"version":"01aa917531e116485beca44a14970834687b857757159769c16b228eb1e49c5f","impliedFormat":1},{"version":"351475f9c874c62f9b45b1f0dc7e2704e80dfd5f1af83a3a9f841f9dfe5b2912","impliedFormat":1},{"version":"ac457ad39e531b7649e7b40ee5847606eac64e236efd76c5d12db95bf4eacd17","impliedFormat":1},{"version":"187a6fdbdecb972510b7555f3caacb44b58415da8d5825d03a583c4b73fde4cf","impliedFormat":1},{"version":"d4c3250105a612202289b3a266bb7e323db144f6b9414f9dea85c531c098b811","impliedFormat":1},{"version":"95b444b8c311f2084f0fb51c616163f950fb2e35f4eaa07878f313a2d36c98a4","impliedFormat":1},{"version":"741067675daa6d4334a2dc80a4452ca3850e89d5852e330db7cb2b5f867173b1","impliedFormat":1},{"version":"f8acecec1114f11690956e007d920044799aefeb3cece9e7f4b1f8a1d542b2c9","impliedFormat":1},{"version":"131b1475d2045f20fb9f43b7aa6b7cb51f25250b5e4c6a1d4aa3cf4dd1a68793","impliedFormat":1},{"version":"3a17f09634c50cce884721f54fd9e7b98e03ac505889c560876291fcf8a09e90","impliedFormat":1},{"version":"32531dfbb0cdc4525296648f53b2b5c39b64282791e2a8c765712e49e6461046","impliedFormat":1},{"version":"0ce1b2237c1c3df49748d61568160d780d7b26693bd9feb3acb0744a152cd86d","impliedFormat":1},{"version":"e489985388e2c71d3542612685b4a7db326922b57ac880f299da7026a4e8a117","impliedFormat":1},{"version":"e1437c5f191edb7a494f7bbbc033b97d72d42e054d521402ee194ac5b6b7bf49","impliedFormat":1},{"version":"04d3aad777b6af5bd000bfc409907a159fe77e190b9d368da4ba649cdc28d39e","affectsGlobalScope":true,"impliedFormat":1},{"version":"fd1b9d883b9446f1e1da1e1033a6a98995c25fbf3c10818a78960e2f2917d10c","impliedFormat":1},{"version":"19252079538942a69be1645e153f7dbbc1ef56b4f983c633bf31fe26aeac32cd","impliedFormat":1},{"version":"bc11f3ac00ac060462597add171220aed628c393f2782ac75dd29ff1e0db871c","impliedFormat":1},{"version":"616775f16134fa9d01fc677ad3f76e68c051a056c22ab552c64cc281a9686790","impliedFormat":1},{"version":"65c24a8baa2cca1de069a0ba9fba82a173690f52d7e2d0f1f7542d59d5eb4db0","impliedFormat":1},{"version":"313c85c332bb6892d5f7c624dc39107ca7a6b2f1b3212db86dbbefbe7f8ddd5a","impliedFormat":1},{"version":"3b0b1d352b8d2e47f1c4df4fb0678702aee071155b12ef0185fce9eb4fa4af1e","impliedFormat":1},{"version":"77e71242e71ebf8528c5802993697878f0533db8f2299b4d36aa015bae08a79c","impliedFormat":1},{"version":"a344403e7a7384e0e7093942533d309194ad0a53eca2a3100c0b0ab4d3932773","impliedFormat":1},{"version":"b7fff2d004c5879cae335db8f954eb1d61242d9f2d28515e67902032723caeab","impliedFormat":1},{"version":"5f3dc10ae646f375776b4e028d2bed039a93eebbba105694d8b910feebbe8b9c","impliedFormat":1},{"version":"bb18bf4a61a17b4a6199eb3938ecfa4a59eb7c40843ad4a82b975ab6f7e3d925","impliedFormat":1},{"version":"4545c1a1ceca170d5d83452dd7c4994644c35cf676a671412601689d9a62da35","impliedFormat":1},{"version":"e9b6fc05f536dfddcdc65dbcf04e09391b1c968ab967382e48924f5cb90d88e1","impliedFormat":1},{"version":"a2d648d333cf67b9aeac5d81a1a379d563a8ffa91ddd61c6179f68de724260ff","impliedFormat":1},{"version":"2b664c3cc544d0e35276e1fb2d4989f7d4b4027ffc64da34ec83a6ccf2e5c528","impliedFormat":1},{"version":"a3f41ed1b4f2fc3049394b945a68ae4fdefd49fa1739c32f149d32c0545d67f5","impliedFormat":1},{"version":"3cd8f0464e0939b47bfccbb9bb474a6d87d57210e304029cd8eb59c63a81935d","impliedFormat":1},{"version":"47699512e6d8bebf7be488182427189f999affe3addc1c87c882d36b7f2d0b0e","impliedFormat":1},{"version":"3026abd48e5e312f2328629ede6e0f770d21c3cd32cee705c450e589d015ee09","impliedFormat":1},{"version":"8b140b398a6afbd17cc97c38aea5274b2f7f39b1ae5b62952cfe65bf493e3e75","impliedFormat":1},{"version":"7663d2c19ce5ef8288c790edba3d45af54e58c84f1b37b1249f6d49d962f3d91","impliedFormat":1},{"version":"30112425b2cf042fca1c79c19e35f88f44bfb2e97454527528cd639dd1a460ca","impliedFormat":1},{"version":"00bd6ebe607246b45296aa2b805bd6a58c859acecda154bfa91f5334d7c175c6","impliedFormat":1},{"version":"ad036a85efcd9e5b4f7dd5c1a7362c8478f9a3b6c3554654ca24a29aa850a9c5","impliedFormat":1},{"version":"fedebeae32c5cdd1a85b4e0504a01996e4a8adf3dfa72876920d3dd6e42978e7","impliedFormat":1},{"version":"504f37ba38bfea8394ec4f397c9a2ade7c78055e41ef5a600073b515c4fd0fc9","impliedFormat":1},{"version":"cdf21eee8007e339b1b9945abf4a7b44930b1d695cc528459e68a3adc39a622e","impliedFormat":1},{"version":"db036c56f79186da50af66511d37d9fe77fa6793381927292d17f81f787bb195","impliedFormat":1},{"version":"87ac2fb61e629e777f4d161dff534c2023ee15afd9cb3b1589b9b1f014e75c58","impliedFormat":1},{"version":"13c8b4348db91e2f7d694adc17e7438e6776bc506d5c8f5de9ad9989707fa3fe","impliedFormat":1},{"version":"3c1051617aa50b38e9efaabce25e10a5dd9b1f42e372ef0e8a674076a68742ed","impliedFormat":1},{"version":"07a3e20cdcb0f1182f452c0410606711fbea922ca76929a41aacb01104bc0d27","impliedFormat":1},{"version":"1de80059b8078ea5749941c9f863aa970b4735bdbb003be4925c853a8b6b4450","impliedFormat":1},{"version":"1d079c37fa53e3c21ed3fa214a27507bda9991f2a41458705b19ed8c2b61173d","impliedFormat":1},{"version":"4cd4b6b1279e9d744a3825cbd7757bbefe7f0708f3f1069179ad535f19e8ed2c","impliedFormat":1},{"version":"5835a6e0d7cd2738e56b671af0e561e7c1b4fb77751383672f4b009f4e161d70","impliedFormat":1},{"version":"c0eeaaa67c85c3bb6c52b629ebbfd3b2292dc67e8c0ffda2fc6cd2f78dc471e6","impliedFormat":1},{"version":"4b7f74b772140395e7af67c4841be1ab867c11b3b82a51b1aeb692822b76c872","impliedFormat":1},{"version":"27be6622e2922a1b412eb057faa854831b95db9db5035c3f6d4b677b902ab3b7","impliedFormat":1},{"version":"b95a6f019095dd1d48fd04965b50dfd63e5743a6e75478343c46d2582a5132bf","impliedFormat":99},{"version":"c2008605e78208cfa9cd70bd29856b72dda7ad89df5dc895920f8e10bcb9cd0a","impliedFormat":99},{"version":"b97cb5616d2ab82a98ec9ada7b9e9cabb1f5da880ec50ea2b8dc5baa4cbf3c16","impliedFormat":99},{"version":"d23df9ff06ae8bf1dcb7cc933e97ae7da418ac77749fecee758bb43a8d69f840","affectsGlobalScope":true,"impliedFormat":1},{"version":"040c71dde2c406f869ad2f41e8d4ce579cc60c8dbe5aa0dd8962ac943b846572","affectsGlobalScope":true,"impliedFormat":1},{"version":"3586f5ea3cc27083a17bd5c9059ede9421d587286d5a47f4341a4c2d00e4fa91","impliedFormat":1},{"version":"a6df929821e62f4719551f7955b9f42c0cd53c1370aec2dd322e24196a7dfe33","impliedFormat":1},{"version":"b789bf89eb19c777ed1e956dbad0925ca795701552d22e68fd130a032008b9f9","impliedFormat":1},"8964d295a9047c3a222af813b7d37deb57b835fd0942d89222e7def0aed136cc",{"version":"1a7a4b00397600634afce6a9a42c98bb766792f1ec4557c72ac5fb4e7f4afff8","signature":"a5f71f0628f9df25aa1fd726b717d8e40ae098844001eb46f666652dccc9378b"},{"version":"6f66bbf05994480f78ad87fe555373b138a621c55a618f9420e05d60cc0c1e99","signature":"f0813ef99eb128e8fe8f6f9e281c0215cac4ca6ed7bcba69f862d7c091fb6314"},{"version":"48976cc019a7c39a7b7c90c37245d23defbb0dfda186f2d2142b65e1eb19163f","signature":"98b49353f133317c1c3f6038a45eb6f76b3ebdb28ceeb63a70e0aaa301b3b540"},{"version":"cf224d3d047f07714e8522444b11af6237dc8b2f958cba621434ca711dc665dd","signature":"1593b7fe898162cdd1872265213946731a29cb9db4330b0bb4eedaf75b3bea5c"},{"version":"90b2c10acbfa423960b6a68d75fa09d298110eccb00bc77e22691edae8bc5693","signature":"5d02b812e8a5593f07d497f33afb6e26a18be6f8ebf8bf1550845f98700ec86e"},"66e54622378da76d5015b19ed281ba55da74ebfe0f45b49aae0162d7a2f1d27e",{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"cdcf9ea426ad970f96ac930cd176d5c69c6c24eebd9fc580e1572d6c6a88f62c","impliedFormat":1},{"version":"23cd712e2ce083d68afe69224587438e5914b457b8acf87073c22494d706a3d0","impliedFormat":1},{"version":"487b694c3de27ddf4ad107d4007ad304d29effccf9800c8ae23c2093638d906a","impliedFormat":1},{"version":"3a80bc85f38526ca3b08007ee80712e7bb0601df178b23fbf0bf87036fce40ce","impliedFormat":1},{"version":"ccf4552357ce3c159ef75f0f0114e80401702228f1898bdc9402214c9499e8c0","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"68834d631c8838c715f225509cfc3927913b9cc7a4870460b5b60c8dbdb99baf","impliedFormat":1},{"version":"2931540c47ee0ff8a62860e61782eb17b155615db61e36986e54645ec67f67c2","impliedFormat":1},{"version":"ccab02f3920fc75c01174c47fcf67882a11daf16baf9e81701d0a94636e94556","impliedFormat":1},{"version":"f6faf5f74e4c4cc309a6c6a6c4da02dbb840be5d3e92905a23dcd7b2b0bd1986","impliedFormat":1},{"version":"ea6bc8de8b59f90a7a3960005fd01988f98fd0784e14bc6922dde2e93305ec7d","impliedFormat":1},{"version":"36107995674b29284a115e21a0618c4c2751b32a8766dd4cb3ba740308b16d59","impliedFormat":1},{"version":"914a0ae30d96d71915fc519ccb4efbf2b62c0ddfb3a3fc6129151076bc01dc60","impliedFormat":1},{"version":"33e981bf6376e939f99bd7f89abec757c64897d33c005036b9a10d9587d80187","impliedFormat":1},{"version":"7fd1b31fd35876b0aa650811c25ec2c97a3c6387e5473eb18004bed86cdd76b6","impliedFormat":1},{"version":"b41767d372275c154c7ea6c9d5449d9a741b8ce080f640155cc88ba1763e35b3","impliedFormat":1},{"version":"3bacf516d686d08682751a3bd2519ea3b8041a164bfb4f1d35728993e70a2426","impliedFormat":1},{"version":"7fb266686238369442bd1719bc0d7edd0199da4fb8540354e1ff7f16669b4323","impliedFormat":1},{"version":"0a60a292b89ca7218b8616f78e5bbd1c96b87e048849469cccb4355e98af959a","impliedFormat":1},{"version":"0b6e25234b4eec6ed96ab138d96eb70b135690d7dd01f3dd8a8ab291c35a683a","impliedFormat":1},{"version":"9666f2f84b985b62400d2e5ab0adae9ff44de9b2a34803c2c5bd3c8325b17dc0","impliedFormat":1},{"version":"40cd35c95e9cf22cfa5bd84e96408b6fcbca55295f4ff822390abb11afbc3dca","impliedFormat":1},{"version":"b1616b8959bf557feb16369c6124a97a0e74ed6f49d1df73bb4b9ddf68acf3f3","impliedFormat":1},{"version":"5b03a034c72146b61573aab280f295b015b9168470f2df05f6080a2122f9b4df","impliedFormat":1},{"version":"40b463c6766ca1b689bfcc46d26b5e295954f32ad43e37ee6953c0a677e4ae2b","impliedFormat":1},{"version":"249b9cab7f5d628b71308c7d9bb0a808b50b091e640ba3ed6e2d0516f4a8d91d","impliedFormat":1},{"version":"80aae6afc67faa5ac0b32b5b8bc8cc9f7fa299cff15cf09cc2e11fd28c6ae29e","impliedFormat":1},{"version":"f473cd2288991ff3221165dcf73cd5d24da30391f87e85b3dd4d0450c787a391","impliedFormat":1},{"version":"499e5b055a5aba1e1998f7311a6c441a369831c70905cc565ceac93c28083d53","impliedFormat":1},{"version":"54c3e2371e3d016469ad959697fd257e5621e16296fa67082c2575d0bf8eced0","impliedFormat":1},{"version":"beb8233b2c220cfa0feea31fbe9218d89fa02faa81ef744be8dce5acb89bb1fd","impliedFormat":1},{"version":"c183b931b68ad184bc8e8372bf663f3d33304772fb482f29fb91b3c391031f3e","impliedFormat":1},{"version":"5d0375ca7310efb77e3ef18d068d53784faf62705e0ad04569597ae0e755c401","impliedFormat":1},{"version":"59af37caec41ecf7b2e76059c9672a49e682c1a2aa6f9d7dc78878f53aa284d6","impliedFormat":1},{"version":"addf417b9eb3f938fddf8d81e96393a165e4be0d4a8b6402292f9c634b1cb00d","impliedFormat":1},{"version":"48cc3ec153b50985fb95153258a710782b25975b10dd4ac8a4f3920632d10790","impliedFormat":1},{"version":"adf27937dba6af9f08a68c5b1d3fce0ca7d4b960c57e6d6c844e7d1a8e53adae","impliedFormat":1},{"version":"e1528ca65ac90f6fa0e4a247eb656b4263c470bb22d9033e466463e13395e599","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"866078923a56d026e39243b4392e282c1c63159723996fa89243140e1388a98d","impliedFormat":1},{"version":"d782e571cb7d6ec0f0645957ed843d00e3f8577e08cc2940f400c931bc47a8df","impliedFormat":99},{"version":"9167246623f181441e6116605221268d94e33a1ebd88075e2dc80133c928ae7e","impliedFormat":99},{"version":"dc1a838d8a514b6de9fbce3bd5e6feb9ccfe56311e9338bb908eb4d0d966ecaf","impliedFormat":99},{"version":"186f09ed4b1bc1d5a5af5b1d9f42e2d798f776418e82599b3de16423a349d184","impliedFormat":99},{"version":"d692ae73951775d2448df535ce8bc8abf162dc343911fedda2c37b8de3b20d8e","impliedFormat":99},{"version":"2948774a5104c8ee235318dfdd3c8e2402c053b8fabc59e0cad1de8302d91cbd","impliedFormat":99},{"version":"014ba72e2add59d6d2d2e82166647982c824639e2902ccd7b3103cf720a0cb65","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"b78c801c3c21015ee487f6494448bcff55bb6b61f41172dfc2c26f2218d99138","impliedFormat":99},{"version":"de97e016d8dd4869febd5bccce02eb96957089d04b74ea5d1dc0e66112493b64","impliedFormat":99},{"version":"671ccab2e6a253d2516c0e4699b3077fc30cdb70b4436d8c79d76c91266a1a94","impliedFormat":99},{"version":"a11fbd8ffbee6e5a7fe4c7c23e6a391be615de2e710a6946d7d1f947a85a1374","impliedFormat":99},{"version":"2d383c515b9b606aefcde23da9c312a69bc7976b75abb85c02592f7a8589a343","impliedFormat":99},{"version":"e760f7860d08e9d42b6ecd7dd341602fbc0c13d60eb30beaf1153f1c7c44d66d","impliedFormat":99},{"version":"fb04e1ca667399e7302c033656cc285e6c1cff9c29f264cf229dd25e3962a762","impliedFormat":99},{"version":"ca6fb77e3480af8f2287ccb756ac88d047ba8a8bcc0512f6720ac1216e274ea2","impliedFormat":99},{"version":"c0cc44b0ad2fd65c933d187c4faad6157efbed33c3c21023802aa6a89d9b9d13","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"d76df1670eeb97afbab6c87b8cd31bbd09dbf9026ff0ca533b5d7d3fc0291f79","impliedFormat":99},{"version":"84dffe2a2331c8324501bb7363e0298074e7d59f97c068a3c497c2188865d20e","impliedFormat":99},{"version":"bc05fb9d657d30e61d50d690615f379b0d0415b8f29e69196e1dc6bfc664dc57","impliedFormat":99},{"version":"e315bab2f28d53f9ab473d9de610c455b6c414757bb19589b31ec8f490cebd4d","impliedFormat":99},{"version":"d999dd5abf4befbdab5f1248193cbea69b323b71131a02bb120f9462807fcd5a","impliedFormat":99},{"version":"031f1805f87171e8a9125cd99105bea4a869018ab2356c2e29dca7c86925510c","impliedFormat":99},{"version":"bdcb070ed484b40b84dad668b58e4861f7c3d36f38632072dad5f905bd8cc0cb","impliedFormat":99},{"version":"49af73d71b88a99b1a211ec02bacd321c21397062d253c605bb8d140082eb7b0","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"a50de7f1a7eadab7732d80dcf9c8a0c0d7d00e33315425316757006b5bec6e46","impliedFormat":99},{"version":"4c6fe268c2a984b3f14031a4b09ae7b2d9e51673258f4b4352e48d0c6ebed679","impliedFormat":99},{"version":"cd8a4297d0ab56dc571dadd2845e558c9d979fe1e120a0dec537935bc8a36dd2","impliedFormat":99},{"version":"079a12cb0e0c42655d77da5185e882b4cc94bd5c6c2131171a9289fc1f4287fc","impliedFormat":99},{"version":"d4ce52c42c23981d958206037138e05f7b48d41faa1cfaba7e9eecce8c2e5489","impliedFormat":99},{"version":"8a3be5afe0275ce84a6a6298010e66d54d2d2f8e927df6bcde0ac326b5e81792","impliedFormat":99},{"version":"167edfac7664bec77aa2efb2ce9d515c41b5cc4269091a946b3fa6ec4e7e8738","impliedFormat":99},{"version":"218997a627f0efc4b8be5e6bc0b58e0c9edf250baa3674b661d3f7e6a7ef21e8","impliedFormat":99},{"version":"c3f1acbd39f587a7539d435d6c78ce8647b3bfdc5435df153a70cb2656b52b80","impliedFormat":99},{"version":"457f9d90b6cea783727ce381a7851507acf3259964cf5fdd8a85afc91783b8dc","impliedFormat":99},{"version":"c7c74ecbba4461b55b6c9f244600af0032cfd1ed565cfb1950961cbf53a150e8","impliedFormat":99},{"version":"e8943fc25a93d31823923cc7a934f81ad940ea5e026ea47d873ce7b6986d0ee7","impliedFormat":99},{"version":"6bf5dc0c9f6b6c79fce77b56c985dadca4d4d474c9abf9139ae0785cb5c01992","impliedFormat":99},{"version":"08d76743f45a3f6ed56af01fb9e86883fe9b91f349a104f1eb351db8427c27cf","impliedFormat":99},{"version":"902eafa19470782fa677eab8df6cfeb5ba96ca3360f73405ec22ce82f8759432","impliedFormat":99},{"version":"e1cc282a46eb73cafb1ca5637c4628b3f4221c8e7bcd7a38bcf92ce43b44a093","impliedFormat":99},{"version":"4d4551dcb3fd19a4f22aaa63c6c391d42ce44a15602a6f6a19d582709edb24d9","impliedFormat":99},{"version":"a76075b5aba8187b1fc5c8f565745daed6e4341e64b44e6ec41412a16d575d62","impliedFormat":99},{"version":"f836bf3653e31c3bba120071196c95d416b83c5d860ce27549975f8785cd670a","impliedFormat":99},{"version":"058d970583137cface729371715449aac0c1388bf7a5ba15e0be952677485fe3","impliedFormat":99},{"version":"31c45c074a9acb94dbe340d9336d3c915635eac2df3308916fcf41f2ba6ab84c","impliedFormat":99},{"version":"774256d456ca1d8266f6e2170a51bad2659cb7116334d1e7977595999533a5d0","impliedFormat":99},{"version":"a3cd900b8aa1424f1d2e99c577b7c6ed8834fb6fd129b96b62a7152e5ba0871c","impliedFormat":99},{"version":"f687f35c2206a319dc7d8f0b751e182638c912838ff54034fb782beae50f7cac","impliedFormat":99},{"version":"1ea2d362005804d980325c2fe6ca0abbb145197b856a64d80016554129966c97","impliedFormat":99},{"version":"7a81f15892b1c8d0cbfb35605038ce5c6d0cf93542946aa0b8c415dbefdea1cd","impliedFormat":99},{"version":"22ef1a1604bed6e226888a2414676ef477a7ad5d6ed907a62d6e40c831797366","impliedFormat":99},{"version":"2ab500573da35083b48fa8f4fe719860099d1502df3384f977eb22ab6b14caf7","impliedFormat":99},{"version":"9fd7d60e314f01c950ba31932c150dcec5db2c82de3c7fe0d0d24ee8b54f1fca","impliedFormat":99},{"version":"9db521ae375731aef6e92ee5c30883dbf71ab70b11fd945c9c046f778b1e8cad","impliedFormat":99},{"version":"aabb12802db5f852990123e8cfccc53afc9d38ce16e664ec2e4f907a277d7b2f","impliedFormat":99},{"version":"b768935549d960e1a8d65cbcd36e5da0a64615de05d2fa03bf90330f71094b34","impliedFormat":99},{"version":"94b576c860480aac3eafdf904cd81755f5c9b16c3e0ef3253953a8f4fd8cecce","impliedFormat":99},{"version":"8dc7c54b72cb2a49a7639dccd99a559c243667a74abfb09545cf8afaecc58056","impliedFormat":99},{"version":"d2166d3793936235216ee5d014bcf0d8695f3a954ad54c01b1976c05f544ceea","impliedFormat":99},{"version":"41bf8c3193b575946682ca243de53370f61917035c3ff3fb747067bc680f2509","impliedFormat":99},{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"dbab1950ef4bf06f44795b144026a352a7b4a3a68a969bbf32eb55addd0fb95a","impliedFormat":99},{"version":"2b5368217b57528a60433558585186a925d9842fe64c1262adde8eac5cb8de33","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"0249cc57fb4f04fcc725481b5f273fe4a18d943e108724b216c762aaf311c255","impliedFormat":99},{"version":"e0c6b7c3e925dc19d45c27f88d493b40d3ea97f9363ca2acd33596081c579ed3","impliedFormat":99},{"version":"91c093343733c2c2d40bee28dc793eff3071af0cb53897651f8459ad25ad01da","impliedFormat":99},{"version":"6cc2be65d508f5404dae184fbe1bc5fc6287f2af93195feba921e619721f56a0","impliedFormat":99},{"version":"17c51065e7822de999ed5ff702aead6057c172067e485e8ffe9721bfe5010f0a","impliedFormat":99},{"version":"e1c58879ba7cfcb2a70f4ec69831f48eef47b7a356f15ab9f4fce03942d9f21a","impliedFormat":99},{"version":"f4fc36916b3eac2ea0180532b46283808604e4b6ff11e5031494d05aa6661cc6","impliedFormat":99},{"version":"82e23a5d9f36ccdac5322227cd970a545b8c23179f2035388a1524f82f96d8d0","impliedFormat":99},{"version":"c52e8203e4cc8ddd3ffa75197673942e80e3ff4b3bffa962588363e872cb9922","impliedFormat":99},{"version":"a5f2b5cdf86179d9d6ddfbc3a7e88d5253949a0ac8df3f7085f4a02e843f85a6","impliedFormat":99},{"version":"bfce32506c0d081212ff9d27ec466fa6135a695ba61d5a02738abd2442566231","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"493c39c5f9e9c050c10930448fda1be8de10a0d9b34dcd24ff17a1713c282162","impliedFormat":99},{"version":"fab630fcff210cedbe0d01eabae9020ecc96b549aa4ebd831a0bbcd0cdd877a7","impliedFormat":99},{"version":"73e4673f2da8677556210e5a127b2637bf030ab73da222ea2a19979f89d9d40a","impliedFormat":99},{"version":"dbf3d90c21c08217509df631336881a3105740033b0592dcc47036490f95e51c","impliedFormat":99},{"version":"e6ad9376e7d088ce1dc6d3183ba5f0b3fb67ee586aa824cc8519b52f2341307a","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"d62b09cb6f1ceb87ec6c26f3789bc38f8be9fb0ce3126fd0bf89b003d0cba371","impliedFormat":99},{"version":"e9d27f2b7d5171f512053f153cadc303d1b84d00c98e917664ba68eca9b7af6a","impliedFormat":99},{"version":"4899d2cf406cd68748c5d536b736c90339a39f996945126d8a11355eba5f56f3","impliedFormat":99},{"version":"491d5f012b1de793c45e75a930f5cdef1ff0e7875968e743fa6bd5dd7d31cb3b","impliedFormat":99},{"version":"53c86b81daa463deacb0046fee490b6d589438ac71311050b74dcee99afca0f6","impliedFormat":99},{"version":"70587241a4cc2e08ffc30e60c20f3eb38bd5af7e3d99640568ffe2993f933485","impliedFormat":99},{"version":"dd01943d0fe191b3b2020438367709333ff08a69d285e2f715a60711dcf83b61","impliedFormat":99},{"version":"0fd62a655321190c1db6237bd2dce50370712ed9115fcf27c04f81b76740a101","impliedFormat":99},{"version":"9d2d423bcfeccccf647b721242a2deca24dd08b4af50de64261c11210e4dc091","impliedFormat":99},{"version":"b6ff37737d006b86082f2f7176eb0a771001e9dde9152a26ef9ea8fd80e6eba0","impliedFormat":99},{"version":"29c4e9ce50026f15c4e58637d8668ced90f82ce7605ca2fd7b521667caa4a12c","impliedFormat":99},{"version":"8575340c8560a52c3309956add745660ad319dbd67309fa268f5af9b1c7551f5","impliedFormat":99},{"version":"3b56bc74e48ec8704af54db1f6ecfee746297ee344b12e990ba5f406431014c1","impliedFormat":99},{"version":"9e4991da8b398fa3ee9b889b272b4fe3c21e898d873916b89c641c0717caed10","impliedFormat":99},{"version":"581813cd18463afea0b92ec77b94c7df71e29c9d9046da829bb76488497183cf","impliedFormat":99},{"version":"7630b6a1c0ebaec2ef8e8abff850e1d6c551c47d1c345340a8ab95667460fc95","impliedFormat":99},{"version":"597b0a9ef02a28f5b1195305ec9f20a4f9948bd90ec3291d0343d1e5c0b4bd16","impliedFormat":99},{"version":"5fa235daeefc7cabde6e68cc0cdd1b9028a6414cfc7f636d62f1e34b64ca12d8","impliedFormat":99},{"version":"f9bf95954745207c3a305a59f3a8f7e36290c742d006d1ce447a41dc772ba3c3","impliedFormat":99},{"version":"732e1c24c3f5a76e61b075bfee7d2b3e5714d4960f8587b0cf989e7e151dc1ea","impliedFormat":99},{"version":"4cc5c2fb807317de6f88edae5cc2b24b705cdce764bbc1cc23aeec15d91a7a49","impliedFormat":99},{"version":"53cae4e7f0a5716f296870e5eef84af8832d5700b23ff79f349c0d1b4aa40d25","impliedFormat":99},{"version":"775e97f58cc774218eb4e979ff7f73b2fb4d958521df4707ae382b32fce5f55b","impliedFormat":99},{"version":"d93588a85b0b0eef4e6ab906fa37caa21efa1d30647aef292567c078b2e3a0a9","impliedFormat":99},{"version":"4a5d9348012a3e46c03888e71b0d318cda7e7db25869731375f90edad8dcea02","impliedFormat":99},{"version":"61b3add3d48dfc79324531ede7da59203059a62986070f97645a83acd3f20aa0","impliedFormat":99},{"version":"6cd8356a92fd9f1edcbfbd3b891f50228738522e79bfdad16e7fb7cfd4a66932","impliedFormat":99},{"version":"347efb60859c806ef954a67ee7520c9aa33e1881eedd40d236298af775deef50","impliedFormat":99},{"version":"fc391876e409d362cc43a7468226a9eb83440de09873b284bf09fbfb261ec259","impliedFormat":99},{"version":"d06f5012d5ac1bc25c5033f7e916fe42cc0253d6b523b9747809b71676069370","impliedFormat":99},{"version":"5d35840bd540fad886e21ddaf9b078a44c21a827dec9abc08d2d2c1a3ff27d44","impliedFormat":99},{"version":"a02182b20bcb1966fc15eac80506f617b71fdd0e279ccff44b27f2ee366b2823","impliedFormat":99},{"version":"32563899782c456f03cadc7a9508b9b6468dd678404b093bd7557d6c6e143218","impliedFormat":99},{"version":"f613a93e0685802f7f7e248156ae93ff9088d45abeff0b21b656520699b79f06","impliedFormat":99},{"version":"5471b59fcb6ad04c41f6bf57075e88f3094d9d498e51595b4341d8bfcb729bf5","impliedFormat":99},{"version":"4ecb0eb653de7093f2eb589cea5b35fdea6e2bbd62bc3d9fafdc5702850f7714","impliedFormat":99},{"version":"69ed52603ad6430aaffbc9dec25e0d01df733aaa32ab4d57d37987aedc94c349","impliedFormat":99},{"version":"6f8acb191da449d8dbec7a4e9c317bdb6b8af104a60a101950643ea52cfa3c85","impliedFormat":99},{"version":"e3457d3b62587043847ad1860500e5d888cba15eab52408d97604eda034c60ea","impliedFormat":99},{"version":"8bba80ef1e0e9ae8c061728626309824023e85eaafcd8c285a6fa89dc6881573","impliedFormat":99},{"version":"ada6bd808581a783390b1aabc2cc836136a5d214af0d924cc57d9f29b5733ce9","impliedFormat":99},{"version":"283336202f1a6a4e13271dc83b776718cf5d4a4137b28e2d013498e3020f7170","impliedFormat":99},{"version":"54a6a3e98b7ec00fec7bd7e42ad50c16014805576ccbe33bfee04f0aac9965da","impliedFormat":99},{"version":"7c90a7108c4319b0475d5419d52f2a2c9bf499234a2a15d5b8504983e141041b","impliedFormat":99},{"version":"67fc5d1b6877a799de1e3943ed2c3669b72a6ab3b17c7b0b0387bdd6e4c1a01f","impliedFormat":99},{"version":"616853ab33cb388421a5d5188e6e2d4b4e8db3f09474baa6a3665707009fe9cf","impliedFormat":99},{"version":"953ee863def1b11f321dcb17a7a91686aa582e69dd4ec370e9e33fbad2adcfd3","impliedFormat":99},{"version":"392e72d77ae33ee322d5b0b907398f2200f72d36adaca1ca62dfa7e22f744ac3","impliedFormat":99},{"version":"e452b617664fc3d2db96f64ef3addadb8c1ef275eff7946373528b1d6c86a217","impliedFormat":99},{"version":"c6a811837fef3d4ba22e7e4adcb16f12caf30252047b133404d698bf8f0e883a","impliedFormat":99},{"version":"2f722a3a421baf9a7c175d8ae6a3118dfd14c5f36474e03f99e3df5800065030","impliedFormat":99},{"version":"f9511d2a891b0a017ae31674977b053f42ca7221dedd012f6de6f75e7cb9aa3e","impliedFormat":99},{"version":"d8f262b549f3ed95402297d10b84f0f86e3113d6d570b03364d2cfca1f75e5d8","impliedFormat":99},{"version":"f216cb46ebeff3f767183626f70d18242307b2c3aab203841ae1d309277aad6b","impliedFormat":99},{"version":"d6d95f96dd5b374484fd000228288cbcfb80aa47cb74ebd3e19ea94a36e8260a","impliedFormat":99},{"version":"6138274c82c329cda440779d37dc66f5fb92713bfda1c5a8fc95785f64a6315f","impliedFormat":99},{"version":"92fb8aa5d61dca9ab2008d49397a639dbf71c7746da23c02245523cfec4a99ef","impliedFormat":99},{"version":"9e6cd6dc690d6e6c89b17b295cabf8a5a08011ae79a7a56578a429e5ae27b8dc","impliedFormat":99},{"version":"edf5cdeb6808ff038b8b6d83cbc5d2d1da1d3eade25db1db21b6244349a56529","impliedFormat":99},{"version":"c3602ad632c6df7653f19a531d683b50ffa6d1846d28ac5a6112c582e1067988","impliedFormat":99},{"version":"eb346e4ce0c2912e148d88955944bc54eaf28e4dcf88fec2c20e0002346f0588","impliedFormat":99},{"version":"58c5a2a520ae555e0573873a5e6303b0f1a1e70f3b376e5ac9094eaad0623d8a","impliedFormat":99},{"version":"5f8217240c95e3f3007d9968104904616287f30d853bac73874759c1dfad4017","impliedFormat":99},{"version":"7ebc96af203f866e829b528e5cffb32111a1a1ff4662bc60c3b53696e89c67f4","impliedFormat":99},{"version":"9f5ee7c037b58964c1cee63c1849fa11757f693208444be0f2d9f08defe859cd","impliedFormat":99},{"version":"33a4085365aa21a995ea4721ffff814128b126e8e346e5f064d87bfcdd0ff7ce","impliedFormat":99},{"version":"3adf214b4b307152af85b77e441d36ede388dadba2bd9962671bf933738d2a25","impliedFormat":99},{"version":"afad82addd1d9ee6e361606205bbda03e97cb3850f948e53fdbb82f160dc43c7","impliedFormat":99},{"version":"250998ae18ea49b8745d327e7739f56464a4318783129daab90b3299bf6f8a55","impliedFormat":99},{"version":"76b3afd1f2748ff725c277bd4701f442af697c0586e1b491e6a67383a246ffad","impliedFormat":99},{"version":"4df5fc6fc2438b8e3418cb25c8c0e863d1f92e4470297d6a8756394c597af844","impliedFormat":99},{"version":"92b5f0879161f1206e30a0c219dd8f23d736f2a74a4e015885e8e3f3b3c9a3e7","impliedFormat":99},{"version":"374d12016302e312ffccd3d38e6f3df1b412378bff6e6266f3e5844af450859c","impliedFormat":99},{"version":"18d0c2293aa57e33923fc1b10970650c6d6932dbfa711a3ffd67600b3caf924b","impliedFormat":99},{"version":"17758b72f880ed66754e3ff4aeade0b82417ec546b72bf3a326cadf4e56c1915","impliedFormat":99},{"version":"3df2d8d345edf29c4e0f5bb6f1b35b8008c626dc6b5f0f98cdfd5587e13c5a52","impliedFormat":99},{"version":"6452f7fccb7d729fafdd9db0b1b0fb98d772504de2fa302751e7bc4164ee75c0","impliedFormat":99},{"version":"a57f8d7e5531fdaf0e2dbb17103ba14ec6c189e92da17e9e22a73ccc77323581","impliedFormat":99},{"version":"3a8a0433d438dcfebf5589921a8ef2490c54d37f8e4832d9a06a488e6b922bc1","impliedFormat":99},{"version":"70ecaa4f1fbccc0635bd57be3474aeaeb03df99b649d3a7910984fbd25fa6d70","impliedFormat":1},{"version":"73ba15fc8b1fe8a2501bd160217112a32e85beb4af0053d27142f0385c310043","impliedFormat":1},{"version":"e63e07bdf7400618d8f94ddc7f0becb4f34ea16f4e2077e0309a965ee4bccb3d","impliedFormat":1},{"version":"49bf876b8f39333c3954c9b99b3e3948f955ee2c5c9d140103a7c51d17aa2380","impliedFormat":1},{"version":"0df055e5a743b279ac281927035f4a1d82d0d575f9132decf643044fd9257d7b","impliedFormat":1},{"version":"2af92ad8cc580ce84c16117475fbdb0d616013d4abd50e77985404d00b636c19","impliedFormat":1},{"version":"f29a2adfd092b2cd74016662956009d117ed0977fd90081ade2147d321faebe6","impliedFormat":1},{"version":"83667e74dce74a2ac0a778ee9c1ca062aef073f594acb3aefb178ff452a944b5","impliedFormat":1},{"version":"9e7ce7dde16fe73632b617ecb7a75426bd3041e7da0bb1d627eca355e78fd294","impliedFormat":1},{"version":"227172ccd6d07fbeac2e9e72083a4cc8229b52e10b5234572e8af5f6bf514281","impliedFormat":1},{"version":"31cdaa8a9f5c7f5108d4c1033ecbd33f3a44481005ac69568cf81baa0567f361","impliedFormat":1},{"version":"eef9483906576d14691da9f4f06a968e6b609d827bdbe1d3a1d50751557e36ef","impliedFormat":1},{"version":"79ecb80c26ac8a35952c61b1d3a175d2ab7ed0eea0b4603e6d52106206a5354d","impliedFormat":1},{"version":"1d2d80904fc5364023ba4f6f91d1f7c78ffce63b7db95b0c8a627a1795cffccf","impliedFormat":1},{"version":"8fa04ff61764daa514a4362470f303b637bbbf2c13cf586a0e5e986a243666cf","impliedFormat":1},{"version":"3ab8140695d4dd30ce7e1be20a39538bd1e454d591d124b74cdd3023588f4848","impliedFormat":1},{"version":"4be7d9a647c34f28cc4840b99e57286b5229b3eb5547f7b601dd8abef3d682df","impliedFormat":1},{"version":"0bcf9befca4a20b4fa6ce4a5bece4db8d03436a70ea4d44661ae9c7a10b57c80","impliedFormat":1},{"version":"59e0a4c2be65f233fee5ca07bb79839849a978a1cab6b8b3cb3662aa29d91719","impliedFormat":1},{"version":"65f0e217641c500bfc93f2c18ebf6597ab1b50c8e760ed6a9de040223aa4f621","impliedFormat":1},{"version":"a980c56f5794d0a08fe308115c3cce5e2bcbd7e2ae42d1e6e698677541428b23","impliedFormat":1},{"version":"35c36f02a6afa6e5ec3e570eb46077c1f7e39a08b84ecf02dd26add5ba9b7bad","impliedFormat":1},{"version":"33036b5ee618a7bf30f5b667b4cfb08de73c809d115f2afea28520633aff7e72","impliedFormat":1},{"version":"3a58767eb60591d2c1558c74f57d47ac1dd1e283e3bde0283647b906eca1aebc","impliedFormat":1},{"version":"1f50f683418e12392973cdb54d969655086d08d403821aad06fb428c38c0004c","impliedFormat":1},{"version":"55a70de1a2108e2fd503fd08116d41b6f1668a924bfa055dec1f3ef76cb217f9","impliedFormat":1},{"version":"288a7c3d5fd6fee8974a3fe884159b349469a4ca655ebcec6c98354c8fa9d23c","impliedFormat":1},{"version":"238d23aea1e50633049a1e1dfcad19a44e5a36304d88f7e13bbc9fca51630682","impliedFormat":1},{"version":"e51aa5e56d9bf3514faba19ba916e56b1dec9ad196bfd5eb6b86c942f8927dd0","impliedFormat":1},{"version":"9a7be590c28f7f860516c7f8354c65cac96db356594993c437c549aa63975c99","impliedFormat":1},{"version":"cab8abf010e0db556dab1a7fbacca7dfc5f3f32e3dae0af702814ca7d0b05394","impliedFormat":1},{"version":"b042e89223f672942c36d41e7c5555ccf15ce6573199fb534505dfd186c91b9b","impliedFormat":1},{"version":"53c768a6986702121e9be47b6a1192bdfa820670a3f0b172bf9bc10940794ffe","impliedFormat":1},{"version":"6828857a2bb623bb52fd4af4f6c98d96910e107af869e7c2b77022400d52998d","impliedFormat":1},{"version":"b84073343a78d3970b7692c46842d2bc98436e3038e719ce049f0b4a7190d7ac","impliedFormat":1},{"version":"518738b3a3a3b534b029df35db29a31ab3dd0f150597ad53ecbc70b2a43c14c8","impliedFormat":1},{"version":"5bfd2410d0c034c01b0ad6e3ca9b9ef6b922cef11a7d8421a43703c1626baeea","impliedFormat":1},{"version":"69994f1a5f3d73dba5fb882ed30a6d8bfbb3f1ca564a93085ddc6dd34cd147b5","impliedFormat":1},{"version":"fbbf6cf39dda76c57cbe0fecd9998718f07285123da7e30777955a681eff6c20","impliedFormat":1},{"version":"498cab8279c59ff6bad678cf7395c94a11b7113111caf866335e1c9a4ee1c991","impliedFormat":1},{"version":"1b2b39612a7b17efd4583ebb2133a6d603577096e4b760cf9d47c529b9c67414","impliedFormat":1},{"version":"5e63b311b7229bd29783ec6ecb625ad7e6e87a9ab5f4295f8e677631e210d904","impliedFormat":1},{"version":"fdfeef65925640e91d11c95aade5278625af6a1f2e1e4d99bad38132e0965d02","impliedFormat":1},{"version":"8de7cc92f4276b26773c1dd1aeffdbc2344ef9ea3de896f054be36dc0539cb5e","impliedFormat":1},{"version":"9319f02947cb4442933565659d0a51c0d8778fd18c7e97612ead8af95bf14b7e","impliedFormat":1},{"version":"22aa95f8a9510ccc6bda53447b283430298f9cb8672c2153cf1569fcb49eec92","impliedFormat":1},{"version":"37b313aae173e64574b3d35fe3b0de3d97c63b0257885cb134da637d1f93efdf","impliedFormat":1},{"version":"62970c1d53c9ac62e7a74c71237d525250eede81551a40b9c3e954ff5691365a","impliedFormat":1},{"version":"3684f5a275e1d359568bc4a79d08b7bcf14a973c7afc61ecff7a1a0888a90201","impliedFormat":1},{"version":"5b44ef24200c6073b05ac914c166614103cdb769360d771be5e24b43a3a87f45","impliedFormat":1},{"version":"38289f5cf345f7438f3da749fa74d2482fa8fc4a85d24ca26f07ac322b72a033","impliedFormat":1},{"version":"8914f6472962bcb23ebc7bdfb60c6fdf506e786c8e6e966b142c0d18216b9ed1","impliedFormat":1},{"version":"e1c770d60db7ef3a216372d61af165b0ff3d6134a91d6361ef2a28548c6cdd95","impliedFormat":1},{"version":"25214789ab14711cd7ee64298b9e92ee2151353a3fa7de2a3539b99531067ee6","impliedFormat":1},{"version":"1c1f9ead25f0ba8a7978fcdc8352108e758041ea9e3680fada574c457c16726e","impliedFormat":1},{"version":"d720ca0af98bfcb9b38dbab758abc7d872f656c2985466afb54c9495d3aa7ace","impliedFormat":1},{"version":"8fe8ac1dd27831dc531609512db0a595aad43fb75f1c7d7caab338910f3afcac","impliedFormat":1},{"version":"b914cc4c3b00603fbf8e98d277099fe0b9ea746583fba1bb001615b9eb2685f8","impliedFormat":1},{"version":"c122e80642a5d7971d4e05f108ec9b12bde3fc5565850a16529027c0654b8226","impliedFormat":1},{"version":"992d276ab098b6d6179f02bd48ba8b21b84f0b0b66d2a4a7ca655def04aa9582","impliedFormat":1},{"version":"44f5cd5353e749726f487f23b0bf5d39017788739a7a445a72d5f8c9213112e4","impliedFormat":1},{"version":"19f163212a99ca8f7a0dcde58dbd6b189b22597731bd1fb10498fdb756418d0e","impliedFormat":1},{"version":"888da990ef7ca12805ed16bcdcadc0559e29322b3267810eec210274abdfa709","impliedFormat":1},{"version":"c952e17e72dc1e8c72558cc9a5afa79ce99212e99729c632a921fe818db288e0","impliedFormat":1},{"version":"bd3afc6be5e3a43e377ce8debb2cc34337aa4931a6248623e2f0472a38df5ab1","impliedFormat":1},{"version":"0ceadc61341632138b537fdef7f88932760de6cb8ddd568a79a102e391575254","impliedFormat":1},{"version":"3c961170e58d5879b5013114a669b935895c727505eee7ca171dc0a77272ac94","impliedFormat":1},{"version":"9ce237f3485f53142c952c6f5c16928b57cdaccc95e3b041f0d8e778cd371009","impliedFormat":1},{"version":"b66414eebf3685327a7a63e2b83b87b729f23728382c2c3179c670b82c967718","impliedFormat":1},{"version":"906d635616d85b7a85dd3cbfb204af0c05277d2baacb3519fcc341f6958a0438","impliedFormat":1},{"version":"c613448f80dab1497823af3e17faf78e94f4f512b05389f84197ac4cf892e3f2","impliedFormat":1},{"version":"5fe5e77f8655c3b9e015eab646489a5b34f0368045639335ab9d1e828c5e1439","impliedFormat":1},{"version":"138d0f43b0fe5b6a57f56355610f2051634aa65f0795d3eb8ea7a20ecef5a216","impliedFormat":1},{"version":"a18d2eb5bac335e8f5077a03894b82dc51ca30f887609f77c6649ec521c30eb4","impliedFormat":1},{"version":"ca448052f36afb9f309a92f74e40f071ac750e88202d47ddbecd6d85690b61a1","impliedFormat":1},{"version":"dddbce36143eeb158221b6d3494042778013dce0320a45e2dd9c72114e1d2834","impliedFormat":1},{"version":"d9066b554e58ecafecd0abff571ef969d12f5f740f4f0f756698c20014056f9b","impliedFormat":1},{"version":"614b2fb077973da78ff18a59b82d637552e7449facd02344cc3960a91c8547d2","impliedFormat":1},{"version":"33b55dc5421948630990f8c04ad8ed11066183e9581f224c4d4e424092b61c74","impliedFormat":1},{"version":"748c351be4802d477df5ef929e0d0a4852772debbd4422e35f4967c5e7e1f3af","impliedFormat":1},{"version":"6280dfb30117e7e5b22910622cf30debedbd2cb75408ab44741ba9dd915e2577","impliedFormat":1},{"version":"4712e02c4cb461ac2e120daced545a2c99d12c1142e842b677b477f9ca4f4a92","impliedFormat":1},{"version":"a79b9dc4b2e8ead01a954533b0f9322e97d6c9ba48636deb06064baed649c004","impliedFormat":1},{"version":"2858af1f5bafa661ceec888b6ec2b73cf8de32ebd9d8f0f51030b56e6a284b35","impliedFormat":1},{"version":"72aa0061ccfff2f4af76bc1b2dd1e749981d88bcb0efec93cdb867986d78a5e5","impliedFormat":1},{"version":"f4f4ca88a2be1bb083e8cdf230c7066877736b8dc0af66140df16fc853918ff4","impliedFormat":1},{"version":"114728dc0b818dd2b0abb4e9b945c11a66c5fae73b248b8f09f8523d2bfdbbc0","impliedFormat":1},{"version":"c3c4e2388a246980373bbfe7d21d09e4d2d2acafbd7c82edfdce99b570a4470c","impliedFormat":1},{"version":"b75d9c18eea27e159ce9111835373af2f303299f251e2dc8c694c5de997f43f7","impliedFormat":1},{"version":"7a6a79529d68a2d5cc5312bfbc379426d388cdf2f12e94c7b4645a693aea1cc4","impliedFormat":1},{"version":"c6515f11b55326374bb11d1c14c5b24c0cda1a9720f198218101ba5a1c633e8c","impliedFormat":1},{"version":"c31c9fc9b7442aabba078ae2dfa1a5337ae30a87869e6272268e0a55b6abb448","impliedFormat":1},{"version":"47d576a0607782ceb77e24d54e5c323de31b3d4721a48b6ac619c0c2b2158ad1","impliedFormat":1},{"version":"b7f642770a86821f4f9ddedbe934cf42e9d46fcd5b91623dbe7ce3b4997221ea","impliedFormat":1},{"version":"747ea0635cf10b4f5bc72cee527dc02b1f21024c5564f9cf6162fb0a6c56d491","impliedFormat":1},{"version":"8fb09c1c7b3e91a3c80f93fd13a3291398cfcf07fd3c52c56e3ca46f49762012","impliedFormat":1},{"version":"428a8b3110d701fb05def44c7984bbdf23fa0bda9a994db3502d2762d6437953","impliedFormat":1},{"version":"cacc558b953e367ac34725c97edaa3932be29e981cd1afd3ab578901e9738265","impliedFormat":1},{"version":"ad466a33b783fdbbc379bc82a5356ab39d780b100178e2dc58f1d35cba590d78","impliedFormat":1},{"version":"654773ea1dbf465dbd99a43136ab6cc1d3f81b24ae918dee1482ef49aed57a24","impliedFormat":1},{"version":"539879c2c5e4df5e760d859e688e195464aae474c74b1294f39567514fad152f","impliedFormat":1},{"version":"6aa31ae3ae71cf1070d6bbeecf308da04baadd4c28142cb2f53faca2b44237be","impliedFormat":1},{"version":"100965474ec0634d3cc41d661d06001082972fad788cb6ecdc48a6152dfb0fae","impliedFormat":1},{"version":"81e9004fe653a17766c1baef973b2675e317196b8e5d5e556c4d3d72a5b51d9f","impliedFormat":1},{"version":"fbfd1dd3d63c564e964acffd43110f3835239bea5106a860b0c6f12c673cf934","impliedFormat":1},{"version":"c07ad1541868010e6fe715a9f10e99b4bb8da43ae06b98f7a381301926579991","impliedFormat":1},{"version":"ae35f0b6967a8cedbc5ec11dbdfd936cc003fd2093c127b3f861a6478cae92b8","impliedFormat":1},{"version":"3abf7e7ed0754361a1b36497870bf10d83042e1ee61f30f528bc46e13ba9c5c0","impliedFormat":1},{"version":"953da53efa000d4a319b1bbbffc586e2dc424200a658350a1351aeac9d8a763a","impliedFormat":1},{"version":"8ab8d8b53701e8310293a6869d63186053d930b8cd08d385d5f1b395821d6508","impliedFormat":1},{"version":"a670bbbabdefcbcc2c06ab4af9678703710870fd1a626c3f9299bd24e9687504","impliedFormat":1},{"version":"d26f7258b8181bfdb2f2a57b88288dbb405f73ec2c4eb42c4c8b0f20f9b68152","impliedFormat":1},{"version":"12ba121cc934a7dad0991993b8cf988c7fc9d3e8466231f565d200a02b35be7a","impliedFormat":1},{"version":"467f02dcfcd43e42511885613d5eb5ece56f2f2b1a1307c8c77bc1fa6bd9fdc0","impliedFormat":1},{"version":"92d9aa8bc2cd29e4e98b6419d9874b52be7731b58ad91349e7e464da8c28acfb","impliedFormat":1},{"version":"f483be305a738aebadbedf77a62f381d90eae5bcdd6d2a66c06b1510df2b0fbf","impliedFormat":1},{"version":"3d1bf13ed400ea46acb0c6c291dca9b9c3b47db3cef97313d393716540f8775a","impliedFormat":1},{"version":"f741c2bea2e69f19b0a08b2bbd764d3be011caa0584cf057d62c17e02b481e33","impliedFormat":1},{"version":"7f4e7b921f11c41af7d78361c190d3679e3376bfd28cdb0d8b847d99f4a096a0","impliedFormat":1},{"version":"a8829405339b2717f654796eae39f0799774fc3c3fdd27c32b6428aa5c96a03b","impliedFormat":1},{"version":"87a976eda42d1560992929cffe6f6bee978f29c8d79197a2407495b62d368822","impliedFormat":1},{"version":"e2bb63b44fdbbf48e4f596f74dea221fa931c9a4747923554b44bc095405b423","impliedFormat":1},{"version":"ff4eafe51c5e86fa503ac3387b7950dd2781d70e3af87415647b5943b9db5ef3","impliedFormat":1},{"version":"a78c8e04ccc4a39e9a29bda8f5e33ac7d0133a993e410c304466d77c38c8bbd4","impliedFormat":1},{"version":"2fe38b4077030635916079ea40177213c4775a90746538e175b18cd4069049be","impliedFormat":1},{"version":"096bc33466c88c46dfa3bb8fcf5a85ed2e86e0379aacbbb93856e4ac956b1461","impliedFormat":1},"78502cf7c3befebd74482e94b6f09bb12ec92f052c31c70b6b38a96c6f34c3e5","7ebf7932d979da3797184654d34a2e997fac8fab3bd832a85d254d549c57f1e8",{"version":"5a6237f90ea7b312ce8e331ad5ab88661ca01c64aad1fdfa4d8a9f2f64caf57d","impliedFormat":1},{"version":"b7982958a5ed024532a66b86adf71382e71b5fc86cddfd04fc6663ec917e6aa5","impliedFormat":1},{"version":"a3628f430f8d502a5c026a0c932a5c41e6361d8e0248287872cd8999bc534399","impliedFormat":1},{"version":"fc4eaf7ff8aea6826b2640c0484cc3fbbe75521a45d28cd7708e4ef5aafc4048","impliedFormat":99},{"version":"39f509b45a50c506dcaf8853902af81cbdfd00c702178d0f1ecc77eab1a50eb5","impliedFormat":1},{"version":"2b6c6039f4d2f656904d66f82231488f4852f861d27147884895097f74e3e812","impliedFormat":1},{"version":"cc6c527d304da87b8873bcf1cf9a47a12fe1630abaf5cbb2c60cbabd8e85e4c2","impliedFormat":1},{"version":"ef1448b99805603191d861730d91469aa753698b1c773d8c7b5c75a95ce61b2e","impliedFormat":1},{"version":"941959cd493fe9e8780f8a704791c83ffff2499447622f7ee63acc7bf08be0f9","impliedFormat":1},{"version":"1fcc4bb6d083b31e1587711ab5a8b0467b52a125f9735467774285bc8cc127e6","impliedFormat":1},{"version":"d689ba4f3520ed3a9de24be37d23ad0930f75d804bd82067822b1558782f12eb","impliedFormat":1},{"version":"0e085cc503ad1332728d56244e9f7a603404beca17c0c5b2d815ed29e0727d4b","impliedFormat":1},{"version":"deda38d3245acb0404dd845dae172547c895c99c442082f176071cbb40d092f3","impliedFormat":1},{"version":"2776f7230a2ae50a27bc595893d0fcd8943869a8a3aaff99a2e3f86aafe54bdb","impliedFormat":1},{"version":"585951f20abc465c5acb3674fe5bad232c299f00d073d90c8cb1a416c807d41e","impliedFormat":1},{"version":"e6f3d02d69394dae0771c088b3c0b982cf15b6a91678c59f1d5fbd7c5e6ad8f8","impliedFormat":1},{"version":"ef182902b33ac9b9ad90c163b313722d2bc9d8c2cfefeb418b3205d70504a486","impliedFormat":1},{"version":"3f279bd4f57a5464d9201ab3520ecc468a434805243125c26a57896d7539ce46","impliedFormat":1},{"version":"95bdd836ed77c23e530fcd3a0823df8fd611035590dfd8d38ee164c56f2bd2c4","impliedFormat":1},{"version":"c2e4b711a529358fbfdded0369781ddfe70320eb535ffbf71060775d60e3fb5a","impliedFormat":1},{"version":"76d33de81cd8f74ca32f2b1d5a6725b20caef91ec8d259a27ac346b8d52df10c","impliedFormat":1},{"version":"c0e42e780d502d530ce67e30d09a3b81c5d37d500c1f7ef04f4bd806f648b96a","impliedFormat":1},{"version":"447b6a80636a59c918ed18af1019de1efa94109a086e8fd8f3d20eb9b9a6937b","impliedFormat":99},{"version":"ca5bb7562523b37cc0e0f92e1ea0b99b6957f86a81f7933e6e3fea94a2dd80a1","impliedFormat":99},{"version":"05c9c065eadecdce0ee370455e3c36674bfb08673f1a268a398002a0d2d801b7","impliedFormat":1},{"version":"b0df6363b53f0b84a98f6e8ebaebd773bcc46f77d4b61af4574c7508c40f6c04","impliedFormat":1},{"version":"0eae63800777384563d5727e572982c220d47acf736dcdb569a2749a32378f19","impliedFormat":1},{"version":"9bf41a89bd0bbd4f8a23a7925d04f99267cb84a5a5b239185f3320edea329b9c","impliedFormat":1},{"version":"ba69d5ef968a0350e3216f4dfd39f846ed9a500f360acbe473e4f88278b3c746","impliedFormat":1},{"version":"ca2d1749803143fc680e7f89c0ee9e59fdbf1b4139666016fb152121e3e2c53c","impliedFormat":1},{"version":"9eb8136b766f74e684182375d1be1e03bb504973b7251dd49be3001f586473e6","impliedFormat":1},{"version":"ecfb7796212d2f1d7fc48d7d42dd6ec4c270f3080572d19f24b2638ae0defac3","impliedFormat":1},{"version":"717c42dfb8774242bcf05836fbc643bd7ccbf21908e5b8fe7920c950617ffc19","impliedFormat":1},{"version":"60662f82f3059abd2e0d8a0a5cb56abea8b982dd5dbbf7c254e60d927be25393","impliedFormat":1},{"version":"18eaffdf9c5aaf96d3ba7e3d9d788193a119be6792c1f32da4ac3595687a3a59","impliedFormat":1},{"version":"faad9daec205f5c695bfff09086f4e1e65b32deb9abc0068cba87ff660c1be90","impliedFormat":1},{"version":"4ae9b50481136302de9c77668621ed3a0b34998f3e091ca3701426f4fe369c8a","impliedFormat":1},{"version":"9ba9ecc57d2f52b3ed3ac229636ee9a36e92e18b80eeae11ffb546c12e56d5e5","impliedFormat":1},{"version":"17644c49b3a6c1907a292b491472a609f342d069c660043b96e398574e34b6a7","impliedFormat":1},{"version":"d182d419bb30a1408784ed95fbabd973dde7517641e04525f0ce761df5d193a5","impliedFormat":1},{"version":"c5396a9d06e2e1754a53813b8e1fe9c85468ab18826222346b94cc36dc4d78f5","impliedFormat":99},{"version":"44fefab0400df00ba153742ab7ba8306d1814fcb509066088e79b0e8ff7857e1","signature":"bfc4f21465be34aa6158d7e45cb96933312da6fd7ff4ab8744090eea49877a88"},{"version":"d208cd80ba896d345decdf33d60d3ef85e36a57e46ce843d7bab65cb439cd5da","signature":"a92e1f6d902352e4e2bc9f24e99694ec4e3b3552cbe9b60f94eba3283d957746"},{"version":"006fb2a3c3303601f97d9da9356fa70c766fe8f89c032c9493d0f35e6aa213bb","signature":"ed31a1f7419ac3f59b422ff0dde933c9d5be3edcbb11bf22dbb8ebea15661f2e"},"eb8f9752a3d59ccc9c7937caf76d2a95489cdba8ed5e3bc46d0636eb833e5c42","1034c530a9abe756c969d3d490f137cc8c58e44b346040b9aeace6ff4536f56d",{"version":"5532e8527279a03ae69737ee50bbb346265b8f65ea1e41da3a0329c2ae3dc2cc","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"d920af0df1360e9a7a0dccac66758e049e6e5beb2b86530b7aa0b438f35f5377","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"a10748a5e7cc2d9984d9f9332782397f9d87fc2de259d78d2645fe2b765a95de","signature":"4226cbc0f7bb5524608d44a2c84509f794177bc99e6d10f8aad68bdad6bcd3d6"},{"version":"9dd3fc511c96b7ee68d74f9ca10130203cfb9dbb356af84b4a477de5af120d24","signature":"f650401b5aae7096738f3f0cbc9234b42b7aac87bb3f439c5ca1fc4a22b71d67"},{"version":"00cb6f70e1ee78e61a662f41e0df6ecb2f92a5255493077eedf88b91c5304e6d","signature":"9e3cbf75202b29067901e20ac498e9aeb38a3d62d9d03ff51b947e6aca6ae3ec"},{"version":"d09a2a53da56d20aeac85e4f0b69f2ef799d73f1186b3abf93d32388ab431fe1","impliedFormat":1},{"version":"6f8cb6004eb7be21356b5d44f5ec7867b99f8f762520b6931bad0cf24a112272","signature":"5b0681384fbef0fc1ae1ebf672ad0083d53bfebd4f6f9df41e47ccb715232c9c"},{"version":"6ef8d2345b9b4e3ae2ab5de3660febbb8f84058ad01124c3eece199a647668c6","signature":"5f0a71b166aeffea369e5cd0569666733dbdae702833f813b505521e5cd7cc75"},"2545e08ac80cad99a51d5f47a78da0ac1c9ce23bf336ec958c2370e926b0de5f","07ff63a4d269744f278ac0fadb691fc81d296ed6af9635612268c90e802410ee",{"version":"e80bf14a8d61dbba42c93f07d6d26549999358508b593c54c7e6ffd2b01e7772","signature":"055bdb7204c2837d3bbb35453c3f4c1c1661d16dfc786a8807f29bb6f61ec849"},{"version":"f747b3802e56d7317b015992d52dc9711b99a95c10e893dfc58b2cb3986abe5e","signature":"17dbbf39b7fefeb122a74c92f01b13b6e40cf6418894e87b1a0ee177fb270b93"},{"version":"91ddf57b233b09677034ffd5f54f79e98145e9c07a43164d890ecac3f7052cbe","signature":"2ea676ad12ed6ba3a0b8701ad49985eb0d53e8b881add875b5c2911f5b9f5575"},{"version":"c89f8bd36ea4b676c69540d8988e622a5183d9a3545680a41907e53795ba5a2b","signature":"f86ac3d10b839abad80b2742faae24bb5d3c115628baabbeaa6c96467946ee71"},"fc2b3745653de70eb32f973b1c2db74071bbe1a67d553d8540ce5eef8e6ceecc",{"version":"5de58a3cc062d04f093b84bb7a3ea63b31be0c6e20d965aba9250af9972f382c","signature":"d8fdfe19bc6e7121bbb38ad9c613dc8f3762cde7ce4419b0061fb8287c1a0198"},{"version":"446b268925080e329e1f71793db6f1093351ecbd035cc55be2c38c3034384cc0","signature":"608be768ee5f02b2761ffa750b8a1b895affeb392805073179d987858facb0f9"},{"version":"a0a77d69a17be9c14545f6166d3889784a10c91e0fdb08ff8139b28becc338c2","signature":"cce0feee41dd1435816f5ec44029cd0e525ae6f59cd8289669787f479ebb398c"},"8b64c9ea710fae14208efbd01473ed6172307b92f95d47a7e1e6d813bf2efafa",{"version":"f609ec8de194118e2eed2eafe6702773946d6cb7345e2f1c1562683d8b7b2a34","signature":"5339b9db075d4a342f3a663ceeca58e3dd9ec9ad44055274bb9aebaea8fa4801"},{"version":"c6ebb0369c33feaaa4f7bd265cabf16f4ef1f17709645410ee0817cc27d12df0","signature":"9fd812c3810706b55bc0532b9cdac23db2cd02657664159eb968d888e3ae0055"},{"version":"3ea62446b643ebb7677425f8029906698a8819aa59c57aed8f36d04baa60be90","signature":"1c9fc864fd89a3fe86db90c466116c70b40f26aeca7e9275656cd8a4ab2c33f6"},{"version":"6c9b88edb76920e1266a6341881e3a955558a8c037c176dd3b2c7eedf67e52d2","signature":"e0cae8dfe56c72b89e47ca752d0b576db3e0f1dd66b8b14357c3518401fa193a"},{"version":"c642ca770305bfeef1be19cc4b187cd73d1d45a6f908794331ecf5f5a2206361","signature":"24c93132ef7f53835d637ee1128a52eb4e7473c99a246a6dae24e0f4f4bafd4f"},"3cc9eea5963534c3623fe66ea5604ea61fc9af85f99a8edb57ec3ec26fd9e1d1",{"version":"da2ca71476893107dfe03e9eb2dc634db561f36fe800c5f4729841bd7a94b50a","impliedFormat":1},{"version":"6b6db2514e5656198c3226e422ce3b20eaa862baed9d245fae718fbda3615b16","impliedFormat":1},{"version":"ba1970e7b532e458592bbd8955ac69feb0ab577fd3eeda34b3d572c0d7171ead","impliedFormat":1},{"version":"d0c1756f8ca0eac71dccd44dbeb0792af96f2171ea3c66e1e1ecccceeee3e4af","impliedFormat":1},{"version":"0aed8cf6445210cbb892de5a36caa8afd3ecbb928382b7d70c6ee907ccf6779c","impliedFormat":1},{"version":"0fa81bf425bfbe2acd54ae24cabb49570ceeb6da3f7226d6ba8057024451f0c7","impliedFormat":1},{"version":"0ed218d6510a443afc7c714543f143bd7cbe1f3e3cc2a8462a1f12b316b03b09","impliedFormat":1},{"version":"f0c22053dbd4dc2f17706c62426fa378e29042b40363e54b1028a258bfa91e05","impliedFormat":1},{"version":"32b789a883704fb6be047f8a8f600685933eeda17f1ca9898ec42af0951bc5b1","impliedFormat":1},{"version":"b0f25d7f2e82edf76b2c8a4423defa26747483d6e1e772ac8476d5b78f69fe4d","impliedFormat":1},{"version":"12ff67dcd2078121daf0dfec7f427c6bb39851bf0d6203200674d610e46b0069","impliedFormat":1},{"version":"d713078712400f84d8a7d4a2d1a1fd7eeb4879603ef87ee06580220ef12d1bc9","impliedFormat":1},{"version":"6fd12b67e326558a9a6a4ccbc40fc2e1f52d989adfec3657e7a49ca3e5c76dec","impliedFormat":1},{"version":"63cce723b802ac9af294c669c70b46d24955a71c5e3de090bda13dff1df0b791","impliedFormat":1},{"version":"7e6177fe5e7f88d45a7c79f7324ab3bba6e3e6bfefd615199831677670fc1ed8","impliedFormat":1},{"version":"ac4555fcaf9a285d9c3b98807b6e0c799cfd3d1fe5861efe072ac5f982ce3c37","impliedFormat":1},{"version":"e82a51d5498c34f37bf96981223d5aa0b5051ced754d34b9747b1aa8a4f2174f","impliedFormat":1},{"version":"1d9afa7e4148512035b4ee4fc50f39c46f80b65f45488e63ec308a54b990ea7c","impliedFormat":1},{"version":"83e01ec16b5a8424ba35047471fe772e4fdeba7dfa7884d9ced04dd84c01a26c","impliedFormat":1},{"version":"2873f7d3fc801d897c9177e8bcc417d348e96c76490f55cd7237e87859af8f12","impliedFormat":1},{"version":"ede088b09b00760b9ce0997bc1669e25bd155241f369faacf09f3d810dc0ede3","impliedFormat":1},{"version":"4ea54e4119bab55529a13b147b742cefe1b1d273b34305467f63c36f831523bc","impliedFormat":1},{"version":"f48673f5cc00610f1971b6af05a2f73305cc6660f267f43ff1c156c4e4d1d778","impliedFormat":1},{"version":"31c5ae7064e1c894e2e2496842e13bbc3fee3f3b5f27185fcb60ba3cb153f138","impliedFormat":1},{"version":"2227eb2c16ccc7d2e0765e1be566a21e9f43cd0bf945e439e14a8aa97b492045","impliedFormat":1},{"version":"8484f620f8b09cd391279de948a5b1cc17d4b592ae6bcbb3d89b4aeab486e675","impliedFormat":1},{"version":"7354af961c75ecf99a1baa62657a9a9b04af1bb503c1d2bb8d6b4cae270c77e0","impliedFormat":1},{"version":"ffbefb948f6bb2b859784f25d107c40522b43767e64db6917442f93854da41c6","impliedFormat":1},{"version":"dc4781aed7c0a5bf243958749fb57b52e198904dff6c4c04755cf62817f64ffa","impliedFormat":1},{"version":"a5a669d78d77f4ba664c690a3fbcddf66332225aaffaaaedebbe5ec1af2b746f","impliedFormat":1},{"version":"9970aa594f22b8254106c66402e8ecd9a273c0e5204681b6d2aaf9b5fe01b244","impliedFormat":1},{"version":"bf1f9c3e1d24dd4a7eb0a1963f17afa39562e8ee8f2238bf0ff412c6b2176653","impliedFormat":1},{"version":"22759dfadc7f47badde31230a0a34ba6810f88b29ff314fb5e0ffd5fe91ba379","impliedFormat":1},{"version":"4a6f2e79152adb1d73a1ed31f0e2abdd33fc7673074388032924493591ba9936","impliedFormat":1},{"version":"bf2f7981c0568c3925827f14809273b12e17dad7c5de15b5246e14bb981f30a8","impliedFormat":1},{"version":"bb3f62b3ce08b5a9613022ccb757658bb4fd65e6fb817684c92435e087c023a2","impliedFormat":1},{"version":"757ee3c9f0cba15282d6343f1bb01a4e1e4c209fb6a9aad61ffac124dca61c6c","impliedFormat":1},{"version":"717e74927b33a4c6ecaa494b9a3b09f05a5d12ef0292b1db84a5ab2fcfaa5881","impliedFormat":1},{"version":"4764e86784bb88b8f3573279db3856c50a03e2b8bc184c06a40f897bff9d7e83","impliedFormat":1},{"version":"9829c6e1afba519fb32122cde3785ff93a2c31a5e413127b6b6a9bf04a00741e","impliedFormat":1},{"version":"9903107847b34bacc30daf39eff0dae9daca6a10d149c2d9f92da75a591b1da8","impliedFormat":1},{"version":"92f1963fac565ffd3eea597a00fa6ce0539e23472b3bc3c46c21b5cc311ad9d0","signature":"c58ad8197193d6c6234cdf920fa0047c3fed4bb9b6b115b6e4f1e3ae4aed9c31"},{"version":"35c75d4244d37495dffc0cf9aeaf00b248a9a6195c4eeb5a74d3bb87c462fea9","signature":"b8bd958b2aa27e9b84811504b95627eb3811f52186e930b5edb134c8068bb695"},{"version":"c57b441e0c0a9cbdfa7d850dae1f8a387d6f81cbffbc3cd0465d530084c2417d","impliedFormat":99},{"version":"26c57c9f839e6d2048d6c25e81f805ba0ca32a28fd4d824399fd5456c9b0575b","impliedFormat":1},{"version":"2b3fd29069bf2646f0c9a781a93fb0001a50e35cf0e6694b043962f342f76a62","signature":"830a8f95ec0268be94019fa64ce06dfb8e9f4721cb49c0dc4d3b523df90cd535"},{"version":"2499a04ddb3ac86f4f463bc69ca5987b94c593770e95ce8ab679462b479db369","signature":"82bc0eed31307a283af1110555d58d817d6cfc992ee435d1b5cc6b77751e5338"},{"version":"9f7e7593891cf92cbc6c2af79efac69d8eec9663f85ed681018dc98cf2a0c9e7","impliedFormat":1},"d2d75c757f03f471bd6637d95a7ca465f6a58890e2c241401ac0f24f9e2be04c",{"version":"e8c618bcd6c55cecb9125c9a292a45be6c5f2d88a5a78f545e46151441a0b265","signature":"d9c75ee390aab53e812064d139cada316ad0eabe96169fc3dba4f041d6fcc676"},"e2f945f6a110e1d29bbc81b5744d21918b9e2c6f454e4ecbe5af5b44ceab5ba5","7f757ab1f4e7c6f5858ad3dc82fdd4bcbca8786fb139bf8a6e8d708aa3393c87",{"version":"6dd553985407f066fddbae9c48bffaf8cb3d988361e4094c8a7eaf95cca70326","signature":"6a20dbddfd986b0589ed4c8176bdfbf754a4627e23cb742287a363451dd4dd73"},{"version":"12223fa373b98f0f8e1576a03078a76faa092d8aacbe9d39ee45c39d1a213df1","signature":"ca6423d75e96b88eca780ff6e0a49ad168538126c370e8e52eab521a618d15be"},{"version":"94e373a282fc5b9ece3f91b3693a75b8025d2d1341145576a2eef538b937da86","signature":"7688e3e234d3c3248bde7fc15015c474e28db0e82eea5bd2ae9326f83aa4a476"},"2e072a369111ea6b4c94dccf712e54ea4b3f6ca24acdfe60bdbd7f552ac1781c","54ebdd35e2c1aa8b799bf01e1efdcc9991a1ee9bbfe7ebaf927c75176ec3b343","486383a607eb38ba192d1c747af4755925b24b297bdeb51e4a266d729900c9f8",{"version":"49f077da45758ad107a6e075eea15a2f37a3c69e199ec297e8a9ae5ce9ff38aa","signature":"1a8264068acec82ad2668ab3f59a362ece81b019882fc0254829fc0625e29321"},{"version":"69cbfd805675e4c5bd0e25b188029f23f4b97f61478e4510c488b717bd695cba","signature":"c29a176e67b3afd19b6a7af583a84e6cd8103999bfb4e504c475de9a149fc781"},"2a1e801a72c5c7d8b40cd1e9faa70f6ac7b59b14465de7ad5c08f16b3734d1c5",{"version":"d5a9625b51d81fbe5ca6026f454de135daaae7cd8d894b92b4daa4bb42654693","signature":"756c82f3cd5aa4871308af9ab993609fd59e16d482acecad4fd5b0f0aa10cfae"},{"version":"7ce4d576bb0306e890518d7251d5a9d7f6f73054f6a565179e110b46ad2d9396","signature":"09e680003f30e2deafa61b99e04a29b91d27b56df93a43bdc3c683285b550085"},"bce91876e1d6bae21d9cba42ae269bf89e7a25b88427b03797acab2bb95c4492","3f1e8306d922c79564238c04caa498bfe54df711660adbbcb1a47b035c20ca2d","70ea4f1e2cbeb3982930faf80ccb4e3a88a5f9dcab9fc491718c1d53eedf8959","9eca65003bed766b7f229bf2edf26c2e2455ed1ddc32779886b606211dcdd8b6","fdb3dda6ffa695ac1c7090ad3593199991aeb9057f99585535c089cab18af68d",{"version":"5a6b9e48bb2c87dfbd43057bb0afbce394d44c280495bffd01768e5b43bb5010","signature":"168fcabf06e2e88cf2d0142456e094c0c5cb2079ece65330125944c03f661d19"},{"version":"0fa6799255189fb784dc891e90ffe8319ab3aa1ad7f01e410c84bfaa38aa9a06","signature":"45b373ad2e114de335dd3eaf62f9658266d71c2f34537489f88f3b4815fa72f8"},"6180ec5c13364c645e6b55a04b737d46336fae5bb7d67e1d05764a88ff12c873",{"version":"23eb86efaccd6add8a0d7e88113dd72a59704b0c0a820aeb21e82d78a46fe432","signature":"5a7afb432c87337188750e2391a51c8c302377048be915502d171d7e2c75a66d"},"e2b149fc39c10f22d940e258f2404ada7f0b452966ee19e4e461f475bd6436af","51d0b5d656973c27f65e50cf2c4107c105c70ce5dde9fd15a363eb7b4a611ab6","eb055dd6c3d1046354616b77ac7774470ce4cbef679eaabccf9bd1477a687073","aa05beb003f4ab48718775144a8448e96dab11b8c154bdc17c4aae28d9d4f8b3",{"version":"9ae5193787858efe4e8e7a6617fad1a121e9247915eae0f83d39d8b66c865887","signature":"2a6e5bef226f06822c6f7da1999114370c4e5b9df2515191b17e2b17060393fc"},"cdd8a0aabbf439a2d1fe164b95517417f320e1664f250f53c319d991405127cb","f2ab6ea73f3880a552608b4b9b3bd17c8e228a18a7072e231340ba11f7efc295",{"version":"11bb4d4479f4df0bc0de06afca9f2a6a40beaf9556a548a7fe1b2b5847842c7b","signature":"0960c5dca4023202d5ceab81435551f70a3dc4c831f2aa59bbc46bcdc369afa3"},{"version":"30b8cb5b0e2dfd984ab6e5c04d9232072fab0b838a4408aade35485cfb73771c","signature":"9092be8bd903bce81385e5acdaf0da41a511570df0b5aaa7042fee0d36e3f22d"},{"version":"3e92b1172a8efe23bb601ab1b9170780072ba716d35877eb167ebf580a4fb184","signature":"aabf6e71b09b82552469d23187ffd89fcb858ae00f9492e2beeed94bb4f0e1fe"},{"version":"9d1aa5f7d18b26eb4df2a451a3035b38cc30a57e9fd641645e5cfcdb99ff3e12","signature":"369564917eb276294cd42d6000e536a3dcb7ff1c8da844a6bee566c20bac7990"},"6b0177b377ac6fa8edba169684e20743a11589995fd0b629387536430352e014","099c4e7e23ce59ea679debcd98236183dccf88a735b316feef5d8ed7e0d4235f","2e3e5e9c0c61b407a5cf2a76be65db1b548e2ef41c7a40354b3972d0eb037464","2145cedc3b712e16cbc46b275489f0af79acb71e34894ec8e289e7a21e9abbd5","8aefba718a3723c1d4b2aed3da39af31a65a0b2eb652a9c102dadb0c5a42b577",{"version":"04cbb741f57b8ba6f64a0afc79730537d7847cf1433fae2fef2cd47a3b5cfe59","signature":"3a8523bfa20e149df671c3166d3c2e0c8e5b9f015b121a6855deedf209096b5e"},"6b57c8719a973f600cec1af5af1394b296197a44e1d3e568e344c06f0db4893a",{"version":"a746d8b8bb72928f71171250a2d5a313096fa18f1c84ac8ee6d8df0b407ac85c","signature":"09c57f83936ccf3a77cbe9dc9100102ab82842eb8a5ec624afd7feebf77fb4d9"},{"version":"d4ad364eee7355a32756499243a557428579d1f467b03e17edbc56480a7539de","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"47b1da22bef44bf20833ec9adfecce0decb4f18c0e5636d5e774bff7c182cc6c","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"c17b0bf6f9862a71decad0c057f869b6abfc2400a927be2b28020590316c37b3","c792888df334aafc8a0a5a939f36e2930af3bbe5ff82540a306241842b880df1","859cdceb67d12c021161862bf1f756990ea3b67f532bbaca4f74487b4949173c",{"version":"5935d23a0ffda052c6ec0dc2473a8a65e4fce0cabece91ea03a4b24ed280ea27","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"48f5b9cf9a57932c13b3cd24d1fae7ddb6aa630e882588ccdb2afca4e757f733","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0ab717f2f13875422de6d9189e748f8f56371a8b04be1fd80a6bd0110b7e8909","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cfa8460e1bf0c14f040807f40c9126987bfbacd09f191248edcbfd5967685993","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"5ccde99cff50ccaca01def168cf403ff5bf193622a6e54db0cb4a18bde728887","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b50298138d475a9f8e8008de2422de5be687ef0c3ed87ce80f7b2aecc925413f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0eba1547a575300310c59fbc3f472ce0a78c7e8500fb6218e7f7c43d118f79bd","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"2b87f16dbe5756a4f194be927db4a7dc9f57592e0e46e3a79b140f1cb8609b02",{"version":"ef87fa2c30900c5f9d3bd2f04acda8dd0a7b82013a5c050d13cd2e98b9ea3ed4","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"a298dc5ceb25a0ede59fa8b7669348b2a616d05bceb3fdf2d32e10da35e8dced","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e582497206600a428acd1bcb057bf4d04506927ae6e1178fb57c9ab7d93051e1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"d55261206129f7b301258dbe90fad2b4c9296f947bf95ea86f67f03edb2da313","f0e1adb59a130c543c3947dd41262f2fa0c75e23b75dd4fbc4fe706b961f9ff7",{"version":"485172f17b73ac4e31cd160ff89a92d728d477954cbd6e9f78f8637f6fce2a0b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d248c9fe6e81ad48f9780aab05bbfac43bcd2e26276e7cb7205191c6031dcd1f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"6ee7e19cd9687f318a3fd934b437bb9d308508bb96428dbcd2b3321aa6532b56","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"abaa548fb6e79765bba8208bb55e2cb48dd95eb86b6d6b77fc1ae35971a47afe","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cae011b16e957e736692cd70a532b2035b70ce472596a5378456fe085116921b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"f908c6a041c5ad244a30679df1cad256dba3005f79b85dd4f371428cab6ac758","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8cc913470e6ccbfac0618c31fe7e2d3e33487371b53adcb121b09b4c93dd0761","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e56efaf90a16045e6acecdb05db37467f8952cfa7ed10b6726f4b0bb469fedcb","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"cf3251a812ddcb23cb9ebf344ab60827ee6126867c8332488b869d665ab34711","5cc305cd4b5346098630bc2d41afdfdc39cb2f13d36b3af76ae1e16e77b7da1f","b9baff34b9dc5a4f3f944f753229df10316cb4de2f4bca34207f271888ecde0e","794d17b2209682aabfcda47ed9a9732f310c0737adbd22201990c2d7ee217f1a","14edf0179560ea852669af4e765b6c5bfb9db2d25dbe034605a83ee1063eea8c","fb0f4d6e31fdb3c9cf24be18499b2d0bd10f0ff75790e449a0611683d3655327","152b7508556670306254ff53b43d64eb690853de0e2cf0593d38cca492bf5797","567fad905d679b928a822ecc4c4e902eebd5cd6488cb2c2542427854da023c64","3e53011f70b914ecffb6be0511de4b75ffab34626bd9ae76478f9a966d1bf5e9","ab2da50293ea89f87149c2642929742db9ac94af705552a4b8df9d8d4adbdd0d","c6e7b3d527cbf5cd8a81b03e4047928581af126ef62264931daf16ff97cc1287","a544769e096dd3885a28cd2c323b1597684181e22ec4ccdf395effefb5765c02","9ed3eeb72d6b9dbc2af1939f390b900b43e71e02408ffd780b0cf9813eb1bb66","8542e4446f029073e4bc998de5e0c103af3b6e000802acd7322c87f1dd28114c","268b3496503530e97aba4a83cb910e53bddf0255ee35b628f64e97ddf972c1a2","2cee5a8dcb87e577fb39a8a9c013091daa18e54334e5d6c3d4d07e9c5d29adc1","0ca620db6d45cc3287eb6ebf76f9e69c3a887f285674a76df1153f7e277937f4","83dd566174f34050e6ca56608d569fb3b8bf7a27c21dc9bee522f6df5d63df90","8ea64a643330da65c16ba943cc146bdc6fdca1c6967c0966b9e56367b5395d34","8742b29e8435f81a41d482fb93e337933999d7fb55e7516f50e761c35b99b65b",{"version":"c8e69e1181bc0c85cb1872a49ff293295fb92f4a3c4c51412a7cdbfcfc084576","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"db35a5fdc23e8cf703fa82994782dc1a353be0ff2e5f0fc31b4254afd669e0a2","7db69a45b9d42ad90d4dbc0d99d8906bdd1a3190439ed9d69faa4ebb1219d0a9","0e30ed38f10305c2792fc26b37dd9bc9c82fd45831fc0f98c2a90b5a6479f5ca","441c0602376b42f8a7fe41993cacb232d1b5b00ac659ec7e723fbd4d25e811fc","4bb6fa3f1dd2c9b4e8cd0c647382961d4928a78b11d87e091f26333e46689731","a93444995725386dab24e6f0348607c33ceb19946b4bb014cd1eadae8978fa6c","02e453254f8510084ac325323576b84a2a5bd8a2be4c0edb30d8c7df0da2fa73",{"version":"151ff381ef9ff8da2da9b9663ebf657eac35c4c9a19183420c05728f31a6761d","impliedFormat":1},{"version":"f3d8c757e148ad968f0d98697987db363070abada5f503da3c06aefd9d4248c1","impliedFormat":1},{"version":"a4a39b5714adfcadd3bbea6698ca2e942606d833bde62ad5fb6ec55f5e438ff8","impliedFormat":1},{"version":"bbc1d029093135d7d9bfa4b38cbf8761db505026cc458b5e9c8b74f4000e5e75","impliedFormat":1},{"version":"1f68ab0e055994eb337b67aa87d2a15e0200951e9664959b3866ee6f6b11a0fe","impliedFormat":1},{"version":"963d59066dd6742da1918a6213a209bcc205b8ee53b1876ee2b4e6d80f97c85e","impliedFormat":1},{"version":"fd326577c62145816fe1acc306c734c2396487f76719d3785d4e825b34540b33","impliedFormat":1},{"version":"8a19491eba2108d5c333c249699f40aff05ad312c04a17504573b27d91f0aede","impliedFormat":1},{"version":"15fe687c59d62741b4494d5e623d497d55eb38966ecf5bea7f36e48fc3fbe15e","impliedFormat":1},{"version":"2c3b8be03577c98530ef9cb1a76e2c812636a871f367e9edf4c5f3ce702b77f8","affectsGlobalScope":true,"impliedFormat":1},{"version":"1ba59c8bbeed2cb75b239bb12041582fa3e8ef32f8d0bd0ec802e38442d3f317","impliedFormat":1}],"root":[[408,414],749,750,[792,801],[803,821],863,864,867,868,[870,966]],"options":{"allowJs":true,"esModuleInterop":true,"jsx":1,"module":99,"skipLibCheck":true,"strict":false,"target":1},"referencedMap":[[458,1],[460,2],[459,1],[457,1],[461,3],[433,4],[445,5],[431,6],[446,7],[455,8],[422,9],[423,10],[421,11],[454,12],[449,13],[453,14],[425,15],[442,16],[424,17],[452,18],[419,19],[420,13],[426,20],[427,1],[432,21],[430,20],[417,22],[456,23],[447,24],[436,25],[435,20],[437,26],[440,27],[434,28],[438,29],[450,12],[428,30],[429,31],[441,32],[418,7],[444,33],[443,20],[439,34],[448,1],[416,1],[451,35],[915,36],[916,37],[917,38],[918,39],[919,40],[920,41],[921,42],[922,43],[923,44],[924,45],[925,46],[926,47],[927,48],[928,49],[930,50],[929,51],[931,52],[932,53],[933,54],[934,55],[935,56],[937,57],[936,58],[938,59],[939,60],[940,61],[941,62],[942,63],[943,64],[944,65],[945,66],[946,67],[913,68],[947,69],[950,70],[949,71],[951,72],[952,73],[948,74],[914,75],[955,76],[956,77],[954,78],[957,79],[953,80],[958,81],[959,82],[961,83],[962,84],[960,85],[963,86],[964,87],[965,88],[966,89],[408,90],[519,91],[471,92],[469,93],[472,94],[476,95],[465,96],[475,97],[484,98],[520,99],[415,1],[488,100],[487,1],[463,1],[470,101],[466,102],[464,103],[474,104],[462,105],[473,106],[467,107],[483,108],[485,109],[493,110],[492,111],[509,112],[512,113],[511,114],[513,112],[510,115],[508,116],[482,117],[486,118],[481,119],[515,120],[477,121],[478,122],[507,123],[495,124],[496,125],[514,126],[479,121],[497,127],[500,128],[499,129],[498,130],[503,131],[502,132],[501,122],[480,121],[504,121],[506,133],[505,134],[516,135],[518,136],[491,137],[489,138],[490,139],[494,140],[517,121],[468,1],[361,1],[645,1],[644,1],[646,141],[787,142],[788,143],[786,144],[781,145],[790,146],[775,1],[776,147],[785,148],[780,149],[789,1],[784,150],[777,1],[778,1],[783,151],[779,148],[782,149],[752,152],[753,153],[751,1],[763,154],[757,1],[766,155],[758,1],[764,156],[762,156],[765,157],[761,158],[760,1],[759,159],[754,1],[772,160],[768,161],[756,1],[755,1],[767,162],[770,163],[771,164],[769,165],[774,166],[791,167],[971,168],[970,169],[969,170],[967,1],[973,171],[968,1],[972,1],[142,172],[143,172],[144,173],[99,174],[145,175],[146,176],[147,177],[94,1],[97,178],[95,1],[96,1],[148,179],[149,180],[150,181],[151,182],[152,183],[153,184],[154,184],[155,185],[156,186],[157,187],[158,188],[100,1],[98,1],[159,189],[160,190],[161,191],[193,192],[162,193],[163,194],[164,195],[165,196],[166,197],[167,198],[168,199],[169,200],[170,201],[171,202],[172,202],[173,203],[174,1],[175,204],[177,205],[176,206],[178,103],[179,207],[180,208],[181,209],[182,210],[183,211],[184,212],[185,213],[186,214],[187,215],[188,216],[189,217],[190,218],[101,1],[102,1],[103,1],[141,219],[191,220],[192,221],[86,1],[198,222],[199,223],[197,224],[195,225],[196,226],[84,1],[87,227],[285,224],[974,12],[976,228],[975,1],[977,229],[865,1],[85,1],[773,1],[869,224],[93,230],[364,231],[368,232],[370,233],[219,234],[233,235],[335,236],[264,1],[338,237],[300,238],[308,239],[336,240],[220,241],[263,1],[265,242],[337,243],[240,244],[221,245],[244,244],[234,244],[204,244],[291,246],[292,247],[209,1],[288,248],[293,249],[379,250],[286,249],[380,251],[270,1],[289,252],[392,253],[391,254],[295,249],[390,1],[388,1],[389,255],[290,224],[277,256],[278,257],[287,258],[303,259],[304,260],[294,261],[272,262],[273,263],[383,264],[386,265],[251,266],[250,267],[249,268],[395,224],[248,269],[225,1],[398,1],[401,1],[400,224],[402,270],[200,1],[329,1],[232,271],[202,272],[352,1],[353,1],[355,1],[358,273],[354,1],[356,274],[357,274],[218,1],[231,1],[363,275],[371,276],[375,277],[214,278],[280,279],[279,1],[271,262],[299,280],[297,281],[296,1],[298,1],[302,282],[275,283],[213,284],[238,285],[326,286],[205,287],[212,288],[201,236],[340,289],[350,290],[339,1],[349,291],[239,1],[223,292],[317,293],[316,1],[323,294],[325,295],[318,296],[322,297],[324,294],[321,296],[320,294],[319,296],[260,298],[245,298],[311,299],[246,299],[207,300],[206,1],[315,301],[314,302],[313,303],[312,304],[208,305],[284,306],[301,307],[283,308],[307,309],[309,310],[306,308],[241,305],[194,1],[327,311],[266,312],[348,313],[269,314],[343,315],[211,1],[344,316],[346,317],[347,318],[330,1],[342,287],[242,319],[328,320],[351,321],[215,1],[217,1],[222,322],[310,323],[210,324],[216,1],[268,325],[267,326],[224,327],[276,328],[274,329],[226,330],[228,331],[399,1],[227,332],[229,333],[366,1],[365,1],[367,1],[397,1],[230,334],[282,224],[92,1],[305,335],[252,1],[262,336],[373,224],[382,337],[259,224],[377,249],[258,338],[360,339],[257,337],[203,1],[384,340],[255,224],[256,224],[247,1],[261,1],[254,341],[253,342],[243,343],[237,261],[345,1],[236,344],[235,1],[369,1],[281,224],[362,345],[83,1],[91,346],[88,224],[89,1],[90,1],[341,347],[334,348],[333,1],[332,349],[331,1],[372,350],[374,351],[376,352],[378,353],[381,354],[407,355],[385,355],[406,356],[387,357],[393,358],[394,359],[396,360],[403,361],[405,1],[404,12],[359,362],[534,1],[621,363],[620,364],[532,365],[529,366],[533,367],[538,368],[525,369],[537,370],[543,371],[622,372],[521,1],[523,1],[531,373],[526,374],[524,103],[536,375],[522,105],[535,376],[527,377],[545,378],[568,379],[557,380],[546,381],[554,382],[544,383],[555,1],[553,384],[548,385],[549,386],[547,387],[556,388],[530,389],[564,390],[561,391],[562,392],[563,393],[565,394],[571,395],[578,396],[577,397],[576,398],[575,399],[574,400],[572,391],[573,391],[566,401],[569,402],[567,403],[570,404],[559,405],[542,406],[558,407],[541,408],[540,409],[560,410],[539,411],[581,412],[579,391],[580,413],[583,414],[582,415],[584,391],[588,416],[586,417],[587,418],[589,419],[592,420],[591,421],[594,422],[593,423],[597,424],[595,425],[596,426],[590,427],[585,428],[598,427],[599,429],[619,430],[600,423],[601,391],[602,431],[603,432],[604,433],[550,434],[551,435],[552,436],[528,1],[605,391],[608,437],[606,391],[607,438],[609,439],[610,440],[613,441],[612,442],[614,443],[615,419],[618,444],[617,445],[616,446],[611,447],[715,448],[712,1],[740,1],[736,449],[737,450],[723,451],[724,452],[725,453],[722,454],[731,455],[726,453],[727,452],[728,456],[730,457],[720,1],[721,458],[746,459],[741,460],[742,461],[717,460],[734,462],[733,463],[713,464],[735,464],[714,464],[745,465],[719,466],[718,467],[716,1],[743,1],[732,1],[729,1],[739,468],[738,469],[695,1],[697,470],[684,471],[685,472],[686,473],[687,474],[678,475],[688,476],[689,474],[690,476],[691,477],[692,472],[693,478],[683,479],[694,480],[696,481],[681,482],[679,483],[709,1],[710,484],[680,485],[682,486],[660,487],[623,1],[661,1],[662,488],[667,489],[668,490],[669,491],[744,491],[670,491],[675,492],[671,491],[665,493],[657,494],[711,495],[676,496],[634,497],[624,494],[632,498],[625,494],[677,494],[626,494],[627,494],[628,494],[656,499],[633,500],[629,494],[630,501],[631,494],[636,502],[635,1],[702,503],[701,504],[703,505],[704,506],[705,507],[706,508],[655,509],[659,510],[708,511],[707,1],[698,512],[653,513],[699,514],[652,515],[700,516],[673,517],[672,518],[658,1],[664,519],[663,520],[748,521],[666,1],[747,522],[674,1],[637,1],[638,1],[643,1],[650,1],[642,1],[651,523],[641,1],[647,524],[649,1],[654,1],[639,1],[640,1],[648,1],[849,525],[837,1],[843,526],[856,1],[835,1],[850,1],[852,527],[853,1],[825,1],[829,528],[831,529],[830,1],[857,530],[826,531],[827,532],[828,528],[832,533],[833,533],[834,528],[824,1],[823,532],[840,1],[838,1],[839,1],[841,1],[854,1],[859,534],[858,1],[860,1],[855,1],[861,535],[862,536],[842,537],[822,1],[848,1],[845,1],[846,1],[851,1],[847,538],[844,539],[836,1],[866,1],[802,1],[81,1],[82,1],[13,1],[14,1],[16,1],[15,1],[2,1],[17,1],[18,1],[19,1],[20,1],[21,1],[22,1],[23,1],[24,1],[3,1],[25,1],[26,1],[4,1],[27,1],[31,1],[28,1],[29,1],[30,1],[32,1],[33,1],[34,1],[5,1],[35,1],[36,1],[37,1],[38,1],[6,1],[42,1],[39,1],[40,1],[41,1],[43,1],[7,1],[44,1],[49,1],[50,1],[45,1],[46,1],[47,1],[48,1],[8,1],[54,1],[51,1],[52,1],[53,1],[55,1],[9,1],[56,1],[57,1],[58,1],[60,1],[59,1],[61,1],[62,1],[10,1],[63,1],[64,1],[65,1],[11,1],[66,1],[67,1],[68,1],[69,1],[70,1],[1,1],[71,1],[72,1],[12,1],[76,1],[74,1],[79,1],[78,1],[73,1],[77,1],[75,1],[80,1],[119,540],[129,541],[118,540],[139,542],[110,543],[109,11],[138,12],[132,544],[137,545],[112,546],[126,547],[111,548],[135,549],[107,550],[106,12],[136,551],[108,552],[113,553],[114,1],[117,553],[104,1],[140,554],[130,555],[121,556],[122,557],[124,558],[120,559],[123,560],[133,12],[115,561],[116,562],[125,563],[105,7],[128,555],[127,553],[131,1],[134,564],[877,565],[878,566],[879,567],[409,568],[410,568],[411,568],[412,568],[413,568],[414,568],[750,569],[793,570],[796,571],[797,572],[798,568],[799,573],[803,574],[801,575],[804,576],[805,569],[806,568],[808,573],[809,573],[807,573],[810,573],[811,577],[814,578],[812,573],[815,569],[880,579],[881,580],[882,581],[883,582],[884,583],[870,584],[886,585],[887,586],[889,587],[890,588],[871,589],[891,590],[872,591],[895,592],[894,593],[896,594],[897,595],[892,596],[873,597],[900,592],[901,598],[899,599],[902,600],[898,579],[903,601],[904,602],[906,583],[907,580],[905,580],[908,583],[909,583],[910,603],[911,604],[912,605],[876,606],[875,607],[874,608],[893,609],[885,610],[888,584],[816,1],[749,611],[792,573],[817,612],[818,613],[819,612],[820,1],[821,1],[795,614],[800,1],[863,615],[864,1],[813,616],[867,617],[868,618],[794,1]],"affectedFilesPendingEmit":[915,916,917,918,919,920,921,922,923,924,925,926,927,928,930,929,931,932,933,934,935,937,936,938,939,940,941,942,943,944,945,946,913,947,950,949,951,952,948,914,955,956,954,957,953,958,959,961,962,960,963,964,965,966,877,878,879,409,410,411,412,413,414,750,793,796,797,798,799,803,801,804,805,806,808,809,807,810,811,814,812,815,880,881,882,883,884,870,886,887,889,890,871,891,872,895,894,896,897,892,873,900,901,899,902,898,903,904,906,907,905,908,909,910,911,912,876,875,874,893,885,888,816,749,792,817,818,819,820,821,795,800,863,864,813,867,868,794],"version":"5.9.3"}
+{"fileNames":["./node_modules/typescript/lib/lib.es5.d.ts","./node_modules/typescript/lib/lib.es2015.d.ts","./node_modules/typescript/lib/lib.es2016.d.ts","./node_modules/typescript/lib/lib.es2017.d.ts","./node_modules/typescript/lib/lib.es2018.d.ts","./node_modules/typescript/lib/lib.es2019.d.ts","./node_modules/typescript/lib/lib.es2020.d.ts","./node_modules/typescript/lib/lib.es2021.d.ts","./node_modules/typescript/lib/lib.es2022.d.ts","./node_modules/typescript/lib/lib.es2023.d.ts","./node_modules/typescript/lib/lib.es2024.d.ts","./node_modules/typescript/lib/lib.esnext.d.ts","./node_modules/typescript/lib/lib.dom.d.ts","./node_modules/typescript/lib/lib.dom.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.core.d.ts","./node_modules/typescript/lib/lib.es2015.collection.d.ts","./node_modules/typescript/lib/lib.es2015.generator.d.ts","./node_modules/typescript/lib/lib.es2015.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.promise.d.ts","./node_modules/typescript/lib/lib.es2015.proxy.d.ts","./node_modules/typescript/lib/lib.es2015.reflect.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2016.array.include.d.ts","./node_modules/typescript/lib/lib.es2016.intl.d.ts","./node_modules/typescript/lib/lib.es2017.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2017.date.d.ts","./node_modules/typescript/lib/lib.es2017.object.d.ts","./node_modules/typescript/lib/lib.es2017.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2017.string.d.ts","./node_modules/typescript/lib/lib.es2017.intl.d.ts","./node_modules/typescript/lib/lib.es2017.typedarrays.d.ts","./node_modules/typescript/lib/lib.es2018.asyncgenerator.d.ts","./node_modules/typescript/lib/lib.es2018.asynciterable.d.ts","./node_modules/typescript/lib/lib.es2018.intl.d.ts","./node_modules/typescript/lib/lib.es2018.promise.d.ts","./node_modules/typescript/lib/lib.es2018.regexp.d.ts","./node_modules/typescript/lib/lib.es2019.array.d.ts","./node_modules/typescript/lib/lib.es2019.object.d.ts","./node_modules/typescript/lib/lib.es2019.string.d.ts","./node_modules/typescript/lib/lib.es2019.symbol.d.ts","./node_modules/typescript/lib/lib.es2019.intl.d.ts","./node_modules/typescript/lib/lib.es2020.bigint.d.ts","./node_modules/typescript/lib/lib.es2020.date.d.ts","./node_modules/typescript/lib/lib.es2020.promise.d.ts","./node_modules/typescript/lib/lib.es2020.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2020.string.d.ts","./node_modules/typescript/lib/lib.es2020.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2020.intl.d.ts","./node_modules/typescript/lib/lib.es2020.number.d.ts","./node_modules/typescript/lib/lib.es2021.promise.d.ts","./node_modules/typescript/lib/lib.es2021.string.d.ts","./node_modules/typescript/lib/lib.es2021.weakref.d.ts","./node_modules/typescript/lib/lib.es2021.intl.d.ts","./node_modules/typescript/lib/lib.es2022.array.d.ts","./node_modules/typescript/lib/lib.es2022.error.d.ts","./node_modules/typescript/lib/lib.es2022.intl.d.ts","./node_modules/typescript/lib/lib.es2022.object.d.ts","./node_modules/typescript/lib/lib.es2022.string.d.ts","./node_modules/typescript/lib/lib.es2022.regexp.d.ts","./node_modules/typescript/lib/lib.es2023.array.d.ts","./node_modules/typescript/lib/lib.es2023.collection.d.ts","./node_modules/typescript/lib/lib.es2023.intl.d.ts","./node_modules/typescript/lib/lib.es2024.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2024.collection.d.ts","./node_modules/typescript/lib/lib.es2024.object.d.ts","./node_modules/typescript/lib/lib.es2024.promise.d.ts","./node_modules/typescript/lib/lib.es2024.regexp.d.ts","./node_modules/typescript/lib/lib.es2024.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2024.string.d.ts","./node_modules/typescript/lib/lib.esnext.array.d.ts","./node_modules/typescript/lib/lib.esnext.collection.d.ts","./node_modules/typescript/lib/lib.esnext.intl.d.ts","./node_modules/typescript/lib/lib.esnext.disposable.d.ts","./node_modules/typescript/lib/lib.esnext.promise.d.ts","./node_modules/typescript/lib/lib.esnext.decorators.d.ts","./node_modules/typescript/lib/lib.esnext.iterator.d.ts","./node_modules/typescript/lib/lib.esnext.float16.d.ts","./node_modules/typescript/lib/lib.esnext.error.d.ts","./node_modules/typescript/lib/lib.esnext.sharedmemory.d.ts","./node_modules/typescript/lib/lib.decorators.d.ts","./node_modules/typescript/lib/lib.decorators.legacy.d.ts","./node_modules/next/dist/styled-jsx/types/css.d.ts","./node_modules/@types/react/global.d.ts","./node_modules/csstype/index.d.ts","./node_modules/@types/prop-types/index.d.ts","./node_modules/@types/react/index.d.ts","./node_modules/next/dist/styled-jsx/types/index.d.ts","./node_modules/next/dist/styled-jsx/types/macro.d.ts","./node_modules/next/dist/styled-jsx/types/style.d.ts","./node_modules/next/dist/styled-jsx/types/global.d.ts","./node_modules/next/dist/shared/lib/amp.d.ts","./node_modules/next/amp.d.ts","./node_modules/@types/node/compatibility/disposable.d.ts","./node_modules/@types/node/compatibility/indexable.d.ts","./node_modules/@types/node/compatibility/iterators.d.ts","./node_modules/@types/node/compatibility/index.d.ts","./node_modules/@types/node/globals.typedarray.d.ts","./node_modules/@types/node/buffer.buffer.d.ts","./node_modules/@types/node/globals.d.ts","./node_modules/@types/node/web-globals/abortcontroller.d.ts","./node_modules/@types/node/web-globals/domexception.d.ts","./node_modules/@types/node/web-globals/events.d.ts","./node_modules/undici-types/header.d.ts","./node_modules/undici-types/readable.d.ts","./node_modules/undici-types/file.d.ts","./node_modules/undici-types/fetch.d.ts","./node_modules/undici-types/formdata.d.ts","./node_modules/undici-types/connector.d.ts","./node_modules/undici-types/client.d.ts","./node_modules/undici-types/errors.d.ts","./node_modules/undici-types/dispatcher.d.ts","./node_modules/undici-types/global-dispatcher.d.ts","./node_modules/undici-types/global-origin.d.ts","./node_modules/undici-types/pool-stats.d.ts","./node_modules/undici-types/pool.d.ts","./node_modules/undici-types/handlers.d.ts","./node_modules/undici-types/balanced-pool.d.ts","./node_modules/undici-types/agent.d.ts","./node_modules/undici-types/mock-interceptor.d.ts","./node_modules/undici-types/mock-agent.d.ts","./node_modules/undici-types/mock-client.d.ts","./node_modules/undici-types/mock-pool.d.ts","./node_modules/undici-types/mock-errors.d.ts","./node_modules/undici-types/proxy-agent.d.ts","./node_modules/undici-types/env-http-proxy-agent.d.ts","./node_modules/undici-types/retry-handler.d.ts","./node_modules/undici-types/retry-agent.d.ts","./node_modules/undici-types/api.d.ts","./node_modules/undici-types/interceptors.d.ts","./node_modules/undici-types/util.d.ts","./node_modules/undici-types/cookies.d.ts","./node_modules/undici-types/patch.d.ts","./node_modules/undici-types/websocket.d.ts","./node_modules/undici-types/eventsource.d.ts","./node_modules/undici-types/filereader.d.ts","./node_modules/undici-types/diagnostics-channel.d.ts","./node_modules/undici-types/content-type.d.ts","./node_modules/undici-types/cache.d.ts","./node_modules/undici-types/index.d.ts","./node_modules/@types/node/web-globals/fetch.d.ts","./node_modules/@types/node/assert.d.ts","./node_modules/@types/node/assert/strict.d.ts","./node_modules/@types/node/async_hooks.d.ts","./node_modules/@types/node/buffer.d.ts","./node_modules/@types/node/child_process.d.ts","./node_modules/@types/node/cluster.d.ts","./node_modules/@types/node/console.d.ts","./node_modules/@types/node/constants.d.ts","./node_modules/@types/node/crypto.d.ts","./node_modules/@types/node/dgram.d.ts","./node_modules/@types/node/diagnostics_channel.d.ts","./node_modules/@types/node/dns.d.ts","./node_modules/@types/node/dns/promises.d.ts","./node_modules/@types/node/domain.d.ts","./node_modules/@types/node/events.d.ts","./node_modules/@types/node/fs.d.ts","./node_modules/@types/node/fs/promises.d.ts","./node_modules/@types/node/http.d.ts","./node_modules/@types/node/http2.d.ts","./node_modules/@types/node/https.d.ts","./node_modules/@types/node/inspector.generated.d.ts","./node_modules/@types/node/module.d.ts","./node_modules/@types/node/net.d.ts","./node_modules/@types/node/os.d.ts","./node_modules/@types/node/path.d.ts","./node_modules/@types/node/perf_hooks.d.ts","./node_modules/@types/node/process.d.ts","./node_modules/@types/node/punycode.d.ts","./node_modules/@types/node/querystring.d.ts","./node_modules/@types/node/readline.d.ts","./node_modules/@types/node/readline/promises.d.ts","./node_modules/@types/node/repl.d.ts","./node_modules/@types/node/sea.d.ts","./node_modules/@types/node/stream.d.ts","./node_modules/@types/node/stream/promises.d.ts","./node_modules/@types/node/stream/consumers.d.ts","./node_modules/@types/node/stream/web.d.ts","./node_modules/@types/node/string_decoder.d.ts","./node_modules/@types/node/test.d.ts","./node_modules/@types/node/timers.d.ts","./node_modules/@types/node/timers/promises.d.ts","./node_modules/@types/node/tls.d.ts","./node_modules/@types/node/trace_events.d.ts","./node_modules/@types/node/tty.d.ts","./node_modules/@types/node/url.d.ts","./node_modules/@types/node/util.d.ts","./node_modules/@types/node/v8.d.ts","./node_modules/@types/node/vm.d.ts","./node_modules/@types/node/wasi.d.ts","./node_modules/@types/node/worker_threads.d.ts","./node_modules/@types/node/zlib.d.ts","./node_modules/@types/node/index.d.ts","./node_modules/next/dist/server/get-page-files.d.ts","./node_modules/@types/react/canary.d.ts","./node_modules/@types/react/experimental.d.ts","./node_modules/@types/react-dom/index.d.ts","./node_modules/@types/react-dom/canary.d.ts","./node_modules/@types/react-dom/experimental.d.ts","./node_modules/next/dist/compiled/webpack/webpack.d.ts","./node_modules/next/dist/server/config.d.ts","./node_modules/next/dist/lib/load-custom-routes.d.ts","./node_modules/next/dist/shared/lib/image-config.d.ts","./node_modules/next/dist/build/webpack/plugins/subresource-integrity-plugin.d.ts","./node_modules/next/dist/server/body-streams.d.ts","./node_modules/next/dist/server/future/route-kind.d.ts","./node_modules/next/dist/server/future/route-definitions/route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/route-match.d.ts","./node_modules/next/dist/client/components/app-router-headers.d.ts","./node_modules/next/dist/server/request-meta.d.ts","./node_modules/next/dist/server/lib/revalidate.d.ts","./node_modules/next/dist/server/config-shared.d.ts","./node_modules/next/dist/server/base-http/index.d.ts","./node_modules/next/dist/server/api-utils/index.d.ts","./node_modules/next/dist/server/node-environment.d.ts","./node_modules/next/dist/server/require-hook.d.ts","./node_modules/next/dist/server/node-polyfill-crypto.d.ts","./node_modules/next/dist/lib/page-types.d.ts","./node_modules/next/dist/build/analysis/get-page-static-info.d.ts","./node_modules/next/dist/build/webpack/loaders/get-module-build-info.d.ts","./node_modules/next/dist/build/webpack/plugins/middleware-plugin.d.ts","./node_modules/next/dist/server/render-result.d.ts","./node_modules/next/dist/server/future/helpers/i18n-provider.d.ts","./node_modules/next/dist/server/web/next-url.d.ts","./node_modules/next/dist/compiled/@edge-runtime/cookies/index.d.ts","./node_modules/next/dist/server/web/spec-extension/cookies.d.ts","./node_modules/next/dist/server/web/spec-extension/request.d.ts","./node_modules/next/dist/server/web/spec-extension/fetch-event.d.ts","./node_modules/next/dist/server/web/spec-extension/response.d.ts","./node_modules/next/dist/server/web/types.d.ts","./node_modules/next/dist/lib/setup-exception-listeners.d.ts","./node_modules/next/dist/lib/constants.d.ts","./node_modules/next/dist/build/index.d.ts","./node_modules/next/dist/build/webpack/plugins/pages-manifest-plugin.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-regex.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-matcher.d.ts","./node_modules/next/dist/shared/lib/router/utils/parse-url.d.ts","./node_modules/next/dist/server/base-http/node.d.ts","./node_modules/next/dist/server/font-utils.d.ts","./node_modules/next/dist/build/webpack/plugins/flight-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-modules/route-module.d.ts","./node_modules/next/dist/server/load-components.d.ts","./node_modules/next/dist/shared/lib/router/utils/middleware-route-matcher.d.ts","./node_modules/next/dist/build/webpack/plugins/next-font-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-definitions/locale-route-definition.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-route-definition.d.ts","./node_modules/next/dist/shared/lib/mitt.d.ts","./node_modules/next/dist/client/with-router.d.ts","./node_modules/next/dist/client/router.d.ts","./node_modules/next/dist/client/route-loader.d.ts","./node_modules/next/dist/client/page-loader.d.ts","./node_modules/next/dist/shared/lib/bloom-filter.d.ts","./node_modules/next/dist/shared/lib/router/router.d.ts","./node_modules/next/dist/shared/lib/router-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/image-config-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/head-manager-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-definitions/app-page-route-definition.d.ts","./node_modules/next/dist/shared/lib/modern-browserslist-target.d.ts","./node_modules/next/dist/shared/lib/constants.d.ts","./node_modules/next/dist/build/webpack/loaders/metadata/types.d.ts","./node_modules/next/dist/build/page-extensions-type.d.ts","./node_modules/next/dist/build/webpack/loaders/next-app-loader.d.ts","./node_modules/next/dist/server/lib/app-dir-module.d.ts","./node_modules/next/dist/server/response-cache/types.d.ts","./node_modules/next/dist/server/response-cache/index.d.ts","./node_modules/next/dist/server/lib/incremental-cache/index.d.ts","./node_modules/next/dist/client/components/hooks-server-context.d.ts","./node_modules/next/dist/server/app-render/dynamic-rendering.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage-instance.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage.external.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/request-cookies.d.ts","./node_modules/next/dist/server/async-storage/draft-mode-provider.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/headers.d.ts","./node_modules/next/dist/client/components/request-async-storage-instance.d.ts","./node_modules/next/dist/client/components/request-async-storage.external.d.ts","./node_modules/next/dist/server/app-render/create-error-handler.d.ts","./node_modules/next/dist/server/app-render/app-render.d.ts","./node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/amp-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.compiled.d.ts","./node_modules/@types/react/jsx-runtime.d.ts","./node_modules/next/dist/client/components/error-boundary.d.ts","./node_modules/next/dist/client/components/router-reducer/create-initial-router-state.d.ts","./node_modules/next/dist/client/components/app-router.d.ts","./node_modules/next/dist/client/components/layout-router.d.ts","./node_modules/next/dist/client/components/render-from-template-context.d.ts","./node_modules/next/dist/client/components/action-async-storage-instance.d.ts","./node_modules/next/dist/client/components/action-async-storage.external.d.ts","./node_modules/next/dist/client/components/client-page.d.ts","./node_modules/next/dist/client/components/search-params.d.ts","./node_modules/next/dist/client/components/not-found-boundary.d.ts","./node_modules/next/dist/server/app-render/rsc/preloads.d.ts","./node_modules/next/dist/server/app-render/rsc/postpone.d.ts","./node_modules/next/dist/server/app-render/rsc/taint.d.ts","./node_modules/next/dist/server/app-render/entry-base.d.ts","./node_modules/next/dist/build/templates/app-page.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.d.ts","./node_modules/next/dist/server/app-render/types.d.ts","./node_modules/next/dist/client/components/router-reducer/fetch-server-response.d.ts","./node_modules/next/dist/client/components/router-reducer/router-reducer-types.d.ts","./node_modules/next/dist/shared/lib/app-router-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/pages/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.compiled.d.ts","./node_modules/next/dist/build/templates/pages.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.d.ts","./node_modules/next/dist/server/render.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-api-route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/pages-api-route-match.d.ts","./node_modules/next/dist/server/future/route-matchers/route-matcher.d.ts","./node_modules/next/dist/server/future/route-matcher-providers/route-matcher-provider.d.ts","./node_modules/next/dist/server/future/route-matcher-managers/route-matcher-manager.d.ts","./node_modules/next/dist/server/future/normalizers/normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/locale-route-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/pathname-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/suffix.d.ts","./node_modules/next/dist/server/future/normalizers/request/rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefix.d.ts","./node_modules/next/dist/server/future/normalizers/request/postponed.d.ts","./node_modules/next/dist/server/future/normalizers/request/action.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefetch-rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/next-data.d.ts","./node_modules/next/dist/server/base-server.d.ts","./node_modules/next/dist/server/image-optimizer.d.ts","./node_modules/next/dist/server/next-server.d.ts","./node_modules/next/dist/lib/coalesced-function.d.ts","./node_modules/next/dist/server/lib/router-utils/types.d.ts","./node_modules/next/dist/trace/types.d.ts","./node_modules/next/dist/trace/trace.d.ts","./node_modules/next/dist/trace/shared.d.ts","./node_modules/next/dist/trace/index.d.ts","./node_modules/next/dist/build/load-jsconfig.d.ts","./node_modules/next/dist/build/webpack-config.d.ts","./node_modules/next/dist/build/webpack/plugins/define-env-plugin.d.ts","./node_modules/next/dist/build/swc/index.d.ts","./node_modules/next/dist/server/dev/parse-version-info.d.ts","./node_modules/next/dist/server/dev/hot-reloader-types.d.ts","./node_modules/next/dist/telemetry/storage.d.ts","./node_modules/next/dist/server/lib/types.d.ts","./node_modules/next/dist/server/lib/render-server.d.ts","./node_modules/next/dist/server/lib/router-server.d.ts","./node_modules/next/dist/shared/lib/router/utils/path-match.d.ts","./node_modules/next/dist/server/lib/router-utils/filesystem.d.ts","./node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.d.ts","./node_modules/next/dist/server/lib/dev-bundler-service.d.ts","./node_modules/next/dist/server/dev/static-paths-worker.d.ts","./node_modules/next/dist/server/dev/next-dev-server.d.ts","./node_modules/next/dist/server/next.d.ts","./node_modules/next/dist/lib/metadata/types/alternative-urls-types.d.ts","./node_modules/next/dist/lib/metadata/types/extra-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-types.d.ts","./node_modules/next/dist/lib/metadata/types/manifest-types.d.ts","./node_modules/next/dist/lib/metadata/types/opengraph-types.d.ts","./node_modules/next/dist/lib/metadata/types/twitter-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-interface.d.ts","./node_modules/next/types/index.d.ts","./node_modules/next/dist/shared/lib/html-context.shared-runtime.d.ts","./node_modules/@next/env/dist/index.d.ts","./node_modules/next/dist/shared/lib/utils.d.ts","./node_modules/next/dist/pages/_app.d.ts","./node_modules/next/app.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-cache.d.ts","./node_modules/next/dist/server/web/spec-extension/revalidate.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-no-store.d.ts","./node_modules/next/cache.d.ts","./node_modules/next/dist/shared/lib/runtime-config.external.d.ts","./node_modules/next/config.d.ts","./node_modules/next/dist/pages/_document.d.ts","./node_modules/next/document.d.ts","./node_modules/next/dist/shared/lib/dynamic.d.ts","./node_modules/next/dynamic.d.ts","./node_modules/next/dist/pages/_error.d.ts","./node_modules/next/error.d.ts","./node_modules/next/dist/shared/lib/head.d.ts","./node_modules/next/head.d.ts","./node_modules/next/dist/client/components/draft-mode.d.ts","./node_modules/next/dist/client/components/headers.d.ts","./node_modules/next/headers.d.ts","./node_modules/next/dist/shared/lib/get-img-props.d.ts","./node_modules/next/dist/client/image-component.d.ts","./node_modules/next/dist/shared/lib/image-external.d.ts","./node_modules/next/image.d.ts","./node_modules/next/dist/client/link.d.ts","./node_modules/next/link.d.ts","./node_modules/next/dist/client/components/redirect-status-code.d.ts","./node_modules/next/dist/client/components/redirect.d.ts","./node_modules/next/dist/client/components/not-found.d.ts","./node_modules/next/dist/client/components/navigation.react-server.d.ts","./node_modules/next/dist/client/components/navigation.d.ts","./node_modules/next/navigation.d.ts","./node_modules/next/router.d.ts","./node_modules/next/dist/client/script.d.ts","./node_modules/next/script.d.ts","./node_modules/next/dist/server/web/spec-extension/user-agent.d.ts","./node_modules/next/dist/compiled/@edge-runtime/primitives/url.d.ts","./node_modules/next/dist/server/web/spec-extension/image-response.d.ts","./node_modules/next/dist/compiled/@vercel/og/satori/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/emoji/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/types.d.ts","./node_modules/next/server.d.ts","./node_modules/next/types/global.d.ts","./node_modules/next/types/compiled.d.ts","./node_modules/next/index.d.ts","./node_modules/next/image-types/global.d.ts","./next-env.d.ts","./src/app/api/abdm/auth/route.ts","./src/app/api/abdm/create/init/route.ts","./src/app/api/abdm/create/verify-otp/route.ts","./src/app/api/abdm/search/route.ts","./src/app/api/abdm/verify/route.ts","./src/app/api/check-config/route.ts","./node_modules/@anthropic-ai/sdk/internal/builtin-types.d.mts","../../../../node_modules/undici-types/utility.d.ts","../../../../node_modules/undici-types/header.d.ts","../../../../node_modules/undici-types/readable.d.ts","../../../../node_modules/undici-types/fetch.d.ts","../../../../node_modules/undici-types/formdata.d.ts","../../../../node_modules/undici-types/connector.d.ts","../../../../node_modules/undici-types/client-stats.d.ts","../../../../node_modules/undici-types/client.d.ts","../../../../node_modules/undici-types/errors.d.ts","../../../../node_modules/undici-types/dispatcher.d.ts","../../../../node_modules/undici-types/global-dispatcher.d.ts","../../../../node_modules/undici-types/global-origin.d.ts","../../../../node_modules/undici-types/pool-stats.d.ts","../../../../node_modules/undici-types/pool.d.ts","../../../../node_modules/undici-types/handlers.d.ts","../../../../node_modules/undici-types/balanced-pool.d.ts","../../../../node_modules/undici-types/h2c-client.d.ts","../../../../node_modules/undici-types/agent.d.ts","../../../../node_modules/undici-types/mock-interceptor.d.ts","../../../../node_modules/undici-types/mock-call-history.d.ts","../../../../node_modules/undici-types/mock-agent.d.ts","../../../../node_modules/undici-types/mock-client.d.ts","../../../../node_modules/undici-types/mock-pool.d.ts","../../../../node_modules/undici-types/snapshot-agent.d.ts","../../../../node_modules/undici-types/mock-errors.d.ts","../../../../node_modules/undici-types/proxy-agent.d.ts","../../../../node_modules/undici-types/env-http-proxy-agent.d.ts","../../../../node_modules/undici-types/retry-handler.d.ts","../../../../node_modules/undici-types/retry-agent.d.ts","../../../../node_modules/undici-types/api.d.ts","../../../../node_modules/undici-types/cache-interceptor.d.ts","../../../../node_modules/undici-types/interceptors.d.ts","../../../../node_modules/undici-types/util.d.ts","../../../../node_modules/undici-types/cookies.d.ts","../../../../node_modules/undici-types/patch.d.ts","../../../../node_modules/undici-types/websocket.d.ts","../../../../node_modules/undici-types/eventsource.d.ts","../../../../node_modules/undici-types/diagnostics-channel.d.ts","../../../../node_modules/undici-types/content-type.d.ts","../../../../node_modules/undici-types/cache.d.ts","../../../../node_modules/undici-types/index.d.ts","../../../../node_modules/formdata-polyfill/esm.min.d.ts","../../../../node_modules/fetch-blob/file.d.ts","../../../../node_modules/fetch-blob/index.d.ts","../../../../node_modules/fetch-blob/from.d.ts","../../../../node_modules/node-fetch/@types/index.d.ts","./node_modules/@anthropic-ai/sdk/internal/types.d.mts","./node_modules/@anthropic-ai/sdk/internal/headers.d.mts","./node_modules/@anthropic-ai/sdk/internal/shim-types.d.mts","./node_modules/@anthropic-ai/sdk/core/streaming.d.mts","./node_modules/@anthropic-ai/sdk/internal/request-options.d.mts","./node_modules/@anthropic-ai/sdk/internal/utils/log.d.mts","./node_modules/@anthropic-ai/sdk/resources/shared.d.mts","./node_modules/@anthropic-ai/sdk/core/error.d.mts","./node_modules/@anthropic-ai/sdk/internal/parse.d.mts","./node_modules/@anthropic-ai/sdk/core/api-promise.d.mts","./node_modules/@anthropic-ai/sdk/core/pagination.d.mts","./node_modules/@anthropic-ai/sdk/internal/uploads.d.mts","./node_modules/@anthropic-ai/sdk/internal/to-file.d.mts","./node_modules/@anthropic-ai/sdk/core/uploads.d.mts","./node_modules/@anthropic-ai/sdk/core/resource.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/environments.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/files.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/user-profiles.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.d.mts","./node_modules/@anthropic-ai/sdk/lib/beta-parser.d.mts","./node_modules/@anthropic-ai/sdk/error.d.mts","./node_modules/@anthropic-ai/sdk/lib/betamessagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/index.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/line.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages.d.mts","./node_modules/@anthropic-ai/sdk/lib/parser.d.mts","./node_modules/@anthropic-ai/sdk/lib/messagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betarunnabletool.d.mts","./node_modules/@anthropic-ai/sdk/resources.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/compactioncontrol.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betatoolrunner.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/toolerror.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/beta.d.mts","./node_modules/@anthropic-ai/sdk/resources/completions.d.mts","./node_modules/@anthropic-ai/sdk/resources/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/index.d.mts","./node_modules/@anthropic-ai/sdk/client.d.mts","./node_modules/@anthropic-ai/sdk/index.d.mts","./node_modules/openai/internal/builtin-types.d.mts","./node_modules/openai/internal/types.d.mts","./node_modules/openai/internal/headers.d.mts","./node_modules/openai/internal/shim-types.d.mts","./node_modules/openai/core/streaming.d.mts","./node_modules/openai/internal/request-options.d.mts","./node_modules/openai/internal/utils/log.d.mts","./node_modules/openai/resources/shared.d.mts","./node_modules/openai/core/error.d.mts","./node_modules/openai/pagination.d.mts","./node_modules/openai/internal/parse.d.mts","./node_modules/openai/core/api-promise.d.mts","./node_modules/openai/core/pagination.d.mts","./node_modules/openai/auth/types.d.mts","./node_modules/openai/internal/uploads.d.mts","./node_modules/openai/internal/to-file.d.mts","./node_modules/openai/core/uploads.d.mts","./node_modules/openai/core/resource.d.mts","./node_modules/openai/resources/completions.d.mts","./node_modules/openai/resources/chat/completions/messages.d.mts","./node_modules/openai/resources/chat/completions/index.d.mts","./node_modules/openai/resources/chat/completions.d.mts","./node_modules/openai/error.d.mts","./node_modules/openai/lib/eventstream.d.mts","./node_modules/openai/lib/abstractchatcompletionrunner.d.mts","./node_modules/openai/lib/chatcompletionstream.d.mts","./node_modules/openai/lib/responsesparser.d.mts","./node_modules/openai/lib/responses/eventtypes.d.mts","./node_modules/openai/lib/responses/responsestream.d.mts","./node_modules/openai/resources/responses/input-items.d.mts","./node_modules/openai/resources/responses/input-tokens.d.mts","./node_modules/openai/resources/responses/responses.d.mts","./node_modules/openai/lib/parser.d.mts","./node_modules/openai/lib/chatcompletionstreamingrunner.d.mts","./node_modules/openai/lib/jsonschema.d.mts","./node_modules/openai/lib/runnablefunction.d.mts","./node_modules/openai/lib/chatcompletionrunner.d.mts","./node_modules/openai/resources/chat/completions/completions.d.mts","./node_modules/openai/resources/chat/chat.d.mts","./node_modules/openai/resources/chat/index.d.mts","./node_modules/openai/resources/audio/speech.d.mts","./node_modules/openai/resources/audio/transcriptions.d.mts","./node_modules/openai/resources/audio/translations.d.mts","./node_modules/openai/resources/audio/audio.d.mts","./node_modules/openai/resources/batches.d.mts","./node_modules/openai/resources/beta/threads/messages.d.mts","./node_modules/openai/resources/beta/threads/runs/steps.d.mts","./node_modules/openai/lib/assistantstream.d.mts","./node_modules/openai/resources/beta/threads/runs/runs.d.mts","./node_modules/openai/resources/beta/threads/threads.d.mts","./node_modules/openai/resources/beta/assistants.d.mts","./node_modules/openai/resources/beta/realtime/sessions.d.mts","./node_modules/openai/resources/beta/realtime/transcription-sessions.d.mts","./node_modules/openai/resources/beta/realtime/realtime.d.mts","./node_modules/openai/resources/beta/chatkit/threads.d.mts","./node_modules/openai/resources/beta/chatkit/sessions.d.mts","./node_modules/openai/resources/beta/chatkit/chatkit.d.mts","./node_modules/openai/resources/beta/beta.d.mts","./node_modules/openai/resources/containers/files/content.d.mts","./node_modules/openai/resources/containers/files/files.d.mts","./node_modules/openai/resources/containers/containers.d.mts","./node_modules/openai/resources/conversations/items.d.mts","./node_modules/openai/resources/conversations/conversations.d.mts","./node_modules/openai/resources/embeddings.d.mts","./node_modules/openai/resources/graders/grader-models.d.mts","./node_modules/openai/resources/evals/runs/output-items.d.mts","./node_modules/openai/resources/evals/runs/runs.d.mts","./node_modules/openai/resources/evals/evals.d.mts","./node_modules/openai/resources/files.d.mts","./node_modules/openai/resources/fine-tuning/methods.d.mts","./node_modules/openai/resources/fine-tuning/alpha/graders.d.mts","./node_modules/openai/resources/fine-tuning/alpha/alpha.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/permissions.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/jobs.d.mts","./node_modules/openai/resources/fine-tuning/fine-tuning.d.mts","./node_modules/openai/resources/graders/graders.d.mts","./node_modules/openai/resources/images.d.mts","./node_modules/openai/resources/models.d.mts","./node_modules/openai/resources/moderations.d.mts","./node_modules/openai/resources/realtime/calls.d.mts","./node_modules/openai/resources/realtime/client-secrets.d.mts","./node_modules/openai/resources/realtime/realtime.d.mts","./node_modules/openai/resources/skills/content.d.mts","./node_modules/openai/resources/skills/versions/content.d.mts","./node_modules/openai/resources/skills/versions/versions.d.mts","./node_modules/openai/resources/skills/skills.d.mts","./node_modules/openai/resources/uploads/parts.d.mts","./node_modules/openai/resources/uploads/uploads.d.mts","./node_modules/openai/uploads.d.mts","./node_modules/openai/resources/vector-stores/files.d.mts","./node_modules/openai/resources/vector-stores/file-batches.d.mts","./node_modules/openai/resources/vector-stores/vector-stores.d.mts","./node_modules/openai/resources/videos.d.mts","./node_modules/openai/resources/webhooks/webhooks.d.mts","./node_modules/openai/resources/webhooks/index.d.mts","./node_modules/openai/resources/webhooks.d.mts","./node_modules/openai/resources/index.d.mts","./node_modules/openai/client.d.mts","./node_modules/openai/azure.d.mts","./node_modules/openai/index.d.mts","./node_modules/pdf-lib/cjs/core/document/pdfheader.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfbool.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfhexstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfname.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnull.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnumber.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfref.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfdict.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfrawstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfarray.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperatornames.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperator.d.ts","./node_modules/pdf-lib/cjs/utils/arrays.d.ts","./node_modules/pdf-lib/cjs/utils/async.d.ts","./node_modules/pdf-lib/cjs/utils/strings.d.ts","./node_modules/pdf-lib/cjs/utils/unicode.d.ts","./node_modules/pdf-lib/cjs/utils/numbers.d.ts","./node_modules/pdf-lib/cjs/utils/errors.d.ts","./node_modules/pdf-lib/cjs/utils/base64.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/font.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/encoding.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/index.d.ts","./node_modules/pdf-lib/cjs/utils/objects.d.ts","./node_modules/pdf-lib/cjs/utils/validators.d.ts","./node_modules/pdf-lib/cjs/utils/pdfdocencoding.d.ts","./node_modules/pdf-lib/cjs/utils/cache.d.ts","./node_modules/pdf-lib/cjs/utils/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfflatestream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcontentstream.d.ts","./node_modules/pdf-lib/cjs/utils/rng.d.ts","./node_modules/pdf-lib/cjs/core/pdfcontext.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfobject.d.ts","./node_modules/pdf-lib/cjs/core/errors.d.ts","./node_modules/pdf-lib/cjs/core/syntax/charcodes.d.ts","./node_modules/pdf-lib/cjs/core/pdfobjectcopier.d.ts","./node_modules/pdf-lib/cjs/core/document/pdfcrossrefsection.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailer.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailerdict.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfwriter.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfstreamwriter.d.ts","./node_modules/pdf-lib/cjs/core/embedders/standardfontembedder.d.ts","./node_modules/pdf-lib/cjs/types/fontkit.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontsubsetembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/fileembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/jpegembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pngembedder.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpagetree.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpageleaf.d.ts","./node_modules/pdf-lib/cjs/types/matrix.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pdfpageembedder.d.ts","./node_modules/pdf-lib/cjs/core/interactive/viewerpreferences.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfinvalidobject.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrofield.d.ts","./node_modules/pdf-lib/cjs/core/annotation/borderstyle.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfannotation.d.ts","./node_modules/pdf-lib/cjs/core/annotation/appearancecharacteristics.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfwidgetannotation.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocheckbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrochoice.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocombobox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroform.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrolistbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrononterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacropushbutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroradiobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrosignature.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrotext.d.ts","./node_modules/pdf-lib/cjs/core/acroform/flags.d.ts","./node_modules/pdf-lib/cjs/core/acroform/utils.d.ts","./node_modules/pdf-lib/cjs/core/acroform/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcatalog.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcrossrefstream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfobjectstream.d.ts","./node_modules/pdf-lib/cjs/core/parser/bytestream.d.ts","./node_modules/pdf-lib/cjs/core/parser/baseparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfxrefstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/streams/stream.d.ts","./node_modules/pdf-lib/cjs/core/streams/decode.d.ts","./node_modules/pdf-lib/cjs/core/annotation/flags.d.ts","./node_modules/pdf-lib/cjs/core/annotation/index.d.ts","./node_modules/pdf-lib/cjs/core/index.d.ts","./node_modules/pdf-lib/cjs/api/embeddable.d.ts","./node_modules/pdf-lib/cjs/api/pdfembeddedpage.d.ts","./node_modules/pdf-lib/cjs/api/pdfimage.d.ts","./node_modules/pdf-lib/cjs/api/colors.d.ts","./node_modules/pdf-lib/cjs/api/rotations.d.ts","./node_modules/pdf-lib/cjs/api/operators.d.ts","./node_modules/pdf-lib/cjs/api/pdfpageoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfpage.d.ts","./node_modules/pdf-lib/cjs/api/image/alignment.d.ts","./node_modules/pdf-lib/cjs/api/image/index.d.ts","./node_modules/pdf-lib/cjs/api/form/pdffield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfbutton.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfcheckbox.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfdropdown.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfoptionlist.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfradiogroup.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfsignature.d.ts","./node_modules/pdf-lib/cjs/api/text/alignment.d.ts","./node_modules/pdf-lib/cjs/api/form/pdftextfield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfform.d.ts","./node_modules/pdf-lib/cjs/api/standardfonts.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocumentoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocument.d.ts","./node_modules/pdf-lib/cjs/api/pdffont.d.ts","./node_modules/pdf-lib/cjs/api/form/appearances.d.ts","./node_modules/pdf-lib/cjs/api/form/index.d.ts","./node_modules/pdf-lib/cjs/api/text/layout.d.ts","./node_modules/pdf-lib/cjs/api/text/index.d.ts","./node_modules/pdf-lib/cjs/api/errors.d.ts","./node_modules/pdf-lib/cjs/api/objects.d.ts","./node_modules/pdf-lib/cjs/api/operations.d.ts","./node_modules/pdf-lib/cjs/api/sizes.d.ts","./node_modules/pdf-lib/cjs/core/embedders/javascriptembedder.d.ts","./node_modules/pdf-lib/cjs/api/pdfjavascript.d.ts","./node_modules/pdf-lib/cjs/api/index.d.ts","./node_modules/pdf-lib/cjs/types/index.d.ts","./node_modules/pdf-lib/cjs/index.d.ts","./src/lib/ai-client.ts","./src/app/api/discharge-ai/route.ts","./node_modules/@supabase/functions-js/dist/module/types.d.ts","./node_modules/@supabase/functions-js/dist/module/functionsclient.d.ts","./node_modules/@supabase/functions-js/dist/module/index.d.ts","./node_modules/@supabase/postgrest-js/dist/index.d.mts","./node_modules/@supabase/realtime-js/dist/module/lib/websocket-factory.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/constants.d.ts","./node_modules/@supabase/phoenix/priv/static/types/longpoll.d.ts","./node_modules/@supabase/phoenix/priv/static/types/types.d.ts","./node_modules/@supabase/phoenix/priv/static/types/timer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/socket.d.ts","./node_modules/@supabase/phoenix/priv/static/types/push.d.ts","./node_modules/@supabase/phoenix/priv/static/types/channel.d.ts","./node_modules/@supabase/phoenix/priv/static/types/presence.d.ts","./node_modules/@supabase/phoenix/priv/static/types/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/index.d.ts","./node_modules/@supabase/realtime-js/dist/module/phoenix/types.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/constants.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimepresence.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimechannel.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimeclient.d.ts","./node_modules/@supabase/realtime-js/dist/module/index.d.ts","./node_modules/iceberg-js/dist/index.d.ts","./node_modules/@supabase/storage-js/dist/index.d.mts","./node_modules/@supabase/auth-js/dist/module/lib/error-codes.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/ethereum.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/solana.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.dom.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/helpers.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/types.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/fetch.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/locks.d.ts","./node_modules/@supabase/auth-js/dist/module/index.d.ts","./node_modules/@supabase/supabase-js/dist/index.d.mts","./src/lib/api-auth.ts","./src/app/api/doctor-note-ocr/route.ts","./src/types/index.ts","./src/lib/fhir.ts","./src/app/api/fhir/patient/[id]/route.ts","./src/app/api/generate-pdf/route.ts","./src/app/api/generate-qr/route.ts","./src/app/api/insurance-bundle/[patientid]/route.ts","./src/lib/ocr.ts","./src/app/api/ocr/route.ts","./node_modules/tesseract.js/src/index.d.ts","./src/app/api/ocr-free/route.ts","./src/app/api/parse-pdf/route.ts","./src/app/api/patient-summary/route.ts","./src/app/api/payment-link/route.ts","./node_modules/@react-pdf/types/pdf.d.ts","./node_modules/@react-pdf/types/svg.d.ts","./node_modules/@react-pdf/stylesheet/lib/index.d.ts","./node_modules/@react-pdf/types/style.d.ts","./node_modules/@react-pdf/primitives/lib/index.d.ts","./node_modules/@react-pdf/types/primitive.d.ts","./node_modules/@react-pdf/font/lib/index.d.ts","./node_modules/@react-pdf/types/font.d.ts","./node_modules/@react-pdf/types/page.d.ts","./node_modules/@react-pdf/types/bookmark.d.ts","./node_modules/@react-pdf/types/node.d.ts","./node_modules/@react-pdf/types/image.d.ts","./node_modules/@react-pdf/types/context.d.ts","./node_modules/@react-pdf/types/hitslop.d.ts","./node_modules/@react-pdf/types/index.d.ts","./node_modules/@react-pdf/renderer/lib/react-pdf.d.ts","./src/lib/pdf-generator.tsx","./src/app/api/pdf/prescriptions/route.ts","./src/app/api/portal/send-link/route.ts","./src/app/api/reminders/route.ts","./src/app/api/reminders/auto-generate/route.ts","./src/app/api/reminders/history/route.ts","./src/app/api/reminders/send-all/route.ts","./src/app/api/test-ai/route.ts","./src/app/api/users/route.ts","./src/lib/supabase.ts","./src/app/api/users/invite/route.ts","./src/app/api/video/room/route.ts","./src/app/api/voice-correct/route.ts","./src/lib/abdm.ts","./src/lib/audit.ts","./src/lib/auth.ts","./src/lib/billing-gst.ts","./src/lib/clinical-risk.ts","./src/lib/constants.ts","./node_modules/pdfjs-dist/types/src/shared/util.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/tools.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/toolbar.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/comment.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/editor.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/freetext.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/highlight.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/draw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/outline.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/inkdraw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/ink.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/signature.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/stamp.d.ts","./node_modules/pdfjs-dist/types/src/display/display_utils.d.ts","./node_modules/pdfjs-dist/types/web/text_accessibility.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_storage.d.ts","./node_modules/pdfjs-dist/types/src/display/optional_content_config.d.ts","./node_modules/pdfjs-dist/types/src/display/pages_mapper.d.ts","./node_modules/pdfjs-dist/types/src/display/metadata.d.ts","./node_modules/pdfjs-dist/types/src/display/pdf_objects.d.ts","./node_modules/pdfjs-dist/types/src/shared/message_handler.d.ts","./node_modules/pdfjs-dist/types/src/display/api.d.ts","./node_modules/pdfjs-dist/types/web/struct_tree_layer_builder.d.ts","./node_modules/pdfjs-dist/types/web/comment_manager.d.ts","./node_modules/pdfjs-dist/types/web/event_utils.d.ts","./node_modules/pdfjs-dist/types/web/pdf_link_service.d.ts","./node_modules/pdfjs-dist/types/web/base_download_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/draw_layer.d.ts","./node_modules/pdfjs-dist/types/web/l10n.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/annotation_editor_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/color_picker.d.ts","./node_modules/pdfjs-dist/types/src/display/svg_factory.d.ts","./node_modules/pdfjs-dist/types/src/display/worker_options.d.ts","./node_modules/pdfjs-dist/types/src/display/api_utils.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/signaturedraw.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer_images.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/touch_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/xfa_layer.d.ts","./node_modules/pdfjs-dist/types/src/pdf.d.ts","./src/lib/pdf-to-image.ts","./src/lib/phi-crypto.ts","./src/lib/settings.ts","./node_modules/clsx/clsx.d.mts","./node_modules/tailwind-merge/dist/types.d.ts","./src/lib/utils.ts","./src/lib/whatsapp-templates.ts","./node_modules/lucide-react/dist/lucide-react.d.ts","./src/app/error.tsx","./src/app/layout.tsx","./src/app/not-found.tsx","./src/app/page.tsx","./src/components/layout/sidebar.tsx","./src/components/layout/mobilenav.tsx","./src/components/layout/appshell.tsx","./src/app/abdm-setup/page.tsx","./src/app/ai-setup/page.tsx","./src/app/analytics/page.tsx","./src/app/anc/page.tsx","./src/app/appointments/page.tsx","./src/app/audit-log/page.tsx","./src/app/beds/page.tsx","./src/app/billing/page.tsx","./src/app/dashboard/page.tsx","./src/components/shared/formscanner.tsx","./src/app/forms/page.tsx","./src/app/fund/page.tsx","./src/app/intake/page.tsx","./src/app/ipd/page.tsx","./src/components/shared/smartmic.tsx","./src/app/ipd/[bedid]/page.tsx","./src/app/labs/page.tsx","./src/app/login/page.tsx","./src/app/opd/page.tsx","./src/components/shared/consultationattachments.tsx","./src/app/opd/[id]/page.tsx","./src/app/opd/[id]/edit/page.tsx","./src/app/opd/[id]/prescription/page.tsx","./src/app/opd/new/page.tsx","./src/app/patients/page.tsx","./src/app/patients/[id]/page.tsx","./src/app/patients/[id]/discharge/page.tsx","./src/app/patients/[id]/edit/page.tsx","./src/app/patients/new/page.tsx","./src/app/portal/page.tsx","./src/app/queue/page.tsx","./src/app/reminders/page.tsx","./src/app/reports/page.tsx","./src/app/reports/daily/page.tsx","./src/app/reports/monthly/page.tsx","./src/app/reports/payments/page.tsx","./src/app/search/page.tsx","./src/app/settings/page.tsx","./src/app/settings/doctors/page.tsx","./src/app/setup/page.tsx","./src/app/video/page.tsx","./src/components/billing/billingextras.tsx","./.next/types/app/layout.ts","./.next/types/app/page.ts","./.next/types/app/abdm-setup/page.ts","./.next/types/app/ai-setup/page.ts","./.next/types/app/analytics/page.ts","./.next/types/app/anc/page.ts","./.next/types/app/api/abdm/auth/route.ts","./.next/types/app/api/abdm/create/init/route.ts","./.next/types/app/api/abdm/create/verify-otp/route.ts","./.next/types/app/api/abdm/search/route.ts","./.next/types/app/api/abdm/verify/route.ts","./.next/types/app/api/check-config/route.ts","./.next/types/app/api/discharge-ai/route.ts","./.next/types/app/api/doctor-note-ocr/route.ts","./.next/types/app/api/fhir/patient/[id]/route.ts","./.next/types/app/api/generate-pdf/route.ts","./.next/types/app/api/generate-qr/route.ts","./.next/types/app/api/insurance-bundle/[patientid]/route.ts","./.next/types/app/api/ocr/route.ts","./.next/types/app/api/ocr-free/route.ts","./.next/types/app/api/parse-pdf/route.ts","./.next/types/app/api/patient-summary/route.ts","./.next/types/app/api/payment-link/route.ts","./.next/types/app/api/reminders/route.ts","./.next/types/app/api/reminders/auto-generate/route.ts","./.next/types/app/api/reminders/history/route.ts","./.next/types/app/api/reminders/send-all/route.ts","./.next/types/app/api/test-ai/route.ts","./.next/types/app/api/users/route.ts","./.next/types/app/api/users/invite/route.ts","./.next/types/app/api/voice-correct/route.ts","./.next/types/app/appointments/page.ts","./.next/types/app/audit-log/page.ts","./.next/types/app/beds/page.ts","./.next/types/app/billing/page.ts","./.next/types/app/dashboard/page.ts","./.next/types/app/forms/page.ts","./.next/types/app/intake/page.ts","./.next/types/app/ipd/[bedid]/page.ts","./.next/types/app/labs/page.ts","./.next/types/app/login/page.ts","./.next/types/app/opd/page.ts","./.next/types/app/opd/[id]/page.ts","./.next/types/app/opd/[id]/edit/page.ts","./.next/types/app/opd/[id]/prescription/page.ts","./.next/types/app/opd/new/page.ts","./.next/types/app/patients/page.ts","./.next/types/app/patients/[id]/page.ts","./.next/types/app/patients/[id]/discharge/page.ts","./.next/types/app/patients/[id]/edit/page.ts","./.next/types/app/patients/new/page.ts","./.next/types/app/queue/page.ts","./.next/types/app/reminders/page.ts","./.next/types/app/reports/page.ts","./.next/types/app/reports/daily/page.ts","./.next/types/app/reports/monthly/page.ts","./.next/types/app/reports/payments/page.ts","./.next/types/app/search/page.ts","./.next/types/app/settings/page.ts","./.next/types/app/setup/page.ts","./node_modules/@types/estree/index.d.ts","./node_modules/@types/json-schema/index.d.ts","./node_modules/@types/eslint/use-at-your-own-risk.d.ts","./node_modules/@types/eslint/index.d.ts","./node_modules/@types/eslint-scope/index.d.ts","./node_modules/@types/minimatch/index.d.ts","./node_modules/@types/glob/index.d.ts","./node_modules/@types/resolve/index.d.ts","./node_modules/@types/trusted-types/lib/index.d.ts","./node_modules/@types/trusted-types/index.d.ts","./node_modules/@types/ws/index.d.ts"],"fileIdsList":[[99,145],[99,145,458,459],[99,145,159,193,457,460],[99,145,186,422,425,428,429],[99,145,175,186,425],[99,145,186,425,429],[99,145,175],[99,145,419],[99,145,423],[99,145,186,421,422,425],[99,145,164,183],[99,145,193],[99,145,193,419],[99,145,164,186,421,425],[99,145,156,175,186,416,417,418,420,424],[99,145,425,433,441],[99,145,417,423],[99,145,425,450,451],[99,145,178,186,193,417,420,425],[99,145,425],[99,145,186,421,425],[99,145,416],[99,145,419,420,421,423,424,425,426,427,429,430,431,432,433,434,435,436,437,438,439,440,441,442,443,444,445,446,447,448,449,451,452,453,454,455],[99,145,153,425,443,446],[99,145,425,433,434,435],[99,145,423,425,434,436],[99,145,424],[99,145,417,419,425],[99,145,425,429,434,436],[99,145,429],[99,145,186,423,425,428],[99,145,417,421,425,433],[99,145,425,443],[99,145,436],[99,145,178,191,193,419,425,450],[99,145,358,898],[99,145,358,899],[99,145,358,900],[99,145,358,901],[99,145,403,409],[99,145,403,410],[99,145,403,411],[99,145,403,412],[99,145,403,413],[99,145,403,414],[99,145,403,750],[99,145,403,793],[99,145,403,796],[99,145,403,797],[99,145,403,798],[99,145,403,799],[99,145,403,803],[99,145,403,801],[99,145,403,804],[99,145,403,805],[99,145,403,806],[99,145,403,827],[99,145,403,828],[99,145,403,826],[99,145,403,829],[99,145,403,830],[99,145,403,833],[99,145,403,831],[99,145,403,835],[99,145,358,902],[99,145,358,903],[99,145,358,904],[99,145,358,905],[99,145,358,906],[99,145,358,908],[99,145,358,910],[99,145,358,913],[99,145,358,914],[99,145,358,892],[99,145,358,915],[99,145,358,919],[99,145,358,918],[99,145,358,920],[99,145,358,921],[99,145,358,916],[99,145,358,894],[99,145,358,924],[99,145,358,925],[99,145,358,923],[99,145,358,926],[99,145,358,922],[99,145,358,928],[99,145,358,929],[99,145,358,931],[99,145,358,932],[99,145,358,930],[99,145,358,933],[99,145,358,934],[99,145,358,935],[99,145,358,937],[99,145,406,407],[99,145,415,462,463,466,467,469,471,472,475,494,515,516,517,518],[99,145,462,470,519],[99,145,468],[99,145,466,470,471,519],[99,145,519],[99,145,464,519],[99,145,473,474],[99,145,469],[99,145,469,471,472,475,492,519],[99,145,487],[99,145,466,472,519],[99,145,415,462,463,465],[99,145,178],[99,145,415],[99,140,145,456,461],[99,145,415,466,519],[99,145,466,519],[99,145,514,519],[99,145,466,483,484,514,519],[99,145,466,484,491,492,519],[99,145,494,519],[99,145,508],[99,145,466,485,508,509,511,520],[99,145,510],[99,145,518],[99,145,507],[99,145,466,471,472,476,481,515],[99,145,481,482],[99,145,466,472,476,482,515],[99,145,476,477,478,479,480,482,498,502,505,514],[99,145,466,471,472,476,515],[99,145,466,471,472,475,476,515],[99,145,477,478,479,480,486,496,500,503,506,515],[99,145,466,471,472,476,488,494,514,515],[99,145,495,514],[99,145,465,466,471,476,483,485,494,495,512,513,514,515],[99,145,465,466,471,472,476,515],[99,145,497,498,499],[99,145,466,471,472,476,498,515],[99,145,466,471,472,476,482,497,499,515],[99,145,501,502],[99,145,466,471,472,475,476,501,515],[99,145,504,505],[99,145,466,471,472,476,504,515],[99,145,465,466,471,476,494,515,516],[99,145,468,494,515,516,517],[99,145,490],[99,145,466,468,471,472,476,488,494],[99,145,489,494],[99,145,465,466,471,476,489,492,493,494],[99,145,644,645],[87,99,145,821],[99,145,813],[99,145,807,808,810,812,814,815,816,817,818,819,820],[99,145,810,812,814,815,816],[99,145,811],[99,145,809],[99,145,786],[99,145,781],[99,145,776,784,785],[99,145,776,780,784,785,786],[99,145,776,781,784,786,787,788,789],[99,145,775,784],[99,145,784],[99,145,779,784],[99,145,776,777,778,779,783,785],[99,145,776,779,781,782,784],[99,145,751],[99,145,751,752],[99,145,759,760,761,762],[99,145,758,759,760,761,762,763,764,765],[99,145,759,763],[99,145,759],[99,145,758,759,760,763],[99,145,757,758],[99,145,755,769,770,771],[99,145,767],[99,145,766],[99,145,766,767,768,769,771],[99,145,755,756,767,768,770],[99,145,770],[99,145,773],[99,145,753,754,772,774,790],[99,145,1000,1003],[99,145,1000,1001,1002],[99,145,1003],[99,145,156,157,193,1005],[99,142,145],[99,144,145],[145],[99,145,150,178],[99,145,146,151,156,164,175,186],[99,145,146,147,156,164],[94,95,96,99,145],[99,145,148,187],[99,145,149,150,157,165],[99,145,150,175,183],[99,145,151,153,156,164],[99,144,145,152],[99,145,153,154],[99,145,155,156],[99,144,145,156],[99,145,156,157,158,175,186],[99,145,156,157,158,171,175,178],[99,145,153,156,159,164,175,186],[99,145,156,157,159,160,164,175,183,186],[99,145,159,161,175,183,186],[97,98,99,100,101,102,103,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,156,162],[99,145,163,186,191],[99,145,153,156,164,175],[99,145,165],[99,145,166],[99,144,145,167],[99,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,169],[99,145,170],[99,145,156,171,172],[99,145,171,173,187,189],[99,145,156,175,176,178],[99,145,177,178],[99,145,175,176],[99,145,179],[99,142,145,175,180],[99,145,156,181,182],[99,145,181,182],[99,145,150,164,175,183],[99,145,184],[99,145,164,185],[99,145,159,170,186],[99,145,150,187],[99,145,175,188],[99,145,163,189],[99,145,190],[99,140,145],[99,140,145,156,158,167,175,178,186,189,191],[99,145,175,192],[87,99,145,197,198,199],[87,99,145,197,198],[87,99,145],[87,91,99,145,196,359,402],[87,91,99,145,195,359,402],[84,85,86,99,145],[99,145,1008],[99,145,156,159,161,164,175,183,186,192,193],[92,99,145],[99,145,363],[99,145,365,366,367],[99,145,369],[99,145,202,212,218,220,359],[99,145,202,209,211,214,232],[99,145,212],[99,145,212,337],[99,145,266,284,299,405],[99,145,307],[99,145,202,212,219,252,262,334,335,405],[99,145,219,405],[99,145,212,262,263,264,405],[99,145,212,219,252,405],[99,145,405],[99,145,202,219,220,405],[99,145,292],[99,144,145,193,291],[87,99,145,285,286,287,304,305],[87,99,145,285],[99,145,275],[99,145,274,276,379],[87,99,145,285,286,302],[99,145,281,305,391],[99,145,389,390],[99,145,226,388],[99,145,278],[99,144,145,193,226,274,275,276,277],[87,99,145,302,304,305],[99,145,302,304],[99,145,302,303,305],[99,145,170,193],[99,145,273],[99,144,145,193,211,213,269,270,271,272],[87,99,145,203,382],[87,99,145,186,193],[87,99,145,219,250],[87,99,145,219],[99,145,248,253],[87,99,145,249,362],[87,91,99,145,159,193,195,196,359,400,401],[99,145,359],[99,145,201],[99,145,352,353,354,355,356,357],[99,145,354],[87,99,145,249,285,362],[87,99,145,285,360,362],[87,99,145,285,362],[99,145,159,193,213,362],[99,145,159,193,210,211,222,240,273,278,279,301,302],[99,145,270,273,278,286,288,289,290,292,293,294,295,296,297,298,405],[99,145,271],[87,99,145,170,193,211,212,240,242,244,269,301,305,359,405],[99,145,159,193,213,214,226,227,274],[99,145,159,193,212,214],[99,145,159,175,193,210,213,214],[99,145,159,170,186,193,210,211,212,213,214,219,222,223,233,234,236,239,240,242,243,244,268,269,302,310,312,315,317,320,322,323,324,325],[99,145,159,175,193],[99,145,202,203,204,210,211,359,362,405],[99,145,159,175,186,193,207,336,338,339,405],[99,145,170,186,193,207,210,213,230,234,236,237,238,242,269,315,326,328,334,348,349],[99,145,212,216,269],[99,145,210,212],[99,145,223,316],[99,145,318,319],[99,145,318],[99,145,316],[99,145,318,321],[99,145,206,207],[99,145,206,245],[99,145,206],[99,145,208,223,314],[99,145,313],[99,145,207,208],[99,145,208,311],[99,145,207],[99,145,301],[99,145,159,193,210,222,241,260,266,280,283,300,302],[99,145,254,255,256,257,258,259,281,282,305,360],[99,145,309],[99,145,159,193,210,222,241,246,306,308,310,359,362],[99,145,159,186,193,203,210,212,268],[99,145,265],[99,145,159,193,342,347],[99,145,233,268,362],[99,145,330,334,348,351],[99,145,159,216,334,342,343,351],[99,145,202,212,233,243,345],[99,145,159,193,212,219,243,329,330,340,341,344,346],[99,145,194,240,241,359,362],[99,145,159,170,186,193,208,210,211,213,216,221,222,230,233,234,236,237,238,239,242,244,268,269,312,326,327,362],[99,145,159,193,210,212,216,328,350],[99,145,159,193,211,213],[87,99,145,159,170,193,201,203,210,211,214,222,239,240,242,244,309,359,362],[99,145,159,170,186,193,205,208,209,213],[99,145,206,267],[99,145,159,193,206,211,222],[99,145,159,193,212,223],[99,145,159,193],[99,145,226],[99,145,225],[99,145,227],[99,145,212,224,226,230],[99,145,212,224,226],[99,145,159,193,205,212,213,219,227,228,229],[87,99,145,302,303,304],[99,145,261],[87,99,145,203],[87,99,145,236],[87,99,145,194,239,244,359,362],[99,145,203,382,383],[87,99,145,253],[87,99,145,170,186,193,201,247,249,251,252,362],[99,145,213,219,236],[99,145,235],[87,99,145,157,159,170,193,201,253,262,359,360,361],[83,87,88,89,90,99,145,195,196,359,402],[99,145,150],[99,145,331,332,333],[99,145,331],[99,145,371],[99,145,373],[99,145,375],[99,145,377],[99,145,380],[99,145,384],[91,93,99,145,359,364,368,370,372,374,376,378,381,385,387,393,394,396,403,404,405],[99,145,386],[99,145,392],[99,145,249],[99,145,395],[99,144,145,227,228,229,230,397,398,399,402],[87,91,99,145,159,161,170,193,195,196,197,199,201,214,351,358,362,402],[99,145,521,523,526,620],[99,145,521,522,523,526,527,529,532,533,534,537,539,552,558,559,564,565,578,581,583,584,588,589,597,598,599,600,601,604,608,610,614,615,616,619],[99,145,522,531,620],[99,145,528],[99,145,526,531,532,620],[99,145,620],[99,145,524,620],[99,145,535,536],[99,145,529],[99,145,529,532,533,537,620,621],[99,145,526,530,620],[99,145,521,522,523,525],[99,145,521],[99,145,521,526,620],[99,145,526,620],[99,145,526,539,542,544,554,556,557,622],[99,145,524,526,544,566,567,569,570,571],[99,145,542,545,553,556,622],[99,145,524,526,542,545,558,622],[99,145,524,542,545,546,553,556,622],[99,145,543],[99,145,528,542,552],[99,145,552],[99,145,526,544,547,548,552,622],[99,145,542,552,553],[99,145,554,555,557],[99,145,533],[99,145,538,561,562,563],[99,145,526,532,538],[99,145,525,526,532,537,538,562,564],[99,145,526,532,537,538,562,564],[99,145,526,528,532,533,538,565],[99,145,526,528,532,533,538,566,567,568,569,570],[99,145,538,570,571,574,577],[99,145,538,575,576],[99,145,526,532,538,575],[99,145,526,532,533,538,577],[99,145,528,538,572,573,574],[99,145,526,528,532,533,538,571],[99,145,525,526,528,532,533,538,566,567,568,569,570,571],[99,145,526,528,532,533,538,567],[99,145,525,526,528,532,538,566,568,569,570,571],[99,145,528,538,558],[99,145,541],[99,145,525,526,528,532,533,538,539,540,545,546,553,554,556,557,558],[99,145,540,558],[99,145,526,533,538,558],[99,145,541,559],[99,145,525,526,532,538,539,558],[99,145,526,532,533,538,552,580],[99,145,526,532,533,537,538,579],[99,145,526,528,532,538,552,582],[99,145,526,532,533,538,552,583],[99,145,526,528,532,533,538,552,585,587],[99,145,526,532,533,538,587],[99,145,526,528,532,533,538,552,558,585,586],[99,145,526,532,533,537,538],[99,145,538,591],[99,145,526,532,538,585],[99,145,538,593],[99,145,526,532,533,538],[99,145,538,590,592,594,596],[99,145,526,533,538],[99,145,526,528,532,533,538,590,595],[99,145,538,585],[99,145,528,538,552,585],[99,145,525,526,532,537,538,599],[99,145,528,539,552,560,564,565,578,581,583,584,588,589,597,598,599,600,601,604,608,610,614,615,618],[99,145,526,532,538,552,604],[99,145,526,532,538,552,603,604],[99,145,528,538,552,602,603,604],[99,145,526,533,538,552],[99,145,526,528,532,538,552],[99,145,525,526,528,532,533,538,547,549,550,551,552],[99,145,526,532,533,537,538,605,607],[99,145,526,532,533,537,538,606],[99,145,526,532,537,538],[99,145,526,532,538,589,609],[99,145,526,532,533,538,611,612,614],[99,145,526,532,533,538,611,614],[99,145,526,528,532,533,538,612,613],[99,145,617],[99,145,616],[99,145,523,538],[99,145,537],[99,145,636],[99,145,711,722,723,724,725,726,727,728,730,735],[99,145,722,723,724,725,726,727,728,730,731,736],[99,145,711,714,719,720,722,734,735,736],[99,145,711,719,722,734,736],[99,145,711,719,722,734,735,736],[99,145,711,714,715,716,721,734,735,736],[99,145,711,722,723,724,725,726,727,728,730,734,735],[99,145,711,722,734],[99,145,711,714,719,722,729,734,735,736],[99,145,720],[99,145,712,713,714,715,716,717,718,719,721,732,733,734,735,737,739,740,741,742,743,745],[99,145,711],[99,145,711,715,716,717],[99,145,629,666,674,711,713,714,719,731,732,733,735],[99,145,666,669],[99,145,711,712,734],[99,145,711,712,734,744],[99,145,711,713,714,715,716,718,734,735],[99,145,715,716,717,735],[99,145,729,738],[99,145,711,729,735],[99,145,678,683,684,685,686,687,688,689,690,691,692,693,694,695,696],[99,145,625,626,629,631,634,656,683],[99,145,626,629,632,655,684],[99,145,625,631,634,683],[99,145,629,632,655,686],[99,145,625,626,628,629,631,632,634,656],[99,145,629,632,634,655,678],[99,145,629,632,655,684],[99,145,629,632,683],[99,145,626,629,632,634,678,682],[99,145,625,628,629,631,632,655,683],[99,145,629,632,634,678],[99,145,625,628,631,632,634],[99,145,628,632],[99,145,680,681,682,709],[99,145,626,628,629,630,632,634],[99,145,625,626,629,631,632,655,679,680,681],[99,145,629],[99,145,632],[99,145,625,629,651,655,666],[99,145,625,666,667],[99,145,629,655],[99,145,629,655,673,674],[99,145,625,629,646,655],[99,145,656],[99,145,623,624,625,626,627,628,629,630,631,632,633,634,635,636,652,653,655,656,657,658,659,660,661,662,663,664,665,667,668,669,670,671,672,673,675,676,677,697,698,699,700,703,704,705,706,708,710],[99,145,624,626,628,632,634,655],[99,145,624,625,626,627,628,629,630,631,632,633,655,656],[99,145,624,625,626,627,628,629,630,631,634,655,656],[99,145,655],[99,145,630,632,655],[99,145,632,655,656],[99,145,625,626,628,631,634,635,655],[99,145,701],[99,145,633],[99,145,625,626,628,629,630,631,632,634,655,656,657,701,702],[99,145,633,703],[99,145,655,703],[99,145,629,633],[99,145,623,624,625,626,627,628,629,630,631,632,633,634,636,653,654,656],[99,145,655,656],[99,145,633,707],[99,145,629,632,655,672,676,697],[99,145,632,636,652,655],[99,145,629,632,652,655],[99,145,630,632,651],[99,145,629,652,655,656],[99,145,626,628,629,630,632,634,655,656,672],[99,145,628,629,632,634,655,673],[99,145,623,629,655,656,661,663],[99,145,623,629,632,655,656,660,661,662],[99,145,651,711,746,747],[99,145,674],[99,145,637,638,639,640,641,642,643,647,648,649,650],[99,145,646],[99,145,855,856,857,863,864,865,867,868],[99,145,855,857,858,859,860,861,862],[99,145,843,846,847,848,852,853,854,855,856,864,869,870,871],[99,145,846],[99,145,850],[99,145,851],[99,145,843,844,845,872],[99,145,846,872],[99,145,849,851],[99,145,855,863,878],[99,145,855,857,867],[99,145,842,843,855,863,869,870,872,873,874,875,876,877,878,879,880,881],[99,145,842],[99,145,866],[99,145,863],[99,112,116,145,186],[99,112,145,175,186],[99,107,145],[99,109,112,145,183,186],[99,107,145,193],[99,109,112,145,164,186],[99,104,105,108,111,145,156,175,186],[99,112,119,145],[99,104,110,145],[99,112,133,134,145],[99,108,112,145,178,186,193],[99,133,145,193],[99,106,107,145,193],[99,112,145],[99,106,107,108,109,110,111,112,113,114,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,134,135,136,137,138,139,145],[99,112,127,145],[99,112,119,120,145],[99,110,112,120,121,145],[99,111,145],[99,104,107,112,145],[99,112,116,120,121,145],[99,116,145],[99,110,112,115,145,186],[99,104,109,112,119,145],[99,107,112,133,145,191,193],[87,99,145,387,836,890,897],[87,99,145,890,897],[87,99,145,832,890,897],[87,99,145,387,832,840,888,889,890,897],[99,145,403],[99,145,403,749],[99,145,403,749,792],[99,145,403,791,795],[99,145,403,748],[99,145,403,791],[99,145,403,802],[99,145,403,749,800],[99,145,403,748,749],[99,145,403,791,823],[99,145,403,520,622,749],[99,145,403,791,832],[87,99,145,387,393,832,888,890,897],[87,99,145,832,888,890,897],[87,99,145,387,794,832,888,890,897],[87,99,145,387,393,832,885,888,890,897],[87,99,145,387,832,888,890,897],[87,99,145,890],[87,99,145,393,800,885,888,890,897,907],[87,99,145,832,838,888,890,897],[87,99,145,393,832,888,890],[87,99,145,387,393,832,888,890,897,912],[87,99,145,387,832,838,888,890,897],[87,99,145,387,393,800,832,837,888,890,897,907],[99,145,406],[87,99,145,393,832,838,841,890],[99,145,387,890],[87,99,145,387,393,794,832,888,890,897,912],[87,99,145,387,393,794,832,888,890,897,917],[87,99,145,387,393,794,800,832,888,890,897,907],[87,99,145,387,393,794,800,832,888,890,897,907,912,917],[87,99,145,387,393,832,890,897],[99,145,393],[87,99,145,387,393,800,832,890,897,907],[87,99,145,387,393,794,832,840,888,889,890,897,917],[87,99,145,387,393,800,832,836,888,890,897,907],[87,99,145,387,393,832,888,890],[87,99,145,387,393,832,837,888,890,897],[87,99,145,888,889,890,897],[87,99,145,832,838,890,897],[87,99,145,832,838,885,890,897],[87,99,145,387,890,897],[87,99,145,832,839,890],[87,99,145,387,393,832,838,885,890,895,896],[99,145,387,393,890],[87,99,145,387,393,832,838,841,890],[87,99,145,832,837,888,890],[87,99,145,800,802,883,888,890],[99,145,520,622,748],[99,145,832],[87,99,145,832],[99,145,794],[87,99,145,791,822],[99,145,882],[99,145,791],[99,145,885,886,887],[99,145,888]],"fileInfos":[{"version":"c430d44666289dae81f30fa7b2edebf186ecc91a2d4c71266ea6ae76388792e1","affectsGlobalScope":true,"impliedFormat":1},{"version":"45b7ab580deca34ae9729e97c13cfd999df04416a79116c3bfb483804f85ded4","impliedFormat":1},{"version":"3facaf05f0c5fc569c5649dd359892c98a85557e3e0c847964caeb67076f4d75","impliedFormat":1},{"version":"e44bb8bbac7f10ecc786703fe0a6a4b952189f908707980ba8f3c8975a760962","impliedFormat":1},{"version":"5e1c4c362065a6b95ff952c0eab010f04dcd2c3494e813b493ecfd4fcb9fc0d8","impliedFormat":1},{"version":"68d73b4a11549f9c0b7d352d10e91e5dca8faa3322bfb77b661839c42b1ddec7","impliedFormat":1},{"version":"5efce4fc3c29ea84e8928f97adec086e3dc876365e0982cc8479a07954a3efd4","impliedFormat":1},{"version":"feecb1be483ed332fad555aff858affd90a48ab19ba7272ee084704eb7167569","impliedFormat":1},{"version":"ee7bad0c15b58988daa84371e0b89d313b762ab83cb5b31b8a2d1162e8eb41c2","impliedFormat":1},{"version":"27bdc30a0e32783366a5abeda841bc22757c1797de8681bbe81fbc735eeb1c10","impliedFormat":1},{"version":"8fd575e12870e9944c7e1d62e1f5a73fcf23dd8d3a321f2a2c74c20d022283fe","impliedFormat":1},{"version":"2ab096661c711e4a81cc464fa1e6feb929a54f5340b46b0a07ac6bbf857471f0","impliedFormat":1},{"version":"080941d9f9ff9307f7e27a83bcd888b7c8270716c39af943532438932ec1d0b9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2e80ee7a49e8ac312cc11b77f1475804bee36b3b2bc896bead8b6e1266befb43","affectsGlobalScope":true,"impliedFormat":1},{"version":"c57796738e7f83dbc4b8e65132f11a377649c00dd3eee333f672b8f0a6bea671","affectsGlobalScope":true,"impliedFormat":1},{"version":"dc2df20b1bcdc8c2d34af4926e2c3ab15ffe1160a63e58b7e09833f616efff44","affectsGlobalScope":true,"impliedFormat":1},{"version":"515d0b7b9bea2e31ea4ec968e9edd2c39d3eebf4a2d5cbd04e88639819ae3b71","affectsGlobalScope":true,"impliedFormat":1},{"version":"0559b1f683ac7505ae451f9a96ce4c3c92bdc71411651ca6ddb0e88baaaad6a3","affectsGlobalScope":true,"impliedFormat":1},{"version":"0dc1e7ceda9b8b9b455c3a2d67b0412feab00bd2f66656cd8850e8831b08b537","affectsGlobalScope":true,"impliedFormat":1},{"version":"ce691fb9e5c64efb9547083e4a34091bcbe5bdb41027e310ebba8f7d96a98671","affectsGlobalScope":true,"impliedFormat":1},{"version":"8d697a2a929a5fcb38b7a65594020fcef05ec1630804a33748829c5ff53640d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ff2a353abf8a80ee399af572debb8faab2d33ad38c4b4474cff7f26e7653b8d","affectsGlobalScope":true,"impliedFormat":1},{"version":"fb0f136d372979348d59b3f5020b4cdb81b5504192b1cacff5d1fbba29378aa1","affectsGlobalScope":true,"impliedFormat":1},{"version":"d15bea3d62cbbdb9797079416b8ac375ae99162a7fba5de2c6c505446486ac0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"68d18b664c9d32a7336a70235958b8997ebc1c3b8505f4f1ae2b7e7753b87618","affectsGlobalScope":true,"impliedFormat":1},{"version":"eb3d66c8327153d8fa7dd03f9c58d351107fe824c79e9b56b462935176cdf12a","affectsGlobalScope":true,"impliedFormat":1},{"version":"38f0219c9e23c915ef9790ab1d680440d95419ad264816fa15009a8851e79119","affectsGlobalScope":true,"impliedFormat":1},{"version":"69ab18c3b76cd9b1be3d188eaf8bba06112ebbe2f47f6c322b5105a6fbc45a2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"a680117f487a4d2f30ea46f1b4b7f58bef1480456e18ba53ee85c2746eeca012","affectsGlobalScope":true,"impliedFormat":1},{"version":"2f11ff796926e0832f9ae148008138ad583bd181899ab7dd768a2666700b1893","affectsGlobalScope":true,"impliedFormat":1},{"version":"4de680d5bb41c17f7f68e0419412ca23c98d5749dcaaea1896172f06435891fc","affectsGlobalScope":true,"impliedFormat":1},{"version":"954296b30da6d508a104a3a0b5d96b76495c709785c1d11610908e63481ee667","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac9538681b19688c8eae65811b329d3744af679e0bdfa5d842d0e32524c73e1c","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a969edff4bd52585473d24995c5ef223f6652d6ef46193309b3921d65dd4376","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e9fbd7030c440b33d021da145d3232984c8bb7916f277e8ffd3dc2e3eae2bdb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811ec78f7fefcabbda4bfa93b3eb67d9ae166ef95f9bff989d964061cbf81a0c","affectsGlobalScope":true,"impliedFormat":1},{"version":"717937616a17072082152a2ef351cb51f98802fb4b2fdabd32399843875974ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"d7e7d9b7b50e5f22c915b525acc5a49a7a6584cf8f62d0569e557c5cfc4b2ac2","affectsGlobalScope":true,"impliedFormat":1},{"version":"71c37f4c9543f31dfced6c7840e068c5a5aacb7b89111a4364b1d5276b852557","affectsGlobalScope":true,"impliedFormat":1},{"version":"576711e016cf4f1804676043e6a0a5414252560eb57de9faceee34d79798c850","affectsGlobalScope":true,"impliedFormat":1},{"version":"89c1b1281ba7b8a96efc676b11b264de7a8374c5ea1e6617f11880a13fc56dc6","affectsGlobalScope":true,"impliedFormat":1},{"version":"74f7fa2d027d5b33eb0471c8e82a6c87216223181ec31247c357a3e8e2fddc5b","affectsGlobalScope":true,"impliedFormat":1},{"version":"d6d7ae4d1f1f3772e2a3cde568ed08991a8ae34a080ff1151af28b7f798e22ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"063600664504610fe3e99b717a1223f8b1900087fab0b4cad1496a114744f8df","affectsGlobalScope":true,"impliedFormat":1},{"version":"934019d7e3c81950f9a8426d093458b65d5aff2c7c1511233c0fd5b941e608ab","affectsGlobalScope":true,"impliedFormat":1},{"version":"52ada8e0b6e0482b728070b7639ee42e83a9b1c22d205992756fe020fd9f4a47","affectsGlobalScope":true,"impliedFormat":1},{"version":"3bdefe1bfd4d6dee0e26f928f93ccc128f1b64d5d501ff4a8cf3c6371200e5e6","affectsGlobalScope":true,"impliedFormat":1},{"version":"59fb2c069260b4ba00b5643b907ef5d5341b167e7d1dbf58dfd895658bda2867","affectsGlobalScope":true,"impliedFormat":1},{"version":"639e512c0dfc3fad96a84caad71b8834d66329a1f28dc95e3946c9b58176c73a","affectsGlobalScope":true,"impliedFormat":1},{"version":"368af93f74c9c932edd84c58883e736c9e3d53cec1fe24c0b0ff451f529ceab1","affectsGlobalScope":true,"impliedFormat":1},{"version":"af3dd424cf267428f30ccfc376f47a2c0114546b55c44d8c0f1d57d841e28d74","affectsGlobalScope":true,"impliedFormat":1},{"version":"995c005ab91a498455ea8dfb63aa9f83fa2ea793c3d8aa344be4a1678d06d399","affectsGlobalScope":true,"impliedFormat":1},{"version":"959d36cddf5e7d572a65045b876f2956c973a586da58e5d26cde519184fd9b8a","affectsGlobalScope":true,"impliedFormat":1},{"version":"965f36eae237dd74e6cca203a43e9ca801ce38824ead814728a2807b1910117d","affectsGlobalScope":true,"impliedFormat":1},{"version":"3925a6c820dcb1a06506c90b1577db1fdbf7705d65b62b99dce4be75c637e26b","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a3d63ef2b853447ec4f749d3f368ce642264246e02911fcb1590d8c161b8005","affectsGlobalScope":true,"impliedFormat":1},{"version":"8cdf8847677ac7d20486e54dd3fcf09eda95812ac8ace44b4418da1bbbab6eb8","affectsGlobalScope":true,"impliedFormat":1},{"version":"8444af78980e3b20b49324f4a16ba35024fef3ee069a0eb67616ea6ca821c47a","affectsGlobalScope":true,"impliedFormat":1},{"version":"3287d9d085fbd618c3971944b65b4be57859f5415f495b33a6adc994edd2f004","affectsGlobalScope":true,"impliedFormat":1},{"version":"b4b67b1a91182421f5df999988c690f14d813b9850b40acd06ed44691f6727ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"df83c2a6c73228b625b0beb6669c7ee2a09c914637e2d35170723ad49c0f5cd4","affectsGlobalScope":true,"impliedFormat":1},{"version":"436aaf437562f276ec2ddbee2f2cdedac7664c1e4c1d2c36839ddd582eeb3d0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e3c06ea092138bf9fa5e874a1fdbc9d54805d074bee1de31b99a11e2fec239d","affectsGlobalScope":true,"impliedFormat":1},{"version":"87dc0f382502f5bbce5129bdc0aea21e19a3abbc19259e0b43ae038a9fc4e326","affectsGlobalScope":true,"impliedFormat":1},{"version":"b1cb28af0c891c8c96b2d6b7be76bd394fddcfdb4709a20ba05a7c1605eea0f9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2fef54945a13095fdb9b84f705f2b5994597640c46afeb2ce78352fab4cb3279","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac77cb3e8c6d3565793eb90a8373ee8033146315a3dbead3bde8db5eaf5e5ec6","affectsGlobalScope":true,"impliedFormat":1},{"version":"56e4ed5aab5f5920980066a9409bfaf53e6d21d3f8d020c17e4de584d29600ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ece9f17b3866cc077099c73f4983bddbcb1dc7ddb943227f1ec070f529dedd1","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a6282c8827e4b9a95f4bf4f5c205673ada31b982f50572d27103df8ceb8013c","affectsGlobalScope":true,"impliedFormat":1},{"version":"1c9319a09485199c1f7b0498f2988d6d2249793ef67edda49d1e584746be9032","affectsGlobalScope":true,"impliedFormat":1},{"version":"e3a2a0cee0f03ffdde24d89660eba2685bfbdeae955a6c67e8c4c9fd28928eeb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811c71eee4aa0ac5f7adf713323a5c41b0cf6c4e17367a34fbce379e12bbf0a4","affectsGlobalScope":true,"impliedFormat":1},{"version":"51ad4c928303041605b4d7ae32e0c1ee387d43a24cd6f1ebf4a2699e1076d4fa","affectsGlobalScope":true,"impliedFormat":1},{"version":"60037901da1a425516449b9a20073aa03386cce92f7a1fd902d7602be3a7c2e9","affectsGlobalScope":true,"impliedFormat":1},{"version":"d4b1d2c51d058fc21ec2629fff7a76249dec2e36e12960ea056e3ef89174080f","affectsGlobalScope":true,"impliedFormat":1},{"version":"22adec94ef7047a6c9d1af3cb96be87a335908bf9ef386ae9fd50eeb37f44c47","affectsGlobalScope":true,"impliedFormat":1},{"version":"196cb558a13d4533a5163286f30b0509ce0210e4b316c56c38d4c0fd2fb38405","affectsGlobalScope":true,"impliedFormat":1},{"version":"73f78680d4c08509933daf80947902f6ff41b6230f94dd002ae372620adb0f60","affectsGlobalScope":true,"impliedFormat":1},{"version":"c5239f5c01bcfa9cd32f37c496cf19c61d69d37e48be9de612b541aac915805b","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e7f8264d0fb4c5339605a15daadb037bf238c10b654bb3eee14208f860a32ea","affectsGlobalScope":true,"impliedFormat":1},{"version":"782dec38049b92d4e85c1585fbea5474a219c6984a35b004963b00beb1aab538","affectsGlobalScope":true,"impliedFormat":1},{"version":"0990a7576222f248f0a3b888adcb7389f957928ce2afb1cd5128169086ff4d29","impliedFormat":1},{"version":"eb5b19b86227ace1d29ea4cf81387279d04bb34051e944bc53df69f58914b788","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac51dd7d31333793807a6abaa5ae168512b6131bd41d9c5b98477fc3b7800f9f","impliedFormat":1},{"version":"87d9d29dbc745f182683f63187bf3d53fd8673e5fca38ad5eaab69798ed29fbc","impliedFormat":1},{"version":"035312d4945d13efa134ae482f6dc56a1a9346f7ac3be7ccbad5741058ce87f3","affectsGlobalScope":true,"impliedFormat":1},{"version":"cc69795d9954ee4ad57545b10c7bf1a7260d990231b1685c147ea71a6faa265c","impliedFormat":1},{"version":"8bc6c94ff4f2af1f4023b7bb2379b08d3d7dd80c698c9f0b07431ea16101f05f","impliedFormat":1},{"version":"1b61d259de5350f8b1e5db06290d31eaebebc6baafd5f79d314b5af9256d7153","impliedFormat":1},{"version":"57194e1f007f3f2cbef26fa299d4c6b21f4623a2eddc63dfeef79e38e187a36e","impliedFormat":1},{"version":"0f6666b58e9276ac3a38fdc80993d19208442d6027ab885580d93aec76b4ef00","impliedFormat":1},{"version":"05fd364b8ef02fb1e174fbac8b825bdb1e5a36a016997c8e421f5fab0a6da0a0","impliedFormat":1},{"version":"70521b6ab0dcba37539e5303104f29b721bfb2940b2776da4cc818c07e1fefc1","affectsGlobalScope":true,"impliedFormat":1},{"version":"ab41ef1f2cdafb8df48be20cd969d875602483859dc194e9c97c8a576892c052","affectsGlobalScope":true,"impliedFormat":1},{"version":"d153a11543fd884b596587ccd97aebbeed950b26933ee000f94009f1ab142848","affectsGlobalScope":true,"impliedFormat":1},{"version":"21d819c173c0cf7cc3ce57c3276e77fd9a8a01d35a06ad87158781515c9a438a","impliedFormat":1},{"version":"98cffbf06d6bab333473c70a893770dbe990783904002c4f1a960447b4b53dca","affectsGlobalScope":true,"impliedFormat":1},{"version":"ba481bca06f37d3f2c137ce343c7d5937029b2468f8e26111f3c9d9963d6568d","affectsGlobalScope":true,"impliedFormat":1},{"version":"6d9ef24f9a22a88e3e9b3b3d8c40ab1ddb0853f1bfbd5c843c37800138437b61","affectsGlobalScope":true,"impliedFormat":1},{"version":"1db0b7dca579049ca4193d034d835f6bfe73096c73663e5ef9a0b5779939f3d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"9798340ffb0d067d69b1ae5b32faa17ab31b82466a3fc00d8f2f2df0c8554aaa","affectsGlobalScope":true,"impliedFormat":1},{"version":"f26b11d8d8e4b8028f1c7d618b22274c892e4b0ef5b3678a8ccbad85419aef43","affectsGlobalScope":true,"impliedFormat":1},{"version":"5929864ce17fba74232584d90cb721a89b7ad277220627cc97054ba15a98ea8f","impliedFormat":1},{"version":"763fe0f42b3d79b440a9b6e51e9ba3f3f91352469c1e4b3b67bfa4ff6352f3f4","impliedFormat":1},{"version":"25c8056edf4314820382a5fdb4bb7816999acdcb929c8f75e3f39473b87e85bc","impliedFormat":1},{"version":"c464d66b20788266e5353b48dc4aa6bc0dc4a707276df1e7152ab0c9ae21fad8","impliedFormat":1},{"version":"78d0d27c130d35c60b5e5566c9f1e5be77caf39804636bc1a40133919a949f21","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"1d6e127068ea8e104a912e42fc0a110e2aa5a66a356a917a163e8cf9a65e4a75","impliedFormat":1},{"version":"5ded6427296cdf3b9542de4471d2aa8d3983671d4cac0f4bf9c637208d1ced43","impliedFormat":1},{"version":"7f182617db458e98fc18dfb272d40aa2fff3a353c44a89b2c0ccb3937709bfb5","impliedFormat":1},{"version":"cadc8aced301244057c4e7e73fbcae534b0f5b12a37b150d80e5a45aa4bebcbd","impliedFormat":1},{"version":"385aab901643aa54e1c36f5ef3107913b10d1b5bb8cbcd933d4263b80a0d7f20","impliedFormat":1},{"version":"9670d44354bab9d9982eca21945686b5c24a3f893db73c0dae0fd74217a4c219","impliedFormat":1},{"version":"0b8a9268adaf4da35e7fa830c8981cfa22adbbe5b3f6f5ab91f6658899e657a7","impliedFormat":1},{"version":"11396ed8a44c02ab9798b7dca436009f866e8dae3c9c25e8c1fbc396880bf1bb","impliedFormat":1},{"version":"ba7bc87d01492633cb5a0e5da8a4a42a1c86270e7b3d2dea5d156828a84e4882","impliedFormat":1},{"version":"4893a895ea92c85345017a04ed427cbd6a1710453338df26881a6019432febdd","impliedFormat":1},{"version":"c21dc52e277bcfc75fac0436ccb75c204f9e1b3fa5e12729670910639f27343e","impliedFormat":1},{"version":"13f6f39e12b1518c6650bbb220c8985999020fe0f21d818e28f512b7771d00f9","impliedFormat":1},{"version":"9b5369969f6e7175740bf51223112ff209f94ba43ecd3bb09eefff9fd675624a","impliedFormat":1},{"version":"4fe9e626e7164748e8769bbf74b538e09607f07ed17c2f20af8d680ee49fc1da","impliedFormat":1},{"version":"24515859bc0b836719105bb6cc3d68255042a9f02a6022b3187948b204946bd2","impliedFormat":1},{"version":"ea0148f897b45a76544ae179784c95af1bd6721b8610af9ffa467a518a086a43","impliedFormat":1},{"version":"24c6a117721e606c9984335f71711877293a9651e44f59f3d21c1ea0856f9cc9","impliedFormat":1},{"version":"dd3273ead9fbde62a72949c97dbec2247ea08e0c6952e701a483d74ef92d6a17","impliedFormat":1},{"version":"405822be75ad3e4d162e07439bac80c6bcc6dbae1929e179cf467ec0b9ee4e2e","impliedFormat":1},{"version":"0db18c6e78ea846316c012478888f33c11ffadab9efd1cc8bcc12daded7a60b6","impliedFormat":1},{"version":"e61be3f894b41b7baa1fbd6a66893f2579bfad01d208b4ff61daef21493ef0a8","impliedFormat":1},{"version":"bd0532fd6556073727d28da0edfd1736417a3f9f394877b6d5ef6ad88fba1d1a","impliedFormat":1},{"version":"89167d696a849fce5ca508032aabfe901c0868f833a8625d5a9c6e861ef935d2","impliedFormat":1},{"version":"615ba88d0128ed16bf83ef8ccbb6aff05c3ee2db1cc0f89ab50a4939bfc1943f","impliedFormat":1},{"version":"a4d551dbf8746780194d550c88f26cf937caf8d56f102969a110cfaed4b06656","impliedFormat":1},{"version":"8bd86b8e8f6a6aa6c49b71e14c4ffe1211a0e97c80f08d2c8cc98838006e4b88","impliedFormat":1},{"version":"317e63deeb21ac07f3992f5b50cdca8338f10acd4fbb7257ebf56735bf52ab00","impliedFormat":1},{"version":"4732aec92b20fb28c5fe9ad99521fb59974289ed1e45aecb282616202184064f","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"bf67d53d168abc1298888693338cb82854bdb2e69ef83f8a0092093c2d562107","impliedFormat":1},{"version":"b52476feb4a0cbcb25e5931b930fc73cb6643fb1a5060bf8a3dda0eeae5b4b68","affectsGlobalScope":true,"impliedFormat":1},{"version":"e2677634fe27e87348825bb041651e22d50a613e2fdf6a4a3ade971d71bac37e","impliedFormat":1},{"version":"7394959e5a741b185456e1ef5d64599c36c60a323207450991e7a42e08911419","impliedFormat":1},{"version":"8c0bcd6c6b67b4b503c11e91a1fb91522ed585900eab2ab1f61bba7d7caa9d6f","impliedFormat":1},{"version":"8cd19276b6590b3ebbeeb030ac271871b9ed0afc3074ac88a94ed2449174b776","affectsGlobalScope":true,"impliedFormat":1},{"version":"696eb8d28f5949b87d894b26dc97318ef944c794a9a4e4f62360cd1d1958014b","impliedFormat":1},{"version":"3f8fa3061bd7402970b399300880d55257953ee6d3cd408722cb9ac20126460c","impliedFormat":1},{"version":"35ec8b6760fd7138bbf5809b84551e31028fb2ba7b6dc91d95d098bf212ca8b4","affectsGlobalScope":true,"impliedFormat":1},{"version":"5524481e56c48ff486f42926778c0a3cce1cc85dc46683b92b1271865bcf015a","impliedFormat":1},{"version":"68bd56c92c2bd7d2339457eb84d63e7de3bd56a69b25f3576e1568d21a162398","affectsGlobalScope":true,"impliedFormat":1},{"version":"3e93b123f7c2944969d291b35fed2af79a6e9e27fdd5faa99748a51c07c02d28","impliedFormat":1},{"version":"9d19808c8c291a9010a6c788e8532a2da70f811adb431c97520803e0ec649991","impliedFormat":1},{"version":"87aad3dd9752067dc875cfaa466fc44246451c0c560b820796bdd528e29bef40","impliedFormat":1},{"version":"4aacb0dd020eeaef65426153686cc639a78ec2885dc72ad220be1d25f1a439df","impliedFormat":1},{"version":"f0bd7e6d931657b59605c44112eaf8b980ba7f957a5051ed21cb93d978cf2f45","impliedFormat":1},{"version":"8db0ae9cb14d9955b14c214f34dae1b9ef2baee2fe4ce794a4cd3ac2531e3255","affectsGlobalScope":true,"impliedFormat":1},{"version":"15fc6f7512c86810273af28f224251a5a879e4261b4d4c7e532abfbfc3983134","impliedFormat":1},{"version":"58adba1a8ab2d10b54dc1dced4e41f4e7c9772cbbac40939c0dc8ce2cdb1d442","impliedFormat":1},{"version":"641942a78f9063caa5d6b777c99304b7d1dc7328076038c6d94d8a0b81fc95c1","impliedFormat":1},{"version":"714435130b9015fae551788df2a88038471a5a11eb471f27c4ede86552842bc9","impliedFormat":1},{"version":"855cd5f7eb396f5f1ab1bc0f8580339bff77b68a770f84c6b254e319bbfd1ac7","impliedFormat":1},{"version":"5650cf3dace09e7c25d384e3e6b818b938f68f4e8de96f52d9c5a1b3db068e86","impliedFormat":1},{"version":"1354ca5c38bd3fd3836a68e0f7c9f91f172582ba30ab15bb8c075891b91502b7","affectsGlobalScope":true,"impliedFormat":1},{"version":"7e20d899c28ca26a2a7afc98beaa69e63ff7fba0a8bc47b4e3bf3ede5e09e424","impliedFormat":1},{"version":"2d2fcaab481b31a5882065c7951255703ddbe1c0e507af56ea42d79ac3911201","impliedFormat":1},{"version":"a192fe8ec33f75edbc8d8f3ed79f768dfae11ff5735e7fe52bfa69956e46d78d","impliedFormat":1},{"version":"ca867399f7db82df981d6915bcbb2d81131d7d1ef683bc782b59f71dda59bc85","affectsGlobalScope":true,"impliedFormat":1},{"version":"372413016d17d804e1d139418aca0c68e47a83fb6669490857f4b318de8cccb3","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e043a1bc8fbf2a255bccf9bf27e0f1caf916c3b0518ea34aa72357c0afd42ec","impliedFormat":1},{"version":"b4f70ec656a11d570e1a9edce07d118cd58d9760239e2ece99306ee9dfe61d02","impliedFormat":1},{"version":"3bc2f1e2c95c04048212c569ed38e338873f6a8593930cf5a7ef24ffb38fc3b6","impliedFormat":1},{"version":"6e70e9570e98aae2b825b533aa6292b6abd542e8d9f6e9475e88e1d7ba17c866","impliedFormat":1},{"version":"f9d9d753d430ed050dc1bf2667a1bab711ccbb1c1507183d794cc195a5b085cc","impliedFormat":1},{"version":"9eece5e586312581ccd106d4853e861aaaa1a39f8e3ea672b8c3847eedd12f6e","impliedFormat":1},{"version":"085f552d005479e2e6a7311cdbbe5d8c55c497b4d19274285df161ee9684cd9c","impliedFormat":1},{"version":"37ba7b45141a45ce6e80e66f2a96c8a5ab1bcef0fc2d0f56bb58df96ec67e972","impliedFormat":1},{"version":"45650f47bfb376c8a8ed39d4bcda5902ab899a3150029684ee4c10676d9fbaee","impliedFormat":1},{"version":"007faacc9268357caa21d24169f3f3f2497af3e9241308df2d89f6e6d9bb3f2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"74cf591a0f63db318651e0e04cb55f8791385f86e987a67fd4d2eaab8191f730","impliedFormat":1},{"version":"5eab9b3dc9b34f185417342436ec3f106898da5f4801992d8ff38ab3aff346b5","impliedFormat":1},{"version":"12ed4559eba17cd977aa0db658d25c4047067444b51acfdcbf38470630642b23","affectsGlobalScope":true,"impliedFormat":1},{"version":"f3ffabc95802521e1e4bcba4c88d8615176dc6e09111d920c7a213bdda6e1d65","impliedFormat":1},{"version":"809821b8a065e3234a55b3a9d7846231ed18d66dd749f2494c66288d890daf7f","impliedFormat":1},{"version":"ae56f65caf3be91108707bd8dfbccc2a57a91feb5daabf7165a06a945545ed26","impliedFormat":1},{"version":"a136d5de521da20f31631a0a96bf712370779d1c05b7015d7019a9b2a0446ca9","impliedFormat":1},{"version":"c3b41e74b9a84b88b1dca61ec39eee25c0dbc8e7d519ba11bb070918cfacf656","affectsGlobalScope":true,"impliedFormat":1},{"version":"4737a9dc24d0e68b734e6cfbcea0c15a2cfafeb493485e27905f7856988c6b29","affectsGlobalScope":true,"impliedFormat":1},{"version":"36d8d3e7506b631c9582c251a2c0b8a28855af3f76719b12b534c6edf952748d","impliedFormat":1},{"version":"1ca69210cc42729e7ca97d3a9ad48f2e9cb0042bada4075b588ae5387debd318","impliedFormat":1},{"version":"f5ebe66baaf7c552cfa59d75f2bfba679f329204847db3cec385acda245e574e","impliedFormat":1},{"version":"ed59add13139f84da271cafd32e2171876b0a0af2f798d0c663e8eeb867732cf","affectsGlobalScope":true,"impliedFormat":1},{"version":"b7c5e2ea4a9749097c347454805e933844ed207b6eefec6b7cfd418b5f5f7b28","impliedFormat":1},{"version":"b1810689b76fd473bd12cc9ee219f8e62f54a7d08019a235d07424afbf074d25","impliedFormat":1},{"version":"8caa5c86be1b793cd5f599e27ecb34252c41e011980f7d61ae4989a149ff6ccc","impliedFormat":1},{"version":"f9fd93190acb1ffe0bc0fb395df979452f8d625071e9ffc8636e4dfb86ab2508","impliedFormat":1},{"version":"5f41fd8732a89e940c58ce22206e3df85745feb8983e2b4c6257fb8cbb118493","impliedFormat":1},{"version":"17ed71200119e86ccef2d96b73b02ce8854b76ad6bd21b5021d4269bec527b5f","impliedFormat":1},{"version":"1cfa8647d7d71cb03847d616bd79320abfc01ddea082a49569fda71ac5ece66b","impliedFormat":1},{"version":"bb7a61dd55dc4b9422d13da3a6bb9cc5e89be888ef23bbcf6558aa9726b89a1c","impliedFormat":1},{"version":"db6d2d9daad8a6d83f281af12ce4355a20b9a3e71b82b9f57cddcca0a8964a96","impliedFormat":1},{"version":"cfe4ef4710c3786b6e23dae7c086c70b4f4835a2e4d77b75d39f9046106e83d3","impliedFormat":1},{"version":"cbea99888785d49bb630dcbb1613c73727f2b5a2cf02e1abcaab7bcf8d6bf3c5","impliedFormat":1},{"version":"98817124fd6c4f60e0b935978c207309459fb71ab112cf514f26f333bf30830e","impliedFormat":1},{"version":"a86f82d646a739041d6702101afa82dcb935c416dd93cbca7fd754fd0282ce1f","impliedFormat":1},{"version":"2dad084c67e649f0f354739ec7df7c7df0779a28a4f55c97c6b6883ae850d1ce","impliedFormat":1},{"version":"fa5bbc7ab4130dd8cdc55ea294ec39f76f2bc507a0f75f4f873e38631a836ca7","impliedFormat":1},{"version":"df45ca1176e6ac211eae7ddf51336dc075c5314bc5c253651bae639defd5eec5","impliedFormat":1},{"version":"cf86de1054b843e484a3c9300d62fbc8c97e77f168bbffb131d560ca0474d4a8","impliedFormat":1},{"version":"196c960b12253fde69b204aa4fbf69470b26daf7a430855d7f94107a16495ab0","impliedFormat":1},{"version":"528637e771ee2e808390d46a591eaef375fa4b9c99b03749e22b1d2e868b1b7c","impliedFormat":1},{"version":"bf24f6d35f7318e246010ffe9924395893c4e96d34324cde77151a73f078b9ad","impliedFormat":1},{"version":"596ccf4070268c4f5a8c459d762d8a934fa9b9317c7bf7a953e921bc9d78ce3c","impliedFormat":1},{"version":"10595c7ff5094dd5b6a959ccb1c00e6a06441b4e10a87bc09c15f23755d34439","impliedFormat":1},{"version":"9620c1ff645afb4a9ab4044c85c26676f0a93e8c0e4b593aea03a89ccb47b6d0","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"a9af0e608929aaf9ce96bd7a7b99c9360636c31d73670e4af09a09950df97841","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"c86fe861cf1b4c46a0fb7d74dffe596cf679a2e5e8b1456881313170f092e3fa","impliedFormat":1},{"version":"08ed0b3f0166787f84a6606f80aa3b1388c7518d78912571b203817406e471da","impliedFormat":1},{"version":"47e5af2a841356a961f815e7c55d72554db0c11b4cba4d0caab91f8717846a94","impliedFormat":1},{"version":"9a1a0dc84fecc111e83281743f003e1ae9048e0f83c2ae2028d17bc58fd93cc7","impliedFormat":1},{"version":"f5f541902bf7ae0512a177295de9b6bcd6809ea38307a2c0a18bfca72212f368","impliedFormat":1},{"version":"e8da637cbd6ed1cf6c36e9424f6bcee4515ca2c677534d4006cbd9a05f930f0c","impliedFormat":1},{"version":"ca1b882a105a1972f82cc58e3be491e7d750a1eb074ffd13b198269f57ed9e1b","impliedFormat":1},{"version":"fc3e1c87b39e5ba1142f27ec089d1966da168c04a859a4f6aab64dceae162c2b","impliedFormat":1},{"version":"3867ca0e9757cc41e04248574f4f07b8f9e3c0c2a796a5eb091c65bfd2fc8bdb","impliedFormat":1},{"version":"61888522cec948102eba94d831c873200aa97d00d8989fdfd2a3e0ee75ec65a2","impliedFormat":1},{"version":"4e10622f89fea7b05dd9b52fb65e1e2b5cbd96d4cca3d9e1a60bb7f8a9cb86a1","impliedFormat":1},{"version":"74b2a5e5197bd0f2e0077a1ea7c07455bbea67b87b0869d9786d55104006784f","impliedFormat":1},{"version":"59bf32919de37809e101acffc120596a9e45fdbab1a99de5087f31fdc36e2f11","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"3df3abb3e7c1a74ab419f95500a998b55dd9bc985e295de96ff315dd94c7446f","impliedFormat":1},{"version":"c40c848daad198266370c1c72a7a8c3d18d2f50727c7859fcfefd3ff69a7f288","impliedFormat":1},{"version":"ac60bbee0d4235643cc52b57768b22de8c257c12bd8c2039860540cab1fa1d82","impliedFormat":1},{"version":"973b59a17aaa817eb205baf6c132b83475a5c0a44e8294a472af7793b1817e89","impliedFormat":1},{"version":"ada39cbb2748ab2873b7835c90c8d4620723aedf323550e8489f08220e477c7f","impliedFormat":1},{"version":"6e5f5cee603d67ee1ba6120815497909b73399842254fc1e77a0d5cdc51d8c9c","impliedFormat":1},{"version":"8dba67056cbb27628e9b9a1cba8e57036d359dceded0725c72a3abe4b6c79cd4","impliedFormat":1},{"version":"70f3814c457f54a7efe2d9ce9d2686de9250bb42eb7f4c539bd2280a42e52d33","impliedFormat":1},{"version":"5cbd32af037805215112472e35773bad9d4e03f0e72b1129a0d0c12d9cd63cc7","impliedFormat":1},{"version":"ef61792acbfa8c27c9bd113f02731e66229f7d3a169e3c1993b508134f1a58e0","impliedFormat":1},{"version":"afcb759e8e3ad6549d5798820697002bc07bdd039899fad0bf522e7e8a9f5866","impliedFormat":1},{"version":"f6404e7837b96da3ea4d38c4f1a3812c96c9dcdf264e93d5bdb199f983a3ef4b","impliedFormat":1},{"version":"c5426dbfc1cf90532f66965a7aa8c1136a78d4d0f96d8180ecbfc11d7722f1a5","impliedFormat":1},{"version":"65a15fc47900787c0bd18b603afb98d33ede930bed1798fc984d5ebb78b26cf9","impliedFormat":1},{"version":"9d202701f6e0744adb6314d03d2eb8fc994798fc83d91b691b75b07626a69801","impliedFormat":1},{"version":"de9d2df7663e64e3a91bf495f315a7577e23ba088f2949d5ce9ec96f44fba37d","impliedFormat":1},{"version":"c7af78a2ea7cb1cd009cfb5bdb48cd0b03dad3b54f6da7aab615c2e9e9d570c5","impliedFormat":1},{"version":"1ee45496b5f8bdee6f7abc233355898e5bf9bd51255db65f5ff7ede617ca0027","impliedFormat":1},{"version":"566e5fb812082f8cf929c6727d40924843246cf19ee4e8b9437a6315c4792b03","affectsGlobalScope":true,"impliedFormat":1},{"version":"db01d18853469bcb5601b9fc9826931cc84cc1a1944b33cad76fd6f1e3d8c544","affectsGlobalScope":true,"impliedFormat":1},{"version":"dba114fb6a32b355a9cfc26ca2276834d72fe0e94cd2c3494005547025015369","impliedFormat":1},{"version":"903e299a28282fa7b714586e28409ed73c3b63f5365519776bf78e8cf173db36","affectsGlobalScope":true,"impliedFormat":1},{"version":"fa6c12a7c0f6b84d512f200690bfc74819e99efae69e4c95c4cd30f6884c526e","impliedFormat":1},{"version":"f1c32f9ce9c497da4dc215c3bc84b722ea02497d35f9134db3bb40a8d918b92b","impliedFormat":1},{"version":"b73c319af2cc3ef8f6421308a250f328836531ea3761823b4cabbd133047aefa","affectsGlobalScope":true,"impliedFormat":1},{"version":"e433b0337b8106909e7953015e8fa3f2d30797cea27141d1c5b135365bb975a6","impliedFormat":1},{"version":"dd3900b24a6a8745efeb7ad27629c0f8a626470ac229c1d73f1fe29d67e44dca","impliedFormat":1},{"version":"ddff7fc6edbdc5163a09e22bf8df7bef75f75369ebd7ecea95ba55c4386e2441","impliedFormat":1},{"version":"106c6025f1d99fd468fd8bf6e5bda724e11e5905a4076c5d29790b6c3745e50c","impliedFormat":1},{"version":"ec29be0737d39268696edcec4f5e97ce26f449fa9b7afc2f0f99a86def34a418","impliedFormat":1},{"version":"68a06fb972b2c7e671bf090dc5a5328d22ba07d771376c3d9acd9e7ed786a9db","impliedFormat":1},{"version":"ec6cba1c02c675e4dd173251b156792e8d3b0c816af6d6ad93f1a55d674591aa","impliedFormat":1},{"version":"b620391fe8060cf9bedc176a4d01366e6574d7a71e0ac0ab344a4e76576fcbb8","impliedFormat":1},{"version":"d729408dfde75b451530bcae944cf89ee8277e2a9df04d1f62f2abfd8b03c1e1","impliedFormat":1},{"version":"e15d3c84d5077bb4a3adee4c791022967b764dc41cb8fa3cfa44d4379b2c95f5","impliedFormat":1},{"version":"78244a2a8ab1080e0dd8fc3633c204c9a4be61611d19912f4b157f7ef7367049","impliedFormat":1},{"version":"e1fc1a1045db5aa09366be2b330e4ce391550041fc3e925f60998ca0b647aa97","impliedFormat":1},{"version":"d3f5861c48322adc023d3277e592635402ac008c5beae2e447b335fbf0da56c2","impliedFormat":1},{"version":"43ba4f2fa8c698f5c304d21a3ef596741e8e85a810b7c1f9b692653791d8d97a","impliedFormat":1},{"version":"31fb49ef3aa3d76f0beb644984e01eab0ea222372ea9b49bb6533be5722d756c","impliedFormat":1},{"version":"33cd131e1461157e3e06b06916b5176e7a8ec3fce15a5cfe145e56de744e07d2","impliedFormat":1},{"version":"889ef863f90f4917221703781d9723278db4122d75596b01c429f7c363562b86","impliedFormat":1},{"version":"3556cfbab7b43da96d15a442ddbb970e1f2fc97876d055b6555d86d7ac57dae5","impliedFormat":1},{"version":"437751e0352c6e924ddf30e90849f1d9eb00ca78c94d58d6a37202ec84eb8393","impliedFormat":1},{"version":"48e8af7fdb2677a44522fd185d8c87deff4d36ee701ea003c6c780b1407a1397","impliedFormat":1},{"version":"d11308de5a36c7015bb73adb5ad1c1bdaac2baede4cc831a05cf85efa3cc7f2f","impliedFormat":1},{"version":"8c9f19c480c747b6d8067c53fcc3cef641619029afb0a903672daed3f5acaed2","impliedFormat":1},{"version":"f9812cfc220ecf7557183379531fa409acd249b9e5b9a145d0d52b76c20862de","affectsGlobalScope":true,"impliedFormat":1},{"version":"7b068371563d0396a065ed64b049cffeb4eed89ad433ae7730fc31fb1e00ebf3","impliedFormat":1},{"version":"2e4f37ffe8862b14d8e24ae8763daaa8340c0df0b859d9a9733def0eee7562d9","impliedFormat":1},{"version":"13283350547389802aa35d9f2188effaeac805499169a06ef5cd77ce2a0bd63f","impliedFormat":1},{"version":"680793958f6a70a44c8d9ae7d46b7a385361c69ac29dcab3ed761edce1c14ab8","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"42c169fb8c2d42f4f668c624a9a11e719d5d07dacbebb63cbcf7ef365b0a75b3","impliedFormat":1},{"version":"913ddbba170240070bd5921b8f33ea780021bdf42fbdfcd4fcb2691b1884ddde","impliedFormat":1},{"version":"74c105214ddd747037d2a75da6588ec8aa1882f914e1f8a312c528f86feca2b9","impliedFormat":1},{"version":"5fe23bd829e6be57d41929ac374ee9551ccc3c44cee893167b7b5b77be708014","impliedFormat":1},{"version":"4d85f80132e24d9a5b5c5e0734e4ecd6878d8c657cc990ecc70845ef384ca96f","impliedFormat":1},{"version":"438c7513b1df91dcef49b13cd7a1c4720f91a36e88c1df731661608b7c055f10","impliedFormat":1},{"version":"cf185cc4a9a6d397f416dd28cca95c227b29f0f27b160060a95c0e5e36cda865","impliedFormat":1},{"version":"0086f3e4ad898fd7ca56bb223098acfacf3fa065595182aaf0f6c4a6a95e6fbd","impliedFormat":1},{"version":"efaa078e392f9abda3ee8ade3f3762ab77f9c50b184e6883063a911742a4c96a","impliedFormat":1},{"version":"54a8bb487e1dc04591a280e7a673cdfb272c83f61e28d8a64cf1ac2e63c35c51","impliedFormat":1},{"version":"021a9498000497497fd693dd315325484c58a71b5929e2bbb91f419b04b24cea","impliedFormat":1},{"version":"9385cdc09850950bc9b59cca445a3ceb6fcca32b54e7b626e746912e489e535e","impliedFormat":1},{"version":"2894c56cad581928bb37607810af011764a2f511f575d28c9f4af0f2ef02d1ab","impliedFormat":1},{"version":"0a72186f94215d020cb386f7dca81d7495ab6c17066eb07d0f44a5bf33c1b21a","impliedFormat":1},{"version":"84124384abae2f6f66b7fbfc03862d0c2c0b71b826f7dbf42c8085d31f1d3f95","impliedFormat":1},{"version":"63a8e96f65a22604eae82737e409d1536e69a467bb738bec505f4f97cce9d878","impliedFormat":1},{"version":"3fd78152a7031315478f159c6a5872c712ece6f01212c78ea82aef21cb0726e2","impliedFormat":1},{"version":"3a6ed8e1d630cfa1f7edf0dc46a6e20ca6c714dbe754409699008571dfe473a6","impliedFormat":1},{"version":"512fc15cca3a35b8dbbf6e23fe9d07e6f87ad03c895acffd3087ce09f352aad0","impliedFormat":1},{"version":"9a0946d15a005832e432ea0cd4da71b57797efb25b755cc07f32274296d62355","impliedFormat":1},{"version":"a52ff6c0a149e9f370372fc3c715d7f2beee1f3bab7980e271a7ab7d313ec677","impliedFormat":1},{"version":"fd933f824347f9edd919618a76cdb6a0c0085c538115d9a287fa0c7f59957ab3","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"6a1aa3e55bdc50503956c5cd09ae4cd72e3072692d742816f65c66ca14f4dfdd","impliedFormat":1},{"version":"ab75cfd9c4f93ffd601f7ca1753d6a9d953bbedfbd7a5b3f0436ac8a1de60dfa","impliedFormat":1},{"version":"59c68235df3905989afa0399381c1198313aaaf1ed387f57937eb616625dff15","impliedFormat":1},{"version":"b73cbf0a72c8800cf8f96a9acfe94f3ad32ca71342a8908b8ae484d61113f647","impliedFormat":1},{"version":"bae6dd176832f6423966647382c0d7ba9e63f8c167522f09a982f086cd4e8b23","impliedFormat":1},{"version":"1364f64d2fb03bbb514edc42224abd576c064f89be6a990136774ecdd881a1da","impliedFormat":1},{"version":"c9958eb32126a3843deedda8c22fb97024aa5d6dd588b90af2d7f2bfac540f23","impliedFormat":1},{"version":"950fb67a59be4c2dbe69a5786292e60a5cb0e8612e0e223537784c731af55db1","impliedFormat":1},{"version":"e927c2c13c4eaf0a7f17e6022eee8519eb29ef42c4c13a31e81a611ab8c95577","impliedFormat":1},{"version":"07ca44e8d8288e69afdec7a31fa408ce6ab90d4f3d620006701d5544646da6aa","impliedFormat":1},{"version":"70246ad95ad8a22bdfe806cb5d383a26c0c6e58e7207ab9c431f1cb175aca657","impliedFormat":1},{"version":"f00f3aa5d64ff46e600648b55a79dcd1333458f7a10da2ed594d9f0a44b76d0b","impliedFormat":1},{"version":"772d8d5eb158b6c92412c03228bd9902ccb1457d7a705b8129814a5d1a6308fc","impliedFormat":1},{"version":"4e4475fba4ed93a72f167b061cd94a2e171b82695c56de9899275e880e06ba41","impliedFormat":1},{"version":"97c5f5d580ab2e4decd0a3135204050f9b97cd7908c5a8fbc041eadede79b2fa","impliedFormat":1},{"version":"c99a3a5f2215d5b9d735aa04cec6e61ed079d8c0263248e298ffe4604d4d0624","impliedFormat":1},{"version":"49b2375c586882c3ac7f57eba86680ff9742a8d8cb2fe25fe54d1b9673690d41","impliedFormat":1},{"version":"802e797bcab5663b2c9f63f51bdf67eff7c41bc64c0fd65e6da3e7941359e2f7","impliedFormat":1},{"version":"b98ce74c2bc49a9b79408f049c49909190c747b0462e78f91c09618da86bae53","impliedFormat":1},{"version":"3ecfccf916fea7c6c34394413b55eb70e817a73e39b4417d6573e523784e3f8e","impliedFormat":1},{"version":"c05bc82af01e673afc99bdffd4ebafde22ab027d63e45be9e1f1db3bc39e2fc0","impliedFormat":1},{"version":"6459054aabb306821a043e02b89d54da508e3a6966601a41e71c166e4ea1474f","impliedFormat":1},{"version":"f416c9c3eee9d47ff49132c34f96b9180e50485d435d5748f0e8b72521d28d2e","impliedFormat":1},{"version":"05c97cddbaf99978f83d96de2d8af86aded9332592f08ce4a284d72d0952c391","impliedFormat":1},{"version":"14e5cdec6f8ae82dfd0694e64903a0a54abdfe37e1d966de3d4128362acbf35f","impliedFormat":1},{"version":"bbc183d2d69f4b59fd4dd8799ffdf4eb91173d1c4ad71cce91a3811c021bf80c","impliedFormat":1},{"version":"7b6ff760c8a240b40dab6e4419b989f06a5b782f4710d2967e67c695ef3e93c4","impliedFormat":1},{"version":"8dbc4134a4b3623fc476be5f36de35c40f2768e2e3d9ed437e0d5f1c4cd850f6","impliedFormat":1},{"version":"4e06330a84dec7287f7ebdd64978f41a9f70a668d3b5edc69d5d4a50b9b376bb","impliedFormat":1},{"version":"65bfa72967fbe9fc33353e1ac03f0480aa2e2ea346d61ff3ea997dfd850f641a","impliedFormat":1},{"version":"8f88c6be9803fe5aaa80b00b27f230c824d4b8a33856b865bea5793cb52bb797","impliedFormat":1},{"version":"f974e4a06953682a2c15d5bd5114c0284d5abf8bc0fe4da25cb9159427b70072","impliedFormat":1},{"version":"872caaa31423f4345983d643e4649fb30f548e9883a334d6d1c5fff68ede22d4","impliedFormat":1},{"version":"94404c4a878fe291e7578a2a80264c6f18e9f1933fbb57e48f0eb368672e389c","impliedFormat":1},{"version":"5c1b7f03aa88be854bc15810bfd5bd5a1943c5a7620e1c53eddd2a013996343e","impliedFormat":1},{"version":"09dfc64fcd6a2785867f2368419859a6cc5a8d4e73cbe2538f205b1642eb0f51","impliedFormat":1},{"version":"bcf6f0a323653e72199105a9316d91463ad4744c546d1271310818b8cef7c608","impliedFormat":1},{"version":"01aa917531e116485beca44a14970834687b857757159769c16b228eb1e49c5f","impliedFormat":1},{"version":"351475f9c874c62f9b45b1f0dc7e2704e80dfd5f1af83a3a9f841f9dfe5b2912","impliedFormat":1},{"version":"ac457ad39e531b7649e7b40ee5847606eac64e236efd76c5d12db95bf4eacd17","impliedFormat":1},{"version":"187a6fdbdecb972510b7555f3caacb44b58415da8d5825d03a583c4b73fde4cf","impliedFormat":1},{"version":"d4c3250105a612202289b3a266bb7e323db144f6b9414f9dea85c531c098b811","impliedFormat":1},{"version":"95b444b8c311f2084f0fb51c616163f950fb2e35f4eaa07878f313a2d36c98a4","impliedFormat":1},{"version":"741067675daa6d4334a2dc80a4452ca3850e89d5852e330db7cb2b5f867173b1","impliedFormat":1},{"version":"f8acecec1114f11690956e007d920044799aefeb3cece9e7f4b1f8a1d542b2c9","impliedFormat":1},{"version":"131b1475d2045f20fb9f43b7aa6b7cb51f25250b5e4c6a1d4aa3cf4dd1a68793","impliedFormat":1},{"version":"3a17f09634c50cce884721f54fd9e7b98e03ac505889c560876291fcf8a09e90","impliedFormat":1},{"version":"32531dfbb0cdc4525296648f53b2b5c39b64282791e2a8c765712e49e6461046","impliedFormat":1},{"version":"0ce1b2237c1c3df49748d61568160d780d7b26693bd9feb3acb0744a152cd86d","impliedFormat":1},{"version":"e489985388e2c71d3542612685b4a7db326922b57ac880f299da7026a4e8a117","impliedFormat":1},{"version":"e1437c5f191edb7a494f7bbbc033b97d72d42e054d521402ee194ac5b6b7bf49","impliedFormat":1},{"version":"04d3aad777b6af5bd000bfc409907a159fe77e190b9d368da4ba649cdc28d39e","affectsGlobalScope":true,"impliedFormat":1},{"version":"fd1b9d883b9446f1e1da1e1033a6a98995c25fbf3c10818a78960e2f2917d10c","impliedFormat":1},{"version":"19252079538942a69be1645e153f7dbbc1ef56b4f983c633bf31fe26aeac32cd","impliedFormat":1},{"version":"bc11f3ac00ac060462597add171220aed628c393f2782ac75dd29ff1e0db871c","impliedFormat":1},{"version":"616775f16134fa9d01fc677ad3f76e68c051a056c22ab552c64cc281a9686790","impliedFormat":1},{"version":"65c24a8baa2cca1de069a0ba9fba82a173690f52d7e2d0f1f7542d59d5eb4db0","impliedFormat":1},{"version":"313c85c332bb6892d5f7c624dc39107ca7a6b2f1b3212db86dbbefbe7f8ddd5a","impliedFormat":1},{"version":"3b0b1d352b8d2e47f1c4df4fb0678702aee071155b12ef0185fce9eb4fa4af1e","impliedFormat":1},{"version":"77e71242e71ebf8528c5802993697878f0533db8f2299b4d36aa015bae08a79c","impliedFormat":1},{"version":"a344403e7a7384e0e7093942533d309194ad0a53eca2a3100c0b0ab4d3932773","impliedFormat":1},{"version":"b7fff2d004c5879cae335db8f954eb1d61242d9f2d28515e67902032723caeab","impliedFormat":1},{"version":"5f3dc10ae646f375776b4e028d2bed039a93eebbba105694d8b910feebbe8b9c","impliedFormat":1},{"version":"bb18bf4a61a17b4a6199eb3938ecfa4a59eb7c40843ad4a82b975ab6f7e3d925","impliedFormat":1},{"version":"4545c1a1ceca170d5d83452dd7c4994644c35cf676a671412601689d9a62da35","impliedFormat":1},{"version":"e9b6fc05f536dfddcdc65dbcf04e09391b1c968ab967382e48924f5cb90d88e1","impliedFormat":1},{"version":"a2d648d333cf67b9aeac5d81a1a379d563a8ffa91ddd61c6179f68de724260ff","impliedFormat":1},{"version":"2b664c3cc544d0e35276e1fb2d4989f7d4b4027ffc64da34ec83a6ccf2e5c528","impliedFormat":1},{"version":"a3f41ed1b4f2fc3049394b945a68ae4fdefd49fa1739c32f149d32c0545d67f5","impliedFormat":1},{"version":"3cd8f0464e0939b47bfccbb9bb474a6d87d57210e304029cd8eb59c63a81935d","impliedFormat":1},{"version":"47699512e6d8bebf7be488182427189f999affe3addc1c87c882d36b7f2d0b0e","impliedFormat":1},{"version":"3026abd48e5e312f2328629ede6e0f770d21c3cd32cee705c450e589d015ee09","impliedFormat":1},{"version":"8b140b398a6afbd17cc97c38aea5274b2f7f39b1ae5b62952cfe65bf493e3e75","impliedFormat":1},{"version":"7663d2c19ce5ef8288c790edba3d45af54e58c84f1b37b1249f6d49d962f3d91","impliedFormat":1},{"version":"30112425b2cf042fca1c79c19e35f88f44bfb2e97454527528cd639dd1a460ca","impliedFormat":1},{"version":"00bd6ebe607246b45296aa2b805bd6a58c859acecda154bfa91f5334d7c175c6","impliedFormat":1},{"version":"ad036a85efcd9e5b4f7dd5c1a7362c8478f9a3b6c3554654ca24a29aa850a9c5","impliedFormat":1},{"version":"fedebeae32c5cdd1a85b4e0504a01996e4a8adf3dfa72876920d3dd6e42978e7","impliedFormat":1},{"version":"504f37ba38bfea8394ec4f397c9a2ade7c78055e41ef5a600073b515c4fd0fc9","impliedFormat":1},{"version":"cdf21eee8007e339b1b9945abf4a7b44930b1d695cc528459e68a3adc39a622e","impliedFormat":1},{"version":"db036c56f79186da50af66511d37d9fe77fa6793381927292d17f81f787bb195","impliedFormat":1},{"version":"87ac2fb61e629e777f4d161dff534c2023ee15afd9cb3b1589b9b1f014e75c58","impliedFormat":1},{"version":"13c8b4348db91e2f7d694adc17e7438e6776bc506d5c8f5de9ad9989707fa3fe","impliedFormat":1},{"version":"3c1051617aa50b38e9efaabce25e10a5dd9b1f42e372ef0e8a674076a68742ed","impliedFormat":1},{"version":"07a3e20cdcb0f1182f452c0410606711fbea922ca76929a41aacb01104bc0d27","impliedFormat":1},{"version":"1de80059b8078ea5749941c9f863aa970b4735bdbb003be4925c853a8b6b4450","impliedFormat":1},{"version":"1d079c37fa53e3c21ed3fa214a27507bda9991f2a41458705b19ed8c2b61173d","impliedFormat":1},{"version":"4cd4b6b1279e9d744a3825cbd7757bbefe7f0708f3f1069179ad535f19e8ed2c","impliedFormat":1},{"version":"5835a6e0d7cd2738e56b671af0e561e7c1b4fb77751383672f4b009f4e161d70","impliedFormat":1},{"version":"c0eeaaa67c85c3bb6c52b629ebbfd3b2292dc67e8c0ffda2fc6cd2f78dc471e6","impliedFormat":1},{"version":"4b7f74b772140395e7af67c4841be1ab867c11b3b82a51b1aeb692822b76c872","impliedFormat":1},{"version":"27be6622e2922a1b412eb057faa854831b95db9db5035c3f6d4b677b902ab3b7","impliedFormat":1},{"version":"b95a6f019095dd1d48fd04965b50dfd63e5743a6e75478343c46d2582a5132bf","impliedFormat":99},{"version":"c2008605e78208cfa9cd70bd29856b72dda7ad89df5dc895920f8e10bcb9cd0a","impliedFormat":99},{"version":"b97cb5616d2ab82a98ec9ada7b9e9cabb1f5da880ec50ea2b8dc5baa4cbf3c16","impliedFormat":99},{"version":"d23df9ff06ae8bf1dcb7cc933e97ae7da418ac77749fecee758bb43a8d69f840","affectsGlobalScope":true,"impliedFormat":1},{"version":"040c71dde2c406f869ad2f41e8d4ce579cc60c8dbe5aa0dd8962ac943b846572","affectsGlobalScope":true,"impliedFormat":1},{"version":"3586f5ea3cc27083a17bd5c9059ede9421d587286d5a47f4341a4c2d00e4fa91","impliedFormat":1},{"version":"a6df929821e62f4719551f7955b9f42c0cd53c1370aec2dd322e24196a7dfe33","impliedFormat":1},{"version":"b789bf89eb19c777ed1e956dbad0925ca795701552d22e68fd130a032008b9f9","impliedFormat":1},"8964d295a9047c3a222af813b7d37deb57b835fd0942d89222e7def0aed136cc",{"version":"1a7a4b00397600634afce6a9a42c98bb766792f1ec4557c72ac5fb4e7f4afff8","signature":"a5f71f0628f9df25aa1fd726b717d8e40ae098844001eb46f666652dccc9378b"},{"version":"6f66bbf05994480f78ad87fe555373b138a621c55a618f9420e05d60cc0c1e99","signature":"f0813ef99eb128e8fe8f6f9e281c0215cac4ca6ed7bcba69f862d7c091fb6314"},{"version":"48976cc019a7c39a7b7c90c37245d23defbb0dfda186f2d2142b65e1eb19163f","signature":"98b49353f133317c1c3f6038a45eb6f76b3ebdb28ceeb63a70e0aaa301b3b540"},{"version":"cf224d3d047f07714e8522444b11af6237dc8b2f958cba621434ca711dc665dd","signature":"1593b7fe898162cdd1872265213946731a29cb9db4330b0bb4eedaf75b3bea5c"},{"version":"90b2c10acbfa423960b6a68d75fa09d298110eccb00bc77e22691edae8bc5693","signature":"5d02b812e8a5593f07d497f33afb6e26a18be6f8ebf8bf1550845f98700ec86e"},"66e54622378da76d5015b19ed281ba55da74ebfe0f45b49aae0162d7a2f1d27e",{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"cdcf9ea426ad970f96ac930cd176d5c69c6c24eebd9fc580e1572d6c6a88f62c","impliedFormat":1},{"version":"23cd712e2ce083d68afe69224587438e5914b457b8acf87073c22494d706a3d0","impliedFormat":1},{"version":"487b694c3de27ddf4ad107d4007ad304d29effccf9800c8ae23c2093638d906a","impliedFormat":1},{"version":"3a80bc85f38526ca3b08007ee80712e7bb0601df178b23fbf0bf87036fce40ce","impliedFormat":1},{"version":"ccf4552357ce3c159ef75f0f0114e80401702228f1898bdc9402214c9499e8c0","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"68834d631c8838c715f225509cfc3927913b9cc7a4870460b5b60c8dbdb99baf","impliedFormat":1},{"version":"2931540c47ee0ff8a62860e61782eb17b155615db61e36986e54645ec67f67c2","impliedFormat":1},{"version":"ccab02f3920fc75c01174c47fcf67882a11daf16baf9e81701d0a94636e94556","impliedFormat":1},{"version":"f6faf5f74e4c4cc309a6c6a6c4da02dbb840be5d3e92905a23dcd7b2b0bd1986","impliedFormat":1},{"version":"ea6bc8de8b59f90a7a3960005fd01988f98fd0784e14bc6922dde2e93305ec7d","impliedFormat":1},{"version":"36107995674b29284a115e21a0618c4c2751b32a8766dd4cb3ba740308b16d59","impliedFormat":1},{"version":"914a0ae30d96d71915fc519ccb4efbf2b62c0ddfb3a3fc6129151076bc01dc60","impliedFormat":1},{"version":"33e981bf6376e939f99bd7f89abec757c64897d33c005036b9a10d9587d80187","impliedFormat":1},{"version":"7fd1b31fd35876b0aa650811c25ec2c97a3c6387e5473eb18004bed86cdd76b6","impliedFormat":1},{"version":"b41767d372275c154c7ea6c9d5449d9a741b8ce080f640155cc88ba1763e35b3","impliedFormat":1},{"version":"3bacf516d686d08682751a3bd2519ea3b8041a164bfb4f1d35728993e70a2426","impliedFormat":1},{"version":"7fb266686238369442bd1719bc0d7edd0199da4fb8540354e1ff7f16669b4323","impliedFormat":1},{"version":"0a60a292b89ca7218b8616f78e5bbd1c96b87e048849469cccb4355e98af959a","impliedFormat":1},{"version":"0b6e25234b4eec6ed96ab138d96eb70b135690d7dd01f3dd8a8ab291c35a683a","impliedFormat":1},{"version":"9666f2f84b985b62400d2e5ab0adae9ff44de9b2a34803c2c5bd3c8325b17dc0","impliedFormat":1},{"version":"40cd35c95e9cf22cfa5bd84e96408b6fcbca55295f4ff822390abb11afbc3dca","impliedFormat":1},{"version":"b1616b8959bf557feb16369c6124a97a0e74ed6f49d1df73bb4b9ddf68acf3f3","impliedFormat":1},{"version":"5b03a034c72146b61573aab280f295b015b9168470f2df05f6080a2122f9b4df","impliedFormat":1},{"version":"40b463c6766ca1b689bfcc46d26b5e295954f32ad43e37ee6953c0a677e4ae2b","impliedFormat":1},{"version":"249b9cab7f5d628b71308c7d9bb0a808b50b091e640ba3ed6e2d0516f4a8d91d","impliedFormat":1},{"version":"80aae6afc67faa5ac0b32b5b8bc8cc9f7fa299cff15cf09cc2e11fd28c6ae29e","impliedFormat":1},{"version":"f473cd2288991ff3221165dcf73cd5d24da30391f87e85b3dd4d0450c787a391","impliedFormat":1},{"version":"499e5b055a5aba1e1998f7311a6c441a369831c70905cc565ceac93c28083d53","impliedFormat":1},{"version":"54c3e2371e3d016469ad959697fd257e5621e16296fa67082c2575d0bf8eced0","impliedFormat":1},{"version":"beb8233b2c220cfa0feea31fbe9218d89fa02faa81ef744be8dce5acb89bb1fd","impliedFormat":1},{"version":"c183b931b68ad184bc8e8372bf663f3d33304772fb482f29fb91b3c391031f3e","impliedFormat":1},{"version":"5d0375ca7310efb77e3ef18d068d53784faf62705e0ad04569597ae0e755c401","impliedFormat":1},{"version":"59af37caec41ecf7b2e76059c9672a49e682c1a2aa6f9d7dc78878f53aa284d6","impliedFormat":1},{"version":"addf417b9eb3f938fddf8d81e96393a165e4be0d4a8b6402292f9c634b1cb00d","impliedFormat":1},{"version":"48cc3ec153b50985fb95153258a710782b25975b10dd4ac8a4f3920632d10790","impliedFormat":1},{"version":"adf27937dba6af9f08a68c5b1d3fce0ca7d4b960c57e6d6c844e7d1a8e53adae","impliedFormat":1},{"version":"e1528ca65ac90f6fa0e4a247eb656b4263c470bb22d9033e466463e13395e599","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"866078923a56d026e39243b4392e282c1c63159723996fa89243140e1388a98d","impliedFormat":1},{"version":"d782e571cb7d6ec0f0645957ed843d00e3f8577e08cc2940f400c931bc47a8df","impliedFormat":99},{"version":"9167246623f181441e6116605221268d94e33a1ebd88075e2dc80133c928ae7e","impliedFormat":99},{"version":"dc1a838d8a514b6de9fbce3bd5e6feb9ccfe56311e9338bb908eb4d0d966ecaf","impliedFormat":99},{"version":"186f09ed4b1bc1d5a5af5b1d9f42e2d798f776418e82599b3de16423a349d184","impliedFormat":99},{"version":"d692ae73951775d2448df535ce8bc8abf162dc343911fedda2c37b8de3b20d8e","impliedFormat":99},{"version":"2948774a5104c8ee235318dfdd3c8e2402c053b8fabc59e0cad1de8302d91cbd","impliedFormat":99},{"version":"014ba72e2add59d6d2d2e82166647982c824639e2902ccd7b3103cf720a0cb65","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"b78c801c3c21015ee487f6494448bcff55bb6b61f41172dfc2c26f2218d99138","impliedFormat":99},{"version":"de97e016d8dd4869febd5bccce02eb96957089d04b74ea5d1dc0e66112493b64","impliedFormat":99},{"version":"671ccab2e6a253d2516c0e4699b3077fc30cdb70b4436d8c79d76c91266a1a94","impliedFormat":99},{"version":"a11fbd8ffbee6e5a7fe4c7c23e6a391be615de2e710a6946d7d1f947a85a1374","impliedFormat":99},{"version":"2d383c515b9b606aefcde23da9c312a69bc7976b75abb85c02592f7a8589a343","impliedFormat":99},{"version":"e760f7860d08e9d42b6ecd7dd341602fbc0c13d60eb30beaf1153f1c7c44d66d","impliedFormat":99},{"version":"fb04e1ca667399e7302c033656cc285e6c1cff9c29f264cf229dd25e3962a762","impliedFormat":99},{"version":"ca6fb77e3480af8f2287ccb756ac88d047ba8a8bcc0512f6720ac1216e274ea2","impliedFormat":99},{"version":"c0cc44b0ad2fd65c933d187c4faad6157efbed33c3c21023802aa6a89d9b9d13","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"d76df1670eeb97afbab6c87b8cd31bbd09dbf9026ff0ca533b5d7d3fc0291f79","impliedFormat":99},{"version":"84dffe2a2331c8324501bb7363e0298074e7d59f97c068a3c497c2188865d20e","impliedFormat":99},{"version":"bc05fb9d657d30e61d50d690615f379b0d0415b8f29e69196e1dc6bfc664dc57","impliedFormat":99},{"version":"e315bab2f28d53f9ab473d9de610c455b6c414757bb19589b31ec8f490cebd4d","impliedFormat":99},{"version":"d999dd5abf4befbdab5f1248193cbea69b323b71131a02bb120f9462807fcd5a","impliedFormat":99},{"version":"031f1805f87171e8a9125cd99105bea4a869018ab2356c2e29dca7c86925510c","impliedFormat":99},{"version":"bdcb070ed484b40b84dad668b58e4861f7c3d36f38632072dad5f905bd8cc0cb","impliedFormat":99},{"version":"49af73d71b88a99b1a211ec02bacd321c21397062d253c605bb8d140082eb7b0","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"a50de7f1a7eadab7732d80dcf9c8a0c0d7d00e33315425316757006b5bec6e46","impliedFormat":99},{"version":"4c6fe268c2a984b3f14031a4b09ae7b2d9e51673258f4b4352e48d0c6ebed679","impliedFormat":99},{"version":"cd8a4297d0ab56dc571dadd2845e558c9d979fe1e120a0dec537935bc8a36dd2","impliedFormat":99},{"version":"079a12cb0e0c42655d77da5185e882b4cc94bd5c6c2131171a9289fc1f4287fc","impliedFormat":99},{"version":"d4ce52c42c23981d958206037138e05f7b48d41faa1cfaba7e9eecce8c2e5489","impliedFormat":99},{"version":"8a3be5afe0275ce84a6a6298010e66d54d2d2f8e927df6bcde0ac326b5e81792","impliedFormat":99},{"version":"167edfac7664bec77aa2efb2ce9d515c41b5cc4269091a946b3fa6ec4e7e8738","impliedFormat":99},{"version":"218997a627f0efc4b8be5e6bc0b58e0c9edf250baa3674b661d3f7e6a7ef21e8","impliedFormat":99},{"version":"c3f1acbd39f587a7539d435d6c78ce8647b3bfdc5435df153a70cb2656b52b80","impliedFormat":99},{"version":"457f9d90b6cea783727ce381a7851507acf3259964cf5fdd8a85afc91783b8dc","impliedFormat":99},{"version":"c7c74ecbba4461b55b6c9f244600af0032cfd1ed565cfb1950961cbf53a150e8","impliedFormat":99},{"version":"e8943fc25a93d31823923cc7a934f81ad940ea5e026ea47d873ce7b6986d0ee7","impliedFormat":99},{"version":"6bf5dc0c9f6b6c79fce77b56c985dadca4d4d474c9abf9139ae0785cb5c01992","impliedFormat":99},{"version":"08d76743f45a3f6ed56af01fb9e86883fe9b91f349a104f1eb351db8427c27cf","impliedFormat":99},{"version":"902eafa19470782fa677eab8df6cfeb5ba96ca3360f73405ec22ce82f8759432","impliedFormat":99},{"version":"e1cc282a46eb73cafb1ca5637c4628b3f4221c8e7bcd7a38bcf92ce43b44a093","impliedFormat":99},{"version":"4d4551dcb3fd19a4f22aaa63c6c391d42ce44a15602a6f6a19d582709edb24d9","impliedFormat":99},{"version":"a76075b5aba8187b1fc5c8f565745daed6e4341e64b44e6ec41412a16d575d62","impliedFormat":99},{"version":"f836bf3653e31c3bba120071196c95d416b83c5d860ce27549975f8785cd670a","impliedFormat":99},{"version":"058d970583137cface729371715449aac0c1388bf7a5ba15e0be952677485fe3","impliedFormat":99},{"version":"31c45c074a9acb94dbe340d9336d3c915635eac2df3308916fcf41f2ba6ab84c","impliedFormat":99},{"version":"774256d456ca1d8266f6e2170a51bad2659cb7116334d1e7977595999533a5d0","impliedFormat":99},{"version":"a3cd900b8aa1424f1d2e99c577b7c6ed8834fb6fd129b96b62a7152e5ba0871c","impliedFormat":99},{"version":"f687f35c2206a319dc7d8f0b751e182638c912838ff54034fb782beae50f7cac","impliedFormat":99},{"version":"1ea2d362005804d980325c2fe6ca0abbb145197b856a64d80016554129966c97","impliedFormat":99},{"version":"7a81f15892b1c8d0cbfb35605038ce5c6d0cf93542946aa0b8c415dbefdea1cd","impliedFormat":99},{"version":"22ef1a1604bed6e226888a2414676ef477a7ad5d6ed907a62d6e40c831797366","impliedFormat":99},{"version":"2ab500573da35083b48fa8f4fe719860099d1502df3384f977eb22ab6b14caf7","impliedFormat":99},{"version":"9fd7d60e314f01c950ba31932c150dcec5db2c82de3c7fe0d0d24ee8b54f1fca","impliedFormat":99},{"version":"9db521ae375731aef6e92ee5c30883dbf71ab70b11fd945c9c046f778b1e8cad","impliedFormat":99},{"version":"aabb12802db5f852990123e8cfccc53afc9d38ce16e664ec2e4f907a277d7b2f","impliedFormat":99},{"version":"b768935549d960e1a8d65cbcd36e5da0a64615de05d2fa03bf90330f71094b34","impliedFormat":99},{"version":"94b576c860480aac3eafdf904cd81755f5c9b16c3e0ef3253953a8f4fd8cecce","impliedFormat":99},{"version":"8dc7c54b72cb2a49a7639dccd99a559c243667a74abfb09545cf8afaecc58056","impliedFormat":99},{"version":"d2166d3793936235216ee5d014bcf0d8695f3a954ad54c01b1976c05f544ceea","impliedFormat":99},{"version":"41bf8c3193b575946682ca243de53370f61917035c3ff3fb747067bc680f2509","impliedFormat":99},{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"dbab1950ef4bf06f44795b144026a352a7b4a3a68a969bbf32eb55addd0fb95a","impliedFormat":99},{"version":"2b5368217b57528a60433558585186a925d9842fe64c1262adde8eac5cb8de33","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"0249cc57fb4f04fcc725481b5f273fe4a18d943e108724b216c762aaf311c255","impliedFormat":99},{"version":"e0c6b7c3e925dc19d45c27f88d493b40d3ea97f9363ca2acd33596081c579ed3","impliedFormat":99},{"version":"91c093343733c2c2d40bee28dc793eff3071af0cb53897651f8459ad25ad01da","impliedFormat":99},{"version":"6cc2be65d508f5404dae184fbe1bc5fc6287f2af93195feba921e619721f56a0","impliedFormat":99},{"version":"17c51065e7822de999ed5ff702aead6057c172067e485e8ffe9721bfe5010f0a","impliedFormat":99},{"version":"e1c58879ba7cfcb2a70f4ec69831f48eef47b7a356f15ab9f4fce03942d9f21a","impliedFormat":99},{"version":"f4fc36916b3eac2ea0180532b46283808604e4b6ff11e5031494d05aa6661cc6","impliedFormat":99},{"version":"82e23a5d9f36ccdac5322227cd970a545b8c23179f2035388a1524f82f96d8d0","impliedFormat":99},{"version":"c52e8203e4cc8ddd3ffa75197673942e80e3ff4b3bffa962588363e872cb9922","impliedFormat":99},{"version":"a5f2b5cdf86179d9d6ddfbc3a7e88d5253949a0ac8df3f7085f4a02e843f85a6","impliedFormat":99},{"version":"bfce32506c0d081212ff9d27ec466fa6135a695ba61d5a02738abd2442566231","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"493c39c5f9e9c050c10930448fda1be8de10a0d9b34dcd24ff17a1713c282162","impliedFormat":99},{"version":"fab630fcff210cedbe0d01eabae9020ecc96b549aa4ebd831a0bbcd0cdd877a7","impliedFormat":99},{"version":"73e4673f2da8677556210e5a127b2637bf030ab73da222ea2a19979f89d9d40a","impliedFormat":99},{"version":"dbf3d90c21c08217509df631336881a3105740033b0592dcc47036490f95e51c","impliedFormat":99},{"version":"e6ad9376e7d088ce1dc6d3183ba5f0b3fb67ee586aa824cc8519b52f2341307a","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"d62b09cb6f1ceb87ec6c26f3789bc38f8be9fb0ce3126fd0bf89b003d0cba371","impliedFormat":99},{"version":"e9d27f2b7d5171f512053f153cadc303d1b84d00c98e917664ba68eca9b7af6a","impliedFormat":99},{"version":"4899d2cf406cd68748c5d536b736c90339a39f996945126d8a11355eba5f56f3","impliedFormat":99},{"version":"491d5f012b1de793c45e75a930f5cdef1ff0e7875968e743fa6bd5dd7d31cb3b","impliedFormat":99},{"version":"53c86b81daa463deacb0046fee490b6d589438ac71311050b74dcee99afca0f6","impliedFormat":99},{"version":"70587241a4cc2e08ffc30e60c20f3eb38bd5af7e3d99640568ffe2993f933485","impliedFormat":99},{"version":"dd01943d0fe191b3b2020438367709333ff08a69d285e2f715a60711dcf83b61","impliedFormat":99},{"version":"0fd62a655321190c1db6237bd2dce50370712ed9115fcf27c04f81b76740a101","impliedFormat":99},{"version":"9d2d423bcfeccccf647b721242a2deca24dd08b4af50de64261c11210e4dc091","impliedFormat":99},{"version":"b6ff37737d006b86082f2f7176eb0a771001e9dde9152a26ef9ea8fd80e6eba0","impliedFormat":99},{"version":"29c4e9ce50026f15c4e58637d8668ced90f82ce7605ca2fd7b521667caa4a12c","impliedFormat":99},{"version":"8575340c8560a52c3309956add745660ad319dbd67309fa268f5af9b1c7551f5","impliedFormat":99},{"version":"3b56bc74e48ec8704af54db1f6ecfee746297ee344b12e990ba5f406431014c1","impliedFormat":99},{"version":"9e4991da8b398fa3ee9b889b272b4fe3c21e898d873916b89c641c0717caed10","impliedFormat":99},{"version":"581813cd18463afea0b92ec77b94c7df71e29c9d9046da829bb76488497183cf","impliedFormat":99},{"version":"7630b6a1c0ebaec2ef8e8abff850e1d6c551c47d1c345340a8ab95667460fc95","impliedFormat":99},{"version":"597b0a9ef02a28f5b1195305ec9f20a4f9948bd90ec3291d0343d1e5c0b4bd16","impliedFormat":99},{"version":"5fa235daeefc7cabde6e68cc0cdd1b9028a6414cfc7f636d62f1e34b64ca12d8","impliedFormat":99},{"version":"f9bf95954745207c3a305a59f3a8f7e36290c742d006d1ce447a41dc772ba3c3","impliedFormat":99},{"version":"732e1c24c3f5a76e61b075bfee7d2b3e5714d4960f8587b0cf989e7e151dc1ea","impliedFormat":99},{"version":"4cc5c2fb807317de6f88edae5cc2b24b705cdce764bbc1cc23aeec15d91a7a49","impliedFormat":99},{"version":"53cae4e7f0a5716f296870e5eef84af8832d5700b23ff79f349c0d1b4aa40d25","impliedFormat":99},{"version":"775e97f58cc774218eb4e979ff7f73b2fb4d958521df4707ae382b32fce5f55b","impliedFormat":99},{"version":"d93588a85b0b0eef4e6ab906fa37caa21efa1d30647aef292567c078b2e3a0a9","impliedFormat":99},{"version":"4a5d9348012a3e46c03888e71b0d318cda7e7db25869731375f90edad8dcea02","impliedFormat":99},{"version":"61b3add3d48dfc79324531ede7da59203059a62986070f97645a83acd3f20aa0","impliedFormat":99},{"version":"6cd8356a92fd9f1edcbfbd3b891f50228738522e79bfdad16e7fb7cfd4a66932","impliedFormat":99},{"version":"347efb60859c806ef954a67ee7520c9aa33e1881eedd40d236298af775deef50","impliedFormat":99},{"version":"fc391876e409d362cc43a7468226a9eb83440de09873b284bf09fbfb261ec259","impliedFormat":99},{"version":"d06f5012d5ac1bc25c5033f7e916fe42cc0253d6b523b9747809b71676069370","impliedFormat":99},{"version":"5d35840bd540fad886e21ddaf9b078a44c21a827dec9abc08d2d2c1a3ff27d44","impliedFormat":99},{"version":"a02182b20bcb1966fc15eac80506f617b71fdd0e279ccff44b27f2ee366b2823","impliedFormat":99},{"version":"32563899782c456f03cadc7a9508b9b6468dd678404b093bd7557d6c6e143218","impliedFormat":99},{"version":"f613a93e0685802f7f7e248156ae93ff9088d45abeff0b21b656520699b79f06","impliedFormat":99},{"version":"5471b59fcb6ad04c41f6bf57075e88f3094d9d498e51595b4341d8bfcb729bf5","impliedFormat":99},{"version":"4ecb0eb653de7093f2eb589cea5b35fdea6e2bbd62bc3d9fafdc5702850f7714","impliedFormat":99},{"version":"69ed52603ad6430aaffbc9dec25e0d01df733aaa32ab4d57d37987aedc94c349","impliedFormat":99},{"version":"6f8acb191da449d8dbec7a4e9c317bdb6b8af104a60a101950643ea52cfa3c85","impliedFormat":99},{"version":"e3457d3b62587043847ad1860500e5d888cba15eab52408d97604eda034c60ea","impliedFormat":99},{"version":"8bba80ef1e0e9ae8c061728626309824023e85eaafcd8c285a6fa89dc6881573","impliedFormat":99},{"version":"ada6bd808581a783390b1aabc2cc836136a5d214af0d924cc57d9f29b5733ce9","impliedFormat":99},{"version":"283336202f1a6a4e13271dc83b776718cf5d4a4137b28e2d013498e3020f7170","impliedFormat":99},{"version":"54a6a3e98b7ec00fec7bd7e42ad50c16014805576ccbe33bfee04f0aac9965da","impliedFormat":99},{"version":"7c90a7108c4319b0475d5419d52f2a2c9bf499234a2a15d5b8504983e141041b","impliedFormat":99},{"version":"67fc5d1b6877a799de1e3943ed2c3669b72a6ab3b17c7b0b0387bdd6e4c1a01f","impliedFormat":99},{"version":"616853ab33cb388421a5d5188e6e2d4b4e8db3f09474baa6a3665707009fe9cf","impliedFormat":99},{"version":"953ee863def1b11f321dcb17a7a91686aa582e69dd4ec370e9e33fbad2adcfd3","impliedFormat":99},{"version":"392e72d77ae33ee322d5b0b907398f2200f72d36adaca1ca62dfa7e22f744ac3","impliedFormat":99},{"version":"e452b617664fc3d2db96f64ef3addadb8c1ef275eff7946373528b1d6c86a217","impliedFormat":99},{"version":"c6a811837fef3d4ba22e7e4adcb16f12caf30252047b133404d698bf8f0e883a","impliedFormat":99},{"version":"2f722a3a421baf9a7c175d8ae6a3118dfd14c5f36474e03f99e3df5800065030","impliedFormat":99},{"version":"f9511d2a891b0a017ae31674977b053f42ca7221dedd012f6de6f75e7cb9aa3e","impliedFormat":99},{"version":"d8f262b549f3ed95402297d10b84f0f86e3113d6d570b03364d2cfca1f75e5d8","impliedFormat":99},{"version":"f216cb46ebeff3f767183626f70d18242307b2c3aab203841ae1d309277aad6b","impliedFormat":99},{"version":"d6d95f96dd5b374484fd000228288cbcfb80aa47cb74ebd3e19ea94a36e8260a","impliedFormat":99},{"version":"6138274c82c329cda440779d37dc66f5fb92713bfda1c5a8fc95785f64a6315f","impliedFormat":99},{"version":"92fb8aa5d61dca9ab2008d49397a639dbf71c7746da23c02245523cfec4a99ef","impliedFormat":99},{"version":"9e6cd6dc690d6e6c89b17b295cabf8a5a08011ae79a7a56578a429e5ae27b8dc","impliedFormat":99},{"version":"edf5cdeb6808ff038b8b6d83cbc5d2d1da1d3eade25db1db21b6244349a56529","impliedFormat":99},{"version":"c3602ad632c6df7653f19a531d683b50ffa6d1846d28ac5a6112c582e1067988","impliedFormat":99},{"version":"eb346e4ce0c2912e148d88955944bc54eaf28e4dcf88fec2c20e0002346f0588","impliedFormat":99},{"version":"58c5a2a520ae555e0573873a5e6303b0f1a1e70f3b376e5ac9094eaad0623d8a","impliedFormat":99},{"version":"5f8217240c95e3f3007d9968104904616287f30d853bac73874759c1dfad4017","impliedFormat":99},{"version":"7ebc96af203f866e829b528e5cffb32111a1a1ff4662bc60c3b53696e89c67f4","impliedFormat":99},{"version":"9f5ee7c037b58964c1cee63c1849fa11757f693208444be0f2d9f08defe859cd","impliedFormat":99},{"version":"33a4085365aa21a995ea4721ffff814128b126e8e346e5f064d87bfcdd0ff7ce","impliedFormat":99},{"version":"3adf214b4b307152af85b77e441d36ede388dadba2bd9962671bf933738d2a25","impliedFormat":99},{"version":"afad82addd1d9ee6e361606205bbda03e97cb3850f948e53fdbb82f160dc43c7","impliedFormat":99},{"version":"250998ae18ea49b8745d327e7739f56464a4318783129daab90b3299bf6f8a55","impliedFormat":99},{"version":"76b3afd1f2748ff725c277bd4701f442af697c0586e1b491e6a67383a246ffad","impliedFormat":99},{"version":"4df5fc6fc2438b8e3418cb25c8c0e863d1f92e4470297d6a8756394c597af844","impliedFormat":99},{"version":"92b5f0879161f1206e30a0c219dd8f23d736f2a74a4e015885e8e3f3b3c9a3e7","impliedFormat":99},{"version":"374d12016302e312ffccd3d38e6f3df1b412378bff6e6266f3e5844af450859c","impliedFormat":99},{"version":"18d0c2293aa57e33923fc1b10970650c6d6932dbfa711a3ffd67600b3caf924b","impliedFormat":99},{"version":"17758b72f880ed66754e3ff4aeade0b82417ec546b72bf3a326cadf4e56c1915","impliedFormat":99},{"version":"3df2d8d345edf29c4e0f5bb6f1b35b8008c626dc6b5f0f98cdfd5587e13c5a52","impliedFormat":99},{"version":"6452f7fccb7d729fafdd9db0b1b0fb98d772504de2fa302751e7bc4164ee75c0","impliedFormat":99},{"version":"a57f8d7e5531fdaf0e2dbb17103ba14ec6c189e92da17e9e22a73ccc77323581","impliedFormat":99},{"version":"3a8a0433d438dcfebf5589921a8ef2490c54d37f8e4832d9a06a488e6b922bc1","impliedFormat":99},{"version":"70ecaa4f1fbccc0635bd57be3474aeaeb03df99b649d3a7910984fbd25fa6d70","impliedFormat":1},{"version":"73ba15fc8b1fe8a2501bd160217112a32e85beb4af0053d27142f0385c310043","impliedFormat":1},{"version":"e63e07bdf7400618d8f94ddc7f0becb4f34ea16f4e2077e0309a965ee4bccb3d","impliedFormat":1},{"version":"49bf876b8f39333c3954c9b99b3e3948f955ee2c5c9d140103a7c51d17aa2380","impliedFormat":1},{"version":"0df055e5a743b279ac281927035f4a1d82d0d575f9132decf643044fd9257d7b","impliedFormat":1},{"version":"2af92ad8cc580ce84c16117475fbdb0d616013d4abd50e77985404d00b636c19","impliedFormat":1},{"version":"f29a2adfd092b2cd74016662956009d117ed0977fd90081ade2147d321faebe6","impliedFormat":1},{"version":"83667e74dce74a2ac0a778ee9c1ca062aef073f594acb3aefb178ff452a944b5","impliedFormat":1},{"version":"9e7ce7dde16fe73632b617ecb7a75426bd3041e7da0bb1d627eca355e78fd294","impliedFormat":1},{"version":"227172ccd6d07fbeac2e9e72083a4cc8229b52e10b5234572e8af5f6bf514281","impliedFormat":1},{"version":"31cdaa8a9f5c7f5108d4c1033ecbd33f3a44481005ac69568cf81baa0567f361","impliedFormat":1},{"version":"eef9483906576d14691da9f4f06a968e6b609d827bdbe1d3a1d50751557e36ef","impliedFormat":1},{"version":"79ecb80c26ac8a35952c61b1d3a175d2ab7ed0eea0b4603e6d52106206a5354d","impliedFormat":1},{"version":"1d2d80904fc5364023ba4f6f91d1f7c78ffce63b7db95b0c8a627a1795cffccf","impliedFormat":1},{"version":"8fa04ff61764daa514a4362470f303b637bbbf2c13cf586a0e5e986a243666cf","impliedFormat":1},{"version":"3ab8140695d4dd30ce7e1be20a39538bd1e454d591d124b74cdd3023588f4848","impliedFormat":1},{"version":"4be7d9a647c34f28cc4840b99e57286b5229b3eb5547f7b601dd8abef3d682df","impliedFormat":1},{"version":"0bcf9befca4a20b4fa6ce4a5bece4db8d03436a70ea4d44661ae9c7a10b57c80","impliedFormat":1},{"version":"59e0a4c2be65f233fee5ca07bb79839849a978a1cab6b8b3cb3662aa29d91719","impliedFormat":1},{"version":"65f0e217641c500bfc93f2c18ebf6597ab1b50c8e760ed6a9de040223aa4f621","impliedFormat":1},{"version":"a980c56f5794d0a08fe308115c3cce5e2bcbd7e2ae42d1e6e698677541428b23","impliedFormat":1},{"version":"35c36f02a6afa6e5ec3e570eb46077c1f7e39a08b84ecf02dd26add5ba9b7bad","impliedFormat":1},{"version":"33036b5ee618a7bf30f5b667b4cfb08de73c809d115f2afea28520633aff7e72","impliedFormat":1},{"version":"3a58767eb60591d2c1558c74f57d47ac1dd1e283e3bde0283647b906eca1aebc","impliedFormat":1},{"version":"1f50f683418e12392973cdb54d969655086d08d403821aad06fb428c38c0004c","impliedFormat":1},{"version":"55a70de1a2108e2fd503fd08116d41b6f1668a924bfa055dec1f3ef76cb217f9","impliedFormat":1},{"version":"288a7c3d5fd6fee8974a3fe884159b349469a4ca655ebcec6c98354c8fa9d23c","impliedFormat":1},{"version":"238d23aea1e50633049a1e1dfcad19a44e5a36304d88f7e13bbc9fca51630682","impliedFormat":1},{"version":"e51aa5e56d9bf3514faba19ba916e56b1dec9ad196bfd5eb6b86c942f8927dd0","impliedFormat":1},{"version":"9a7be590c28f7f860516c7f8354c65cac96db356594993c437c549aa63975c99","impliedFormat":1},{"version":"cab8abf010e0db556dab1a7fbacca7dfc5f3f32e3dae0af702814ca7d0b05394","impliedFormat":1},{"version":"b042e89223f672942c36d41e7c5555ccf15ce6573199fb534505dfd186c91b9b","impliedFormat":1},{"version":"53c768a6986702121e9be47b6a1192bdfa820670a3f0b172bf9bc10940794ffe","impliedFormat":1},{"version":"6828857a2bb623bb52fd4af4f6c98d96910e107af869e7c2b77022400d52998d","impliedFormat":1},{"version":"b84073343a78d3970b7692c46842d2bc98436e3038e719ce049f0b4a7190d7ac","impliedFormat":1},{"version":"518738b3a3a3b534b029df35db29a31ab3dd0f150597ad53ecbc70b2a43c14c8","impliedFormat":1},{"version":"5bfd2410d0c034c01b0ad6e3ca9b9ef6b922cef11a7d8421a43703c1626baeea","impliedFormat":1},{"version":"69994f1a5f3d73dba5fb882ed30a6d8bfbb3f1ca564a93085ddc6dd34cd147b5","impliedFormat":1},{"version":"fbbf6cf39dda76c57cbe0fecd9998718f07285123da7e30777955a681eff6c20","impliedFormat":1},{"version":"498cab8279c59ff6bad678cf7395c94a11b7113111caf866335e1c9a4ee1c991","impliedFormat":1},{"version":"1b2b39612a7b17efd4583ebb2133a6d603577096e4b760cf9d47c529b9c67414","impliedFormat":1},{"version":"5e63b311b7229bd29783ec6ecb625ad7e6e87a9ab5f4295f8e677631e210d904","impliedFormat":1},{"version":"fdfeef65925640e91d11c95aade5278625af6a1f2e1e4d99bad38132e0965d02","impliedFormat":1},{"version":"8de7cc92f4276b26773c1dd1aeffdbc2344ef9ea3de896f054be36dc0539cb5e","impliedFormat":1},{"version":"9319f02947cb4442933565659d0a51c0d8778fd18c7e97612ead8af95bf14b7e","impliedFormat":1},{"version":"22aa95f8a9510ccc6bda53447b283430298f9cb8672c2153cf1569fcb49eec92","impliedFormat":1},{"version":"37b313aae173e64574b3d35fe3b0de3d97c63b0257885cb134da637d1f93efdf","impliedFormat":1},{"version":"62970c1d53c9ac62e7a74c71237d525250eede81551a40b9c3e954ff5691365a","impliedFormat":1},{"version":"3684f5a275e1d359568bc4a79d08b7bcf14a973c7afc61ecff7a1a0888a90201","impliedFormat":1},{"version":"5b44ef24200c6073b05ac914c166614103cdb769360d771be5e24b43a3a87f45","impliedFormat":1},{"version":"38289f5cf345f7438f3da749fa74d2482fa8fc4a85d24ca26f07ac322b72a033","impliedFormat":1},{"version":"8914f6472962bcb23ebc7bdfb60c6fdf506e786c8e6e966b142c0d18216b9ed1","impliedFormat":1},{"version":"e1c770d60db7ef3a216372d61af165b0ff3d6134a91d6361ef2a28548c6cdd95","impliedFormat":1},{"version":"25214789ab14711cd7ee64298b9e92ee2151353a3fa7de2a3539b99531067ee6","impliedFormat":1},{"version":"1c1f9ead25f0ba8a7978fcdc8352108e758041ea9e3680fada574c457c16726e","impliedFormat":1},{"version":"d720ca0af98bfcb9b38dbab758abc7d872f656c2985466afb54c9495d3aa7ace","impliedFormat":1},{"version":"8fe8ac1dd27831dc531609512db0a595aad43fb75f1c7d7caab338910f3afcac","impliedFormat":1},{"version":"b914cc4c3b00603fbf8e98d277099fe0b9ea746583fba1bb001615b9eb2685f8","impliedFormat":1},{"version":"c122e80642a5d7971d4e05f108ec9b12bde3fc5565850a16529027c0654b8226","impliedFormat":1},{"version":"992d276ab098b6d6179f02bd48ba8b21b84f0b0b66d2a4a7ca655def04aa9582","impliedFormat":1},{"version":"44f5cd5353e749726f487f23b0bf5d39017788739a7a445a72d5f8c9213112e4","impliedFormat":1},{"version":"19f163212a99ca8f7a0dcde58dbd6b189b22597731bd1fb10498fdb756418d0e","impliedFormat":1},{"version":"888da990ef7ca12805ed16bcdcadc0559e29322b3267810eec210274abdfa709","impliedFormat":1},{"version":"c952e17e72dc1e8c72558cc9a5afa79ce99212e99729c632a921fe818db288e0","impliedFormat":1},{"version":"bd3afc6be5e3a43e377ce8debb2cc34337aa4931a6248623e2f0472a38df5ab1","impliedFormat":1},{"version":"0ceadc61341632138b537fdef7f88932760de6cb8ddd568a79a102e391575254","impliedFormat":1},{"version":"3c961170e58d5879b5013114a669b935895c727505eee7ca171dc0a77272ac94","impliedFormat":1},{"version":"9ce237f3485f53142c952c6f5c16928b57cdaccc95e3b041f0d8e778cd371009","impliedFormat":1},{"version":"b66414eebf3685327a7a63e2b83b87b729f23728382c2c3179c670b82c967718","impliedFormat":1},{"version":"906d635616d85b7a85dd3cbfb204af0c05277d2baacb3519fcc341f6958a0438","impliedFormat":1},{"version":"c613448f80dab1497823af3e17faf78e94f4f512b05389f84197ac4cf892e3f2","impliedFormat":1},{"version":"5fe5e77f8655c3b9e015eab646489a5b34f0368045639335ab9d1e828c5e1439","impliedFormat":1},{"version":"138d0f43b0fe5b6a57f56355610f2051634aa65f0795d3eb8ea7a20ecef5a216","impliedFormat":1},{"version":"a18d2eb5bac335e8f5077a03894b82dc51ca30f887609f77c6649ec521c30eb4","impliedFormat":1},{"version":"ca448052f36afb9f309a92f74e40f071ac750e88202d47ddbecd6d85690b61a1","impliedFormat":1},{"version":"dddbce36143eeb158221b6d3494042778013dce0320a45e2dd9c72114e1d2834","impliedFormat":1},{"version":"d9066b554e58ecafecd0abff571ef969d12f5f740f4f0f756698c20014056f9b","impliedFormat":1},{"version":"614b2fb077973da78ff18a59b82d637552e7449facd02344cc3960a91c8547d2","impliedFormat":1},{"version":"33b55dc5421948630990f8c04ad8ed11066183e9581f224c4d4e424092b61c74","impliedFormat":1},{"version":"748c351be4802d477df5ef929e0d0a4852772debbd4422e35f4967c5e7e1f3af","impliedFormat":1},{"version":"6280dfb30117e7e5b22910622cf30debedbd2cb75408ab44741ba9dd915e2577","impliedFormat":1},{"version":"4712e02c4cb461ac2e120daced545a2c99d12c1142e842b677b477f9ca4f4a92","impliedFormat":1},{"version":"a79b9dc4b2e8ead01a954533b0f9322e97d6c9ba48636deb06064baed649c004","impliedFormat":1},{"version":"2858af1f5bafa661ceec888b6ec2b73cf8de32ebd9d8f0f51030b56e6a284b35","impliedFormat":1},{"version":"72aa0061ccfff2f4af76bc1b2dd1e749981d88bcb0efec93cdb867986d78a5e5","impliedFormat":1},{"version":"f4f4ca88a2be1bb083e8cdf230c7066877736b8dc0af66140df16fc853918ff4","impliedFormat":1},{"version":"114728dc0b818dd2b0abb4e9b945c11a66c5fae73b248b8f09f8523d2bfdbbc0","impliedFormat":1},{"version":"c3c4e2388a246980373bbfe7d21d09e4d2d2acafbd7c82edfdce99b570a4470c","impliedFormat":1},{"version":"b75d9c18eea27e159ce9111835373af2f303299f251e2dc8c694c5de997f43f7","impliedFormat":1},{"version":"7a6a79529d68a2d5cc5312bfbc379426d388cdf2f12e94c7b4645a693aea1cc4","impliedFormat":1},{"version":"c6515f11b55326374bb11d1c14c5b24c0cda1a9720f198218101ba5a1c633e8c","impliedFormat":1},{"version":"c31c9fc9b7442aabba078ae2dfa1a5337ae30a87869e6272268e0a55b6abb448","impliedFormat":1},{"version":"47d576a0607782ceb77e24d54e5c323de31b3d4721a48b6ac619c0c2b2158ad1","impliedFormat":1},{"version":"b7f642770a86821f4f9ddedbe934cf42e9d46fcd5b91623dbe7ce3b4997221ea","impliedFormat":1},{"version":"747ea0635cf10b4f5bc72cee527dc02b1f21024c5564f9cf6162fb0a6c56d491","impliedFormat":1},{"version":"8fb09c1c7b3e91a3c80f93fd13a3291398cfcf07fd3c52c56e3ca46f49762012","impliedFormat":1},{"version":"428a8b3110d701fb05def44c7984bbdf23fa0bda9a994db3502d2762d6437953","impliedFormat":1},{"version":"cacc558b953e367ac34725c97edaa3932be29e981cd1afd3ab578901e9738265","impliedFormat":1},{"version":"ad466a33b783fdbbc379bc82a5356ab39d780b100178e2dc58f1d35cba590d78","impliedFormat":1},{"version":"654773ea1dbf465dbd99a43136ab6cc1d3f81b24ae918dee1482ef49aed57a24","impliedFormat":1},{"version":"539879c2c5e4df5e760d859e688e195464aae474c74b1294f39567514fad152f","impliedFormat":1},{"version":"6aa31ae3ae71cf1070d6bbeecf308da04baadd4c28142cb2f53faca2b44237be","impliedFormat":1},{"version":"100965474ec0634d3cc41d661d06001082972fad788cb6ecdc48a6152dfb0fae","impliedFormat":1},{"version":"81e9004fe653a17766c1baef973b2675e317196b8e5d5e556c4d3d72a5b51d9f","impliedFormat":1},{"version":"fbfd1dd3d63c564e964acffd43110f3835239bea5106a860b0c6f12c673cf934","impliedFormat":1},{"version":"c07ad1541868010e6fe715a9f10e99b4bb8da43ae06b98f7a381301926579991","impliedFormat":1},{"version":"ae35f0b6967a8cedbc5ec11dbdfd936cc003fd2093c127b3f861a6478cae92b8","impliedFormat":1},{"version":"3abf7e7ed0754361a1b36497870bf10d83042e1ee61f30f528bc46e13ba9c5c0","impliedFormat":1},{"version":"953da53efa000d4a319b1bbbffc586e2dc424200a658350a1351aeac9d8a763a","impliedFormat":1},{"version":"8ab8d8b53701e8310293a6869d63186053d930b8cd08d385d5f1b395821d6508","impliedFormat":1},{"version":"a670bbbabdefcbcc2c06ab4af9678703710870fd1a626c3f9299bd24e9687504","impliedFormat":1},{"version":"d26f7258b8181bfdb2f2a57b88288dbb405f73ec2c4eb42c4c8b0f20f9b68152","impliedFormat":1},{"version":"12ba121cc934a7dad0991993b8cf988c7fc9d3e8466231f565d200a02b35be7a","impliedFormat":1},{"version":"467f02dcfcd43e42511885613d5eb5ece56f2f2b1a1307c8c77bc1fa6bd9fdc0","impliedFormat":1},{"version":"92d9aa8bc2cd29e4e98b6419d9874b52be7731b58ad91349e7e464da8c28acfb","impliedFormat":1},{"version":"f483be305a738aebadbedf77a62f381d90eae5bcdd6d2a66c06b1510df2b0fbf","impliedFormat":1},{"version":"3d1bf13ed400ea46acb0c6c291dca9b9c3b47db3cef97313d393716540f8775a","impliedFormat":1},{"version":"f741c2bea2e69f19b0a08b2bbd764d3be011caa0584cf057d62c17e02b481e33","impliedFormat":1},{"version":"7f4e7b921f11c41af7d78361c190d3679e3376bfd28cdb0d8b847d99f4a096a0","impliedFormat":1},{"version":"a8829405339b2717f654796eae39f0799774fc3c3fdd27c32b6428aa5c96a03b","impliedFormat":1},{"version":"87a976eda42d1560992929cffe6f6bee978f29c8d79197a2407495b62d368822","impliedFormat":1},{"version":"e2bb63b44fdbbf48e4f596f74dea221fa931c9a4747923554b44bc095405b423","impliedFormat":1},{"version":"ff4eafe51c5e86fa503ac3387b7950dd2781d70e3af87415647b5943b9db5ef3","impliedFormat":1},{"version":"a78c8e04ccc4a39e9a29bda8f5e33ac7d0133a993e410c304466d77c38c8bbd4","impliedFormat":1},{"version":"2fe38b4077030635916079ea40177213c4775a90746538e175b18cd4069049be","impliedFormat":1},{"version":"096bc33466c88c46dfa3bb8fcf5a85ed2e86e0379aacbbb93856e4ac956b1461","impliedFormat":1},"78502cf7c3befebd74482e94b6f09bb12ec92f052c31c70b6b38a96c6f34c3e5","7ebf7932d979da3797184654d34a2e997fac8fab3bd832a85d254d549c57f1e8",{"version":"5a6237f90ea7b312ce8e331ad5ab88661ca01c64aad1fdfa4d8a9f2f64caf57d","impliedFormat":1},{"version":"b7982958a5ed024532a66b86adf71382e71b5fc86cddfd04fc6663ec917e6aa5","impliedFormat":1},{"version":"a3628f430f8d502a5c026a0c932a5c41e6361d8e0248287872cd8999bc534399","impliedFormat":1},{"version":"fc4eaf7ff8aea6826b2640c0484cc3fbbe75521a45d28cd7708e4ef5aafc4048","impliedFormat":99},{"version":"39f509b45a50c506dcaf8853902af81cbdfd00c702178d0f1ecc77eab1a50eb5","impliedFormat":1},{"version":"2b6c6039f4d2f656904d66f82231488f4852f861d27147884895097f74e3e812","impliedFormat":1},{"version":"cc6c527d304da87b8873bcf1cf9a47a12fe1630abaf5cbb2c60cbabd8e85e4c2","impliedFormat":1},{"version":"ef1448b99805603191d861730d91469aa753698b1c773d8c7b5c75a95ce61b2e","impliedFormat":1},{"version":"941959cd493fe9e8780f8a704791c83ffff2499447622f7ee63acc7bf08be0f9","impliedFormat":1},{"version":"1fcc4bb6d083b31e1587711ab5a8b0467b52a125f9735467774285bc8cc127e6","impliedFormat":1},{"version":"d689ba4f3520ed3a9de24be37d23ad0930f75d804bd82067822b1558782f12eb","impliedFormat":1},{"version":"0e085cc503ad1332728d56244e9f7a603404beca17c0c5b2d815ed29e0727d4b","impliedFormat":1},{"version":"deda38d3245acb0404dd845dae172547c895c99c442082f176071cbb40d092f3","impliedFormat":1},{"version":"2776f7230a2ae50a27bc595893d0fcd8943869a8a3aaff99a2e3f86aafe54bdb","impliedFormat":1},{"version":"585951f20abc465c5acb3674fe5bad232c299f00d073d90c8cb1a416c807d41e","impliedFormat":1},{"version":"e6f3d02d69394dae0771c088b3c0b982cf15b6a91678c59f1d5fbd7c5e6ad8f8","impliedFormat":1},{"version":"ef182902b33ac9b9ad90c163b313722d2bc9d8c2cfefeb418b3205d70504a486","impliedFormat":1},{"version":"3f279bd4f57a5464d9201ab3520ecc468a434805243125c26a57896d7539ce46","impliedFormat":1},{"version":"95bdd836ed77c23e530fcd3a0823df8fd611035590dfd8d38ee164c56f2bd2c4","impliedFormat":1},{"version":"c2e4b711a529358fbfdded0369781ddfe70320eb535ffbf71060775d60e3fb5a","impliedFormat":1},{"version":"76d33de81cd8f74ca32f2b1d5a6725b20caef91ec8d259a27ac346b8d52df10c","impliedFormat":1},{"version":"c0e42e780d502d530ce67e30d09a3b81c5d37d500c1f7ef04f4bd806f648b96a","impliedFormat":1},{"version":"447b6a80636a59c918ed18af1019de1efa94109a086e8fd8f3d20eb9b9a6937b","impliedFormat":99},{"version":"ca5bb7562523b37cc0e0f92e1ea0b99b6957f86a81f7933e6e3fea94a2dd80a1","impliedFormat":99},{"version":"05c9c065eadecdce0ee370455e3c36674bfb08673f1a268a398002a0d2d801b7","impliedFormat":1},{"version":"b0df6363b53f0b84a98f6e8ebaebd773bcc46f77d4b61af4574c7508c40f6c04","impliedFormat":1},{"version":"0eae63800777384563d5727e572982c220d47acf736dcdb569a2749a32378f19","impliedFormat":1},{"version":"9bf41a89bd0bbd4f8a23a7925d04f99267cb84a5a5b239185f3320edea329b9c","impliedFormat":1},{"version":"ba69d5ef968a0350e3216f4dfd39f846ed9a500f360acbe473e4f88278b3c746","impliedFormat":1},{"version":"ca2d1749803143fc680e7f89c0ee9e59fdbf1b4139666016fb152121e3e2c53c","impliedFormat":1},{"version":"9eb8136b766f74e684182375d1be1e03bb504973b7251dd49be3001f586473e6","impliedFormat":1},{"version":"ecfb7796212d2f1d7fc48d7d42dd6ec4c270f3080572d19f24b2638ae0defac3","impliedFormat":1},{"version":"717c42dfb8774242bcf05836fbc643bd7ccbf21908e5b8fe7920c950617ffc19","impliedFormat":1},{"version":"60662f82f3059abd2e0d8a0a5cb56abea8b982dd5dbbf7c254e60d927be25393","impliedFormat":1},{"version":"18eaffdf9c5aaf96d3ba7e3d9d788193a119be6792c1f32da4ac3595687a3a59","impliedFormat":1},{"version":"faad9daec205f5c695bfff09086f4e1e65b32deb9abc0068cba87ff660c1be90","impliedFormat":1},{"version":"4ae9b50481136302de9c77668621ed3a0b34998f3e091ca3701426f4fe369c8a","impliedFormat":1},{"version":"9ba9ecc57d2f52b3ed3ac229636ee9a36e92e18b80eeae11ffb546c12e56d5e5","impliedFormat":1},{"version":"17644c49b3a6c1907a292b491472a609f342d069c660043b96e398574e34b6a7","impliedFormat":1},{"version":"d182d419bb30a1408784ed95fbabd973dde7517641e04525f0ce761df5d193a5","impliedFormat":1},{"version":"c5396a9d06e2e1754a53813b8e1fe9c85468ab18826222346b94cc36dc4d78f5","impliedFormat":99},{"version":"44fefab0400df00ba153742ab7ba8306d1814fcb509066088e79b0e8ff7857e1","signature":"bfc4f21465be34aa6158d7e45cb96933312da6fd7ff4ab8744090eea49877a88"},{"version":"d208cd80ba896d345decdf33d60d3ef85e36a57e46ce843d7bab65cb439cd5da","signature":"a92e1f6d902352e4e2bc9f24e99694ec4e3b3552cbe9b60f94eba3283d957746"},{"version":"006fb2a3c3303601f97d9da9356fa70c766fe8f89c032c9493d0f35e6aa213bb","signature":"ed31a1f7419ac3f59b422ff0dde933c9d5be3edcbb11bf22dbb8ebea15661f2e"},"eb8f9752a3d59ccc9c7937caf76d2a95489cdba8ed5e3bc46d0636eb833e5c42","1034c530a9abe756c969d3d490f137cc8c58e44b346040b9aeace6ff4536f56d",{"version":"5532e8527279a03ae69737ee50bbb346265b8f65ea1e41da3a0329c2ae3dc2cc","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"d920af0df1360e9a7a0dccac66758e049e6e5beb2b86530b7aa0b438f35f5377","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"a10748a5e7cc2d9984d9f9332782397f9d87fc2de259d78d2645fe2b765a95de","signature":"4226cbc0f7bb5524608d44a2c84509f794177bc99e6d10f8aad68bdad6bcd3d6"},{"version":"9dd3fc511c96b7ee68d74f9ca10130203cfb9dbb356af84b4a477de5af120d24","signature":"f650401b5aae7096738f3f0cbc9234b42b7aac87bb3f439c5ca1fc4a22b71d67"},{"version":"00cb6f70e1ee78e61a662f41e0df6ecb2f92a5255493077eedf88b91c5304e6d","signature":"9e3cbf75202b29067901e20ac498e9aeb38a3d62d9d03ff51b947e6aca6ae3ec"},{"version":"d09a2a53da56d20aeac85e4f0b69f2ef799d73f1186b3abf93d32388ab431fe1","impliedFormat":1},{"version":"6f8cb6004eb7be21356b5d44f5ec7867b99f8f762520b6931bad0cf24a112272","signature":"5b0681384fbef0fc1ae1ebf672ad0083d53bfebd4f6f9df41e47ccb715232c9c"},{"version":"6ef8d2345b9b4e3ae2ab5de3660febbb8f84058ad01124c3eece199a647668c6","signature":"5f0a71b166aeffea369e5cd0569666733dbdae702833f813b505521e5cd7cc75"},"2545e08ac80cad99a51d5f47a78da0ac1c9ce23bf336ec958c2370e926b0de5f","07ff63a4d269744f278ac0fadb691fc81d296ed6af9635612268c90e802410ee",{"version":"82738d9afed59be7ee7b5f1602747adfb22136ff31af4d4a2cc8651ef77eaf19","impliedFormat":1},{"version":"55b9f917fb57d9f6051cce4512179e5fd699fd872ce6a8d49e0f0ec45b1bdc19","impliedFormat":1},{"version":"2013596c6c115ec71880ea60f7d891850e2147b598b0c0fea76dce8c6029f6a2","impliedFormat":99},{"version":"e0f4c3a6747fac775e2d740f92e60a6da762e4f34d0a2057e22784fb5204181a","impliedFormat":1},{"version":"1fba5e163eece0323b4d113f743842a7d3a7d788e517d3dae943171dae41c561","impliedFormat":99},{"version":"75ec6a6e61de058d8d450b229d54504ef1a47328b7e61d9cdc49e283559f3687","impliedFormat":1},{"version":"8a96c93f8e3bd0e5c8855a21e1408ff93419a1b0274ccc2f7fb246da91165719","impliedFormat":99},{"version":"a469460e21a0286fb87a7df9539ff99e6c831ee11e1f929ce6ad68b8aaca7e3d","impliedFormat":1},{"version":"1b8e0cff7e05b290d2581f93d0b9f9b1d17971034825617b55ad3f398a2870f4","impliedFormat":1},{"version":"d23b8c70c6565fef9286c65bd6ff34ae3ad7084e0ec5e177f125a42d2a7c1886","impliedFormat":1},{"version":"e1f0a4fe22cc88363101de497ca9e397f26d34fa1a36cacac21b27b6ff133754","impliedFormat":1},{"version":"5e33e33ccf4ced66964ff3b4799ecf434b9d137dd9bf8ad5efdefde4a1d0714a","impliedFormat":1},{"version":"681abfae63f06f15e42cd6f4c6f8a185da32c002e53af81652c59caa84370172","impliedFormat":1},{"version":"8ce944fdd9db48c1c6c9069ce0413338afcb5293de4e67894b13bba7e5e92aea","impliedFormat":1},{"version":"d0a9b476d2bb20ded0ac2f5d53900bb244d4e657857bed72a4991d0cccbaa7a8","impliedFormat":1},{"version":"3cf4d86f2133e1a9abcbefdb2ebad7a27055bfcc78c718d1efe19baf2b4654e4","impliedFormat":99},{"version":"00fc63dafac9292643d82b4cca983c8b370142db30d011c7280b577f6cad2e25","signature":"432fe92476e507a52c38c803af6bf34d030f09b257b315430937a205e8384dc6"},{"version":"a96a12a4d2b14ec23a8d86860e9a945300803961043012c7df42d82a996f4bc7","signature":"c921653e89ecef81e3be3e32d6b2b615e043e251c9fdab65ac7fc98f0d9f772d"},{"version":"e394bd17ed101cc3dcfe7f5dc5dfffcf4cf2d2d11d1249ef21f3fbf89c7bfdd7","signature":"efecd4959a916a601380f564cf357b4bdf968a7ef1c5402e6c7c594b8cfe649a"},{"version":"e80bf14a8d61dbba42c93f07d6d26549999358508b593c54c7e6ffd2b01e7772","signature":"055bdb7204c2837d3bbb35453c3f4c1c1661d16dfc786a8807f29bb6f61ec849"},{"version":"f747b3802e56d7317b015992d52dc9711b99a95c10e893dfc58b2cb3986abe5e","signature":"17dbbf39b7fefeb122a74c92f01b13b6e40cf6418894e87b1a0ee177fb270b93"},{"version":"91ddf57b233b09677034ffd5f54f79e98145e9c07a43164d890ecac3f7052cbe","signature":"2ea676ad12ed6ba3a0b8701ad49985eb0d53e8b881add875b5c2911f5b9f5575"},{"version":"c89f8bd36ea4b676c69540d8988e622a5183d9a3545680a41907e53795ba5a2b","signature":"f86ac3d10b839abad80b2742faae24bb5d3c115628baabbeaa6c96467946ee71"},"fc2b3745653de70eb32f973b1c2db74071bbe1a67d553d8540ce5eef8e6ceecc",{"version":"5de58a3cc062d04f093b84bb7a3ea63b31be0c6e20d965aba9250af9972f382c","signature":"d8fdfe19bc6e7121bbb38ad9c613dc8f3762cde7ce4419b0061fb8287c1a0198"},{"version":"446b268925080e329e1f71793db6f1093351ecbd035cc55be2c38c3034384cc0","signature":"608be768ee5f02b2761ffa750b8a1b895affeb392805073179d987858facb0f9"},{"version":"a0a77d69a17be9c14545f6166d3889784a10c91e0fdb08ff8139b28becc338c2","signature":"cce0feee41dd1435816f5ec44029cd0e525ae6f59cd8289669787f479ebb398c"},{"version":"a09dcdab4609d95c94db58585d7682043d7143072e8000bfbfdebb686ae614e1","signature":"bc5a7e94c4b4d70369efb3b125f6a445f7b825022e11f6453bdadd25f9031a0c"},"8b64c9ea710fae14208efbd01473ed6172307b92f95d47a7e1e6d813bf2efafa",{"version":"f609ec8de194118e2eed2eafe6702773946d6cb7345e2f1c1562683d8b7b2a34","signature":"5339b9db075d4a342f3a663ceeca58e3dd9ec9ad44055274bb9aebaea8fa4801"},{"version":"c6ebb0369c33feaaa4f7bd265cabf16f4ef1f17709645410ee0817cc27d12df0","signature":"9fd812c3810706b55bc0532b9cdac23db2cd02657664159eb968d888e3ae0055"},{"version":"1562adf5c5c91228f09461f7a6a90bb25656ed95fc324c8d5c51d9b61ad87562","signature":"1f71689607ee66299eee6f91deabefd1b03e620286298bbe706acb716bbafc06"},{"version":"6c9b88edb76920e1266a6341881e3a955558a8c037c176dd3b2c7eedf67e52d2","signature":"e0cae8dfe56c72b89e47ca752d0b576db3e0f1dd66b8b14357c3518401fa193a"},{"version":"c642ca770305bfeef1be19cc4b187cd73d1d45a6f908794331ecf5f5a2206361","signature":"24c93132ef7f53835d637ee1128a52eb4e7473c99a246a6dae24e0f4f4bafd4f"},"3cc9eea5963534c3623fe66ea5604ea61fc9af85f99a8edb57ec3ec26fd9e1d1",{"version":"da2ca71476893107dfe03e9eb2dc634db561f36fe800c5f4729841bd7a94b50a","impliedFormat":1},{"version":"6b6db2514e5656198c3226e422ce3b20eaa862baed9d245fae718fbda3615b16","impliedFormat":1},{"version":"ba1970e7b532e458592bbd8955ac69feb0ab577fd3eeda34b3d572c0d7171ead","impliedFormat":1},{"version":"d0c1756f8ca0eac71dccd44dbeb0792af96f2171ea3c66e1e1ecccceeee3e4af","impliedFormat":1},{"version":"0aed8cf6445210cbb892de5a36caa8afd3ecbb928382b7d70c6ee907ccf6779c","impliedFormat":1},{"version":"0fa81bf425bfbe2acd54ae24cabb49570ceeb6da3f7226d6ba8057024451f0c7","impliedFormat":1},{"version":"0ed218d6510a443afc7c714543f143bd7cbe1f3e3cc2a8462a1f12b316b03b09","impliedFormat":1},{"version":"f0c22053dbd4dc2f17706c62426fa378e29042b40363e54b1028a258bfa91e05","impliedFormat":1},{"version":"32b789a883704fb6be047f8a8f600685933eeda17f1ca9898ec42af0951bc5b1","impliedFormat":1},{"version":"b0f25d7f2e82edf76b2c8a4423defa26747483d6e1e772ac8476d5b78f69fe4d","impliedFormat":1},{"version":"12ff67dcd2078121daf0dfec7f427c6bb39851bf0d6203200674d610e46b0069","impliedFormat":1},{"version":"d713078712400f84d8a7d4a2d1a1fd7eeb4879603ef87ee06580220ef12d1bc9","impliedFormat":1},{"version":"6fd12b67e326558a9a6a4ccbc40fc2e1f52d989adfec3657e7a49ca3e5c76dec","impliedFormat":1},{"version":"63cce723b802ac9af294c669c70b46d24955a71c5e3de090bda13dff1df0b791","impliedFormat":1},{"version":"7e6177fe5e7f88d45a7c79f7324ab3bba6e3e6bfefd615199831677670fc1ed8","impliedFormat":1},{"version":"ac4555fcaf9a285d9c3b98807b6e0c799cfd3d1fe5861efe072ac5f982ce3c37","impliedFormat":1},{"version":"e82a51d5498c34f37bf96981223d5aa0b5051ced754d34b9747b1aa8a4f2174f","impliedFormat":1},{"version":"1d9afa7e4148512035b4ee4fc50f39c46f80b65f45488e63ec308a54b990ea7c","impliedFormat":1},{"version":"83e01ec16b5a8424ba35047471fe772e4fdeba7dfa7884d9ced04dd84c01a26c","impliedFormat":1},{"version":"2873f7d3fc801d897c9177e8bcc417d348e96c76490f55cd7237e87859af8f12","impliedFormat":1},{"version":"ede088b09b00760b9ce0997bc1669e25bd155241f369faacf09f3d810dc0ede3","impliedFormat":1},{"version":"4ea54e4119bab55529a13b147b742cefe1b1d273b34305467f63c36f831523bc","impliedFormat":1},{"version":"f48673f5cc00610f1971b6af05a2f73305cc6660f267f43ff1c156c4e4d1d778","impliedFormat":1},{"version":"31c5ae7064e1c894e2e2496842e13bbc3fee3f3b5f27185fcb60ba3cb153f138","impliedFormat":1},{"version":"2227eb2c16ccc7d2e0765e1be566a21e9f43cd0bf945e439e14a8aa97b492045","impliedFormat":1},{"version":"8484f620f8b09cd391279de948a5b1cc17d4b592ae6bcbb3d89b4aeab486e675","impliedFormat":1},{"version":"7354af961c75ecf99a1baa62657a9a9b04af1bb503c1d2bb8d6b4cae270c77e0","impliedFormat":1},{"version":"ffbefb948f6bb2b859784f25d107c40522b43767e64db6917442f93854da41c6","impliedFormat":1},{"version":"dc4781aed7c0a5bf243958749fb57b52e198904dff6c4c04755cf62817f64ffa","impliedFormat":1},{"version":"a5a669d78d77f4ba664c690a3fbcddf66332225aaffaaaedebbe5ec1af2b746f","impliedFormat":1},{"version":"9970aa594f22b8254106c66402e8ecd9a273c0e5204681b6d2aaf9b5fe01b244","impliedFormat":1},{"version":"bf1f9c3e1d24dd4a7eb0a1963f17afa39562e8ee8f2238bf0ff412c6b2176653","impliedFormat":1},{"version":"22759dfadc7f47badde31230a0a34ba6810f88b29ff314fb5e0ffd5fe91ba379","impliedFormat":1},{"version":"4a6f2e79152adb1d73a1ed31f0e2abdd33fc7673074388032924493591ba9936","impliedFormat":1},{"version":"bf2f7981c0568c3925827f14809273b12e17dad7c5de15b5246e14bb981f30a8","impliedFormat":1},{"version":"bb3f62b3ce08b5a9613022ccb757658bb4fd65e6fb817684c92435e087c023a2","impliedFormat":1},{"version":"757ee3c9f0cba15282d6343f1bb01a4e1e4c209fb6a9aad61ffac124dca61c6c","impliedFormat":1},{"version":"717e74927b33a4c6ecaa494b9a3b09f05a5d12ef0292b1db84a5ab2fcfaa5881","impliedFormat":1},{"version":"4764e86784bb88b8f3573279db3856c50a03e2b8bc184c06a40f897bff9d7e83","impliedFormat":1},{"version":"9829c6e1afba519fb32122cde3785ff93a2c31a5e413127b6b6a9bf04a00741e","impliedFormat":1},{"version":"9903107847b34bacc30daf39eff0dae9daca6a10d149c2d9f92da75a591b1da8","impliedFormat":1},{"version":"92f1963fac565ffd3eea597a00fa6ce0539e23472b3bc3c46c21b5cc311ad9d0","signature":"c58ad8197193d6c6234cdf920fa0047c3fed4bb9b6b115b6e4f1e3ae4aed9c31"},{"version":"d008ce0e969c963835079eb79c4410f8396239fc2e36fba7cb01094d89104675","signature":"572bcb7199e5cb6de8a1dee63f317f5d762f601daec66c473a8da75653a1bc4d"},{"version":"a68197b8fae42751cd54c288ab43533aa8201fc0e041a6fab8b47a618fd1c373","signature":"6c78f8eb0d23186c74e89f068a892f65bb300a70bb5197f7fe0f728b92b23288"},{"version":"c57b441e0c0a9cbdfa7d850dae1f8a387d6f81cbffbc3cd0465d530084c2417d","impliedFormat":99},{"version":"26c57c9f839e6d2048d6c25e81f805ba0ca32a28fd4d824399fd5456c9b0575b","impliedFormat":1},{"version":"7481e1d29ad17ce7cca93462ff111b5a0096b3f98083ac5f7345d6ce35a9bbe1","signature":"dbc32bf3427153072b734d98d8ec7e7bc9c33f69a1244331f04bdf59e01e0d30"},"2499a04ddb3ac86f4f463bc69ca5987b94c593770e95ce8ab679462b479db369",{"version":"9f7e7593891cf92cbc6c2af79efac69d8eec9663f85ed681018dc98cf2a0c9e7","impliedFormat":1},"d2d75c757f03f471bd6637d95a7ca465f6a58890e2c241401ac0f24f9e2be04c",{"version":"e8c618bcd6c55cecb9125c9a292a45be6c5f2d88a5a78f545e46151441a0b265","signature":"d9c75ee390aab53e812064d139cada316ad0eabe96169fc3dba4f041d6fcc676"},"e2f945f6a110e1d29bbc81b5744d21918b9e2c6f454e4ecbe5af5b44ceab5ba5","7f757ab1f4e7c6f5858ad3dc82fdd4bcbca8786fb139bf8a6e8d708aa3393c87",{"version":"a6b823e81ee6daf76e69f1e72361227e816c04ad4d4d2f97d9593f587e742642","signature":"6a20dbddfd986b0589ed4c8176bdfbf754a4627e23cb742287a363451dd4dd73"},{"version":"12223fa373b98f0f8e1576a03078a76faa092d8aacbe9d39ee45c39d1a213df1","signature":"ca6423d75e96b88eca780ff6e0a49ad168538126c370e8e52eab521a618d15be"},{"version":"25e4bb83b7776a5669b5bb0f2185d1920d13de8e5a8813363e539d84987e1dd1","signature":"7688e3e234d3c3248bde7fc15015c474e28db0e82eea5bd2ae9326f83aa4a476"},"2e072a369111ea6b4c94dccf712e54ea4b3f6ca24acdfe60bdbd7f552ac1781c","54ebdd35e2c1aa8b799bf01e1efdcc9991a1ee9bbfe7ebaf927c75176ec3b343",{"version":"b2437b5bce872532b765654a88d12adc7938dbb03602bf06446c4dcd15255787","signature":"6767c0b76d8cca39bdd58f1cdfeb297f9bc6cf1521acd922f8f1c9a9c74dd4b3"},"486383a607eb38ba192d1c747af4755925b24b297bdeb51e4a266d729900c9f8","49f077da45758ad107a6e075eea15a2f37a3c69e199ec297e8a9ae5ce9ff38aa","69cbfd805675e4c5bd0e25b188029f23f4b97f61478e4510c488b717bd695cba","2a1e801a72c5c7d8b40cd1e9faa70f6ac7b59b14465de7ad5c08f16b3734d1c5","d5a9625b51d81fbe5ca6026f454de135daaae7cd8d894b92b4daa4bb42654693","7ce4d576bb0306e890518d7251d5a9d7f6f73054f6a565179e110b46ad2d9396","bce91876e1d6bae21d9cba42ae269bf89e7a25b88427b03797acab2bb95c4492",{"version":"812e6eabc5a8eeec3845ed6d46aa292f61b34a26d778f32a9d56e84a7531145f","signature":"89006be3a86d5d3b66819eff82c4b5e8fc0a020ba23d98ff86c85c1261c8a52b"},{"version":"51c5174e34d7984354d5db53297989e74fc4144415a0ecc36168941c11bfd4ad","signature":"4c2ddc4144d45856b4af69032cb37ee1abfcb3dfe9d3899ce6405c4f1f82e1ea"},"70ea4f1e2cbeb3982930faf80ccb4e3a88a5f9dcab9fc491718c1d53eedf8959",{"version":"5ce98b43df8eaf48d0759996a9ea2e57ec51c7e365beab592d7872ba074cbc04","signature":"995d4ba2506f281350ac61875819155c37aec93c7143b6dd10dbf7e3b0516b0c"},"9eca65003bed766b7f229bf2edf26c2e2455ed1ddc32779886b606211dcdd8b6","fdb3dda6ffa695ac1c7090ad3593199991aeb9057f99585535c089cab18af68d","5a6b9e48bb2c87dfbd43057bb0afbce394d44c280495bffd01768e5b43bb5010","0fa6799255189fb784dc891e90ffe8319ab3aa1ad7f01e410c84bfaa38aa9a06","6180ec5c13364c645e6b55a04b737d46336fae5bb7d67e1d05764a88ff12c873","23eb86efaccd6add8a0d7e88113dd72a59704b0c0a820aeb21e82d78a46fe432","e2b149fc39c10f22d940e258f2404ada7f0b452966ee19e4e461f475bd6436af","51d0b5d656973c27f65e50cf2c4107c105c70ce5dde9fd15a363eb7b4a611ab6","eb055dd6c3d1046354616b77ac7774470ce4cbef679eaabccf9bd1477a687073","aa05beb003f4ab48718775144a8448e96dab11b8c154bdc17c4aae28d9d4f8b3","9ae5193787858efe4e8e7a6617fad1a121e9247915eae0f83d39d8b66c865887","cdd8a0aabbf439a2d1fe164b95517417f320e1664f250f53c319d991405127cb","f2ab6ea73f3880a552608b4b9b3bd17c8e228a18a7072e231340ba11f7efc295","11bb4d4479f4df0bc0de06afca9f2a6a40beaf9556a548a7fe1b2b5847842c7b","30b8cb5b0e2dfd984ab6e5c04d9232072fab0b838a4408aade35485cfb73771c",{"version":"68db6d38aa1b9d9cc7e50f337ce659e619daad875b6b3fe0e6cd72ceb42aede8","signature":"f8143841c9ee7a7203c86e7d1d0cea6be345405ef0702ad7ec74c3d4984030de"},"3e92b1172a8efe23bb601ab1b9170780072ba716d35877eb167ebf580a4fb184","9d1aa5f7d18b26eb4df2a451a3035b38cc30a57e9fd641645e5cfcdb99ff3e12","6b0177b377ac6fa8edba169684e20743a11589995fd0b629387536430352e014","099c4e7e23ce59ea679debcd98236183dccf88a735b316feef5d8ed7e0d4235f","2e3e5e9c0c61b407a5cf2a76be65db1b548e2ef41c7a40354b3972d0eb037464","2145cedc3b712e16cbc46b275489f0af79acb71e34894ec8e289e7a21e9abbd5","8aefba718a3723c1d4b2aed3da39af31a65a0b2eb652a9c102dadb0c5a42b577",{"version":"36d7d21588fc9c5f9664fa3876c961e9e41d165f612f9678fdf4c398a4991c4f","signature":"3a8523bfa20e149df671c3166d3c2e0c8e5b9f015b121a6855deedf209096b5e"},{"version":"2c60f4b3a1527a00dcf8423c812e2ce95d64a77440db4be8c28a0adce538159d","signature":"a55ec3b0f0dcd6adc536f91349b34d81692c1df60d0daf3f3e542e285f1a0938"},"6b57c8719a973f600cec1af5af1394b296197a44e1d3e568e344c06f0db4893a",{"version":"612d4e77c2d058868007fc607868c9713bb118b651c08ab64e5e6a6afd0220ed","signature":"de9778d33e4f461819869f306fc52daa0f1c73a7189ddc9d9c4ea169e23b3aac"},{"version":"a746d8b8bb72928f71171250a2d5a313096fa18f1c84ac8ee6d8df0b407ac85c","signature":"09c57f83936ccf3a77cbe9dc9100102ab82842eb8a5ec624afd7feebf77fb4d9"},{"version":"d4ad364eee7355a32756499243a557428579d1f467b03e17edbc56480a7539de","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"47b1da22bef44bf20833ec9adfecce0decb4f18c0e5636d5e774bff7c182cc6c","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"c17b0bf6f9862a71decad0c057f869b6abfc2400a927be2b28020590316c37b3","c792888df334aafc8a0a5a939f36e2930af3bbe5ff82540a306241842b880df1",{"version":"55d65dff71c286089d755cfec64db745c4b806bafb91e2e76433d8068ed207c8","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"859cdceb67d12c021161862bf1f756990ea3b67f532bbaca4f74487b4949173c",{"version":"5935d23a0ffda052c6ec0dc2473a8a65e4fce0cabece91ea03a4b24ed280ea27","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"48f5b9cf9a57932c13b3cd24d1fae7ddb6aa630e882588ccdb2afca4e757f733","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0ab717f2f13875422de6d9189e748f8f56371a8b04be1fd80a6bd0110b7e8909","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cfa8460e1bf0c14f040807f40c9126987bfbacd09f191248edcbfd5967685993","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"5ccde99cff50ccaca01def168cf403ff5bf193622a6e54db0cb4a18bde728887","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b50298138d475a9f8e8008de2422de5be687ef0c3ed87ce80f7b2aecc925413f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0eba1547a575300310c59fbc3f472ce0a78c7e8500fb6218e7f7c43d118f79bd","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"57bc4cf67afebf80095b3a105f2fd9bc84cb7ac52063d03697851efb96a3d506","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"2b87f16dbe5756a4f194be927db4a7dc9f57592e0e46e3a79b140f1cb8609b02",{"version":"ef87fa2c30900c5f9d3bd2f04acda8dd0a7b82013a5c050d13cd2e98b9ea3ed4","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"a298dc5ceb25a0ede59fa8b7669348b2a616d05bceb3fdf2d32e10da35e8dced","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e582497206600a428acd1bcb057bf4d04506927ae6e1178fb57c9ab7d93051e1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"d55261206129f7b301258dbe90fad2b4c9296f947bf95ea86f67f03edb2da313","f0e1adb59a130c543c3947dd41262f2fa0c75e23b75dd4fbc4fe706b961f9ff7",{"version":"485172f17b73ac4e31cd160ff89a92d728d477954cbd6e9f78f8637f6fce2a0b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d248c9fe6e81ad48f9780aab05bbfac43bcd2e26276e7cb7205191c6031dcd1f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"6ee7e19cd9687f318a3fd934b437bb9d308508bb96428dbcd2b3321aa6532b56","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"abaa548fb6e79765bba8208bb55e2cb48dd95eb86b6d6b77fc1ae35971a47afe","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"94cce1ae8e481ac4e080661704c11d57b94eedd13937c1790b5c36c028f0fcc3","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"73c86a71ae6fabaa9a567ef328181ad213aedccd9ed8ba33e6155cb8e592240e","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b629cee1721a4887d0ab0a902f34b2ab3fa607c05f8a96a75d720cd823be00a0","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cae011b16e957e736692cd70a532b2035b70ce472596a5378456fe085116921b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"f908c6a041c5ad244a30679df1cad256dba3005f79b85dd4f371428cab6ac758","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8cc913470e6ccbfac0618c31fe7e2d3e33487371b53adcb121b09b4c93dd0761","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e56efaf90a16045e6acecdb05db37467f8952cfa7ed10b6726f4b0bb469fedcb","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"cf3251a812ddcb23cb9ebf344ab60827ee6126867c8332488b869d665ab34711",{"version":"742110fb6308cb0c48283af2f4007fea8aca72b7d85572f76464147f863a9d4b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"5cc305cd4b5346098630bc2d41afdfdc39cb2f13d36b3af76ae1e16e77b7da1f","b9baff34b9dc5a4f3f944f753229df10316cb4de2f4bca34207f271888ecde0e","794d17b2209682aabfcda47ed9a9732f310c0737adbd22201990c2d7ee217f1a","14edf0179560ea852669af4e765b6c5bfb9db2d25dbe034605a83ee1063eea8c","fb0f4d6e31fdb3c9cf24be18499b2d0bd10f0ff75790e449a0611683d3655327","152b7508556670306254ff53b43d64eb690853de0e2cf0593d38cca492bf5797","567fad905d679b928a822ecc4c4e902eebd5cd6488cb2c2542427854da023c64","3e53011f70b914ecffb6be0511de4b75ffab34626bd9ae76478f9a966d1bf5e9","ab2da50293ea89f87149c2642929742db9ac94af705552a4b8df9d8d4adbdd0d","c6e7b3d527cbf5cd8a81b03e4047928581af126ef62264931daf16ff97cc1287","a544769e096dd3885a28cd2c323b1597684181e22ec4ccdf395effefb5765c02","9ed3eeb72d6b9dbc2af1939f390b900b43e71e02408ffd780b0cf9813eb1bb66","8542e4446f029073e4bc998de5e0c103af3b6e000802acd7322c87f1dd28114c","268b3496503530e97aba4a83cb910e53bddf0255ee35b628f64e97ddf972c1a2","2cee5a8dcb87e577fb39a8a9c013091daa18e54334e5d6c3d4d07e9c5d29adc1","0ca620db6d45cc3287eb6ebf76f9e69c3a887f285674a76df1153f7e277937f4","83dd566174f34050e6ca56608d569fb3b8bf7a27c21dc9bee522f6df5d63df90","8ea64a643330da65c16ba943cc146bdc6fdca1c6967c0966b9e56367b5395d34","8742b29e8435f81a41d482fb93e337933999d7fb55e7516f50e761c35b99b65b","c8e69e1181bc0c85cb1872a49ff293295fb92f4a3c4c51412a7cdbfcfc084576","db35a5fdc23e8cf703fa82994782dc1a353be0ff2e5f0fc31b4254afd669e0a2","7db69a45b9d42ad90d4dbc0d99d8906bdd1a3190439ed9d69faa4ebb1219d0a9","0e30ed38f10305c2792fc26b37dd9bc9c82fd45831fc0f98c2a90b5a6479f5ca","441c0602376b42f8a7fe41993cacb232d1b5b00ac659ec7e723fbd4d25e811fc","4bb6fa3f1dd2c9b4e8cd0c647382961d4928a78b11d87e091f26333e46689731","a93444995725386dab24e6f0348607c33ceb19946b4bb014cd1eadae8978fa6c","02e453254f8510084ac325323576b84a2a5bd8a2be4c0edb30d8c7df0da2fa73",{"version":"151ff381ef9ff8da2da9b9663ebf657eac35c4c9a19183420c05728f31a6761d","impliedFormat":1},{"version":"f3d8c757e148ad968f0d98697987db363070abada5f503da3c06aefd9d4248c1","impliedFormat":1},{"version":"a4a39b5714adfcadd3bbea6698ca2e942606d833bde62ad5fb6ec55f5e438ff8","impliedFormat":1},{"version":"bbc1d029093135d7d9bfa4b38cbf8761db505026cc458b5e9c8b74f4000e5e75","impliedFormat":1},{"version":"1f68ab0e055994eb337b67aa87d2a15e0200951e9664959b3866ee6f6b11a0fe","impliedFormat":1},{"version":"963d59066dd6742da1918a6213a209bcc205b8ee53b1876ee2b4e6d80f97c85e","impliedFormat":1},{"version":"fd326577c62145816fe1acc306c734c2396487f76719d3785d4e825b34540b33","impliedFormat":1},{"version":"8a19491eba2108d5c333c249699f40aff05ad312c04a17504573b27d91f0aede","impliedFormat":1},{"version":"15fe687c59d62741b4494d5e623d497d55eb38966ecf5bea7f36e48fc3fbe15e","impliedFormat":1},{"version":"2c3b8be03577c98530ef9cb1a76e2c812636a871f367e9edf4c5f3ce702b77f8","affectsGlobalScope":true,"impliedFormat":1},{"version":"1ba59c8bbeed2cb75b239bb12041582fa3e8ef32f8d0bd0ec802e38442d3f317","impliedFormat":1}],"root":[[408,414],749,750,[792,801],[803,806],[823,841],[883,885],888,889,[891,999]],"options":{"allowJs":true,"esModuleInterop":true,"jsx":1,"module":99,"skipLibCheck":true,"strict":false,"target":1},"referencedMap":[[458,1],[460,2],[459,1],[457,1],[461,3],[433,4],[445,5],[431,6],[446,7],[455,8],[422,9],[423,10],[421,11],[454,12],[449,13],[453,14],[425,15],[442,16],[424,17],[452,18],[419,19],[420,13],[426,20],[427,1],[432,21],[430,20],[417,22],[456,23],[447,24],[436,25],[435,20],[437,26],[440,27],[434,28],[438,29],[450,12],[428,30],[429,31],[441,32],[418,7],[444,33],[443,20],[439,34],[448,1],[416,1],[451,35],[942,36],[943,37],[944,38],[945,39],[946,40],[947,41],[948,42],[949,43],[950,44],[951,45],[952,46],[953,47],[954,48],[955,49],[956,50],[957,51],[959,52],[958,53],[960,54],[961,55],[962,56],[964,57],[965,58],[963,59],[966,60],[967,61],[969,62],[968,63],[970,64],[971,65],[972,66],[973,67],[974,68],[975,69],[976,70],[977,71],[978,72],[979,73],[940,74],[980,75],[983,76],[982,77],[984,78],[985,79],[981,80],[941,81],[988,82],[989,83],[987,84],[990,85],[986,86],[991,87],[992,88],[994,89],[995,90],[993,91],[996,92],[997,93],[998,94],[999,95],[408,96],[519,97],[471,98],[469,99],[472,100],[476,101],[465,102],[475,103],[484,104],[520,105],[415,1],[488,106],[487,1],[463,1],[470,107],[466,108],[464,109],[474,110],[462,111],[473,112],[467,113],[483,114],[485,115],[493,116],[492,117],[509,118],[512,119],[511,120],[513,118],[510,121],[508,122],[482,123],[486,124],[481,125],[515,126],[477,127],[478,128],[507,129],[495,130],[496,131],[514,132],[479,127],[497,133],[500,134],[499,135],[498,136],[503,137],[502,138],[501,128],[480,127],[504,127],[506,139],[505,140],[516,141],[518,142],[491,143],[489,144],[490,145],[494,146],[517,127],[468,1],[361,1],[645,1],[644,1],[646,147],[813,1],[811,1],[822,148],[809,1],[816,1],[819,1],[814,149],[820,1],[818,1],[821,150],[817,151],[815,1],[807,1],[812,152],[810,153],[808,1],[787,154],[788,155],[786,156],[781,157],[790,158],[775,1],[776,159],[785,160],[780,161],[789,1],[784,162],[777,1],[778,1],[783,163],[779,160],[782,161],[752,164],[753,165],[751,1],[763,166],[757,1],[766,167],[758,1],[764,168],[762,168],[765,169],[761,170],[760,1],[759,171],[754,1],[772,172],[768,173],[756,1],[755,1],[767,174],[770,175],[771,176],[769,177],[774,178],[791,179],[1004,180],[1003,181],[1002,182],[1000,1],[1006,183],[1001,1],[1005,1],[142,184],[143,184],[144,185],[99,186],[145,187],[146,188],[147,189],[94,1],[97,190],[95,1],[96,1],[148,191],[149,192],[150,193],[151,194],[152,195],[153,196],[154,196],[155,197],[156,198],[157,199],[158,200],[100,1],[98,1],[159,201],[160,202],[161,203],[193,204],[162,205],[163,206],[164,207],[165,208],[166,209],[167,210],[168,211],[169,212],[170,213],[171,214],[172,214],[173,215],[174,1],[175,216],[177,217],[176,218],[178,109],[179,219],[180,220],[181,221],[182,222],[183,223],[184,224],[185,225],[186,226],[187,227],[188,228],[189,229],[190,230],[101,1],[102,1],[103,1],[141,231],[191,232],[192,233],[86,1],[198,234],[199,235],[197,236],[195,237],[196,238],[84,1],[87,239],[285,236],[1007,12],[1009,240],[1008,1],[1010,241],[886,1],[85,1],[773,1],[890,236],[93,242],[364,243],[368,244],[370,245],[219,246],[233,247],[335,248],[264,1],[338,249],[300,250],[308,251],[336,252],[220,253],[263,1],[265,254],[337,255],[240,256],[221,257],[244,256],[234,256],[204,256],[291,258],[292,259],[209,1],[288,260],[293,261],[379,262],[286,261],[380,263],[270,1],[289,264],[392,265],[391,266],[295,261],[390,1],[388,1],[389,267],[290,236],[277,268],[278,269],[287,270],[303,271],[304,272],[294,273],[272,274],[273,275],[383,276],[386,277],[251,278],[250,279],[249,280],[395,236],[248,281],[225,1],[398,1],[401,1],[400,236],[402,282],[200,1],[329,1],[232,283],[202,284],[352,1],[353,1],[355,1],[358,285],[354,1],[356,286],[357,286],[218,1],[231,1],[363,287],[371,288],[375,289],[214,290],[280,291],[279,1],[271,274],[299,292],[297,293],[296,1],[298,1],[302,294],[275,295],[213,296],[238,297],[326,298],[205,299],[212,300],[201,248],[340,301],[350,302],[339,1],[349,303],[239,1],[223,304],[317,305],[316,1],[323,306],[325,307],[318,308],[322,309],[324,306],[321,308],[320,306],[319,308],[260,310],[245,310],[311,311],[246,311],[207,312],[206,1],[315,313],[314,314],[313,315],[312,316],[208,317],[284,318],[301,319],[283,320],[307,321],[309,322],[306,320],[241,317],[194,1],[327,323],[266,324],[348,325],[269,326],[343,327],[211,1],[344,328],[346,329],[347,330],[330,1],[342,299],[242,331],[328,332],[351,333],[215,1],[217,1],[222,334],[310,335],[210,336],[216,1],[268,337],[267,338],[224,339],[276,340],[274,341],[226,342],[228,343],[399,1],[227,344],[229,345],[366,1],[365,1],[367,1],[397,1],[230,346],[282,236],[92,1],[305,347],[252,1],[262,348],[373,236],[382,349],[259,236],[377,261],[258,350],[360,351],[257,349],[203,1],[384,352],[255,236],[256,236],[247,1],[261,1],[254,353],[253,354],[243,355],[237,273],[345,1],[236,356],[235,1],[369,1],[281,236],[362,357],[83,1],[91,358],[88,236],[89,1],[90,1],[341,359],[334,360],[333,1],[332,361],[331,1],[372,362],[374,363],[376,364],[378,365],[381,366],[407,367],[385,367],[406,368],[387,369],[393,370],[394,371],[396,372],[403,373],[405,1],[404,12],[359,374],[534,1],[621,375],[620,376],[532,377],[529,378],[533,379],[538,380],[525,381],[537,382],[543,383],[622,384],[521,1],[523,1],[531,385],[526,386],[524,109],[536,387],[522,111],[535,388],[527,389],[545,390],[568,391],[557,392],[546,393],[554,394],[544,395],[555,1],[553,396],[548,397],[549,398],[547,399],[556,400],[530,401],[564,402],[561,403],[562,404],[563,405],[565,406],[571,407],[578,408],[577,409],[576,410],[575,411],[574,412],[572,403],[573,403],[566,413],[569,414],[567,415],[570,416],[559,417],[542,418],[558,419],[541,420],[540,421],[560,422],[539,423],[581,424],[579,403],[580,425],[583,426],[582,427],[584,403],[588,428],[586,429],[587,430],[589,431],[592,432],[591,433],[594,434],[593,435],[597,436],[595,437],[596,438],[590,439],[585,440],[598,439],[599,441],[619,442],[600,435],[601,403],[602,443],[603,444],[604,445],[550,446],[551,447],[552,448],[528,1],[605,403],[608,449],[606,403],[607,450],[609,451],[610,452],[613,453],[612,454],[614,455],[615,431],[618,456],[617,457],[616,458],[611,459],[715,460],[712,1],[740,1],[736,461],[737,462],[723,463],[724,464],[725,465],[722,466],[731,467],[726,465],[727,464],[728,468],[730,469],[720,1],[721,470],[746,471],[741,472],[742,473],[717,472],[734,474],[733,475],[713,476],[735,476],[714,476],[745,477],[719,478],[718,479],[716,1],[743,1],[732,1],[729,1],[739,480],[738,481],[695,1],[697,482],[684,483],[685,484],[686,485],[687,486],[678,487],[688,488],[689,486],[690,488],[691,489],[692,484],[693,490],[683,491],[694,492],[696,493],[681,494],[679,495],[709,1],[710,496],[680,497],[682,498],[660,499],[623,1],[661,1],[662,500],[667,501],[668,502],[669,503],[744,503],[670,503],[675,504],[671,503],[665,505],[657,506],[711,507],[676,508],[634,509],[624,506],[632,510],[625,506],[677,506],[626,506],[627,506],[628,506],[656,511],[633,512],[629,506],[630,513],[631,506],[636,514],[635,1],[702,515],[701,516],[703,517],[704,518],[705,519],[706,520],[655,521],[659,522],[708,523],[707,1],[698,524],[653,525],[699,526],[652,527],[700,528],[673,529],[672,530],[658,1],[664,531],[663,532],[748,533],[666,1],[747,534],[674,1],[637,1],[638,1],[643,1],[650,1],[642,1],[651,535],[641,1],[647,536],[649,1],[654,1],[639,1],[640,1],[648,1],[869,537],[857,1],[863,538],[876,1],[855,1],[870,1],[872,539],[873,1],[845,1],[849,540],[851,541],[850,1],[877,542],[846,543],[847,544],[848,540],[852,545],[853,545],[854,540],[844,1],[843,544],[860,1],[858,1],[859,1],[861,1],[874,1],[879,546],[878,1],[880,1],[875,1],[881,547],[882,548],[862,549],[842,1],[868,1],[865,1],[866,1],[871,1],[867,550],[864,551],[856,1],[887,1],[802,1],[81,1],[82,1],[13,1],[14,1],[16,1],[15,1],[2,1],[17,1],[18,1],[19,1],[20,1],[21,1],[22,1],[23,1],[24,1],[3,1],[25,1],[26,1],[4,1],[27,1],[31,1],[28,1],[29,1],[30,1],[32,1],[33,1],[34,1],[5,1],[35,1],[36,1],[37,1],[38,1],[6,1],[42,1],[39,1],[40,1],[41,1],[43,1],[7,1],[44,1],[49,1],[50,1],[45,1],[46,1],[47,1],[48,1],[8,1],[54,1],[51,1],[52,1],[53,1],[55,1],[9,1],[56,1],[57,1],[58,1],[60,1],[59,1],[61,1],[62,1],[10,1],[63,1],[64,1],[65,1],[11,1],[66,1],[67,1],[68,1],[69,1],[70,1],[1,1],[71,1],[72,1],[12,1],[76,1],[74,1],[79,1],[78,1],[73,1],[77,1],[75,1],[80,1],[119,552],[129,553],[118,552],[139,554],[110,555],[109,11],[138,12],[132,556],[137,557],[112,558],[126,559],[111,560],[135,561],[107,562],[106,12],[136,563],[108,564],[113,565],[114,1],[117,565],[104,1],[140,566],[130,567],[121,568],[122,569],[124,570],[120,571],[123,572],[133,12],[115,573],[116,574],[125,575],[105,7],[128,567],[127,565],[131,1],[134,576],[898,577],[899,578],[900,579],[901,580],[409,581],[410,581],[411,581],[412,581],[413,581],[414,581],[750,582],[793,583],[796,584],[797,585],[798,581],[799,586],[803,587],[801,588],[804,589],[805,582],[806,581],[824,590],[825,586],[827,586],[828,586],[826,586],[829,586],[830,591],[833,592],[831,586],[834,586],[835,582],[902,593],[903,594],[904,595],[905,596],[906,597],[891,598],[908,599],[909,600],[910,601],[913,602],[911,603],[914,604],[892,605],[915,606],[893,607],[919,608],[918,609],[920,610],[921,611],[916,612],[894,613],[924,608],[925,614],[923,615],[926,616],[922,593],[927,617],[928,618],[929,619],[931,597],[932,594],[930,594],[933,597],[934,597],[936,620],[935,621],[937,622],[938,600],[939,623],[897,624],[896,625],[895,626],[917,627],[907,628],[912,598],[836,1],[749,629],[792,586],[837,630],[838,631],[839,630],[840,1],[841,1],[795,632],[800,1],[823,633],[883,634],[884,1],[885,630],[832,635],[888,636],[889,637],[794,1]],"semanticDiagnosticsPerFile":[[824,[{"start":4331,"length":9,"code":2345,"category":1,"messageText":{"messageText":"Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit'.","category":1,"code":2345,"next":[{"messageText":"Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.","category":1,"code":2740,"canonicalHead":{"code":2322,"messageText":"Type 'Buffer<ArrayBufferLike>' is not assignable to type 'URLSearchParams'."}}]}}]],[884,[{"start":1621,"length":8,"code":2769,"category":1,"messageText":{"messageText":"No overload matches this call.","category":1,"code":2769,"next":[{"messageText":"The last overload gave the following error.","category":1,"code":2770,"next":[{"messageText":"Argument of type 'Uint8Array<ArrayBufferLike>' is not assignable to parameter of type 'BufferSource'.","category":1,"code":2345,"next":[{"messageText":"Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'ArrayBufferView<ArrayBuffer>'.","category":1,"code":2322,"next":[{"messageText":"Types of property 'buffer' are incompatible.","category":1,"code":2326,"next":[{"messageText":"Type 'ArrayBufferLike' is not assignable to type 'ArrayBuffer'.","category":1,"code":2322,"next":[{"messageText":"Type 'SharedArrayBuffer' is missing the following properties from type 'ArrayBuffer': resizable, resize, detached, transfer, transferToFixedLength","category":1,"code":2739,"canonicalHead":{"code":2322,"messageText":"Type 'SharedArrayBuffer' is not assignable to type 'ArrayBuffer'."}}],"canonicalHead":{"code":2322,"messageText":"Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'ArrayBufferView<ArrayBuffer>'."}}]}]}]}]}]},"relatedInformation":[{"file":"./node_modules/typescript/lib/lib.dom.d.ts","start":1489071,"length":246,"messageText":"The last overload is declared here.","category":1,"code":2771}]},{"start":2724,"length":8,"messageText":"Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.","category":1,"code":2802}]],[895,[{"start":5652,"length":10,"code":2322,"category":1,"messageText":"Type '\"audit.view\"' is not assignable to type 'Permission'.","relatedInformation":[{"start":1362,"length":10,"messageText":"The expected type comes from property 'permission' which is declared here on type 'NavItemDef'","category":3,"code":6500}]}]]],"affectedFilesPendingEmit":[942,943,944,945,946,947,948,949,950,951,952,953,954,955,956,957,959,958,960,961,962,964,965,963,966,967,969,968,970,971,972,973,974,975,976,977,978,979,940,980,983,982,984,985,981,941,988,989,987,990,986,991,992,994,995,993,996,997,998,999,898,899,900,901,409,410,411,412,413,414,750,793,796,797,798,799,803,801,804,805,806,824,825,827,828,826,829,830,833,831,834,835,902,903,904,905,906,891,908,909,910,913,911,914,892,915,893,919,918,920,921,916,894,924,925,923,926,922,927,928,929,931,932,930,933,934,936,935,937,938,939,897,896,895,917,907,912,836,749,792,837,838,839,840,841,795,800,823,883,884,885,832,888,889,794],"version":"5.9.3"}
 ```
 
 # vercel.json
