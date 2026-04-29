@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/lib/constants'
 import { isFirstTimeSetup, bootstrapAdmin } from '@/lib/auth'
-import { Eye, EyeOff, Activity, ArrowLeft, UserPlus, Shield } from 'lucide-react'
+import { getMFAStatus, verifyMFACode } from '@/lib/mfa'
+import { auditLogin } from '@/lib/audit'
+import { Eye, EyeOff, Activity, ArrowLeft, UserPlus, Shield, KeyRound } from 'lucide-react'
 
-type View = 'login' | 'forgot' | 'setup'
+type View = 'login' | 'forgot' | 'setup' | 'mfa'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -22,6 +24,10 @@ export default function LoginPage() {
   const [isSetup,    setIsSetup]    = useState(false)
   const [setupName,  setSetupName]  = useState('')
   const [setupDone,  setSetupDone]  = useState(false)
+
+  // MFA state
+  const [mfaCode,    setMfaCode]    = useState('')
+  const [mfaLoading, setMfaLoading] = useState(false)
 
   // Check if this is a fresh install (no users yet)
   useEffect(() => {
@@ -63,7 +69,42 @@ export default function LoginPage() {
       return
     }
 
+    // Check if MFA is enrolled — if so, prompt for TOTP code
+    try {
+      const mfaStatus = await getMFAStatus()
+      if (mfaStatus.enrolled && mfaStatus.verified) {
+        setView('mfa')
+        setLoading(false)
+        return
+      }
+    } catch {
+      // MFA check failed — proceed without MFA
+    }
+
+    await auditLogin()
     router.push('/dashboard')
+  }
+
+  // ── MFA verification handler ────────────────────────────────
+  async function handleMFAVerify(e: React.FormEvent) {
+    e.preventDefault()
+    if (!mfaCode.trim() || mfaCode.length !== 6) {
+      setError('Please enter a 6-digit code from your authenticator app')
+      return
+    }
+    setMfaLoading(true)
+    setError('')
+
+    const result = await verifyMFACode(mfaCode)
+    setMfaLoading(false)
+
+    if (result.success) {
+      await auditLogin()
+      router.push('/dashboard')
+    } else {
+      setError(result.error || 'Invalid code. Please try again.')
+      setMfaCode('')
+    }
   }
 
   // ── Forgot password handler ────────────────────────────────
@@ -107,6 +148,66 @@ export default function LoginPage() {
   function fillDemo() {
     setEmail('demo@hospital.com')
     setPassword('demo1234')
+  }
+
+  // ── MFA verification screen ─────────────────────────────────
+  if (view === 'mfa') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
+
+        <div className="relative w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+              <KeyRound className="w-8 h-8 text-blue-600" />
+            </div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">Two-Factor Authentication</h1>
+            <p className="text-blue-200 text-sm mt-1">Enter the 6-digit code from your authenticator app</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleMFAVerify} className="space-y-4">
+              <div>
+                <label className="label">Verification Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  className="input text-center text-2xl tracking-[0.5em] font-mono"
+                  placeholder="000000"
+                  value={mfaCode}
+                  onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  autoFocus
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Open Google Authenticator, Authy, or your authenticator app and enter the 6-digit code for NexMedicon HMS.
+                </p>
+              </div>
+              <button type="submit" disabled={mfaLoading || mfaCode.length !== 6}
+                className="w-full btn-primary py-3 text-base disabled:opacity-60">
+                {mfaLoading ? 'Verifying...' : 'Verify & Sign In'}
+              </button>
+            </form>
+
+            <button
+              onClick={() => { setView('login'); setError(''); setMfaCode(''); supabase.auth.signOut() }}
+              className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center"
+            >
+              ← Back to login
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // ── First-time setup screen ────────────────────────────────

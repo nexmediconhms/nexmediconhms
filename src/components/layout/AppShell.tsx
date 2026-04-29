@@ -8,6 +8,7 @@ import type { ClinicUser, AuthContextType, Permission } from '@/lib/auth'
 import { initSettings, migrateLocalStorageToSupabase } from '@/lib/settings'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
+import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -125,6 +126,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </div>
         <main className="md:ml-60 print:ml-0 flex-1 min-h-screen pb-16 md:pb-0">
+
+          {/* Connection / Clinic Mode banner */}
+          <div className="no-print">
+            <ConnectionBanner />
+          </div>
 
           {/* Configuration warning banner */}
           {configWarn.length > 0 && !warnDismissed && (

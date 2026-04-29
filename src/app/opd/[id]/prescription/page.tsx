@@ -4,11 +4,16 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
+import ClinicalSafetyModal from '@/components/clinical/ClinicalSafetyModal'
+import type { ClinicalAlert } from '@/components/clinical/ClinicalSafetyModal'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings, minFollowUpDate, isSunday } from '@/lib/utils'
+import { searchDrugs } from '@/lib/drug-database'
+import { runPrescriptionSafetyChecks } from '@/lib/prescription-safety'
+import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
-import { Plus, Trash2, Printer, Save, ArrowLeft, CheckCircle } from 'lucide-react'
+import { Plus, Trash2, Printer, Save, ArrowLeft, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
 
 const ROUTES = ['Oral','IV','IM','Topical','Sublingual','Inhalation','Rectal','Nasal']
 const FREQS  = ['Once daily','Twice daily','Thrice daily','Four times daily',
@@ -98,6 +103,9 @@ export default function PrescriptionPage() {
   const [saving,        setSaving]        = useState(false)
   const [saved,         setSaved]         = useState(false)
   const [drugSuggestion, setDrugSuggestion] = useState<{idx:number;list:string[]}|null>(null)
+  const [safetyAlerts,  setSafetyAlerts]  = useState<ClinicalAlert[]>([])
+  const [showSafetyModal, setShowSafetyModal] = useState(false)
+  const [safetyChecked, setSafetyChecked] = useState(false)
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : { hospitalName:'NexMedicon Demo Hospital', address:'', phone:'', regNo:'', gstin:'', doctorName:'Dr. Demo', doctorQual:'MBBS, MD (OBG)', doctorReg:'', footerNote:'' }
 
   useEffect(() => { if (encounterId) loadData() }, [encounterId])
@@ -151,10 +159,56 @@ export default function PrescriptionPage() {
   }
   function handleDrugInput(idx: number, val: string) {
     updateMed(idx,'drug',val)
+    setSafetyChecked(false) // Reset safety check when meds change
     if (val.length >= 2) {
-      const matches = COMMON.filter(d => d.toLowerCase().includes(val.toLowerCase()))
-      setDrugSuggestion(matches.length ? {idx, list:matches.slice(0,6)} : null)
+      // Search from comprehensive drug database (200+ drugs) + common list
+      const dbMatches = searchDrugs(val, 4).map(d => `${d.generic} ${d.strengths[0] || ''}`.trim())
+      const commonMatches = COMMON.filter(d => d.toLowerCase().includes(val.toLowerCase()))
+      const allMatches = Array.from(new Set([...dbMatches, ...commonMatches])).slice(0, 8)
+      setDrugSuggestion(allMatches.length ? {idx, list: allMatches} : null)
     } else setDrugSuggestion(null)
+  }
+
+  // ── Safety Check before Save ────────────────────────────────
+  async function handleSaveWithSafetyCheck() {
+    if (!encounterId || !patient) return
+    const validMeds = meds.filter(m => m.drug.trim())
+    if (validMeds.length === 0) { handleSave(); return }
+
+    // Run all clinical safety checks
+    const isPregnant = encounter?.ob_data?.lmp || encounter?.ob_data?.edd
+    const result = await runPrescriptionSafetyChecks({
+      medications: validMeds,
+      patientId: patient.id,
+      patientAge: patient.age,
+      patientWeight: patient.weight_kg || encounter?.weight,
+      isPregnant: !!isPregnant,
+      gestationalAge: encounter?.ob_data?.gestational_age,
+    })
+
+    if (result.hasAlerts) {
+      setSafetyAlerts(result.alerts)
+      setShowSafetyModal(true)
+    } else {
+      setSafetyChecked(true)
+      handleSave()
+    }
+  }
+
+  async function handleSafetyAcknowledge(overrideReason?: string) {
+    setShowSafetyModal(false)
+    setSafetyChecked(true)
+
+    // Log safety override in audit trail
+    if (overrideReason) {
+      await auditSafetyOverride('drug_interaction', encounterId, patient?.full_name || '', {
+        alerts: safetyAlerts.map(a => ({ level: a.level, title: a.title, category: a.category })),
+        overrideReason,
+        medications: meds.filter(m => m.drug.trim()).map(m => m.drug),
+      })
+    }
+
+    handleSave()
   }
 
   async function handleSave() {
@@ -168,6 +222,10 @@ export default function PrescriptionPage() {
     }
     if (existing) await supabase.from('prescriptions').update(payload).eq('id', existing.id)
     else { const {data} = await supabase.from('prescriptions').insert(payload).select().single(); setExisting(data) }
+
+    // Audit the prescription save
+    await audit('create', 'prescription', encounterId, patient?.full_name || '')
+
     setSaving(false); setSaved(true); setTimeout(()=>setSaved(false), 3000)
   }
 
@@ -207,11 +265,11 @@ export default function PrescriptionPage() {
             <button onClick={()=>window.print()} className="btn-secondary flex items-center gap-2 text-xs">
               <Printer className="w-3.5 h-3.5"/>Print
             </button>
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={handleSaveWithSafetyCheck} disabled={saving}
               className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60
-                ${saved?'bg-green-600 text-white':'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                ${saved?'bg-green-600 text-white':safetyChecked?'bg-blue-600 hover:bg-blue-700 text-white':'bg-blue-600 hover:bg-blue-700 text-white'}`}>
               {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                : saved ? <CheckCircle className="w-3.5 h-3.5"/> : <Save className="w-3.5 h-3.5"/>}
+                : saved ? <CheckCircle className="w-3.5 h-3.5"/> : <Shield className="w-3.5 h-3.5"/>}
               {saving?'Saving...':saved?'Saved!':'Save'}
             </button>
           </div>
@@ -431,6 +489,16 @@ export default function PrescriptionPage() {
           <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-400 text-center">{hs.footerNote}</div>
         )}
       </div>
+
+      {/* Clinical Safety Modal */}
+      {showSafetyModal && safetyAlerts.length > 0 && (
+        <ClinicalSafetyModal
+          alerts={safetyAlerts}
+          onAcknowledge={handleSafetyAcknowledge}
+          onCancel={() => setShowSafetyModal(false)}
+          patientName={patient?.full_name}
+        />
+      )}
     </AppShell>
   )
 }

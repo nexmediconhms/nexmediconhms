@@ -6,8 +6,10 @@ import AppShell from '@/components/layout/AppShell'
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
+import { checkVitals, autoCreateVitalAlerts } from '@/lib/critical-alerts'
+import type { CriticalValueCheck } from '@/lib/critical-alerts'
 import type { OBData, Encounter } from '@/types'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, ChevronRight, AlertTriangle } from 'lucide-react'
 
 type Tab = 'vitals' | 'consultation' | 'obgyn'
 
@@ -27,6 +29,7 @@ export default function EditEncounterPage() {
   const [saving,    setSaving]    = useState(false)
   const [saved,     setSaved]     = useState(false)
   const [error,     setError]     = useState('')
+  const [vitalAlerts, setVitalAlerts] = useState<CriticalValueCheck[]>([])
 
   const [vitals, setVitals] = useState<Vitals>({
     pulse: '', bp_systolic: '', bp_diastolic: '',
@@ -99,8 +102,36 @@ export default function EditEncounterPage() {
 
     setSaving(false)
     if (err) { setError(`Save failed: ${err.message}`); return }
+
+    // ── Critical Value Alerts ─────────────────────────────────
+    // Check vitals for critical values and auto-create alerts
+    const vitalChecks = checkVitals({
+      bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : undefined,
+      bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : undefined,
+      pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+      spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
+      temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
+    })
+    setVitalAlerts(vitalChecks)
+
+    // Auto-create alerts in database for critical/high values
+    if (vitalChecks.length > 0 && patient?.id) {
+      await autoCreateVitalAlerts(patient.id, id, {
+        bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : undefined,
+        bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : undefined,
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+        spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
+      })
+    }
+
     setSaved(true)
-    setTimeout(() => router.push(`/opd/${id}`), 1200)
+    // If critical alerts, stay on page to show them; otherwise navigate
+    if (vitalChecks.some(c => c.severity === 'critical')) {
+      // Don't auto-navigate — show alerts
+    } else {
+      setTimeout(() => router.push(`/opd/${id}`), 1200)
+    }
   }
 
   if (loading) return (
@@ -151,6 +182,51 @@ export default function EditEncounterPage() {
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          </div>
+        )}
+
+        {/* Critical Value Alerts Banner */}
+        {vitalAlerts.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {vitalAlerts.map((alert, i) => (
+              <div key={i} className={`border rounded-lg p-4 flex items-start gap-3 ${
+                alert.severity === 'critical'
+                  ? 'bg-red-50 border-red-300'
+                  : 'bg-orange-50 border-orange-300'
+              }`}>
+                <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${
+                  alert.severity === 'critical' ? 'text-red-600' : 'text-orange-600'
+                }`} />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      alert.severity === 'critical' ? 'bg-red-600 text-white' : 'bg-orange-600 text-white'
+                    }`}>
+                      {alert.severity === 'critical' ? '🚨 CRITICAL' : '⚠️ HIGH'}
+                    </span>
+                    <span className="text-xs text-gray-500">{alert.parameter.replace(/_/g, ' ')}: {alert.value} {alert.unit}</span>
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900">{alert.message}</p>
+                  <p className="text-xs text-gray-600 mt-1">{alert.action}</p>
+                </div>
+                <button
+                  onClick={() => setVitalAlerts(prev => prev.filter((_, idx) => idx !== i))}
+                  className="text-gray-400 hover:text-gray-600 text-xs"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+            {vitalAlerts.some(a => a.severity === 'critical') && (
+              <div className="text-center">
+                <button
+                  onClick={() => { setVitalAlerts([]); router.push(`/opd/${id}`) }}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  I have reviewed the alerts — continue to consultation →
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -7,6 +7,10 @@
     {
       "path": "/api/reminders/auto-generate",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/backup",
+      "schedule": "30 20 * * *"
     }
   ]
 }
