@@ -18,7 +18,7 @@ export type AuditAction =
   | 'create' | 'update' | 'delete'
   | 'view'   | 'print'
   | 'login'  | 'logout'
-  | 'export' | 'scan'
+  | 'export' | 'scan' | 'autofill'
   | 'safety_override' | 'mfa_enroll' | 'mfa_verify'
   | 'backup' | 'purge'
 

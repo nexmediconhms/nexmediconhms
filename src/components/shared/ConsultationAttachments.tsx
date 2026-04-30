@@ -18,7 +18,7 @@ import {
   Paperclip, Upload, Camera, X, FileText,
   Image, Trash2, Download, Eye, Loader2,
   AlertCircle, CheckCircle, Info, BookOpen,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react'
 
 function buildDoctorNoteFileName(originalFile: File): string {
@@ -91,6 +91,11 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   const [ocrResult,   setOcrResult]   = useState<OCRResult | null>(null)
   const [ocrError,    setOcrError]    = useState('')
   const [showOcrRaw,  setShowOcrRaw]  = useState(false)
+
+  // ── Autofill state ────────────────────────────────────────
+  const [autofilling,       setAutofilling]       = useState<string | null>(null)   // attachment id
+  const [autofillDoneId,    setAutofillDoneId]    = useState<string | null>(null)   // id of last success
+  const [autofillError,     setAutofillError]     = useState('')
 
   const uid    = useId()
   const fileId = `attach-file-${uid}`
@@ -315,6 +320,68 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   }
 
   function closeOcr() { setOcrTarget(null); setOcrResult(null); setOcrError('') }
+
+  // ── Extract & Autofill ────────────────────────────────────
+  // Sends the file to /api/doctor-note-ocr in 'autofill' mode.
+  // The API returns structured fields + a formType (ob_exam | vitals | encounter).
+  // We fire a custom DOM event 'autofill-fields' so the parent OPD/ANC page
+  // can listen and populate its own form state automatically.
+  async function extractAndFill(att: Attachment) {
+    setAutofilling(att.id)
+    setAutofillDoneId(null)
+    setAutofillError('')
+
+    try {
+      // Get the image blob the same way readDoctorNote does
+      let imageBlob: Blob | null = null
+      if (att.source === 'storage' && att.storage_key) {
+        const { data } = await supabase.storage.from(BUCKET).download(att.storage_key)
+        imageBlob = data
+      } else if (att.source === 'db' && att.file_data) {
+        const byteChars = atob(att.file_data)
+        const bytes     = new Uint8Array(byteChars.length)
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+        imageBlob = new Blob([bytes], { type: att.file_type })
+      }
+      if (!imageBlob) throw new Error('Could not retrieve image data.')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Not authenticated.')
+
+      const fd = new FormData()
+      fd.append('image', new File([imageBlob], att.file_name, { type: att.file_type }))
+      fd.append('context', `Extract structured fields for autofill. File: ${att.file_name}`)
+      fd.append('mode', 'autofill')
+
+      const res  = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Extraction failed.')
+
+      const { formType, fields } = data as { formType: string; fields: Record<string, any> }
+      if (!fields || Object.keys(fields).length === 0) {
+        throw new Error('Could not extract structured fields from this image. Try a clearer photo.')
+      }
+
+      // Dispatch DOM event so OPD/ANC pages can pick up and fill their forms
+      window.dispatchEvent(new CustomEvent('autofill-fields', {
+        detail: { formType, fields, sourceFile: att.file_name },
+      }))
+
+      await audit('autofill', 'attachment', att.id, att.file_name)
+      setAutofillDoneId(att.id)
+      setTimeout(() => setAutofillDoneId(null), 4000)
+    } catch (e: any) {
+      setAutofillError(e.message || 'Extract failed.')
+      setTimeout(() => setAutofillError(''), 5000)
+    } finally {
+      setAutofilling(null)
+    }
+  }
 
   const fmtSize = (b: number) =>
     b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
@@ -544,7 +611,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
         </div>
         <p className="text-xs text-gray-400 mt-1.5">
           JPG, PNG, WebP photos · PDF documents · Max {storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB
-          <span className="ml-2 text-blue-500">· Image uploads: tap <BookOpen className="w-3 h-3 inline"/> to read handwriting (cursive OK)</span>
+          <span className="ml-2 text-blue-500">· Image uploads: tap <BookOpen className="w-3 h-3 inline"/> to read handwriting (cursive OK) · tap <Sparkles className="w-3 h-3 inline text-emerald-500"/> to extract &amp; autofill form fields</span>
         </p>
       </div>
 
@@ -553,6 +620,14 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
           <span>{error}</span>
           <button onClick={() => setError('')} className="ml-auto flex-shrink-0"><X className="w-3 h-3"/></button>
+        </div>
+      )}
+
+      {autofillError && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
+          <span><strong>Extract &amp; Fill:</strong> {autofillError}</span>
+          <button onClick={() => setAutofillError('')} className="ml-auto flex-shrink-0"><X className="w-3 h-3"/></button>
         </div>
       )}
 
@@ -585,6 +660,22 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
                 {att.file_type.startsWith('image/') && (
                   <button onClick={() => readDoctorNote(att)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg" title="Read handwriting with AI">
                     <BookOpen className="w-3.5 h-3.5"/>
+                  </button>
+                )}
+                {/* ── Extract & Fill Fields — NEW ── */}
+                {att.file_type.startsWith('image/') && (
+                  <button
+                    onClick={() => extractAndFill(att)}
+                    disabled={autofilling === att.id}
+                    title="Extract data and autofill form fields"
+                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg disabled:opacity-50"
+                  >
+                    {autofilling === att.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin"/>
+                      : autofillDoneId === att.id
+                      ? <CheckCircle className="w-3.5 h-3.5 text-green-500"/>
+                      : <Sparkles className="w-3.5 h-3.5"/>
+                    }
                   </button>
                 )}
                 <button onClick={() => deleteAttachment(att)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg" title="Delete">

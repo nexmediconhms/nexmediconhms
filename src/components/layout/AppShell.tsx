@@ -33,7 +33,7 @@ import { AlertTriangle, X } from 'lucide-react'
 
 // ── Optional additions — comment out if files don't exist yet ──
 // import SessionTimeout  from './SessionTimeout'
-// import VoiceAssistant  from '@/components/voice/VoiceAssistant'
+import VoiceAssistant  from '@/components/voice/VoiceAssistant'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -192,7 +192,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* ── Uncomment these when the files exist: ────────── */}
         {/* <SessionTimeout /> */}
-        {/* <VoiceAssistant /> */}
+        <VoiceAssistant />
 
       </div>
     </AuthContext.Provider>

@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
 import { getHospitalSettings } from '@/lib/utils'
 import { whatsAppUrl } from '@/lib/whatsapp-templates'
 import {
@@ -69,8 +70,9 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
 }
 
-const FILTER_TABS: { key: ReminderType | 'all'; label: string; emoji: string }[] = [
+const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [
   { key: 'all',           label: 'All',            emoji: '📋' },
+  { key: 'today_only',    label: "Today's",        emoji: '🔔' },
   { key: 'appointment',   label: 'Appointments',   emoji: '📅' },
   { key: 'follow_up',     label: 'Follow-ups',     emoji: '🔁' },
   { key: 'anc',           label: 'ANC',            emoji: '🤰' },
@@ -129,10 +131,12 @@ export default function RemindersPage() {
   const [reminders,    setReminders]    = useState<ReminderItem[]>([])
   const [loading,      setLoading]      = useState(true)
   const [refreshing,   setRefreshing]   = useState(false)
-  const [filter,       setFilter]       = useState<ReminderType | 'all'>('all')
+  const [filter,       setFilter]       = useState<ReminderType | 'all' | 'today_only'>('today_only')
   const [sent,         setSent]         = useState<Set<string>>(new Set())
   const [expanded,     setExpanded]     = useState<string | null>(null)
   const [generatedAt,  setGeneratedAt]  = useState<string>('')
+  const [realtimeOk,   setRealtimeOk]   = useState(false)
+  const [lastLiveAt,   setLastLiveAt]   = useState<Date | null>(null)
 
   // ── Bulk send state ─────────────────────────────────────────
   const [sendingAll,     setSendingAll]     = useState(false)
@@ -174,6 +178,38 @@ export default function RemindersPage() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Supabase Realtime — appointments, prescriptions, bills ───
+  // Any INSERT/UPDATE on these tables triggers a silent reload so
+  // today's newly-scheduled appointments appear without a manual Refresh.
+  useEffect(() => {
+    const channel = supabase
+      .channel('reminders_live_watch')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' },
+        () => { setLastLiveAt(new Date()); load(true) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' },
+        () => { setLastLiveAt(new Date()); load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'prescriptions' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prescriptions' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'discharge_summaries' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bills' },
+        () => { load(true) })
+      .subscribe(status => setRealtimeOk(status === 'SUBSCRIBED'))
+
+    // Fallback poll every 60s when Realtime isn't enabled on the table
+    const pollId = setInterval(() => {
+      if (!realtimeOk) load(true)
+    }, 60_000)
+
+    return () => {
+      channel.unsubscribe()
+      clearInterval(pollId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Mark a single reminder as sent in Supabase + local state
   async function markSent(r: ReminderItem) {
     setSent(prev => new Set(Array.from(prev).concat(r.id)))
@@ -192,7 +228,18 @@ export default function RemindersPage() {
     })
   }
 
-  const filtered   = filter === 'all' ? reminders : reminders.filter(r => r.type === filter)
+  // today's date in IST (YYYY-MM-DD)
+  const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+
+  const filtered = (() => {
+    if (filter === 'all') return reminders
+    if (filter === 'today_only') return reminders.filter(r =>
+      r.priority === 'today' || r.priority === 'urgent' ||
+      r.dueDate === todayIST ||
+      r.context?.apptDate === todayIST
+    )
+    return reminders.filter(r => r.type === (filter as ReminderType))
+  })()
   const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
   const pending    = filtered.filter(r => !isSent(r))
   const done       = filtered.filter(r => isSent(r))
@@ -202,6 +249,8 @@ export default function RemindersPage() {
       t.key,
       t.key === 'all'
         ? reminders.length
+        : t.key === 'today_only'
+        ? reminders.filter(r => r.priority === 'today' || r.priority === 'urgent').length
         : reminders.filter(r => r.type === t.key).length,
     ])
   )
@@ -332,6 +381,11 @@ export default function RemindersPage() {
                   Last refreshed: {new Date(generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
+              {lastLiveAt && (
+                <span className="ml-2 text-xs text-green-600 animate-pulse">
+                  ↻ Live update {lastLiveAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-2 items-center">
@@ -341,6 +395,12 @@ export default function RemindersPage() {
                 {urgentCount} Urgent
               </span>
             )}
+            <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full border ${
+              realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}>
+              <Zap className="w-3 h-3"/>
+              {realtimeOk ? 'Live' : 'Connecting…'}
+            </span>
             <button onClick={() => load(true)} disabled={refreshing}
               className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}/>

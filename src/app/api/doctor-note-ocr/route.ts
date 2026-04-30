@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
     const fd      = await req.formData()
     const file    = fd.get('image') as File | null
     const context = (fd.get('context') as string | null) ?? ''
+    const mode    = (fd.get('mode')    as string | null) ?? 'ocr'
 
     if (!file) {
       return NextResponse.json({ error: 'No image file provided.' }, { status: 400 })
@@ -116,6 +117,63 @@ export async function POST(req: NextRequest) {
     const mediaType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) as
                       'image/jpeg' | 'image/png' | 'image/webp'
 
+    // ── Autofill mode — extract structured fields for form population ──
+    if (mode === 'autofill') {
+      const autofillPrompt = `You are a medical data extraction assistant for an Indian hospital management system.
+
+Analyse this medical document image carefully.
+
+Determine which form type it belongs to:
+- "ob_exam": Gyn/OB examination (LMP, EDD, gravida/para, fundal height, FHS, presentation, liquor, BP, oedema, haemoglobin)
+- "vitals": Vitals & Complaints (weight, height, BP, temperature, pulse, SpO2, chief complaints, allergies)
+- "encounter": Consultation/Diagnosis (diagnosis, symptoms, lab tests, medicines, follow-up dates)
+- "unknown": Cannot determine
+
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "formType": "ob_exam" | "vitals" | "encounter" | "unknown",
+  "confidence": 0.0-1.0,
+  "fields": {
+    // ob_exam: lmp, edd, gravida, para, living, abortions, gestational_age_weeks, fundal_height,
+    //   presentation, engagement, fhs, liquor, haemoglobin, bp_systolic, bp_diastolic,
+    //   weight, oedema, urine_protein, urine_sugar, risk_factors, plan
+    // vitals: weight, height, bp_systolic, bp_diastolic, pulse, temperature, spo2,
+    //   chief_complaint, duration, allergies, past_history
+    // encounter: diagnosis, symptoms, investigations, follow_up_date, advice,
+    //   medicines: [{name, dose, frequency, days}]
+    // Only include fields you are reasonably confident about
+  }
+}
+
+Convert BP like "120/80" → bp_systolic: 120, bp_diastolic: 80.
+Use YYYY-MM-DD for dates.`
+
+      const autofillResult = await analyzeImage({
+        base64,
+        mediaType,
+        prompt:    autofillPrompt,
+        system:    SYSTEM_PROMPT,
+        maxTokens: 2048,
+      })
+
+      const jsonString = autofillResult.text
+        .replace(/^\`\`\`json\s*/im, '')
+        .replace(/^\`\`\`\s*/im, '')
+        .replace(/\s*\`\`\`$/im, '')
+        .trim()
+
+      try {
+        const parsed = JSON.parse(jsonString)
+        return NextResponse.json({ ...parsed, _provider: autofillResult.provider })
+      } catch {
+        return NextResponse.json({
+          formType: 'unknown', confidence: 0, fields: {},
+          _provider: autofillResult.provider, _parse_error: true,
+        })
+      }
+    }
+
+    // ── Original OCR / transcription mode (unchanged) ─────────────────────────
     // Build user prompt with optional context hint
     let userPrompt = 'Please transcribe this handwritten doctor note. Include all text, even if partially illegible.'
     if (context.trim()) {
@@ -133,9 +191,9 @@ export async function POST(req: NextRequest) {
 
     // Strip any accidental markdown fences
     const jsonString = result.text
-      .replace(/^```json\s*/im, '')
-      .replace(/^```\s*/im, '')
-      .replace(/\s*```$/im, '')
+      .replace(/^\`\`\`json\s*/im, '')
+      .replace(/^\`\`\`\s*/im, '')
+      .replace(/\s*\`\`\`$/im, '')
       .trim()
 
     let parsed: any

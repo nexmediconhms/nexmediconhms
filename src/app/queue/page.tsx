@@ -20,7 +20,7 @@ import { audit }                        from '@/lib/audit'
 import { formatDateTime }               from '@/lib/utils'
 import {
   Users, Plus, X, Clock, CheckCircle, Play,
-  AlertTriangle, Loader2, RefreshCw, Zap,
+  AlertTriangle, Loader2, RefreshCw, Zap, Filter,
 } from 'lucide-react'
 
 type QueueStatus = 'waiting' | 'in_progress' | 'done' | 'cancelled'
@@ -72,6 +72,7 @@ export default function QueuePage() {
   const [lastUpdate,   setLastUpdate]   = useState<Date | null>(null)
   const [error,        setError]        = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [stageFilter,  setStageFilter]  = useState<QueueStatus | 'all'>('all')
 
   // Add to queue form state
   const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
@@ -220,6 +221,81 @@ export default function QueuePage() {
   const inProgress = queue.filter(q => q.status === 'in_progress').length
   const done       = queue.filter(q => q.status === 'done').length
 
+  // ── Filtered view ─────────────────────────────────────────
+  const displayQueue = stageFilter === 'all'
+    ? queue
+    : queue.filter(q => q.status === stageFilter)
+
+  // Within 'all' view, order: in_progress → waiting → done → cancelled
+  const orderedDisplay = stageFilter === 'all'
+    ? [...displayQueue].sort((a, b) => {
+        const o: Record<QueueStatus, number> = { in_progress: 0, waiting: 1, done: 2, cancelled: 3 }
+        return o[a.status] - o[b.status] || a.token_number - b.token_number
+      })
+    : displayQueue
+
+  // ── Render a single queue entry card ─────────────────────
+  function renderEntry(entry: QueueEntry) {
+    return (
+      <div key={entry.id}
+        className={`border rounded-xl px-4 py-3 ${STATUS_STYLES[entry.status]} transition-colors`}>
+        <div className="flex items-center gap-4">
+          {/* Token */}
+          <div className="text-2xl font-bold tabular-nums w-10 text-center flex-shrink-0">
+            {String(entry.token_number).padStart(2, '0')}
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-900">{entry.patient_name}</span>
+              <span className="text-xs text-gray-500 bg-white/70 px-1.5 py-0.5 rounded">MRN {entry.mrn}</span>
+              {entry.priority !== 'normal' && (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[entry.priority]}`}>
+                  {entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1)}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+              <Clock className="w-3 h-3"/>
+              Added {formatDateTime(entry.created_at)}
+              {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
+              {entry.notes && <span className="ml-1">· {entry.notes}</span>}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 flex-shrink-0">
+            {entry.status === 'waiting' && (
+              <>
+                <button onClick={() => updateStatus(entry, 'in_progress')}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                  <Play className="w-3 h-3"/> Call
+                </button>
+                <button onClick={() => updateStatus(entry, 'cancelled')}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                  <X className="w-4 h-4"/>
+                </button>
+              </>
+            )}
+            {entry.status === 'in_progress' && (
+              <button onClick={() => updateStatus(entry, 'done')}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                <CheckCircle className="w-3 h-3"/> Done
+              </button>
+            )}
+            {entry.patient_id && (
+              <Link href={`/patients/${entry.patient_id}`}
+                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs">
+                View
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── Render ────────────────────────────────────────────────
   return (
     <AppShell>
@@ -248,17 +324,46 @@ export default function QueuePage() {
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        {/* Stats — clickable to filter by stage */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
           {[
-            { label: 'Waiting', count: waiting,    color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
-            { label: 'In Progress', count: inProgress, color: 'text-blue-700 bg-blue-50 border-blue-200' },
-            { label: 'Done', count: done,       color: 'text-green-700 bg-green-50 border-green-200' },
+            { label: 'Waiting',     count: waiting,    status: 'waiting'     as QueueStatus, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+            { label: 'In Progress', count: inProgress, status: 'in_progress' as QueueStatus, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+            { label: 'Done',        count: done,       status: 'done'        as QueueStatus, color: 'text-green-700 bg-green-50 border-green-200' },
           ].map(s => (
-            <div key={s.label} className={`border rounded-xl p-3 text-center ${s.color}`}>
+            <button key={s.label}
+              onClick={() => setStageFilter(prev => prev === s.status ? 'all' : s.status)}
+              className={`border rounded-xl p-3 text-center transition-all hover:shadow-sm ${s.color} ${
+                stageFilter === s.status ? 'ring-2 ring-offset-1 ring-blue-400' : ''
+              }`}>
               <div className="text-2xl font-bold">{s.count}</div>
               <div className="text-xs font-medium mt-0.5">{s.label}</div>
-            </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Stage filter tabs */}
+        <div className="flex gap-2 mb-5 bg-gray-100 rounded-xl p-1">
+          {([
+            { key: 'all',         label: 'All Active'  },
+            { key: 'waiting',     label: 'Waiting'     },
+            { key: 'in_progress', label: 'In Progress' },
+            { key: 'done',        label: 'Done'        },
+          ] as { key: QueueStatus | 'all'; label: string }[]).map(f => (
+            <button key={f.key}
+              onClick={() => setStageFilter(f.key)}
+              className={`flex-1 text-xs font-semibold py-1.5 px-3 rounded-lg transition-all ${
+                stageFilter === f.key
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {f.label}
+              {f.key !== 'all' && (
+                <span className="ml-1 text-[10px] font-bold">
+                  ({f.key === 'waiting' ? waiting : f.key === 'in_progress' ? inProgress : done})
+                </span>
+              )}
+            </button>
           ))}
         </div>
 
@@ -275,74 +380,41 @@ export default function QueuePage() {
           <div className="flex items-center justify-center py-12 text-gray-400">
             <Loader2 className="w-6 h-6 animate-spin mr-2"/> Loading queue…
           </div>
-        ) : queue.length === 0 ? (
+        ) : orderedDisplay.length === 0 ? (
           <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
             <Users className="w-10 h-10 mx-auto mb-3 opacity-30"/>
-            <p className="font-medium">Queue is empty</p>
-            <p className="text-sm mt-1">Add patients to start the day</p>
+            <p className="font-medium">
+              {stageFilter === 'all' ? 'Queue is empty' : `No patients ${STATUS_LABELS[stageFilter as QueueStatus]?.toLowerCase()}`}
+            </p>
+            {stageFilter === 'all' && <p className="text-sm mt-1">Add patients to start the day</p>}
           </div>
         ) : (
           <div className="space-y-2">
-            {/* Active first */}
-            {['in_progress', 'waiting', 'done', 'cancelled'].map(statusGroup =>
-              queue.filter(q => q.status === statusGroup).map(entry => (
-                <div key={entry.id}
-                  className={`border rounded-xl px-4 py-3 ${STATUS_STYLES[entry.status]} transition-colors`}>
-                  <div className="flex items-center gap-4">
-                    {/* Token */}
-                    <div className="text-2xl font-bold tabular-nums w-10 text-center flex-shrink-0">
-                      {String(entry.token_number).padStart(2, '0')}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-gray-900">{entry.patient_name}</span>
-                        <span className="text-xs text-gray-500 bg-white/70 px-1.5 py-0.5 rounded">MRN {entry.mrn}</span>
-                        {entry.priority !== 'normal' && (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[entry.priority]}`}>
-                            {entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1)}
-                          </span>
-                        )}
+            {stageFilter === 'all' ? (
+              // Grouped view: show section headers per stage
+              <>
+                {(['in_progress', 'waiting', 'done', 'cancelled'] as QueueStatus[]).map(statusGroup => {
+                  const group = orderedDisplay.filter(q => q.status === statusGroup)
+                  if (group.length === 0) return null
+                  const sectionColors: Record<QueueStatus, string> = {
+                    in_progress: 'text-blue-700', waiting: 'text-yellow-700',
+                    done: 'text-green-700', cancelled: 'text-gray-400',
+                  }
+                  return (
+                    <div key={statusGroup} className="mb-2">
+                      <div className={`flex items-center gap-2 mb-1.5 ${sectionColors[statusGroup]}`}>
+                        <span className="text-xs font-bold uppercase tracking-wider">{STATUS_LABELS[statusGroup]}</span>
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-current/10">{group.length}</span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
-                        <Clock className="w-3 h-3"/>
-                        Added {formatDateTime(entry.created_at)}
-                        {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
-                        {entry.notes && <span className="ml-1">· {entry.notes}</span>}
+                      <div className="space-y-2">
+                        {group.map(entry => renderEntry(entry))}
                       </div>
                     </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 flex-shrink-0">
-                      {entry.status === 'waiting' && (
-                        <>
-                          <button onClick={() => updateStatus(entry, 'in_progress')}
-                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                            <Play className="w-3 h-3"/> Call
-                          </button>
-                          <button onClick={() => updateStatus(entry, 'cancelled')}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
-                            <X className="w-4 h-4"/>
-                          </button>
-                        </>
-                      )}
-                      {entry.status === 'in_progress' && (
-                        <button onClick={() => updateStatus(entry, 'done')}
-                          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                          <CheckCircle className="w-3 h-3"/> Done
-                        </button>
-                      )}
-                      {entry.patient_id && (
-                        <Link href={`/patients/${entry.patient_id}`}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs">
-                          View
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
+                  )
+                })}
+              </>
+            ) : (
+              orderedDisplay.map(entry => renderEntry(entry))
             )}
           </div>
         )}
