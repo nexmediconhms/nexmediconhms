@@ -1,5 +1,15 @@
+/**
+ * src/app/api/ocr/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard. The full original system prompt (Gujarati
+ * medical terms, all JSON schema, all 15 ABSOLUTE RULES), file validation logic,
+ * image path, PDF path, markdown stripping, graceful low-confidence fallback,
+ * and all error handlers are preserved exactly as in the original.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeImage, analyzePDF, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth } from '@/lib/api-auth'
 import type { OCRResult } from '@/lib/ocr'
 
 const SYSTEM_PROMPT = `You are a medical form OCR specialist for Indian hospitals in Gujarat.
@@ -96,6 +106,11 @@ JSON SCHEMA:
 Return ONLY valid JSON.`
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   if (!hasAnyAIKey()) {
     return NextResponse.json({
       error: 'No AI key configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env.local and restart.',
@@ -160,9 +175,9 @@ export async function POST(req: NextRequest) {
 
     // Strip markdown fences
     const jsonString = rawResponse
-      .replace(/^\`\`\`json\s*/im, '')
-      .replace(/^\`\`\`\s*/im, '')
-      .replace(/\s*\`\`\`$/im, '')
+      .replace(/^```json\s*/im, '')
+      .replace(/^```\s*/im, '')
+      .replace(/\s*```$/im, '')
       .trim()
 
     let parsed: OCRResult

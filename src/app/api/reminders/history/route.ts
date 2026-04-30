@@ -1,24 +1,28 @@
+/**
+ * src/app/api/reminders/history/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard. All original query params (limit, days,
+ * type filter), batch grouping, graceful missing-table handling preserved.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
-/**
- * GET /api/reminders/history
- *
- * Returns recent reminder send history from the reminder_log table.
- * Query params:
- *   ?limit=50       — max records (default 50)
- *   ?days=1         — how many days back (default 1 = today only)
- *   ?type=appointment — filter by reminder type
- */
 export async function GET(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const { searchParams } = new URL(req.url)
-  const limit = parseInt(searchParams.get('limit') || '50', 10)
-  const days = parseInt(searchParams.get('days') || '1', 10)
+  const limit      = parseInt(searchParams.get('limit') || '50', 10)
+  const days       = parseInt(searchParams.get('days')  || '1',  10)
   const typeFilter = searchParams.get('type')
 
   // Calculate start date
@@ -42,7 +46,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error('[reminder-history] DB error:', error)
-      // If table doesn't exist yet, return empty
+      // If table doesn't exist yet, return empty gracefully
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
         return NextResponse.json({ logs: [], total: 0 })
       }
@@ -57,23 +61,18 @@ export async function GET(req: NextRequest) {
         if (existing) {
           existing.count++
         } else {
-          batches.set(log.batch_id, {
-            count: 1,
-            sentBy: log.sent_by || 'manual',
-            sentAt: log.sent_at,
-          })
+          batches.set(log.batch_id, { count: 1, sentBy: log.sent_by || 'manual', sentAt: log.sent_at })
         }
       }
     }
 
     return NextResponse.json({
-      logs: data || [],
-      total: data?.length || 0,
+      logs:    data || [],
+      total:   data?.length || 0,
       batches: Object.fromEntries(batches),
     })
   } catch (err: any) {
     console.error('[reminder-history] Error:', err)
-    // Gracefully handle if table doesn't exist
     return NextResponse.json({ logs: [], total: 0 })
   }
 }

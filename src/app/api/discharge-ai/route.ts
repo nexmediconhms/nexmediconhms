@@ -1,7 +1,20 @@
+/**
+ * src/app/api/discharge-ai/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard at the top.
+ * Everything else is the original code — AI prompt, JSON parse, provider field — preserved exactly.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth } from '@/lib/api-auth'
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   if (!hasAnyAIKey()) {
     return NextResponse.json({ error: 'No AI key configured.' }, { status: 503 })
   }
@@ -30,9 +43,13 @@ Return JSON object with keys: final_diagnosis, secondary_diagnosis, clinical_sum
 Return ONLY valid JSON. No markdown.`
 
   try {
-    const { text, provider } = await generateText({ prompt, maxTokens: 1500,
-      system: 'You are a clinical documentation assistant. Return only valid JSON as specified.' })
-    const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+    const { text, provider } = await generateText({
+      prompt,
+      maxTokens: 1500,
+      system: 'You are a clinical documentation assistant. Return only valid JSON as specified.',
+    })
+    const clean = text
+      .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
     try {
       return NextResponse.json({ discharge: JSON.parse(clean), provider })
     } catch {

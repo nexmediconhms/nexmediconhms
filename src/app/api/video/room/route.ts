@@ -1,22 +1,18 @@
 /**
- * src/app/api/video/room/route.ts
+ * src/app/api/video/room/route.ts  — UPDATED
  *
- * POST /api/video/room
- *
- * Creates a video consultation room and returns a join link.
- * Uses Jitsi Meet (free, no API key needed) with a unique room name.
- * Optional: can be swapped to Daily.co / Twilio for token-authenticated rooms.
- *
- * Requirement #5 — Video consultation feature
+ * CHANGE: Replaced the manual inline Bearer token check with requireAuth().
+ * Everything else — crypto room ID generator, Jitsi link format, appointment
+ * video_link update, GET by appointment_id — preserved exactly.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-/** Generate a cryptographically safe room ID */
 function generateRoomId(): string {
   const bytes = new Uint8Array(8)
   crypto.getRandomValues(bytes)
@@ -24,14 +20,12 @@ function generateRoomId(): string {
 }
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-
-  // Auth
-  const token = req.headers.get('authorization')?.split(' ')[1]
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
   const { appointment_id, patient_name, doctor_name } = body
@@ -40,10 +34,9 @@ export async function POST(req: NextRequest) {
   const roomName = `nexmedicon-${roomId}`
 
   // Jitsi deep-link (free, open-source, HIPAA-compatible with proper deployment)
-  // Doctor gets moderator link, patient gets regular link
-  const jitsiBase    = 'https://meet.jit.si'
-  const doctorLink   = `${jitsiBase}/${roomName}#config.prejoinPageEnabled=true&config.startWithVideoMuted=false`
-  const patientLink  = `${jitsiBase}/${roomName}`
+  const jitsiBase   = 'https://meet.jit.si'
+  const doctorLink  = `${jitsiBase}/${roomName}#config.prejoinPageEnabled=true&config.startWithVideoMuted=false`
+  const patientLink = `${jitsiBase}/${roomName}`
 
   // If appointment_id provided, update the appointment record with the video link
   if (appointment_id) {
@@ -66,9 +59,9 @@ export async function POST(req: NextRequest) {
  * Returns the video link for an existing appointment
  */
 export async function GET(req: NextRequest) {
-  const supabase      = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+  const supabase        = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
   const { searchParams } = new URL(req.url)
-  const appointmentId = searchParams.get('appointment_id')
+  const appointmentId   = searchParams.get('appointment_id')
 
   if (!appointmentId) {
     return NextResponse.json({ error: 'appointment_id required' }, { status: 400 })

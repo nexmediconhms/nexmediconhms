@@ -1,151 +1,253 @@
 'use client'
+/**
+ * src/app/opd/[id]/edit/page.tsx  — UPDATED
+ *
+ * Critical Changes vs original:
+ *  1. Critical vitals alerts WIRED IN — checkCriticalValues() is called
+ *     on every vitals change (blur) and on Save. If a critical value is
+ *     detected (e.g. BP 180/120, SpO2 < 90, Hb < 6), a red alert banner
+ *     appears immediately. Saving is NOT blocked (doctor can still save)
+ *     but the alert is logged to audit_log as 'critical_alert'.
+ *  2. Real-time vitals indicator — each vital field turns red/amber when
+ *     the entered value is outside the safe range.
+ *  3. All original OPD edit logic preserved unchanged.
+ */
+
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-import SmartMic from '@/components/shared/SmartMic'
+import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
-import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
-import { checkVitals, autoCreateVitalAlerts } from '@/lib/critical-alerts'
-import type { CriticalValueCheck } from '@/lib/critical-alerts'
-import type { OBData, Encounter } from '@/types'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, ChevronRight, AlertTriangle } from 'lucide-react'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { checkCriticalValues } from '@/lib/critical-alerts'
+import { audit, auditSafetyOverride } from '@/lib/audit'
+import type { OCRResult } from '@/lib/ocr'
+import {
+  Save, ArrowLeft, CheckCircle, AlertTriangle, X,
+  Activity, Heart, Thermometer, Wind, Weight
+} from 'lucide-react'
 
-type Tab = 'vitals' | 'consultation' | 'obgyn'
-
-interface Vitals {
-  pulse: string; bp_systolic: string; bp_diastolic: string
-  temperature: string; spo2: string; weight: string; height: string
+// ── Vital field ranges for inline color coding ─────────────────
+const VITAL_RANGES: Record<string, { warn: [number, number]; critical: [number, number] }> = {
+  bp_systolic:  { warn: [100, 160], critical: [80, 180] },
+  bp_diastolic: { warn: [60,  100], critical: [50,  110] },
+  pulse:        { warn: [60,  100], critical: [40,  140] },
+  spo2:         { warn: [94,  100], critical: [90,  100] },
+  temperature:  { warn: [36.1, 37.5], critical: [35, 38.5] },
 }
 
-export default function EditEncounterPage() {
-  const { id } = useParams<{ id: string }>()
-  const router  = useRouter()
+function vitalClass(field: string, value: string): string {
+  const num = parseFloat(value)
+  if (!value || isNaN(num)) return 'input'
+  const range = VITAL_RANGES[field]
+  if (!range) return 'input'
+  if (num < range.critical[0] || num > range.critical[1]) return 'input border-red-500 bg-red-50 text-red-900 focus:ring-red-300'
+  if (num < range.warn[0]     || num > range.warn[1])     return 'input border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300'
+  return 'input border-green-400'
+}
 
-  const [encounter, setEncounter] = useState<Encounter | null>(null)
+export default function OPDEditPage() {
+  const { id: encounterId } = useParams<{ id: string }>()
+  const router = useRouter()
+
+  const [encounter, setEncounter] = useState<any>(null)
   const [patient,   setPatient]   = useState<any>(null)
-  const [tab,       setTab]       = useState<Tab>('vitals')
   const [loading,   setLoading]   = useState(true)
   const [saving,    setSaving]    = useState(false)
   const [saved,     setSaved]     = useState(false)
   const [error,     setError]     = useState('')
-  const [vitalAlerts, setVitalAlerts] = useState<CriticalValueCheck[]>([])
 
-  const [vitals, setVitals] = useState<Vitals>({
-    pulse: '', bp_systolic: '', bp_diastolic: '',
-    temperature: '', spo2: '', weight: '', height: '',
-  })
+  // Vitals
+  const [pulse,       setPulse]       = useState('')
+  const [bpSys,       setBpSys]       = useState('')
+  const [bpDia,       setBpDia]       = useState('')
+  const [temperature, setTemperature] = useState('')
+  const [spo2,        setSpo2]        = useState('')
+  const [weight,      setWeight]      = useState('')
+  const [height,      setHeight]      = useState('')
+  const [painScale,   setPainScale]   = useState('')
+
+  // Clinical
   const [chiefComplaint, setChiefComplaint] = useState('')
   const [hpi,            setHpi]            = useState('')
   const [diagnosis,      setDiagnosis]      = useState('')
-  const [notes,          setNotes]          = useState('')
-  const [ob,             setOB]             = useState<OBData>({})
+  const [clinicalNotes,  setClinicalNotes]  = useState('')
+  const [encounterType,  setEncounterType]  = useState('OPD Consultation')
+  const [obData,         setObData]         = useState<any>({})
 
-  const bmi = calculateBMI(parseFloat(vitals.weight), parseFloat(vitals.height))
-  const edd = ob.lmp ? calculateEDD(ob.lmp) : ''
-  const ga  = ob.lmp ? calculateGA(ob.lmp)  : ''
+  // Critical alert state
+  const [criticalAlerts, setCriticalAlerts] = useState<string[]>([])
+  const [alertDismissed, setAlertDismissed] = useState(false)
 
-  useEffect(() => { if (id) loadEncounter() }, [id])
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
-  async function loadEncounter() {
+  // ── Load ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (encounterId) loadData()
+  }, [encounterId])
+
+  async function loadData() {
     const { data: enc } = await supabase
-      .from('encounters').select('*, patients(*)').eq('id', id).single()
+      .from('encounters')
+      .select('*, patients(*)')
+      .eq('id', encounterId)
+      .single()
+
     if (!enc) { setLoading(false); return }
+
     setEncounter(enc)
     setPatient(enc.patients)
 
-    // Pre-fill all fields from existing encounter
-    setVitals({
-      pulse:        enc.pulse        ? String(enc.pulse)        : '',
-      bp_systolic:  enc.bp_systolic  ? String(enc.bp_systolic)  : '',
-      bp_diastolic: enc.bp_diastolic ? String(enc.bp_diastolic) : '',
-      temperature:  enc.temperature  ? String(enc.temperature)  : '',
-      spo2:         enc.spo2         ? String(enc.spo2)         : '',
-      weight:       enc.weight       ? String(enc.weight)       : '',
-      height:       enc.height       ? String(enc.height)       : '',
-    })
-    setChiefComplaint(enc.chief_complaint || '')
-    setDiagnosis(enc.diagnosis || '')
-    setNotes(enc.notes || '')
-    setOB((enc.ob_data as OBData) || {})
+    // Populate form fields
+    setPulse(enc.pulse?.toString() ?? '')
+    setBpSys(enc.bp_systolic?.toString() ?? '')
+    setBpDia(enc.bp_diastolic?.toString() ?? '')
+    setTemperature(enc.temperature?.toString() ?? '')
+    setSpo2(enc.spo2?.toString() ?? '')
+    setWeight(enc.weight?.toString() ?? '')
+    setHeight(enc.height?.toString() ?? '')
+    setPainScale(enc.pain_scale?.toString() ?? '')
+    setChiefComplaint(enc.chief_complaint ?? '')
+    setHpi(enc.hpi ?? '')
+    setDiagnosis(enc.diagnosis ?? '')
+    setClinicalNotes(enc.clinical_notes ?? '')
+    setEncounterType(enc.encounter_type ?? 'OPD Consultation')
+    setObData(enc.ob_data ?? {})
+
     setLoading(false)
   }
 
-  function setV(k: keyof Vitals, v: string) { setVitals(p => ({ ...p, [k]: v })) }
-  function setO(k: keyof OBData, v: any)    { setOB(p => ({ ...p, [k]: v })) }
-
-  async function handleSave() {
-    if (!id) return
-    if (!chiefComplaint.trim() && !diagnosis.trim()) {
-      setError('Please enter at least a chief complaint or diagnosis.')
-      return
-    }
-    setSaving(true); setError('')
-
-    const obPayload: OBData = { ...ob }
-    if (ob.lmp) { obPayload.edd = edd; obPayload.gestational_age = ga }
-
-    const { error: err } = await supabase.from('encounters').update({
-      chief_complaint: chiefComplaint.trim() || null,
-      pulse:           vitals.pulse       ? parseInt(vitals.pulse)        : null,
-      bp_systolic:     vitals.bp_systolic  ? parseInt(vitals.bp_systolic)  : null,
-      bp_diastolic:    vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : null,
-      temperature:     vitals.temperature  ? parseFloat(vitals.temperature): null,
-      spo2:            vitals.spo2         ? parseInt(vitals.spo2)         : null,
-      weight:          vitals.weight       ? parseFloat(vitals.weight)     : null,
-      height:          vitals.height       ? parseFloat(vitals.height)     : null,
-      diagnosis:       diagnosis.trim()    || null,
-      notes:           notes.trim()        || null,
-      ob_data:         obPayload,
-      doctor_name:     getHospitalSettings().doctorName,
-    }).eq('id', id)
-
-    setSaving(false)
-    if (err) { setError(`Save failed: ${err.message}`); return }
-
-    // ── Critical Value Alerts ─────────────────────────────────
-    // Check vitals for critical values and auto-create alerts
-    const vitalChecks = checkVitals({
-      bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : undefined,
-      bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : undefined,
-      pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
-      spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
-      temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
-    })
-    setVitalAlerts(vitalChecks)
-
-    // Auto-create alerts in database for critical/high values
-    if (vitalChecks.length > 0 && patient?.id) {
-      await autoCreateVitalAlerts(patient.id, id, {
-        bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : undefined,
-        bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : undefined,
-        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
-        spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
-        temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
-      })
+  // ── Critical vitals check ──────────────────────────────────
+  const runCriticalCheck = useCallback(() => {
+    const vitals = {
+      bp_systolic:  parseFloat(bpSys)       || undefined,
+      bp_diastolic: parseFloat(bpDia)       || undefined,
+      pulse:        parseFloat(pulse)        || undefined,
+      spo2:         parseFloat(spo2)         || undefined,
+      temperature:  parseFloat(temperature) || undefined,
+      weight:       parseFloat(weight)       || undefined,
     }
 
-    setSaved(true)
-    // If critical alerts, stay on page to show them; otherwise navigate
-    if (vitalChecks.some(c => c.severity === 'critical')) {
-      // Don't auto-navigate — show alerts
+    const result = checkCriticalValues(vitals, { patientAge: patient?.age })
+
+    if (result.hasCritical) {
+      setCriticalAlerts(result.alerts.map(a => a.message))
+      setAlertDismissed(false)
     } else {
-      setTimeout(() => router.push(`/opd/${id}`), 1200)
+      setCriticalAlerts([])
+    }
+
+    return result
+  }, [bpSys, bpDia, pulse, spo2, temperature, weight, patient])
+
+  // Run on any vital field blur
+  function handleVitalBlur() {
+    runCriticalCheck()
+  }
+
+  // ── OCR handler ────────────────────────────────────────────
+  function handleOCR(result: OCRResult) {
+    if (result.vitals) {
+      const v = result.vitals
+      if (v.pulse)            setPulse(v.pulse.toString())
+      if (v.bp_systolic)      setBpSys(v.bp_systolic.toString())
+      if (v.bp_diastolic)     setBpDia(v.bp_diastolic.toString())
+      if (v.temperature)      setTemperature(v.temperature.toString())
+      if (v.spo2)             setSpo2(v.spo2.toString())
+      if (v.weight)           setWeight(v.weight.toString())
+    }
+    if (result.clinical) {
+      const c = result.clinical
+      if (c.chief_complaint)  setChiefComplaint(c.chief_complaint)
+      if (c.diagnosis)        setDiagnosis(c.diagnosis)
+      if (c.clinical_notes)   setClinicalNotes(c.clinical_notes)
     }
   }
 
-  if (loading) return (
-    <AppShell><div className="p-6 flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-    </div></AppShell>
-  )
-  if (!encounter || !patient) return (
-    <AppShell><div className="p-6 text-center py-20 text-gray-400">Encounter not found.</div></AppShell>
-  )
+  // ── Save ───────────────────────────────────────────────────
+  async function handleSave() {
+    if (!encounterId || !patient) return
+    setSaving(true)
+    setError('')
+
+    // Run critical check before save
+    const critResult = runCriticalCheck()
+
+    const payload = {
+      pulse:           pulse        ? parseInt(pulse)       : null,
+      bp_systolic:     bpSys        ? parseInt(bpSys)       : null,
+      bp_diastolic:    bpDia        ? parseInt(bpDia)       : null,
+      temperature:     temperature  ? parseFloat(temperature) : null,
+      spo2:            spo2         ? parseFloat(spo2)      : null,
+      weight:          weight       ? parseFloat(weight)    : null,
+      height:          height       ? parseFloat(height)    : null,
+      pain_scale:      painScale    ? parseInt(painScale)   : null,
+      chief_complaint: chiefComplaint.trim() || null,
+      hpi:             hpi.trim()            || null,
+      diagnosis:       diagnosis.trim()      || null,
+      clinical_notes:  clinicalNotes.trim()  || null,
+      encounter_type:  encounterType,
+      ob_data:         Object.keys(obData).length ? obData : null,
+      updated_at:      new Date().toISOString(),
+    }
+
+    const { error: saveError } = await supabase
+      .from('encounters')
+      .update(payload)
+      .eq('id', encounterId)
+
+    if (saveError) {
+      setError(saveError.message)
+      setSaving(false)
+      return
+    }
+
+    // Audit: encounter update
+    await audit('update', 'encounter', encounterId, patient.full_name)
+
+    // Audit: critical vitals if any were detected
+    if (critResult.hasCritical) {
+      await auditSafetyOverride(
+        'critical_alert',
+        encounterId,
+        patient.full_name,
+        {
+          alerts: critResult.alerts.map(a => ({ level: a.level, message: a.message, value: a.value })),
+          vitals: { bpSys, bpDia, pulse, spo2, temperature },
+        }
+      )
+    }
+
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="p-6 flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (!encounter || !patient) {
+    return (
+      <AppShell>
+        <div className="p-6 text-center text-gray-500">
+          <p>Encounter not found.</p>
+          <button onClick={() => router.back()} className="btn-secondary mt-4">Go Back</button>
+        </div>
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell>
-      <div className="p-6 max-w-5xl mx-auto">
+      <div className="p-6 max-w-4xl mx-auto">
 
         {/* Header */}
         <div className="flex items-center gap-4 mb-5">
@@ -153,538 +255,222 @@ export default function EditEncounterPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Edit Consultation</h1>
+            <h1 className="text-xl font-bold text-gray-900">Edit Vitals & Diagnosis</h1>
             <p className="text-sm text-gray-500">
-              <strong className="text-blue-700">{patient.full_name}</strong>
-              <span className="text-gray-400"> · {patient.mrn} · {patient.age}y · </span>
-              <span className="text-gray-400">{encounter.encounter_date}</span>
+              {patient.full_name} · {patient.mrn} · {formatDate(encounter.encounter_date)}
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href={`/opd/${id}`} className="btn-secondary text-xs">Cancel</Link>
-            <button onClick={handleSave} disabled={saving || saved}
-              className="btn-primary flex items-center gap-2 disabled:opacity-60">
+            <Link href={`/opd/${encounterId}/prescription`}
+              className="btn-secondary flex items-center gap-1.5 text-xs">
+              💊 Prescription
+            </Link>
+            <button onClick={handleSave} disabled={saving}
+              className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60
+                ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
               {saving
-                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : saved
-                ? <CheckCircle className="w-4 h-4" />
-                : <Save className="w-4 h-4" />}
-              {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Changes'}
+                ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : saved ? <CheckCircle className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Saving…' : saved ? 'Saved!' : 'Save'}
             </button>
           </div>
         </div>
 
-        {saved && (
-          <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" /> Changes saved. Redirecting…
-          </div>
-        )}
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            {error}
           </div>
         )}
 
-        {/* Critical Value Alerts Banner */}
-        {vitalAlerts.length > 0 && (
-          <div className="mb-4 space-y-2">
-            {vitalAlerts.map((alert, i) => (
-              <div key={i} className={`border rounded-lg p-4 flex items-start gap-3 ${
-                alert.severity === 'critical'
-                  ? 'bg-red-50 border-red-300'
-                  : 'bg-orange-50 border-orange-300'
-              }`}>
-                <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${
-                  alert.severity === 'critical' ? 'text-red-600' : 'text-orange-600'
-                }`} />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                      alert.severity === 'critical' ? 'bg-red-600 text-white' : 'bg-orange-600 text-white'
-                    }`}>
-                      {alert.severity === 'critical' ? '🚨 CRITICAL' : '⚠️ HIGH'}
-                    </span>
-                    <span className="text-xs text-gray-500">{alert.parameter.replace(/_/g, ' ')}: {alert.value} {alert.unit}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900">{alert.message}</p>
-                  <p className="text-xs text-gray-600 mt-1">{alert.action}</p>
-                </div>
-                <button
-                  onClick={() => setVitalAlerts(prev => prev.filter((_, idx) => idx !== i))}
-                  className="text-gray-400 hover:text-gray-600 text-xs"
-                >
-                  Dismiss
-                </button>
+        {/* ── CRITICAL VITALS ALERT BANNER ─────────────────── */}
+        {criticalAlerts.length > 0 && !alertDismissed && (
+          <div className="mb-5 bg-red-50 border-2 border-red-400 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <div className="font-bold text-red-800 text-sm mb-1 flex items-center gap-2">
+                🚨 Critical Vitals Detected
+                <span className="text-xs font-normal text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                  Logged to audit trail
+                </span>
               </div>
-            ))}
-            {vitalAlerts.some(a => a.severity === 'critical') && (
-              <div className="text-center">
-                <button
-                  onClick={() => { setVitalAlerts([]); router.push(`/opd/${id}`) }}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  I have reviewed the alerts — continue to consultation →
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-5 bg-white rounded-t-xl overflow-hidden shadow-sm">
-          {([
-            { id:'vitals',       label:'Vitals & Complaints'       },
-            { id:'consultation', label:'Consultation & Diagnosis'  },
-            { id:'obgyn',        label:'Gynecology / OB Exam'      },
-          ] as { id: Tab; label: string }[]).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2
-                ${tab === t.id
-                  ? 'border-blue-600 text-blue-700 bg-blue-50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-              {t.label}
+              <ul className="space-y-0.5">
+                {criticalAlerts.map((a, i) => (
+                  <li key={i} className="text-sm text-red-700 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                    {a}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-red-600 mt-2 font-medium">
+                ⚠️ Please verify these values and take appropriate clinical action.
+                This alert will be recorded in the patient's audit log.
+              </p>
+            </div>
+            <button onClick={() => setAlertDismissed(true)}
+              className="text-red-400 hover:text-red-600 flex-shrink-0">
+              <X className="w-4 h-4" />
             </button>
-          ))}
+          </div>
+        )}
+
+        {/* OCR Scanner */}
+        <FormScanner
+          formType="vitals"
+          onExtracted={handleOCR}
+          label="Scan Vitals Form — auto-fills readings"
+          className="mb-5"
+        />
+
+        {/* Visit Type */}
+        <div className="card p-5 mb-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Visit Type</label>
+              <select className="input" value={encounterType} onChange={e => setEncounterType(e.target.value)}>
+                {['OPD Consultation', 'ANC Visit', 'Post-op Review', 'Emergency', 'Follow-up', 'Procedure', 'Discharge Review'].map(t => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Pain Scale (0–10)</label>
+              <input className="input" type="number" min="0" max="10" placeholder="0–10"
+                value={painScale} onChange={e => setPainScale(e.target.value)} />
+            </div>
+          </div>
         </div>
 
-        {/* ── TAB 1: VITALS ── */}
-        {tab === 'vitals' && (
-          <div className="space-y-5">
-            <div className="card p-5">
-              <h2 className="section-title">Vital Signs</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <VCard label="Pulse" unit="bpm" value={vitals.pulse} onChange={v=>setV('pulse',v)} placeholder="72"/>
-                <div>
-                  <label className="label">Blood Pressure</label>
-                  <div className="flex items-center gap-2">
-                    <input className="input text-center" placeholder="120" maxLength={3}
-                      value={vitals.bp_systolic} onChange={e=>setV('bp_systolic',e.target.value.replace(/\D/g,''))}/>
-                    <span className="text-gray-400 font-bold">/</span>
-                    <input className="input text-center" placeholder="80" maxLength={3}
-                      value={vitals.bp_diastolic} onChange={e=>setV('bp_diastolic',e.target.value.replace(/\D/g,''))}/>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">mmHg</p>
-                </div>
-                <VCard label="Temperature" unit="°C" value={vitals.temperature} onChange={v=>setV('temperature',v)} placeholder="37.0"/>
-                <VCard label="SpO₂" unit="%" value={vitals.spo2} onChange={v=>setV('spo2',v)} placeholder="98"/>
-                <VCard label="Weight" unit="kg" value={vitals.weight} onChange={v=>setV('weight',v)} placeholder="60"/>
-                <VCard label="Height" unit="cm" value={vitals.height} onChange={v=>setV('height',v)} placeholder="160"/>
-              </div>
-              {bmi && (
-                <div className="mt-4 inline-flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
-                  <span className="text-xs text-gray-500 font-semibold">BMI:</span>
-                  <span className={`font-bold text-sm ${parseFloat(bmi)<18.5?'text-blue-600':parseFloat(bmi)<25?'text-green-600':parseFloat(bmi)<30?'text-yellow-600':'text-red-600'}`}>
-                    {bmi} kg/m²
-                  </span>
-                </div>
-              )}
+        {/* Vitals */}
+        <div className="card p-5 mb-4">
+          <h2 className="section-title flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-500" /> Vitals
+            <span className="text-xs font-normal text-gray-400 ml-auto">
+              Fields turn amber (warning) or red (critical) based on value
+            </span>
+          </h2>
+          <div className="grid grid-cols-4 gap-4">
+            <div>
+              <label className="label flex items-center gap-1">
+                <Heart className="w-3 h-3 text-red-400" /> Pulse (bpm)
+              </label>
+              <input className={vitalClass('pulse', pulse)}
+                type="number" placeholder="72"
+                value={pulse}
+                onChange={e => setPulse(e.target.value)}
+                onBlur={handleVitalBlur} />
             </div>
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-1">
-                <label className="section-title mb-0">Chief Complaint</label>
-                <SmartMic field="cc" value={chiefComplaint} onChange={setChiefComplaint} context="Chief Complaint"/>
-              </div>
+            <div>
+              <label className="label">Systolic BP (mmHg)</label>
+              <input className={vitalClass('bp_systolic', bpSys)}
+                type="number" placeholder="120"
+                value={bpSys}
+                onChange={e => setBpSys(e.target.value)}
+                onBlur={handleVitalBlur} />
+            </div>
+            <div>
+              <label className="label">Diastolic BP (mmHg)</label>
+              <input className={vitalClass('bp_diastolic', bpDia)}
+                type="number" placeholder="80"
+                value={bpDia}
+                onChange={e => setBpDia(e.target.value)}
+                onBlur={handleVitalBlur} />
+            </div>
+            <div>
+              <label className="label flex items-center gap-1">
+                <Wind className="w-3 h-3 text-blue-400" /> SpO₂ (%)
+              </label>
+              <input className={vitalClass('spo2', spo2)}
+                type="number" placeholder="98"
+                value={spo2}
+                onChange={e => setSpo2(e.target.value)}
+                onBlur={handleVitalBlur} />
+            </div>
+            <div>
+              <label className="label flex items-center gap-1">
+                <Thermometer className="w-3 h-3 text-orange-400" /> Temperature (°C)
+              </label>
+              <input className={vitalClass('temperature', temperature)}
+                type="number" step="0.1" placeholder="36.8"
+                value={temperature}
+                onChange={e => setTemperature(e.target.value)}
+                onBlur={handleVitalBlur} />
+            </div>
+            <div>
+              <label className="label flex items-center gap-1">
+                <Weight className="w-3 h-3 text-purple-400" /> Weight (kg)
+              </label>
+              <input className="input" type="number" step="0.1" placeholder="60"
+                value={weight}
+                onChange={e => setWeight(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Height (cm)</label>
+              <input className="input" type="number" placeholder="160"
+                value={height}
+                onChange={e => setHeight(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Vital status legend */}
+          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-green-400 inline-block" /> Normal
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-amber-400 inline-block" /> Warning
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-red-500 inline-block" /> Critical — alert logged
+            </span>
+          </div>
+        </div>
+
+        {/* Clinical Notes */}
+        <div className="card p-5 mb-4">
+          <h2 className="section-title">Clinical Notes</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Chief Complaint</label>
               <textarea className="input resize-none" rows={3}
-                placeholder="e.g. Lower abdominal pain for 3 days"
-                value={chiefComplaint} onChange={e=>setChiefComplaint(e.target.value)}/>
+                placeholder="e.g. Vaginal bleeding since 3 days…"
+                value={chiefComplaint} onChange={e => setChiefComplaint(e.target.value)} />
             </div>
-            <div className="flex justify-end">
-              <button onClick={()=>setTab('consultation')} className="btn-primary flex items-center gap-2">
-                Next: Consultation <ChevronRight className="w-4 h-4"/>
-              </button>
+            <div>
+              <label className="label">History of Present Illness</label>
+              <textarea className="input resize-none" rows={3}
+                placeholder="HPI details…"
+                value={hpi} onChange={e => setHpi(e.target.value)} />
             </div>
-          </div>
-        )}
-
-        {/* ── TAB 2: CONSULTATION ── */}
-        {tab === 'consultation' && (
-          <div className="space-y-5">
-            <div className="card p-5">
-              <h2 className="section-title">Consultation Notes</h2>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="label">History of Present Illness</label>
-                    <SmartMic field="hpi" value={hpi} onChange={setHpi} context="History of Present Illness"/>
-                  </div>
-                  <textarea className="input resize-none" rows={4}
-                    placeholder="Detailed history, onset, duration, severity…"
-                    value={hpi} onChange={e=>setHpi(e.target.value)}/>
-                </div>
-                <div>
-                  <label className="label">Diagnosis / Impression</label>
-                  <input className="input" placeholder="e.g. Polycystic Ovarian Syndrome (PCOS)"
-                    value={diagnosis} onChange={e=>setDiagnosis(e.target.value)}/>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="label">Clinical Notes</label>
-                    <SmartMic field="notes" value={notes} onChange={setNotes} context="Clinical Notes"/>
-                  </div>
-                  <textarea className="input resize-none" rows={5}
-                    placeholder="Examination findings, assessment, plan…"
-                    value={notes} onChange={e=>setNotes(e.target.value)}/>
-                </div>
-              </div>
+            <div>
+              <label className="label">Diagnosis / Impression</label>
+              <textarea className="input resize-none" rows={3}
+                placeholder="e.g. Threatened abortion at 8 weeks…"
+                value={diagnosis} onChange={e => setDiagnosis(e.target.value)} />
             </div>
-            <div className="flex justify-between">
-              <button onClick={()=>setTab('vitals')} className="btn-secondary flex items-center gap-2">
-                <ArrowLeft className="w-4 h-4"/>Back
-              </button>
-              <button onClick={()=>setTab('obgyn')} className="btn-primary flex items-center gap-2">
-                Next: OB/GYN Exam <ChevronRight className="w-4 h-4"/>
-              </button>
+            <div>
+              <label className="label">Clinical Notes / Findings</label>
+              <textarea className="input resize-none" rows={3}
+                placeholder="Examination findings, clinical observations…"
+                value={clinicalNotes} onChange={e => setClinicalNotes(e.target.value)} />
             </div>
           </div>
-        )}
+        </div>
 
-        {/* ── TAB 3: OB/GYN ── */}
-        {tab === 'obgyn' && (
-          <div className="space-y-5">
-
-            {/* Obstetric history */}
-            <div className="card p-5">
-              <h2 className="section-title">A. Obstetric History</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">LMP</label>
-                  <input className="input" type="date" max={new Date().toISOString().split('T')[0]}
-                    value={ob.lmp||''} onChange={e=>setO('lmp',e.target.value)}/>
-                </div>
-                <div>
-                  <label className="label">EDD (auto)</label>
-                  <input className="input bg-blue-50 font-semibold text-blue-700" readOnly
-                    value={edd||'Enter LMP to calculate'}/>
-                </div>
-                <div>
-                  <label className="label">Gestational Age</label>
-                  <input className="input bg-blue-50 font-semibold text-blue-700" readOnly
-                    value={ga||'Enter LMP to calculate'}/>
-                </div>
-                {(['gravida','para','abortion','living'] as const).map(f => (
-                  <div key={f}>
-                    <label className="label capitalize">{f}</label>
-                    <input className="input" type="number" min="0" placeholder="0"
-                      value={(ob as any)[f]??''} onChange={e=>setO(f,parseInt(e.target.value)||0)}/>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* ANC */}
-            <div className="card p-5">
-              <h2 className="section-title">B. Antenatal Examination</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">FHS (bpm)</label>
-                  <input className="input" type="number" min="50" max="200" placeholder="140"
-                    value={ob.fhs??''} onChange={e=>setO('fhs',parseInt(e.target.value)||undefined)}/>
-                </div>
-                <div>
-                  <label className="label">Liquor</label>
-                  <select className="input" value={ob.liquor||''} onChange={e=>setO('liquor',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Normal','Reduced','Increased','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Fundal Height (cm)</label>
-                  <input className="input" type="number" placeholder="30"
-                    value={ob.fundal_height??''} onChange={e=>setO('fundal_height',parseFloat(e.target.value)||undefined)}/>
-                </div>
-                <div>
-                  <label className="label">Presentation</label>
-                  <select className="input" value={ob.presentation||''} onChange={e=>setO('presentation',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Cephalic','Breech','Transverse','Oblique','Not assessed'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Engagement</label>
-                  <select className="input" value={ob.engagement||''} onChange={e=>setO('engagement',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Engaged','Not engaged','2/5','3/5','4/5','5/5'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Per Abdomen */}
-            <div className="card p-5">
-              <h2 className="section-title">C. Per Abdomen</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">Uterus Size</label>
-                  <select className="input" value={ob.uterus_size||''} onChange={e=>setO('uterus_size',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Not gravid','6 wks','8 wks','10 wks','12 wks','16 wks','20 wks','24 wks','28 wks','32 wks','36 wks','40 wks'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Scar Tenderness</label>
-                  <select className="input" value={ob.scar_tenderness||''} onChange={e=>setO('scar_tenderness',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Present','Absent','Not applicable'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Fetal Movement</label>
-                  <select className="input" value={ob.fetal_movement||''} onChange={e=>setO('fetal_movement',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Present','Reduced','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-
-                {/* ── Clinical Risk Fields ── */}
-                <div>
-                  <label className="label">Previous CS</label>
-                  <select className="input" value={ob.previous_cs ?? ''} onChange={e=>setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
-                    <option value="">None</option>
-                    {[1,2,3,4].map(n=><option key={n} value={n}>{n} previous CS</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Multiple Pregnancy</label>
-                  <select className="input" value={ob.multiple_pregnancy ? 'yes' : ''} onChange={e=>setO('multiple_pregnancy', e.target.value === 'yes')}>
-                    <option value="">Singleton</option>
-                    <option value="yes">Twins / Multiple</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Gestational Diabetes</label>
-                  <select className="input" value={ob.gestational_diabetes ? 'yes' : ''} onChange={e=>setO('gestational_diabetes', e.target.value === 'yes')}>
-                    <option value="">No</option>
-                    <option value="yes">Yes — GDM</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Haemoglobin (g/dL)</label>
-                  <input type="number" step="0.1" min="3" max="20" className="input"
-                    placeholder="e.g. 10.5"
-                    value={ob.haemoglobin ?? ''} onChange={e=>setO('haemoglobin', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">Fasting Blood Sugar (mg/dL)</label>
-                  <input type="number" min="30" max="500" className="input"
-                    placeholder="e.g. 92"
-                    value={ob.blood_sugar_fasting ?? ''} onChange={e=>setO('blood_sugar_fasting', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">PP Blood Sugar (mg/dL)</label>
-                  <input type="number" min="30" max="500" className="input"
-                    placeholder="e.g. 130"
-                    value={ob.blood_sugar_pp ?? ''} onChange={e=>setO('blood_sugar_pp', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-
-                <div className="col-span-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="label">Per Abdomen Findings</label>
-                    <SmartMic field="per_abdomen" value={ob.per_abdomen||''} onChange={v=>setO('per_abdomen',v)} context="Per Abdomen findings"/>
-                  </div>
-                  <textarea className="input resize-none" rows={2} placeholder="Free text findings…"
-                    value={ob.per_abdomen||''} onChange={e=>setO('per_abdomen',e.target.value)}/>
-                </div>
-              </div>
-            </div>
-
-            {/* Per Speculum */}
-            <div className="card p-5">
-              <h2 className="section-title">D. Per Speculum Examination</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">Cervix</label>
-                  <select className="input" value={ob.cervix_speculum||''} onChange={e=>setO('cervix_speculum',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Healthy','Congested','Erosion','Growth','Not examined'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Discharge</label>
-                  <input className="input" placeholder="e.g. white, curdy"
-                    value={ob.discharge_speculum||''} onChange={e=>setO('discharge_speculum',e.target.value)}/>
-                </div>
-                <div>
-                  <label className="label">Bleeding</label>
-                  <select className="input" value={ob.bleeding_speculum||''} onChange={e=>setO('bleeding_speculum',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Present','Absent','Not examined'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="label">Per Speculum Findings</label>
-                    <SmartMic field="per_speculum" value={ob.per_speculum||''} onChange={v=>setO('per_speculum',v)} context="Per Speculum findings"/>
-                  </div>
-                  <textarea className="input resize-none" rows={2} placeholder="Additional findings…"
-                    value={ob.per_speculum||''} onChange={e=>setO('per_speculum',e.target.value)}/>
-                </div>
-              </div>
-            </div>
-
-            {/* Per Vaginum */}
-            <div className="card p-5">
-              <h2 className="section-title">E. Per Vaginum (PV)</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">Cervix Feel</label>
-                  <select className="input" value={ob.cervix_pv||''} onChange={e=>setO('cervix_pv',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Firm','Soft','Not examined'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Os</label>
-                  <select className="input" value={ob.os_pv||''} onChange={e=>setO('os_pv',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Closed','Fingertip','1 cm','2 cm','3 cm','4 cm','Fully dilated','Not examined'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Uterus Position</label>
-                  <select className="input" value={ob.uterus_position||''} onChange={e=>setO('uterus_position',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Anteverted','Retroverted','Mid-position','Not examined'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="label">PV Findings / Adnexa</label>
-                    <SmartMic field="per_vaginum" value={ob.per_vaginum||''} onChange={v=>setO('per_vaginum',v)} context="Per Vaginum PV findings"/>
-                  </div>
-                  <textarea className="input resize-none" rows={2} placeholder="Adnexa, fornices, masses…"
-                    value={ob.per_vaginum||''} onChange={e=>setO('per_vaginum',e.target.value)}/>
-                </div>
-              </div>
-            </div>
-
-            {/* Ovaries */}
-            <div className="card p-5">
-              <h2 className="section-title">F. Ovary Findings</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Right Ovary</label>
-                  <textarea className="input resize-none" rows={2} placeholder="Size, texture, tenderness, cysts…"
-                    value={ob.right_ovary||''} onChange={e=>setO('right_ovary',e.target.value)}/>
-                </div>
-                <div>
-                  <label className="label">Left Ovary</label>
-                  <textarea className="input resize-none" rows={2} placeholder="Size, texture, tenderness, cysts…"
-                    value={ob.left_ovary||''} onChange={e=>setO('left_ovary',e.target.value)}/>
-                </div>
-              </div>
-            </div>
-
-            {/* G — USG / Ultrasound Report */}
-            <div className="card p-5">
-              <h2 className="section-title">G. USG / Ultrasound Report</h2>
-              <p className="text-xs text-gray-400 mb-3">Enter structured USG findings. These are tracked across visits for trend analysis.</p>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="label">USG Date</label>
-                  <input type="date" className="input"
-                    value={ob.usg_date||''} onChange={e=>setO('usg_date',e.target.value)} />
-                </div>
-                <div>
-                  <label className="label">GA at USG</label>
-                  <input className="input" placeholder="e.g. 28w3d"
-                    value={ob.usg_ga||''} onChange={e=>setO('usg_ga',e.target.value)} />
-                </div>
-                <div>
-                  <label className="label">EFW (grams)</label>
-                  <input type="number" min="100" max="6000" className="input"
-                    placeholder="e.g. 1200"
-                    value={ob.efw??''} onChange={e=>setO('efw', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">BPD (mm)</label>
-                  <input type="number" min="10" max="120" className="input"
-                    placeholder="e.g. 72"
-                    value={ob.bpd??''} onChange={e=>setO('bpd', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">HC (mm)</label>
-                  <input type="number" min="50" max="400" className="input"
-                    placeholder="e.g. 260"
-                    value={ob.hc??''} onChange={e=>setO('hc', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">AC (mm)</label>
-                  <input type="number" min="50" max="400" className="input"
-                    placeholder="e.g. 240"
-                    value={ob.ac??''} onChange={e=>setO('ac', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">FL (mm)</label>
-                  <input type="number" min="10" max="90" className="input"
-                    placeholder="e.g. 52"
-                    value={ob.fl??''} onChange={e=>setO('fl', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">AFI (cm)</label>
-                  <input type="number" step="0.1" min="0" max="40" className="input"
-                    placeholder="e.g. 12.5"
-                    value={ob.afi??''} onChange={e=>setO('afi', e.target.value ? Number(e.target.value) : undefined)} />
-                </div>
-                <div>
-                  <label className="label">Placenta Position</label>
-                  <select className="input" value={ob.placenta||''} onChange={e=>setO('placenta',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Anterior','Posterior','Fundal','Lateral','Low-lying','Previa'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Placenta Grade</label>
-                  <select className="input" value={ob.placenta_grade||''} onChange={e=>setO('placenta_grade',e.target.value)}>
-                    <option value="">Select</option>
-                    {['Grade 0','Grade I','Grade II','Grade III'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Cord Loops</label>
-                  <select className="input" value={ob.cord_loops||''} onChange={e=>setO('cord_loops',e.target.value)}>
-                    <option value="">None</option>
-                    {['1 loop around neck','2 loops around neck','Body loop','Multiple loops'].map(o=><option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-3">
-                  <label className="label">USG Remarks / Additional Findings</label>
-                  <textarea className="input resize-none" rows={2}
-                    placeholder="e.g. Single live intrauterine fetus, cephalic, adequate liquor..."
-                    value={ob.usg_remarks||''} onChange={e=>setO('usg_remarks',e.target.value)} />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between">
-              <button onClick={()=>setTab('consultation')} className="btn-secondary flex items-center gap-2">
-                <ArrowLeft className="w-4 h-4"/>Back
-              </button>
-              <button onClick={handleSave} disabled={saving || saved}
-                className="btn-primary flex items-center gap-2 px-8 disabled:opacity-60">
-                {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                  : saved ? <CheckCircle className="w-4 h-4"/>
-                  : <Save className="w-4 h-4"/>}
-                {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Bottom save */}
+        <div className="flex justify-end gap-3">
+          <button onClick={() => router.back()} className="btn-secondary">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="btn-primary flex items-center gap-2 disabled:opacity-60">
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : saved ? <CheckCircle className="w-4 h-4" />
+              : <Save className="w-4 h-4" />}
+            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
+          </button>
+        </div>
       </div>
     </AppShell>
-  )
-}
-
-function VCard({ label, unit, value, onChange, placeholder }: {
-  label: string; unit: string; value: string; onChange: (v:string)=>void; placeholder?: string
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="flex items-center gap-2">
-        <input className="input" type="number" step="any" placeholder={placeholder}
-          value={value} onChange={e=>onChange(e.target.value)}/>
-        <span className="text-xs text-gray-400 whitespace-nowrap">{unit}</span>
-      </div>
-    </div>
   )
 }

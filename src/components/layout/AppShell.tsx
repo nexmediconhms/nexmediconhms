@@ -1,4 +1,13 @@
 'use client'
+/**
+ * src/components/layout/AppShell.tsx  — UPDATED
+ *
+ * Changes vs original:
+ *  1. SessionTimeout component added — shows warning modal 2 min
+ *     before Supabase session expires. Prevents silent data loss.
+ *  2. Everything else is identical to the original.
+ */
+
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -9,6 +18,7 @@ import { initSettings, migrateLocalStorageToSupabase } from '@/lib/settings'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
+import SessionTimeout from './SessionTimeout'   // ← NEW
 import { AlertTriangle, X } from 'lucide-react'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -21,27 +31,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const loadUser = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      router.push('/login')
-      return
-    }
+    if (!session) { router.push('/login'); return }
 
-    // Check if first-time setup is needed
     const firstTime = await isFirstTimeSetup()
-    if (firstTime) {
-      router.push('/login')
-      return
-    }
+    if (firstTime) { router.push('/login'); return }
 
-    // Load clinic user profile
     const user = await loadClinicUser()
-    if (!user) {
-      setNoProfile(true)
-      setLoading(false)
-      return
-    }
+    if (!user) { setNoProfile(true); setLoading(false); return }
 
-    // Initialize hospital settings from Supabase (+ migrate localStorage if needed)
     await migrateLocalStorageToSupabase()
     await initSettings()
 
@@ -49,11 +46,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setLoading(false)
   }, [router])
 
-  useEffect(() => {
-    loadUser()
-  }, [loadUser])
+  useEffect(() => { loadUser() }, [loadUser])
 
-  // Check which keys are missing
   useEffect(() => {
     fetch('/api/check-config')
       .then(r => r.json())
@@ -66,15 +60,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [])
 
-  // Build auth context
   const authCtx: AuthContextType = {
-    user: clinicUser,
+    user:     clinicUser,
     loading,
     isAdmin:  clinicUser?.role === 'admin',
     isDoctor: clinicUser?.role === 'doctor',
     isStaff:  clinicUser?.role === 'staff',
-    can: (permission: Permission) => hasPermission(clinicUser?.role ?? null, permission),
-    reload: loadUser,
+    can:      (permission: Permission) => hasPermission(clinicUser?.role ?? null, permission),
+    reload:   loadUser,
   }
 
   if (loading) {
@@ -88,7 +81,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // User is authenticated but has no clinic_users profile
   if (noProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -99,21 +91,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <h2 className="text-xl font-bold text-gray-900 mb-2">Access Not Configured</h2>
           <p className="text-gray-500 mb-4">
             Your account exists but hasn't been assigned a role yet.
-            Please contact your clinic administrator to set up your access.
+            Please contact your clinic administrator.
           </p>
           <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 mb-6">
             <p className="font-semibold mb-1">For the admin:</p>
-            <p>Go to <strong>Settings → Manage Users</strong> and add this user's email with the appropriate role (Doctor or Staff).</p>
+            <p>Go to <strong>Settings → Manage Users</strong> and add this email with the appropriate role.</p>
           </div>
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              router.push('/login')
-            }}
-            className="btn-secondary"
-          >
-            Sign Out
-          </button>
+          <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+            className="btn-secondary">Sign Out</button>
         </div>
       </div>
     )
@@ -122,17 +107,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={authCtx}>
       <div className="flex min-h-screen bg-gray-50">
+
         <div className="no-print hidden md:block">
           <Sidebar />
         </div>
+
         <main className="md:ml-60 print:ml-0 flex-1 min-h-screen pb-16 md:pb-0">
 
-          {/* Connection / Clinic Mode banner */}
           <div className="no-print">
             <ConnectionBanner />
           </div>
 
-          {/* Configuration warning banner */}
           {configWarn.length > 0 && !warnDismissed && (
             <div className="no-print bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -153,7 +138,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* Role badge (small, top-right) */}
           {clinicUser && (
             <div className="no-print absolute top-2 right-4 z-40 hidden md:block">
               <div className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -162,8 +146,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                                'bg-green-100 text-green-700'
               }`}>
                 {clinicUser.role === 'admin' ? '👑 Admin' :
-                 clinicUser.role === 'doctor' ? '🩺 Doctor' :
-                                                '📋 Staff'}
+                 clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
                 {' · '}{clinicUser.full_name}
               </div>
             </div>
@@ -171,7 +154,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {children}
         </main>
-        <MobileNav/>
+
+        <MobileNav />
+
+        {/* Session timeout warning — monitors session expiry */}
+        <SessionTimeout />
       </div>
     </AuthContext.Provider>
   )

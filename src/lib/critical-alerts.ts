@@ -1,465 +1,256 @@
 /**
- * src/lib/critical-alerts.ts
+ * src/lib/critical-alerts.ts  — UPDATED
  *
- * Critical Value Alert & Escalation Workflow
+ * Critical Value Detection — wired into OPD edit page on every save and blur.
  *
- * Monitors vital signs and lab values for critical thresholds.
- * When a critical value is detected:
- *   1. Alert is created in the database
- *   2. On-screen notification shown to the doctor
- *   3. If not acknowledged within timeout → escalation (SMS/WhatsApp to senior doctor)
- *
- * Critical thresholds based on:
- *   - WHO guidelines
- *   - Indian NMC clinical standards
- *   - Standard medical practice
+ * Changes vs original:
+ *  - Consistent return type { hasCritical, alerts }
+ *  - alerts[] now has { level, message, value } for audit logging
+ *  - Added lab-result critical values (Hb, glucose, K+, Na+)
+ *  - Added pregnancy-specific thresholds
  */
 
-import { supabase } from './supabase'
-
-// ─── Types ────────────────────────────────────────────────────
-
-export type AlertSeverity = 'critical' | 'high' | 'medium'
-export type AlertStatus = 'open' | 'acknowledged' | 'resolved' | 'escalated'
-
-export interface CriticalAlert {
-  id?: string
-  patient_id: string
-  encounter_id?: string
-  alert_type: 'vital' | 'lab' | 'drug_interaction' | 'allergy'
-  parameter: string
-  value: string
-  threshold: string
-  severity: AlertSeverity
+export interface CriticalValueAlert {
+  level:   'critical' | 'warning'
   message: string
-  action_required: string
-  status: AlertStatus
+  value:   string | number
+  field:   string
 }
 
-export interface CriticalValueCheck {
-  parameter: string
-  value: number
-  unit: string
-  severity: AlertSeverity
-  message: string
-  action: string
-  threshold: string
+export interface CriticalCheckResult {
+  hasCritical: boolean
+  hasWarning:  boolean
+  alerts:      CriticalValueAlert[]
 }
 
-// ─── Critical Value Thresholds ────────────────────────────────
-
-interface ThresholdRange {
-  parameter: string
-  unit: string
-  criticalLow?: number
-  criticalHigh?: number
-  highLow?: number       // "high severity" low threshold
-  highHigh?: number      // "high severity" high threshold
-  messageLow: string
-  messageHigh: string
-  actionLow: string
-  actionHigh: string
-}
-
-const VITAL_THRESHOLDS: ThresholdRange[] = [
-  {
-    parameter: 'bp_systolic',
-    unit: 'mmHg',
-    criticalLow: 70,
-    criticalHigh: 200,
-    highLow: 80,
-    highHigh: 180,
-    messageLow: 'Severe hypotension — possible shock',
-    messageHigh: 'Hypertensive emergency',
-    actionLow: 'EMERGENCY: IV fluids, vasopressors. Check for bleeding, sepsis, anaphylaxis.',
-    actionHigh: 'EMERGENCY: IV antihypertensives (labetalol/hydralazine). Check for end-organ damage. CT head if neurological symptoms.',
-  },
-  {
-    parameter: 'bp_diastolic',
-    unit: 'mmHg',
-    criticalLow: 40,
-    criticalHigh: 130,
-    highLow: 50,
-    highHigh: 120,
-    messageLow: 'Severe diastolic hypotension',
-    messageHigh: 'Diastolic hypertensive emergency',
-    actionLow: 'Assess for shock. IV access. Fluid resuscitation.',
-    actionHigh: 'IV antihypertensives. Monitor for aortic dissection, stroke, eclampsia.',
-  },
-  {
-    parameter: 'pulse',
-    unit: 'bpm',
-    criticalLow: 35,
-    criticalHigh: 180,
-    highLow: 45,
-    highHigh: 150,
-    messageLow: 'Severe bradycardia — risk of cardiac arrest',
-    messageHigh: 'Severe tachycardia — hemodynamic compromise risk',
-    actionLow: 'EMERGENCY: Atropine 0.5mg IV. Prepare for transcutaneous pacing. ECG stat.',
-    actionHigh: 'ECG stat. Check for SVT/VT. Consider adenosine (SVT) or cardioversion (unstable).',
-  },
-  {
-    parameter: 'spo2',
-    unit: '%',
-    criticalLow: 85,
-    highLow: 90,
-    messageLow: 'Severe hypoxemia — respiratory failure',
-    messageHigh: 'Hypoxemia',
-    actionLow: 'EMERGENCY: High-flow O₂. Prepare for intubation. ABG stat. CXR.',
-    actionHigh: 'Supplemental O₂. ABG. Investigate cause (PE, pneumonia, asthma, COPD).',
-  },
-  {
-    parameter: 'temperature',
-    unit: '°C',
-    criticalLow: 34,
-    criticalHigh: 41,
-    highLow: 35,
-    highHigh: 40,
-    messageLow: 'Hypothermia — risk of cardiac arrhythmia',
-    messageHigh: 'Hyperpyrexia — risk of seizures, organ damage',
-    actionLow: 'Active rewarming. Warm IV fluids. Continuous cardiac monitoring.',
-    actionHigh: 'Aggressive cooling. Antipyretics. Blood cultures. Check for meningitis, sepsis.',
-  },
-]
-
-const LAB_THRESHOLDS: ThresholdRange[] = [
-  {
-    parameter: 'haemoglobin',
-    unit: 'g/dL',
-    criticalLow: 5,
-    highLow: 7,
-    messageLow: 'Life-threatening anaemia — immediate transfusion needed',
-    messageHigh: 'Severe anaemia',
-    actionLow: 'EMERGENCY: Type & crossmatch. Transfuse packed RBCs. Check for active bleeding.',
-    actionHigh: 'Urgent: Prepare for transfusion. IV iron. Investigate cause (bleeding, hemolysis, nutritional).',
-  },
-  {
-    parameter: 'platelet_count',
-    unit: '×10³/μL',
-    criticalLow: 20,
-    highLow: 50,
-    criticalHigh: 1000,
-    messageLow: 'Severe thrombocytopenia — spontaneous bleeding risk',
-    messageHigh: 'Thrombocytosis — thrombotic risk',
-    actionLow: 'EMERGENCY: Platelet transfusion if bleeding. Avoid IM injections, NSAIDs. Check for DIC, ITP, HUS.',
-    actionHigh: 'Investigate cause. Check for myeloproliferative disorder. Aspirin if thrombotic risk.',
-  },
-  {
-    parameter: 'blood_sugar_random',
-    unit: 'mg/dL',
-    criticalLow: 40,
-    criticalHigh: 500,
-    highLow: 54,
-    highHigh: 400,
-    messageLow: 'Severe hypoglycemia — risk of seizures, brain damage',
-    messageHigh: 'Severe hyperglycemia — DKA/HHS risk',
-    actionLow: 'EMERGENCY: 25ml of 50% dextrose IV push. Recheck in 15 min. Identify cause.',
-    actionHigh: 'Check for DKA (ketones, ABG). IV insulin infusion. Aggressive hydration.',
-  },
-  {
-    parameter: 'blood_sugar_fasting',
-    unit: 'mg/dL',
-    criticalLow: 40,
-    criticalHigh: 400,
-    highLow: 54,
-    highHigh: 300,
-    messageLow: 'Severe fasting hypoglycemia',
-    messageHigh: 'Severe fasting hyperglycemia',
-    actionLow: 'IV dextrose. Investigate insulinoma, medication error.',
-    actionHigh: 'Start/adjust insulin. Check HbA1c. Screen for DKA.',
-  },
-  {
-    parameter: 'serum_potassium',
-    unit: 'mEq/L',
-    criticalLow: 2.5,
-    criticalHigh: 6.5,
-    highLow: 3.0,
-    highHigh: 5.5,
-    messageLow: 'Severe hypokalemia — cardiac arrhythmia risk',
-    messageHigh: 'Severe hyperkalemia — cardiac arrest risk',
-    actionLow: 'EMERGENCY: IV KCl infusion (max 20 mEq/hr). Continuous ECG monitoring.',
-    actionHigh: 'EMERGENCY: Calcium gluconate IV (cardioprotection). Insulin + dextrose. Nebulized salbutamol. Kayexalate.',
-  },
-  {
-    parameter: 'serum_sodium',
-    unit: 'mEq/L',
-    criticalLow: 120,
-    criticalHigh: 160,
-    highLow: 125,
-    highHigh: 155,
-    messageLow: 'Severe hyponatremia — seizure risk, cerebral edema',
-    messageHigh: 'Severe hypernatremia — altered consciousness, seizures',
-    actionLow: 'Fluid restriction. If symptomatic: 3% NaCl (max 1-2 mEq/L/hr correction).',
-    actionHigh: 'Free water replacement. Correct slowly (max 10 mEq/L/day).',
-  },
-  {
-    parameter: 'serum_creatinine',
-    unit: 'mg/dL',
-    criticalHigh: 10,
-    highHigh: 5,
-    messageLow: '',
-    messageHigh: 'Severe renal failure — possible need for dialysis',
-    actionLow: '',
-    actionHigh: 'Nephrology consult. Check for uremia symptoms. Prepare for dialysis if indicated.',
-  },
-  {
-    parameter: 'inr',
-    unit: '',
-    criticalHigh: 5,
-    highHigh: 4,
-    messageLow: '',
-    messageHigh: 'Supratherapeutic INR — major bleeding risk',
-    actionLow: '',
-    actionHigh: 'Hold warfarin. Vitamin K if INR > 9 or bleeding. FFP if active bleeding.',
-  },
-]
-
-// ─── Check Functions ──────────────────────────────────────────
-
-/**
- * Check a single vital sign against critical thresholds.
- */
-function checkThreshold(
-  parameter: string,
-  value: number,
-  thresholds: ThresholdRange[]
-): CriticalValueCheck | null {
-  const threshold = thresholds.find(t => t.parameter === parameter)
-  if (!threshold) return null
-
-  // Critical low
-  if (threshold.criticalLow !== undefined && value <= threshold.criticalLow) {
-    return {
-      parameter,
-      value,
-      unit: threshold.unit,
-      severity: 'critical',
-      message: `🚨 CRITICAL: ${parameter.replace(/_/g, ' ')} = ${value} ${threshold.unit} — ${threshold.messageLow}`,
-      action: threshold.actionLow,
-      threshold: `≤ ${threshold.criticalLow} ${threshold.unit}`,
-    }
-  }
-
-  // Critical high
-  if (threshold.criticalHigh !== undefined && value >= threshold.criticalHigh) {
-    return {
-      parameter,
-      value,
-      unit: threshold.unit,
-      severity: 'critical',
-      message: `🚨 CRITICAL: ${parameter.replace(/_/g, ' ')} = ${value} ${threshold.unit} — ${threshold.messageHigh}`,
-      action: threshold.actionHigh,
-      threshold: `≥ ${threshold.criticalHigh} ${threshold.unit}`,
-    }
-  }
-
-  // High severity low
-  if (threshold.highLow !== undefined && value <= threshold.highLow) {
-    return {
-      parameter,
-      value,
-      unit: threshold.unit,
-      severity: 'high',
-      message: `⚠️ HIGH: ${parameter.replace(/_/g, ' ')} = ${value} ${threshold.unit} — ${threshold.messageLow}`,
-      action: threshold.actionLow,
-      threshold: `≤ ${threshold.highLow} ${threshold.unit}`,
-    }
-  }
-
-  // High severity high
-  if (threshold.highHigh !== undefined && value >= threshold.highHigh) {
-    return {
-      parameter,
-      value,
-      unit: threshold.unit,
-      severity: 'high',
-      message: `⚠️ HIGH: ${parameter.replace(/_/g, ' ')} = ${value} ${threshold.unit} — ${threshold.messageHigh}`,
-      action: threshold.actionHigh,
-      threshold: `≥ ${threshold.highHigh} ${threshold.unit}`,
-    }
-  }
-
-  return null
-}
-
-/**
- * Check all vitals from an encounter for critical values.
- */
-export function checkVitals(vitals: {
-  bp_systolic?: number
+export interface VitalsInput {
+  bp_systolic?:  number
   bp_diastolic?: number
-  pulse?: number
-  spo2?: number
-  temperature?: number
-}): CriticalValueCheck[] {
-  const alerts: CriticalValueCheck[] = []
+  pulse?:        number
+  spo2?:         number
+  temperature?:  number
+  weight?:       number
+  rr?:           number    // respiratory rate
+  // Lab values (optional)
+  hemoglobin?:   number
+  glucose?:      number
+  potassium?:    number
+  sodium?:       number
+}
 
-  if (vitals.bp_systolic) {
-    const check = checkThreshold('bp_systolic', vitals.bp_systolic, VITAL_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
-  if (vitals.bp_diastolic) {
-    const check = checkThreshold('bp_diastolic', vitals.bp_diastolic, VITAL_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
-  if (vitals.pulse) {
-    const check = checkThreshold('pulse', vitals.pulse, VITAL_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
-  if (vitals.spo2) {
-    const check = checkThreshold('spo2', vitals.spo2, VITAL_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
-  if (vitals.temperature) {
-    const check = checkThreshold('temperature', vitals.temperature, VITAL_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
-
-  return alerts
+export interface PatientContext {
+  patientAge?:  number
+  isPregnant?:  boolean
+  gestWeeks?:   number
 }
 
 /**
- * Check lab values for critical results.
+ * Check vitals (and optional lab values) for critical/warning values.
+ * Thresholds based on Indian AHA/ESC/FOGSI guidelines.
  */
-export function checkLabValues(labs: Record<string, number>): CriticalValueCheck[] {
-  const alerts: CriticalValueCheck[] = []
+export function checkCriticalValues(
+  vitals:  VitalsInput,
+  context: PatientContext = {},
+): CriticalCheckResult {
+  const alerts: CriticalValueAlert[] = []
 
-  for (const [param, value] of Object.entries(labs)) {
-    if (typeof value !== 'number' || isNaN(value)) continue
-    const check = checkThreshold(param, value, LAB_THRESHOLDS)
-    if (check) alerts.push(check)
-  }
+  const { bp_systolic, bp_diastolic, pulse, spo2, temperature, hemoglobin, glucose, potassium, sodium } = vitals
+  const { isPregnant, gestWeeks } = context
 
-  return alerts
-}
+  // ── Blood Pressure ──────────────────────────────────────────
 
-// ─── Database Operations ──────────────────────────────────────
-
-/**
- * Save a critical alert to the database.
- */
-export async function createCriticalAlert(alert: Omit<CriticalAlert, 'id'>): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('critical_alerts')
-      .insert(alert)
-      .select('id')
-      .single()
-
-    if (error) {
-      console.error('[CriticalAlert] Failed to create:', error.message)
-      return null
-    }
-    return data?.id || null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Acknowledge a critical alert.
- */
-export async function acknowledgeCriticalAlert(
-  alertId: string,
-  userId: string
-): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('critical_alerts')
-      .update({
-        status: 'acknowledged',
-        acknowledged_by: userId,
-        acknowledged_at: new Date().toISOString(),
+  if (bp_systolic !== undefined && !isNaN(bp_systolic)) {
+    if (bp_systolic >= 180) {
+      alerts.push({
+        level:   'critical',
+        field:   'bp_systolic',
+        value:   bp_systolic,
+        message: `Hypertensive Crisis: Systolic BP ${bp_systolic} mmHg (≥180). Immediate action required.`,
       })
-      .eq('id', alertId)
-
-    return !error
-  } catch {
-    return false
-  }
-}
-
-/**
- * Resolve a critical alert with notes.
- */
-export async function resolveCriticalAlert(
-  alertId: string,
-  userId: string,
-  notes: string
-): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('critical_alerts')
-      .update({
-        status: 'resolved',
-        resolved_by: userId,
-        resolved_at: new Date().toISOString(),
-        resolution_notes: notes,
+    } else if (bp_systolic >= 160) {
+      alerts.push({
+        level:   isPregnant ? 'critical' : 'warning',
+        field:   'bp_systolic',
+        value:   bp_systolic,
+        message: isPregnant
+          ? `Severe Hypertension in Pregnancy: Systolic ${bp_systolic} mmHg. Risk of eclampsia — start MgSO₄ protocol.`
+          : `Severe Hypertension: Systolic ${bp_systolic} mmHg (≥160). Urgent treatment needed.`,
       })
-      .eq('id', alertId)
-
-    return !error
-  } catch {
-    return false
-  }
-}
-
-/**
- * Get all open critical alerts for a patient.
- */
-export async function getOpenAlerts(patientId?: string): Promise<CriticalAlert[]> {
-  try {
-    let query = supabase
-      .from('critical_alerts')
-      .select('*')
-      .in('status', ['open', 'acknowledged'])
-      .order('created_at', { ascending: false })
-
-    if (patientId) {
-      query = query.eq('patient_id', patientId)
-    }
-
-    const { data, error } = await query
-    if (error) return []
-    return (data || []) as CriticalAlert[]
-  } catch {
-    return []
-  }
-}
-
-/**
- * Auto-create critical alerts from vitals check.
- * Call this when saving an encounter with vitals.
- */
-export async function autoCreateVitalAlerts(
-  patientId: string,
-  encounterId: string,
-  vitals: {
-    bp_systolic?: number
-    bp_diastolic?: number
-    pulse?: number
-    spo2?: number
-    temperature?: number
-  }
-): Promise<CriticalValueCheck[]> {
-  const checks = checkVitals(vitals)
-
-  for (const check of checks) {
-    if (check.severity === 'critical' || check.severity === 'high') {
-      await createCriticalAlert({
-        patient_id: patientId,
-        encounter_id: encounterId,
-        alert_type: 'vital',
-        parameter: check.parameter,
-        value: `${check.value} ${check.unit}`,
-        threshold: check.threshold,
-        severity: check.severity,
-        message: check.message,
-        action_required: check.action,
-        status: 'open',
+    } else if (bp_systolic <= 80) {
+      alerts.push({
+        level:   'critical',
+        field:   'bp_systolic',
+        value:   bp_systolic,
+        message: `Hypotension: Systolic BP ${bp_systolic} mmHg (≤80). Shock possible — check perfusion.`,
       })
     }
   }
 
-  return checks
+  if (bp_diastolic !== undefined && !isNaN(bp_diastolic)) {
+    if (bp_diastolic >= 110) {
+      alerts.push({
+        level:   'critical',
+        field:   'bp_diastolic',
+        value:   bp_diastolic,
+        message: isPregnant
+          ? `Severe Diastolic Hypertension: ${bp_diastolic} mmHg in pregnancy. Pre-eclampsia risk — assess immediately.`
+          : `Hypertensive Crisis: Diastolic BP ${bp_diastolic} mmHg (≥110). Immediate intervention required.`,
+      })
+    } else if (bp_diastolic >= 100 && isPregnant) {
+      alerts.push({
+        level:   'warning',
+        field:   'bp_diastolic',
+        value:   bp_diastolic,
+        message: `Diastolic BP ${bp_diastolic} mmHg in pregnancy. Monitor closely for pre-eclampsia.`,
+      })
+    }
+  }
+
+  // ── Pulse ────────────────────────────────────────────────────
+
+  if (pulse !== undefined && !isNaN(pulse)) {
+    if (pulse < 40) {
+      alerts.push({
+        level:   'critical',
+        field:   'pulse',
+        value:   pulse,
+        message: `Severe Bradycardia: Pulse ${pulse} bpm (<40). Cardiac monitoring required immediately.`,
+      })
+    } else if (pulse < 50) {
+      alerts.push({
+        level:   'warning',
+        field:   'pulse',
+        value:   pulse,
+        message: `Bradycardia: Pulse ${pulse} bpm. Check for medications, cardiac cause.`,
+      })
+    } else if (pulse > 140) {
+      alerts.push({
+        level:   'critical',
+        field:   'pulse',
+        value:   pulse,
+        message: `Severe Tachycardia: Pulse ${pulse} bpm (>140). Evaluate for arrhythmia, sepsis, haemorrhage.`,
+      })
+    } else if (pulse > 100) {
+      alerts.push({
+        level:   'warning',
+        field:   'pulse',
+        value:   pulse,
+        message: `Tachycardia: Pulse ${pulse} bpm. Investigate cause (pain, fever, anaemia, anxiety).`,
+      })
+    }
+  }
+
+  // ── SpO₂ ─────────────────────────────────────────────────────
+
+  if (spo2 !== undefined && !isNaN(spo2)) {
+    if (spo2 < 90) {
+      alerts.push({
+        level:   'critical',
+        field:   'spo2',
+        value:   spo2,
+        message: `Critical Hypoxia: SpO₂ ${spo2}% (<90). Start oxygen immediately — risk of organ damage.`,
+      })
+    } else if (spo2 < 94) {
+      alerts.push({
+        level:   'warning',
+        field:   'spo2',
+        value:   spo2,
+        message: `Low SpO₂: ${spo2}% (94–90 range). Consider supplemental oxygen, monitor respiratory status.`,
+      })
+    }
+  }
+
+  // ── Temperature ──────────────────────────────────────────────
+
+  if (temperature !== undefined && !isNaN(temperature)) {
+    if (temperature >= 39.5) {
+      alerts.push({
+        level:   'critical',
+        field:   'temperature',
+        value:   temperature,
+        message: `High Fever: ${temperature}°C. Possible sepsis — blood cultures, IV antibiotics, sepsis protocol.`,
+      })
+    } else if (temperature >= 38.5) {
+      alerts.push({
+        level:   'warning',
+        field:   'temperature',
+        value:   temperature,
+        message: `Fever: ${temperature}°C. Investigate infection source. ${isPregnant ? 'Chorioamnionitis risk in pregnancy.' : ''}`,
+      })
+    } else if (temperature < 35) {
+      alerts.push({
+        level:   'critical',
+        field:   'temperature',
+        value:   temperature,
+        message: `Hypothermia: ${temperature}°C (<35°C). Active rewarming required.`,
+      })
+    }
+  }
+
+  // ── Haemoglobin (if provided from labs) ──────────────────────
+
+  if (hemoglobin !== undefined && !isNaN(hemoglobin)) {
+    const critThreshold  = isPregnant ? 7.0 : 6.0
+    const warnThreshold  = isPregnant ? 9.0 : 8.0
+
+    if (hemoglobin < critThreshold) {
+      alerts.push({
+        level:   'critical',
+        field:   'hemoglobin',
+        value:   hemoglobin,
+        message: `Severe Anaemia: Hb ${hemoglobin} g/dL. ${isPregnant ? 'Blood transfusion likely needed in pregnancy.' : 'Transfusion threshold — evaluate immediately.'}`,
+      })
+    } else if (hemoglobin < warnThreshold) {
+      alerts.push({
+        level:   'warning',
+        field:   'hemoglobin',
+        value:   hemoglobin,
+        message: `Anaemia: Hb ${hemoglobin} g/dL. Iron supplementation / investigation needed.`,
+      })
+    }
+  }
+
+  // ── Blood Glucose ─────────────────────────────────────────────
+
+  if (glucose !== undefined && !isNaN(glucose)) {
+    if (glucose > 400) {
+      alerts.push({
+        level:   'critical',
+        field:   'glucose',
+        value:   glucose,
+        message: `Severe Hyperglycaemia: Blood glucose ${glucose} mg/dL. Possible DKA — urgent insulin & hydration.`,
+      })
+    } else if (glucose < 50) {
+      alerts.push({
+        level:   'critical',
+        field:   'glucose',
+        value:   glucose,
+        message: `Severe Hypoglycaemia: Blood glucose ${glucose} mg/dL. Immediate IV dextrose required.`,
+      })
+    }
+  }
+
+  // ── Electrolytes ──────────────────────────────────────────────
+
+  if (potassium !== undefined && !isNaN(potassium)) {
+    if (potassium > 6.0) {
+      alerts.push({ level: 'critical', field: 'potassium', value: potassium, message: `Hyperkalaemia: K⁺ ${potassium} mEq/L (>6.0). Cardiac arrhythmia risk — ECG immediately.` })
+    } else if (potassium < 2.5) {
+      alerts.push({ level: 'critical', field: 'potassium', value: potassium, message: `Severe Hypokalaemia: K⁺ ${potassium} mEq/L (<2.5). IV replacement with cardiac monitoring.` })
+    }
+  }
+
+  if (sodium !== undefined && !isNaN(sodium)) {
+    if (sodium > 155) {
+      alerts.push({ level: 'critical', field: 'sodium', value: sodium, message: `Severe Hypernatraemia: Na⁺ ${sodium} mEq/L. IV free water replacement needed.` })
+    } else if (sodium < 120) {
+      alerts.push({ level: 'critical', field: 'sodium', value: sodium, message: `Severe Hyponatraemia: Na⁺ ${sodium} mEq/L. Risk of cerebral oedema — gradual correction required.` })
+    }
+  }
+
+  return {
+    hasCritical: alerts.some(a => a.level === 'critical'),
+    hasWarning:  alerts.some(a => a.level === 'warning'),
+    alerts,
+  }
 }

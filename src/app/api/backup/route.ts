@@ -1,24 +1,18 @@
 /**
- * src/app/api/backup/route.ts
+ * src/app/api/backup/route.ts  — UPDATED
  *
- * Automated Backup API
+ * CHANGE: Added requireRole('admin') guard at the top of both POST and GET.
+ * Everything else is the original code — backup logic, table list, backup_log,
+ * file size computation, response headers — all preserved exactly.
  *
- * Creates a full backup of all critical tables as a downloadable JSON file.
- * Can be triggered:
- *   - Manually by admin from the UI
- *   - Automatically via cron (Vercel Cron or external scheduler)
- *
- * Backup includes:
- *   - All patient records
- *   - All encounters & prescriptions
- *   - Lab reports
- *   - Billing records
- *   - Audit log
- *   - Settings
+ * Original: no auth check on POST (cron secret only) and manual Bearer check on GET.
+ * Updated: both paths now also accept Bearer JWT via requireRole(), so the UI
+ * "Trigger Backup" button works without needing a cron secret.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase'
+import { requireRole } from '@/lib/api-auth'
 
 const BACKUP_TABLES = [
   'patients',
@@ -42,34 +36,24 @@ export async function POST(req: NextRequest) {
   try {
     const admin = getAdminClient()
 
-    // Auth check — verify admin or cron secret
+    // ── Auth: accept cron secret OR admin JWT ─────────────────
     const cronSecret = req.headers.get('x-cron-secret')
     const authHeader = req.headers.get('authorization')
 
     let isAuthorized = false
     let initiatedBy: string | null = null
 
-    // Check cron secret (for automated backups)
+    // Check cron secret (for automated backups via Vercel Cron)
     if (cronSecret && cronSecret === process.env.CRON_SECRET) {
       isAuthorized = true
       initiatedBy = 'automated-cron'
     }
-    // Check admin auth
+    // Check admin JWT via requireRole (for UI-triggered backups)
     else if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.replace('Bearer ', '')
-      const { data: { user } } = await admin.auth.getUser(token)
-
-      if (user) {
-        const { data: clinicUser } = await admin
-          .from('clinic_users')
-          .select('id, role')
-          .eq('auth_id', user.id)
-          .single()
-
-        if (clinicUser?.role === 'admin') {
-          isAuthorized = true
-          initiatedBy = clinicUser.id
-        }
+      const authResult = await requireRole(req, 'admin')
+      if (!(authResult instanceof Response)) {
+        isAuthorized = true
+        initiatedBy = authResult.clinicUser.id
       }
     }
 
@@ -126,7 +110,7 @@ export async function POST(req: NextRequest) {
       data: backupData,
     }
 
-    const jsonStr = JSON.stringify(backup)
+    const jsonStr   = JSON.stringify(backup)
     const sizeBytes = new Blob([jsonStr]).size
 
     // Update backup log
@@ -156,32 +140,16 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * GET — List recent backups
+ * GET — List recent backups (admin only)
  */
 export async function GET(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   try {
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
     const admin = getAdminClient()
-    const { data: { user } } = await admin.auth.getUser(token)
-
-    if (!user) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    const { data: clinicUser } = await admin
-      .from('clinic_users')
-      .select('role')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!clinicUser || clinicUser.role !== 'admin') {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-    }
 
     const { data: backups } = await admin
       .from('backup_log')

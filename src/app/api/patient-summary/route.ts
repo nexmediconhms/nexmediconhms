@@ -1,7 +1,21 @@
+/**
+ * src/app/api/patient-summary/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard. The full original AI prompt — encounter
+ * lines, prescription lines, discharge line, OB data, 3-5 sentence prose — is
+ * preserved exactly.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth } from '@/lib/api-auth'
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   if (!hasAnyAIKey()) {
     return NextResponse.json({
       error: 'No AI key configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env.local.',
@@ -17,9 +31,9 @@ export async function POST(req: NextRequest) {
   if (!patient) return NextResponse.json({ error: 'Patient data required' }, { status: 400 })
 
   const encLines = (encounters ?? []).slice(0, 10).map((e: any, i: number) => {
-    const ob = e.ob_data ?? {}
+    const ob    = e.ob_data ?? {}
     const obStr = ob.lmp ? ` | LMP ${ob.lmp}, FHS ${ob.fhs ?? '-'} bpm` : ''
-    return `${i+1}. ${e.encounter_date}: ${e.chief_complaint ?? '-'} | Dx: ${e.diagnosis ?? '-'} | BP ${e.bp_systolic ?? '-'}/${e.bp_diastolic ?? '-'}${obStr}`
+    return `${i + 1}. ${e.encounter_date}: ${e.chief_complaint ?? '-'} | Dx: ${e.diagnosis ?? '-'} | BP ${e.bp_systolic ?? '-'}/${e.bp_diastolic ?? '-'}${obStr}`
   }).join('\n')
 
   const rxLines = (prescriptions ?? []).slice(0, 3).map((rx: any) => {

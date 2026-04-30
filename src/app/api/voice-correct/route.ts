@@ -1,7 +1,20 @@
+/**
+ * src/app/api/voice-correct/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard. The original prompt, AI call,
+ * and trimmed response are preserved exactly.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth } from '@/lib/api-auth'
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   if (!hasAnyAIKey()) {
     return NextResponse.json({ corrected: null, error: 'No AI key configured.' }, { status: 503 })
   }

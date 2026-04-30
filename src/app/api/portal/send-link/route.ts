@@ -1,46 +1,28 @@
 /**
- * src/app/api/portal/send-link/route.ts
+ * src/app/api/portal/send-link/route.ts  — UPDATED
  *
- * POST /api/portal/send-link
- *
- * Generates a magic-link portal token for a patient and (optionally)
- * returns a WhatsApp deep-link to send it.
- *
- * Body: { patient_id, mrn, mobile, patient_name }
- * Auth: requires valid clinic user JWT (admin or staff)
- *
- * The token:
- *  - Is stored in `portal_tokens` table
- *  - Expires in 24 hours
- *  - Is single-use (is_used flag)
- *
- * Requirement #5 — patient-direct portal access without staff interference
+ * CHANGE: Replaced the manual inline Bearer token check and supabase.auth.getUser()
+ * with requireAuth() so auth logic is consistent. Everything else — expire-old-tokens
+ * query, new token insert, WhatsApp message format, 24-hour expiry — is preserved.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
-const supabaseUrl     = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const serviceKey      = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const siteUrl         = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
-const hospitalName    = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
+const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const siteUrl      = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
+const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
-  // Auth check
-  const authHeader = req.headers.get('authorization')
-  const token      = authHeader?.split(' ')[1]
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-  if (authErr || !user) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-  }
-
-  // Parse body
   let body: any
   try { body = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
@@ -71,7 +53,7 @@ export async function POST(req: NextRequest) {
       token:       portalToken,
       expires_at:  expiresAt,
       is_used:     false,
-      created_by:  user.id,
+      created_by:  auth.user.id,
     })
 
   if (insertErr) {
@@ -82,18 +64,18 @@ export async function POST(req: NextRequest) {
   const portalUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
 
   // Build WhatsApp message
-  const firstName   = (patient_name || 'Patient').split(' ')[0]
-  const waMessage   = `Namaste ${firstName} ji,\n\nYou can now view your health records, prescriptions, upcoming appointments, and bills securely:\n\n▶ ${portalUrl}\n\nThis link is valid for 24 hours. Do not share it with others.\n\n— ${hospitalName}`
-  const waNumber    = mobile ? mobile.replace(/\D/g, '').slice(-10) : ''
-  const waLink      = waNumber
+  const firstName = (patient_name || 'Patient').split(' ')[0]
+  const waMessage = `Namaste ${firstName} ji,\n\nYou can now view your health records, prescriptions, upcoming appointments, and bills securely:\n\n▶ ${portalUrl}\n\nThis link is valid for 24 hours. Do not share it with others.\n\n— ${hospitalName}`
+  const waNumber  = mobile ? mobile.replace(/\D/g, '').slice(-10) : ''
+  const waLink    = waNumber
     ? `https://wa.me/91${waNumber}?text=${encodeURIComponent(waMessage)}`
     : null
 
   return NextResponse.json({
-    success:    true,
-    portal_url: portalUrl,
-    expires_at: expiresAt,
+    success:       true,
+    portal_url:    portalUrl,
+    expires_at:    expiresAt,
     whatsapp_link: waLink,
-    message:    waMessage,
+    message:       waMessage,
   })
 }

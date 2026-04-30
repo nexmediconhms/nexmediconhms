@@ -1,54 +1,31 @@
 /**
- * src/app/api/export/route.ts
+ * src/app/api/export/route.ts  — UPDATED
  *
- * Full Data Export API
- *
- * Exports all patient data in JSON or CSV format.
- * Admin-only endpoint for data portability compliance.
- *
- * Supports:
- *   - Full export (all tables)
- *   - Per-table export
- *   - FHIR-compliant patient bundles
- *   - Date range filtering
+ * CHANGE: Replaced manual inline auth check with requireRole('admin').
+ * Everything else is the original code — table list, date filtering, CSV
+ * multi-table format, JSON bundle with metadata — all preserved exactly.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase'
+import { requireRole } from '@/lib/api-auth'
+import { audit } from '@/lib/audit'
 
 export async function GET(req: NextRequest) {
+  // ── Auth gate: admin only ────────────────────────────────────
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   try {
-    // Auth check — only admin can export
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
     const admin = getAdminClient()
-
-    const { data: { user }, error: authError } = await admin.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    // Check admin role
-    const { data: clinicUser } = await admin
-      .from('clinic_users')
-      .select('role')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!clinicUser || clinicUser.role !== 'admin') {
-      return NextResponse.json({ error: 'Admin access required for data export' }, { status: 403 })
-    }
 
     // Parse query params
     const { searchParams } = new URL(req.url)
     const format = searchParams.get('format') || 'json'  // 'json' or 'csv'
-    const table = searchParams.get('table') || 'all'
-    const from = searchParams.get('from')  // ISO date
-    const to = searchParams.get('to')      // ISO date
+    const table  = searchParams.get('table')  || 'all'
+    const from   = searchParams.get('from')             // ISO date
+    const to     = searchParams.get('to')               // ISO date
 
     const tables = table === 'all'
       ? ['patients', 'encounters', 'prescriptions', 'lab_reports', 'bills', 'patient_allergies', 'appointments']
@@ -61,22 +38,23 @@ export async function GET(req: NextRequest) {
         let query = admin.from(t).select('*')
 
         if (from) query = query.gte('created_at', from)
-        if (to) query = query.lte('created_at', to)
+        if (to)   query = query.lte('created_at', to)
 
         query = query.order('created_at', { ascending: false })
 
         const { data, error } = await query
-        if (!error && data) {
-          exportData[t] = data
-        }
+        if (!error && data) exportData[t] = data
       } catch {
         exportData[t] = []
       }
     }
 
-    // Format response
+    // Audit the export
+    const totalRecords = Object.values(exportData).reduce((s, r) => s + r.length, 0)
+    await audit('export', 'patient', undefined, `${table} (${totalRecords} records)`)
+
+    // CSV format
     if (format === 'csv') {
-      // Convert to CSV
       const csvParts: string[] = []
       for (const [tableName, rows] of Object.entries(exportData)) {
         if (rows.length === 0) continue
@@ -106,7 +84,7 @@ export async function GET(req: NextRequest) {
     // JSON format
     const exportBundle = {
       exportedAt: new Date().toISOString(),
-      exportedBy: user.email,
+      exportedBy: auth.user.email,
       system: 'NexMedicon HMS',
       version: '2.0',
       tables: Object.keys(exportData),

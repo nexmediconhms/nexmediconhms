@@ -1,26 +1,26 @@
+/**
+ * src/app/api/reminders/send-all/route.ts  — UPDATED
+ *
+ * CHANGE: Added requireAuth() guard. The full original body shape, batch ID
+ * generation, per-reminder source-table update, reminder_log insert, and
+ * success/failure count response are preserved exactly.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
-/**
- * POST /api/reminders/send-all
- *
- * Bulk-marks all (or filtered) pending reminders as "sent".
- * For each reminder it:
- *   1. Updates the source table's reminder_sent_at column
- *   2. Logs the send in reminder_log table
- *   3. Returns WhatsApp URLs so the client can open them in sequence
- *
- * Body (optional):
- *   { types?: string[], ids?: string[] }
- *   - types: filter by reminder type (e.g., ["appointment", "anc"])
- *   - ids: specific reminder IDs to mark as sent
- */
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   try {
     const body = await req.json().catch(() => ({}))
     const { reminders = [], sentBy = 'bulk' } = body as {
@@ -42,10 +42,9 @@ export async function POST(req: NextRequest) {
     }
 
     const batchId = crypto.randomUUID()
-    const now = new Date().toISOString()
+    const now     = new Date().toISOString()
     const results: { id: string; success: boolean; error?: string }[] = []
 
-    // Process each reminder
     for (const r of reminders) {
       try {
         // 1. Update source table's reminder_sent_at (if applicable)
@@ -56,7 +55,6 @@ export async function POST(req: NextRequest) {
             .update({ reminder_sent_at: now })
             .eq('id', r.sourceId)
 
-          // Also mark appointments reminder_sent = true
           if (r.sourceTable === 'appointments') {
             await supabase
               .from('appointments')
@@ -67,18 +65,18 @@ export async function POST(req: NextRequest) {
 
         // 2. Log in reminder_log
         await supabase.from('reminder_log').insert({
-          patient_id: r.patientId,
-          patient_name: r.patientName,
-          mobile: r.mobile,
-          reminder_type: r.type,
-          source_table: r.sourceTable,
-          source_id: r.sourceId,
+          patient_id:      r.patientId,
+          patient_name:    r.patientName,
+          mobile:          r.mobile,
+          reminder_type:   r.type,
+          source_table:    r.sourceTable,
+          source_id:       r.sourceId,
           message_preview: (r.messagePreview || '').slice(0, 200),
-          channel: 'whatsapp',
-          status: 'sent',
-          sent_at: now,
-          sent_by: sentBy,
-          batch_id: batchId,
+          channel:         'whatsapp',
+          status:          'sent',
+          sent_at:         now,
+          sent_by:         sentBy,
+          batch_id:        batchId,
         })
 
         results.push({ id: r.id, success: true })
@@ -88,13 +86,13 @@ export async function POST(req: NextRequest) {
     }
 
     const successCount = results.filter(r => r.success).length
-    const failCount = results.filter(r => !r.success).length
+    const failCount    = results.filter(r => !r.success).length
 
     return NextResponse.json({
       ok: true,
       batchId,
-      total: reminders.length,
-      sent: successCount,
+      total:  reminders.length,
+      sent:   successCount,
       failed: failCount,
       results,
     })
