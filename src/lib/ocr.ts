@@ -123,7 +123,13 @@ export interface OCRPrescriptionData {
 }
 
 // Union type — the OCR API returns one of these based on form_type
-export type OCRFormType = 'patient_registration' | 'opd_consultation' | 'anc_card' | 'lab_report' | 'prescription'
+export type OCRFormType = 'patient_registration' | 'opd_consultation' | 'anc_card' | 'lab_report' | 'prescription' | 'vitals'
+
+export interface OCRClinicalData {
+  chief_complaint?: string
+  diagnosis?: string
+  clinical_notes?: string
+}
 
 export interface OCRResult {
   form_type: OCRFormType
@@ -132,6 +138,7 @@ export interface OCRResult {
   raw_text: string             // full raw OCR text for debugging
   patient?: OCRPatientData
   vitals?: OCRVitalsData
+  clinical?: OCRClinicalData 
   ob_data?: OCROBData
   lab?: OCRLabData
   prescription?: OCRPrescriptionData
