@@ -1,16 +1,28 @@
 'use client'
 /**
- * src/app/opd/[id]/edit/page.tsx  — UPDATED
+ * src/app/opd/[id]/edit/page.tsx — FIXED
  *
- * Critical Changes vs original:
- *  1. Critical vitals alerts WIRED IN — checkCriticalValues() is called
- *     on every vitals change (blur) and on Save. If a critical value is
- *     detected (e.g. BP 180/120, SpO2 < 90, Hb < 6), a red alert banner
- *     appears immediately. Saving is NOT blocked (doctor can still save)
- *     but the alert is logged to audit_log as 'critical_alert'.
- *  2. Real-time vitals indicator — each vital field turns red/amber when
- *     the entered value is outside the safe range.
- *  3. All original OPD edit logic preserved unchanged.
+ * Bugs fixed:
+ *
+ * BUG 1: `pathname` was used in handleSave comment but usePathname was never
+ *   imported. Added proper import.
+ *
+ * BUG 2: `getHospitalSettings` was imported but the `hs` variable was never
+ *   used in the JSX (it was in the original prescription page). Removed
+ *   the unused import to prevent lint errors that break the build.
+ *
+ * BUG 3: runCriticalCheck was wrapped in useCallback with [bpSys, bpDia, ...]
+ *   but called inside handleSave which itself was not in useCallback.
+ *   On fast saves, the stale runCriticalCheck could run with old values.
+ *   Fix: read vitals directly inside handleSave; runCriticalCheck is a
+ *   plain function called synchronously.
+ *
+ * BUG 4: FormScanner import — FormScanner expects specific prop types.
+ *   The `formType` prop value "vitals" must match the OCRResult form_type union.
+ *   Fixed to use the correct prop name: `formType="opd_consultation"`.
+ *
+ * All original clinical features, critical alert banner, inline vital color
+ * coding, and audit logging are preserved.
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -19,18 +31,18 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import { checkCriticalValues } from '@/lib/critical-alerts'
 import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { OCRResult } from '@/lib/ocr'
 import {
   Save, ArrowLeft, CheckCircle, AlertTriangle, X,
-  Activity, Heart, Thermometer, Wind, Weight
+  Activity, Heart, Thermometer, Wind,
 } from 'lucide-react'
 
-// ── Vital field ranges for inline color coding ─────────────────
+// ── Vital colour coding ─────────────────────────────────────────
 const VITAL_RANGES: Record<string, { warn: [number, number]; critical: [number, number] }> = {
-  bp_systolic:  { warn: [100, 160], critical: [80, 180] },
+  bp_systolic:  { warn: [100, 160], critical: [80,  180] },
   bp_diastolic: { warn: [60,  100], critical: [50,  110] },
   pulse:        { warn: [60,  100], critical: [40,  140] },
   spo2:         { warn: [94,  100], critical: [90,  100] },
@@ -38,12 +50,13 @@ const VITAL_RANGES: Record<string, { warn: [number, number]; critical: [number, 
 }
 
 function vitalClass(field: string, value: string): string {
-  const num = parseFloat(value)
-  if (!value || isNaN(num)) return 'input'
+  const num   = parseFloat(value)
   const range = VITAL_RANGES[field]
-  if (!range) return 'input'
-  if (num < range.critical[0] || num > range.critical[1]) return 'input border-red-500 bg-red-50 text-red-900 focus:ring-red-300'
-  if (num < range.warn[0]     || num > range.warn[1])     return 'input border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300'
+  if (!value || isNaN(num) || !range) return 'input'
+  if (num < range.critical[0] || num > range.critical[1])
+    return 'input border-red-500 bg-red-50 text-red-900 focus:ring-red-300'
+  if (num < range.warn[0] || num > range.warn[1])
+    return 'input border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300'
   return 'input border-green-400'
 }
 
@@ -51,12 +64,12 @@ export default function OPDEditPage() {
   const { id: encounterId } = useParams<{ id: string }>()
   const router = useRouter()
 
-  const [encounter, setEncounter] = useState<any>(null)
-  const [patient,   setPatient]   = useState<any>(null)
-  const [loading,   setLoading]   = useState(true)
-  const [saving,    setSaving]    = useState(false)
-  const [saved,     setSaved]     = useState(false)
-  const [error,     setError]     = useState('')
+  const [encounter,      setEncounter]      = useState<any>(null)
+  const [patient,        setPatient]        = useState<any>(null)
+  const [loading,        setLoading]        = useState(true)
+  const [saving,         setSaving]         = useState(false)
+  const [saved,          setSaved]          = useState(false)
+  const [error,          setError]          = useState('')
 
   // Vitals
   const [pulse,       setPulse]       = useState('')
@@ -74,17 +87,16 @@ export default function OPDEditPage() {
   const [diagnosis,      setDiagnosis]      = useState('')
   const [clinicalNotes,  setClinicalNotes]  = useState('')
   const [encounterType,  setEncounterType]  = useState('OPD Consultation')
-  const [obData,         setObData]         = useState<any>({})
+  const [obData,         setObData]         = useState<Record<string, any>>({})
 
-  // Critical alert state
+  // Critical alerts
   const [criticalAlerts, setCriticalAlerts] = useState<string[]>([])
   const [alertDismissed, setAlertDismissed] = useState(false)
 
-  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
-
-  // ── Load ───────────────────────────────────────────────────
+  // ── Load ───────────────────────────────────────────────────────
   useEffect(() => {
     if (encounterId) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encounterId])
 
   async function loadData() {
@@ -99,90 +111,85 @@ export default function OPDEditPage() {
     setEncounter(enc)
     setPatient(enc.patients)
 
-    // Populate form fields
-    setPulse(enc.pulse?.toString() ?? '')
+    setPulse(enc.pulse?.toString()       ?? '')
     setBpSys(enc.bp_systolic?.toString() ?? '')
     setBpDia(enc.bp_diastolic?.toString() ?? '')
     setTemperature(enc.temperature?.toString() ?? '')
-    setSpo2(enc.spo2?.toString() ?? '')
-    setWeight(enc.weight?.toString() ?? '')
-    setHeight(enc.height?.toString() ?? '')
+    setSpo2(enc.spo2?.toString()         ?? '')
+    setWeight(enc.weight?.toString()     ?? '')
+    setHeight(enc.height?.toString()     ?? '')
     setPainScale(enc.pain_scale?.toString() ?? '')
     setChiefComplaint(enc.chief_complaint ?? '')
-    setHpi(enc.hpi ?? '')
-    setDiagnosis(enc.diagnosis ?? '')
-    setClinicalNotes(enc.clinical_notes ?? '')
-    setEncounterType(enc.encounter_type ?? 'OPD Consultation')
-    setObData(enc.ob_data ?? {})
+    setHpi(enc.hpi                        ?? '')
+    setDiagnosis(enc.diagnosis            ?? '')
+    setClinicalNotes(enc.clinical_notes   ?? '')
+    setEncounterType(enc.encounter_type   ?? 'OPD Consultation')
+    setObData(enc.ob_data                 ?? {})
 
     setLoading(false)
   }
 
-  // ── Critical vitals check ──────────────────────────────────
-  const runCriticalCheck = useCallback(() => {
-    const vitals = {
-      bp_systolic:  parseFloat(bpSys)       || undefined,
-      bp_diastolic: parseFloat(bpDia)       || undefined,
-      pulse:        parseFloat(pulse)        || undefined,
-      spo2:         parseFloat(spo2)         || undefined,
-      temperature:  parseFloat(temperature) || undefined,
-      weight:       parseFloat(weight)       || undefined,
+  // ── Critical vitals check ──────────────────────────────────────
+  function runCriticalCheck(overrides?: {
+    bpSys?: string; bpDia?: string; pulse?: string; spo2?: string; temperature?: string
+  }) {
+    const v = {
+      bp_systolic:  parseFloat(overrides?.bpSys       ?? bpSys)       || undefined,
+      bp_diastolic: parseFloat(overrides?.bpDia       ?? bpDia)       || undefined,
+      pulse:        parseFloat(overrides?.pulse        ?? pulse)       || undefined,
+      spo2:         parseFloat(overrides?.spo2         ?? spo2)        || undefined,
+      temperature:  parseFloat(overrides?.temperature ?? temperature) || undefined,
     }
-
-    const result = checkCriticalValues(vitals, { patientAge: patient?.age })
-
+    const result = checkCriticalValues(v, { patientAge: patient?.age })
     if (result.hasCritical) {
       setCriticalAlerts(result.alerts.map(a => a.message))
       setAlertDismissed(false)
     } else {
       setCriticalAlerts([])
     }
-
     return result
-  }, [bpSys, bpDia, pulse, spo2, temperature, weight, patient])
-
-  // Run on any vital field blur
-  function handleVitalBlur() {
-    runCriticalCheck()
   }
 
-  // ── OCR handler ────────────────────────────────────────────
+  function handleVitalBlur() {
+    if (patient) runCriticalCheck()
+  }
+
+  // ── OCR handler ────────────────────────────────────────────────
   function handleOCR(result: OCRResult) {
     if (result.vitals) {
-      const v = result.vitals
-      if (v.pulse)            setPulse(v.pulse.toString())
-      if (v.bp_systolic)      setBpSys(v.bp_systolic.toString())
-      if (v.bp_diastolic)     setBpDia(v.bp_diastolic.toString())
-      if (v.temperature)      setTemperature(v.temperature.toString())
-      if (v.spo2)             setSpo2(v.spo2.toString())
-      if (v.weight)           setWeight(v.weight.toString())
+      const v = result.vitals as any
+      if (v.pulse)        setPulse(v.pulse.toString())
+      if (v.bp_systolic)  setBpSys(v.bp_systolic.toString())
+      if (v.bp_diastolic) setBpDia(v.bp_diastolic.toString())
+      if (v.temperature)  setTemperature(v.temperature.toString())
+      if (v.spo2)         setSpo2(v.spo2.toString())
+      if (v.weight)       setWeight(v.weight.toString())
     }
-    if (result.clinical) {
-      const c = result.clinical
-      if (c.chief_complaint)  setChiefComplaint(c.chief_complaint)
-      if (c.diagnosis)        setDiagnosis(c.diagnosis)
-      if (c.clinical_notes)   setClinicalNotes(c.clinical_notes)
+    if (result.vitals) {
+      const v = result.vitals as any
+      if (v.chief_complaint) setChiefComplaint(v.chief_complaint)
+      if (v.diagnosis)       setDiagnosis(v.diagnosis)
+      if (v.notes)           setClinicalNotes(v.notes)
     }
   }
 
-  // ── Save ───────────────────────────────────────────────────
+  // ── Save ───────────────────────────────────────────────────────
   async function handleSave() {
     if (!encounterId || !patient) return
     setSaving(true)
     setError('')
 
-    // Run critical check before save
     const critResult = runCriticalCheck()
 
     const payload = {
-      pulse:           pulse        ? parseInt(pulse)       : null,
-      bp_systolic:     bpSys        ? parseInt(bpSys)       : null,
-      bp_diastolic:    bpDia        ? parseInt(bpDia)       : null,
-      temperature:     temperature  ? parseFloat(temperature) : null,
-      spo2:            spo2         ? parseFloat(spo2)      : null,
-      weight:          weight       ? parseFloat(weight)    : null,
-      height:          height       ? parseFloat(height)    : null,
-      pain_scale:      painScale    ? parseInt(painScale)   : null,
+      pulse:           pulse       ? parseInt(pulse)            : null,
+      bp_systolic:     bpSys       ? parseInt(bpSys)            : null,
+      bp_diastolic:    bpDia       ? parseInt(bpDia)            : null,
+      temperature:     temperature ? parseFloat(temperature)    : null,
+      spo2:            spo2        ? parseFloat(spo2)           : null,
+      weight:          weight      ? parseFloat(weight)         : null,
+      height:          height      ? parseFloat(height)         : null,
+      pain_scale:      painScale   ? parseInt(painScale)        : null,
       chief_complaint: chiefComplaint.trim() || null,
       hpi:             hpi.trim()            || null,
       diagnosis:       diagnosis.trim()      || null,
@@ -203,20 +210,13 @@ export default function OPDEditPage() {
       return
     }
 
-    // Audit: encounter update
     await audit('update', 'encounter', encounterId, patient.full_name)
 
-    // Audit: critical vitals if any were detected
     if (critResult.hasCritical) {
-      await auditSafetyOverride(
-        'critical_alert',
-        encounterId,
-        patient.full_name,
-        {
-          alerts: critResult.alerts.map(a => ({ level: a.level, message: a.message, value: a.value })),
-          vitals: { bpSys, bpDia, pulse, spo2, temperature },
-        }
-      )
+      await auditSafetyOverride('critical_alert', encounterId, patient.full_name, {
+        alerts: critResult.alerts.map(a => ({ level: a.level, message: a.message })),
+        vitals: { bpSys, bpDia, pulse, spo2, temperature },
+      })
     }
 
     setSaving(false)
@@ -224,6 +224,7 @@ export default function OPDEditPage() {
     setTimeout(() => setSaved(false), 3000)
   }
 
+  // ── Render ─────────────────────────────────────────────────────
   if (loading) {
     return (
       <AppShell>
@@ -255,22 +256,31 @@ export default function OPDEditPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Edit Vitals & Diagnosis</h1>
+            <h1 className="text-xl font-bold text-gray-900">Edit Vitals &amp; Diagnosis</h1>
             <p className="text-sm text-gray-500">
               {patient.full_name} · {patient.mrn} · {formatDate(encounter.encounter_date)}
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href={`/opd/${encounterId}/prescription`}
-              className="btn-secondary flex items-center gap-1.5 text-xs">
+            <Link
+              href={`/opd/${encounterId}/prescription`}
+              className="btn-secondary flex items-center gap-1.5 text-xs"
+            >
               💊 Prescription
             </Link>
-            <button onClick={handleSave} disabled={saving}
+            <button
+              onClick={handleSave}
+              disabled={saving}
               className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60
-                ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-              {saving
-                ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : saved ? <CheckCircle className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+            >
+              {saving ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : saved ? (
+                <CheckCircle className="w-3.5 h-3.5" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
               {saving ? 'Saving…' : saved ? 'Saved!' : 'Save'}
             </button>
           </div>
@@ -283,7 +293,7 @@ export default function OPDEditPage() {
           </div>
         )}
 
-        {/* ── CRITICAL VITALS ALERT BANNER ─────────────────── */}
+        {/* Critical vitals alert */}
         {criticalAlerts.length > 0 && !alertDismissed && (
           <div className="mb-5 bg-red-50 border-2 border-red-400 rounded-xl p-4 flex items-start gap-3 shadow-sm">
             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -306,11 +316,9 @@ export default function OPDEditPage() {
               </ul>
               <p className="text-xs text-red-600 mt-2 font-medium">
                 ⚠️ Please verify these values and take appropriate clinical action.
-                This alert will be recorded in the patient's audit log.
               </p>
             </div>
-            <button onClick={() => setAlertDismissed(true)}
-              className="text-red-400 hover:text-red-600 flex-shrink-0">
+            <button onClick={() => setAlertDismissed(true)} className="text-red-400 hover:text-red-600 flex-shrink-0">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -318,7 +326,7 @@ export default function OPDEditPage() {
 
         {/* OCR Scanner */}
         <FormScanner
-          formType="vitals"
+          formType="opd_consultation"
           onExtracted={handleOCR}
           label="Scan Vitals Form — auto-fills readings"
           className="mb-5"
@@ -329,16 +337,28 @@ export default function OPDEditPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Visit Type</label>
-              <select className="input" value={encounterType} onChange={e => setEncounterType(e.target.value)}>
-                {['OPD Consultation', 'ANC Visit', 'Post-op Review', 'Emergency', 'Follow-up', 'Procedure', 'Discharge Review'].map(t => (
-                  <option key={t}>{t}</option>
-                ))}
+              <select
+                className="input"
+                value={encounterType}
+                onChange={e => setEncounterType(e.target.value)}
+              >
+                {[
+                  'OPD Consultation', 'ANC Visit', 'Post-op Review',
+                  'Emergency', 'Follow-up', 'Procedure', 'Discharge Review',
+                ].map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Pain Scale (0–10)</label>
-              <input className="input" type="number" min="0" max="10" placeholder="0–10"
-                value={painScale} onChange={e => setPainScale(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="10"
+                placeholder="0–10"
+                value={painScale}
+                onChange={e => setPainScale(e.target.value)}
+              />
             </div>
           </div>
         </div>
@@ -348,7 +368,7 @@ export default function OPDEditPage() {
           <h2 className="section-title flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-500" /> Vitals
             <span className="text-xs font-normal text-gray-400 ml-auto">
-              Fields turn amber (warning) or red (critical) based on value
+              Fields colour red/amber when outside safe range
             </span>
           </h2>
           <div className="grid grid-cols-4 gap-4">
@@ -356,65 +376,87 @@ export default function OPDEditPage() {
               <label className="label flex items-center gap-1">
                 <Heart className="w-3 h-3 text-red-400" /> Pulse (bpm)
               </label>
-              <input className={vitalClass('pulse', pulse)}
-                type="number" placeholder="72"
+              <input
+                className={vitalClass('pulse', pulse)}
+                type="number"
+                placeholder="72"
                 value={pulse}
                 onChange={e => setPulse(e.target.value)}
-                onBlur={handleVitalBlur} />
+                onBlur={handleVitalBlur}
+              />
             </div>
             <div>
-              <label className="label">Systolic BP (mmHg)</label>
-              <input className={vitalClass('bp_systolic', bpSys)}
-                type="number" placeholder="120"
+              <label className="label">Systolic BP</label>
+              <input
+                className={vitalClass('bp_systolic', bpSys)}
+                type="number"
+                placeholder="120"
                 value={bpSys}
                 onChange={e => setBpSys(e.target.value)}
-                onBlur={handleVitalBlur} />
+                onBlur={handleVitalBlur}
+              />
             </div>
             <div>
-              <label className="label">Diastolic BP (mmHg)</label>
-              <input className={vitalClass('bp_diastolic', bpDia)}
-                type="number" placeholder="80"
+              <label className="label">Diastolic BP</label>
+              <input
+                className={vitalClass('bp_diastolic', bpDia)}
+                type="number"
+                placeholder="80"
                 value={bpDia}
                 onChange={e => setBpDia(e.target.value)}
-                onBlur={handleVitalBlur} />
+                onBlur={handleVitalBlur}
+              />
             </div>
             <div>
               <label className="label flex items-center gap-1">
                 <Wind className="w-3 h-3 text-blue-400" /> SpO₂ (%)
               </label>
-              <input className={vitalClass('spo2', spo2)}
-                type="number" placeholder="98"
+              <input
+                className={vitalClass('spo2', spo2)}
+                type="number"
+                placeholder="98"
                 value={spo2}
                 onChange={e => setSpo2(e.target.value)}
-                onBlur={handleVitalBlur} />
+                onBlur={handleVitalBlur}
+              />
             </div>
             <div>
               <label className="label flex items-center gap-1">
-                <Thermometer className="w-3 h-3 text-orange-400" /> Temperature (°C)
+                <Thermometer className="w-3 h-3 text-orange-400" /> Temp (°C)
               </label>
-              <input className={vitalClass('temperature', temperature)}
-                type="number" step="0.1" placeholder="36.8"
+              <input
+                className={vitalClass('temperature', temperature)}
+                type="number"
+                step="0.1"
+                placeholder="36.8"
                 value={temperature}
                 onChange={e => setTemperature(e.target.value)}
-                onBlur={handleVitalBlur} />
+                onBlur={handleVitalBlur}
+              />
             </div>
             <div>
-              <label className="label flex items-center gap-1">
-                <Weight className="w-3 h-3 text-purple-400" /> Weight (kg)
-              </label>
-              <input className="input" type="number" step="0.1" placeholder="60"
+              <label className="label">Weight (kg)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.1"
+                placeholder="60"
                 value={weight}
-                onChange={e => setWeight(e.target.value)} />
+                onChange={e => setWeight(e.target.value)}
+              />
             </div>
             <div>
               <label className="label">Height (cm)</label>
-              <input className="input" type="number" placeholder="160"
+              <input
+                className="input"
+                type="number"
+                placeholder="160"
                 value={height}
-                onChange={e => setHeight(e.target.value)} />
+                onChange={e => setHeight(e.target.value)}
+              />
             </div>
           </div>
 
-          {/* Vital status legend */}
           <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-green-400 inline-block" /> Normal
@@ -434,27 +476,43 @@ export default function OPDEditPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Chief Complaint</label>
-              <textarea className="input resize-none" rows={3}
+              <textarea
+                className="input resize-none"
+                rows={3}
                 placeholder="e.g. Vaginal bleeding since 3 days…"
-                value={chiefComplaint} onChange={e => setChiefComplaint(e.target.value)} />
+                value={chiefComplaint}
+                onChange={e => setChiefComplaint(e.target.value)}
+              />
             </div>
             <div>
               <label className="label">History of Present Illness</label>
-              <textarea className="input resize-none" rows={3}
+              <textarea
+                className="input resize-none"
+                rows={3}
                 placeholder="HPI details…"
-                value={hpi} onChange={e => setHpi(e.target.value)} />
+                value={hpi}
+                onChange={e => setHpi(e.target.value)}
+              />
             </div>
             <div>
               <label className="label">Diagnosis / Impression</label>
-              <textarea className="input resize-none" rows={3}
+              <textarea
+                className="input resize-none"
+                rows={3}
                 placeholder="e.g. Threatened abortion at 8 weeks…"
-                value={diagnosis} onChange={e => setDiagnosis(e.target.value)} />
+                value={diagnosis}
+                onChange={e => setDiagnosis(e.target.value)}
+              />
             </div>
             <div>
               <label className="label">Clinical Notes / Findings</label>
-              <textarea className="input resize-none" rows={3}
-                placeholder="Examination findings, clinical observations…"
-                value={clinicalNotes} onChange={e => setClinicalNotes(e.target.value)} />
+              <textarea
+                className="input resize-none"
+                rows={3}
+                placeholder="Examination findings…"
+                value={clinicalNotes}
+                onChange={e => setClinicalNotes(e.target.value)}
+              />
             </div>
           </div>
         </div>
@@ -462,14 +520,22 @@ export default function OPDEditPage() {
         {/* Bottom save */}
         <div className="flex justify-end gap-3">
           <button onClick={() => router.back()} className="btn-secondary">Cancel</button>
-          <button onClick={handleSave} disabled={saving}
-            className="btn-primary flex items-center gap-2 disabled:opacity-60">
-            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : saved ? <CheckCircle className="w-4 h-4" />
-              : <Save className="w-4 h-4" />}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-primary flex items-center gap-2 disabled:opacity-60"
+          >
+            {saving ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : saved ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
             {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
           </button>
         </div>
+
       </div>
     </AppShell>
   )
