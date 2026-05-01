@@ -64,9 +64,9 @@ export interface ObstetricEntry {
 
 export interface AbortionEntry {
   type?:      'Spontaneous' | 'Induced' | ''
-  weeks?:     string
-  method?:    'Medicines' | 'Surgery' | ''
-  years_ago?: string
+  weeks?:     string   // gestational age in weeks at time of abortion
+  method?:    'MTP Kit' | 'D&C' | 'Suction Evacuation' | 'Natural' | 'Surgical' | 'Medicines' | 'Surgery' | ''
+  years_ago?: string   // actual year it occurred (e.g. "2019") — field name kept for backward compat
 }
 
 export interface OBData {

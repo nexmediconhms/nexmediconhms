@@ -745,10 +745,150 @@ export default function NewConsultationPage() {
                     <label className="label capitalize">{k}</label>
                     <input className={oc(k)} type="number" min="0" placeholder="0"
                       value={(ob as any)[k] ?? ''}
-                      onChange={e => setO(k, parseInt(e.target.value) || 0)} />
+                      onChange={e => {
+                        const val = parseInt(e.target.value) || 0
+                        setO(k, val)
+                        // ── Auto-sync abortion entries when count changes ──
+                        if (k === 'abortion') {
+                          const current = ob.abortion_entries || []
+                          if (val > current.length) {
+                            // Add blank entries to match count
+                            const toAdd = Array.from({ length: val - current.length }, () => ({
+                              type: '' as AbortionEntry['type'],
+                              weeks: '',
+                              method: '' as AbortionEntry['method'],
+                              years_ago: '',
+                            }))
+                            setO('abortion_entries', [...current, ...toAdd])
+                          } else if (val < current.length) {
+                            // Trim extra entries
+                            setO('abortion_entries', current.slice(0, val))
+                          }
+                        }
+                      }} />
                   </div>
                 ))}
               </div>
+
+              {/* ── Abortion Details — inline, auto-shown when abortion > 0 ── */}
+              {(ob.abortion ?? 0) > 0 && (
+                <div className="mt-4 border border-orange-200 rounded-xl bg-orange-50/40 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-orange-800 flex items-center gap-2">
+                      📋 Abortion Details
+                      <span className="text-xs font-normal text-orange-600">
+                        — {ob.abortion} {(ob.abortion ?? 0) === 1 ? 'entry' : 'entries'} (fill details below)
+                      </span>
+                    </h3>
+                    {/* Allow manual add if count doesn't match */}
+                    {(ob.abortion_entries || []).length < (ob.abortion ?? 0) && (
+                      <button type="button"
+                        className="text-xs btn-secondary py-1 px-3"
+                        onClick={() => setO('abortion_entries', [
+                          ...(ob.abortion_entries || []),
+                          { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
+                        ])}>
+                        + Add Entry
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Column headers */}
+                  <div className="hidden sm:grid grid-cols-4 gap-3 text-xs font-semibold text-orange-700 uppercase tracking-wide mb-2 px-1">
+                    <span>1. Type</span>
+                    <span>2. Duration (weeks)</span>
+                    <span>3. Method</span>
+                    <span>4. Year</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(ob.abortion_entries || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-4 gap-3 items-end border border-orange-200 rounded-lg px-3 py-3 bg-white relative">
+
+                        {/* Remove button */}
+                        <button type="button"
+                          className="absolute top-1.5 right-2 text-red-400 hover:text-red-600 text-xs font-bold leading-none"
+                          title="Remove this entry"
+                          onClick={() => {
+                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
+                            setO('abortion_entries', updated)
+                            setO('abortion', updated.length)
+                          }}>✕</button>
+
+                        {/* Abortion number label */}
+                        <div className="absolute -left-3 -top-2 w-5 h-5 bg-orange-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold">
+                          {idx + 1}
+                        </div>
+
+                        {/* 1. Type — Spontaneous or Induced */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Type</label>
+                          <select className="input bg-white text-sm"
+                            value={entry.type || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select type…</option>
+                            <option value="Spontaneous">Spontaneous</option>
+                            <option value="Induced">Induced</option>
+                          </select>
+                        </div>
+
+                        {/* 2. Duration in weeks */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Duration (weeks)</label>
+                          <input className="input text-sm" type="number" min="4" max="28"
+                            placeholder="e.g. 8"
+                            value={entry.weeks || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], weeks: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                          <p className="text-[10px] text-gray-400 mt-0.5">gestation at time of abortion</p>
+                        </div>
+
+                        {/* 3. Method — MTP Kit, D&C, etc. */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Method</label>
+                          <select className="input bg-white text-sm"
+                            value={entry.method || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select method…</option>
+                            <option value="MTP Kit">MTP Kit</option>
+                            <option value="D&C">D&amp;C (Dilation &amp; Curettage)</option>
+                            <option value="Suction Evacuation">Suction Evacuation (MVA)</option>
+                            <option value="Natural">Natural / Expectant</option>
+                            <option value="Surgical">Surgical (Other)</option>
+                          </select>
+                        </div>
+
+                        {/* 4. Year */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Year</label>
+                          <input className="input text-sm" type="number"
+                            min="1970" max={new Date().getFullYear()}
+                            placeholder={`e.g. ${new Date().getFullYear() - 2}`}
+                            value={entry.years_ago || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                          <p className="text-[10px] text-gray-400 mt-0.5">year it occurred</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ── Per-pregnancy details table (NEW) ── */}
               <div className="mt-5">
@@ -851,93 +991,6 @@ export default function NewConsultationPage() {
                 )}
               </div>
             </div>
-
-            {/* ── ABORTION DETAILS (NEW) — shown only when abortion > 0 ── */}
-            {(ob.abortion ?? 0) > 0 && (
-              <div className="card p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="section-title mb-0">Abortion Details</h2>
-                  <button type="button"
-                    className="text-xs btn-secondary py-1 px-3"
-                    onClick={() => {
-                      setO('abortion_entries', [
-                        ...(ob.abortion_entries || []),
-                        { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
-                      ])
-                    }}>
-                    + Add Entry
-                  </button>
-                </div>
-
-                {(!ob.abortion_entries || ob.abortion_entries.length === 0) ? (
-                  <p className="text-xs text-gray-400 italic">Click "+ Add Entry" to record abortion details.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {(ob.abortion_entries || []).map((entry, idx) => (
-                      <div key={idx}
-                        className="grid grid-cols-4 gap-3 border border-gray-200 rounded-lg p-3 bg-gray-50 relative">
-                        <button type="button"
-                          className="absolute top-2 right-2 text-red-400 hover:text-red-600 text-xs font-bold"
-                          onClick={() => {
-                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
-                            setO('abortion_entries', updated)
-                          }}>✕</button>
-                        <div>
-                          <label className="label">Type</label>
-                          <select className="input bg-white"
-                            value={entry.type || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
-                              setO('abortion_entries', updated)
-                            }}>
-                            <option value="">Select</option>
-                            <option>Spontaneous</option>
-                            <option>Induced</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label">At Weeks (gestation)</label>
-                          <input className="input" type="number" min="4" max="28"
-                            placeholder="e.g. 8"
-                            value={entry.weeks || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], weeks: e.target.value }
-                              setO('abortion_entries', updated)
-                            }} />
-                        </div>
-                        <div>
-                          <label className="label">Method</label>
-                          <select className="input bg-white"
-                            value={entry.method || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
-                              setO('abortion_entries', updated)
-                            }}>
-                            <option value="">Select</option>
-                            <option>Medicines</option>
-                            <option>Surgery</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label">How Many Years Ago</label>
-                          <input className="input" type="number" min="0" max="50"
-                            placeholder="e.g. 2"
-                            value={entry.years_ago || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
-                              setO('abortion_entries', updated)
-                            }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* B — ANC */}
             <div className="card p-5">
