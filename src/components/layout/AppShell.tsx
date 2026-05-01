@@ -33,6 +33,8 @@ import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
+import SessionTimeout from './SessionTimeout'; 
+import VoiceAssistant from '../voice/VoiceAssistant'; 
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -300,9 +302,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <MobileNav />
 
-        {/* ── Uncomment these when the files exist: ────────── */}
-        {/* <SessionTimeout /> */}
-        {/* <VoiceAssistant /> */}
+       {/* ── Uncomment these when the files exist: ────────── */}
+      <SessionTimeout />
+      <VoiceAssistant />
+
 
       </div>
     </AuthContext.Provider>

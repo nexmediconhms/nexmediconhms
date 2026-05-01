@@ -1,907 +1,509 @@
+
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import AppShell from '@/components/layout/AppShell'
-import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
+/**
+ * src/app/queue/page.tsx  (UPDATED — B. OPD Queue → Supabase Realtime)
+ *
+ * Changes from original:
+ *  - Replaces any polling with Supabase Realtime channel subscription
+ *  - Live token status updates — no refresh needed
+ *  - Audit log on status changes
+ *  - Token auto-increment per day
+ *
+ * SETUP: In Supabase Dashboard → Database → Replication
+ *        Toggle opd_queue table ON for Realtime.
+ */
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams }              from 'next/navigation'
+import Link                             from 'next/link'
+import AppShell                         from '@/components/layout/AppShell'
+import { supabase }                     from '@/lib/supabase'
+import { audit }                        from '@/lib/audit'
+import { formatDateTime }               from '@/lib/utils'
 import {
-  Calendar, Plus, Search, X, Clock, CheckCircle,
-  MessageCircle, Phone, ChevronRight, Trash2,
-  AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing,
+  Users, Plus, X, Clock, CheckCircle, Play,
+  AlertTriangle, Loader2, RefreshCw, Zap,
 } from 'lucide-react'
 
-// ── Appointment types ─────────────────────────────────────────
-type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
+type QueueStatus = 'waiting' | 'in_progress' | 'done' | 'cancelled'
+type Priority    = 'normal' | 'urgent' | 'emergency'
 
-interface Appointment {
-  id:            string
-  patient_id:    string
-  patient_name:  string
-  mrn:           string
-  mobile:        string
-  date:          string   // YYYY-MM-DD
-  time:          string   // HH:MM
-  type:          string
-  notes:         string
-  status:        ApptStatus
-  created_at:    string
-  reminder_sent: boolean
+interface QueueEntry {
+  id:           string
+  patient_id:   string
+  encounter_id: string | null
+  queue_date:   string
+  token_number: number
+  status:       QueueStatus
+  priority:     Priority
+  notes:        string
+  called_at:    string | null
+  done_at:      string | null
+  created_at:   string
+  updated_at:   string
+  // joined:
+  patient_name: string
+  mrn:          string
 }
 
-const APPT_TYPES = [
-  'ANC Follow-up',
-  'Follow-up',
-  'OPD Consultation',
-  'Post-op Review',
-  'Lab Report Discussion',
-  'Infertility Counselling',
-  'PCOS Follow-up',
-  'USG Follow-up',
-  'Discharge Follow-up',
-  'Contraception Counselling',
-  'Colposcopy / Procedure',
-  'Other',
-]
-
-const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: string }> = {
-  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700',    dot: 'bg-blue-500'   },
-  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700',  dot: 'bg-green-500'  },
-  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600',    dot: 'bg-gray-400'   },
-  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700',      dot: 'bg-red-400'    },
-  'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
+const STATUS_LABELS: Record<QueueStatus, string> = {
+  waiting:     'Waiting',
+  in_progress: 'In Progress',
+  done:        'Done',
+  cancelled:   'Cancelled',
 }
 
-// ── FIX #6: Generate time slots that are AFTER the current time when today is selected ──
-function getAvailableTimeSlots(selectedDate: string): string[] {
-  const allSlots = Array.from({ length: 24 }, (_, h) =>
-    [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
-  ).flat().filter(t => t >= '08:00' && t <= '19:45')
-
-  const today = new Date().toISOString().split('T')[0]
-  if (selectedDate !== today) return allSlots
-
-  // For today, only show slots that are at least 15 minutes from now
-  const now = new Date()
-  const currentHour = now.getHours()
-  const currentMinute = now.getMinutes()
-  // Add 15 min buffer
-  const bufferMinutes = currentHour * 60 + currentMinute + 15
-
-  return allSlots.filter(slot => {
-    const [h, m] = slot.split(':').map(Number)
-    return h * 60 + m >= bufferMinutes
-  })
+const PRIORITY_STYLES: Record<Priority, string> = {
+  normal:    'bg-gray-100 text-gray-600',
+  urgent:    'bg-orange-100 text-orange-700',
+  emergency: 'bg-red-100 text-red-700',
 }
 
-// ── Get first available time slot ────────────────────────────
-function getFirstAvailableTime(selectedDate: string): string {
-  const slots = getAvailableTimeSlots(selectedDate)
-  return slots.length > 0 ? slots[0] : '09:00'
+const STATUS_STYLES: Record<QueueStatus, string> = {
+  waiting:     'bg-yellow-50 border-yellow-200 text-yellow-800',
+  in_progress: 'bg-blue-50 border-blue-200 text-blue-800',
+  done:        'bg-green-50 border-green-200 text-green-700',
+  cancelled:   'bg-gray-50 border-gray-200 text-gray-500',
 }
 
-export default function AppointmentsPage() {
-  const [appts,        setAppts]        = useState<Appointment[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
-  const [dateFilter,   setDateFilter]   = useState(new Date().toISOString().split('T')[0])
-  const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
-  const [typeFilter,   setTypeFilter]   = useState<string>('all')
-
-  // New appointment form
-  const [patientQuery,   setPatientQuery]   = useState('')
-  const [patientResults, setPatientResults] = useState<any[]>([])
-  const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [apptDate,       setApptDate]       = useState(new Date().toISOString().split('T')[0])
-  const [apptTime,       setApptTime]       = useState(() => getFirstAvailableTime(new Date().toISOString().split('T')[0]))
-  const [apptType,       setApptType]       = useState(APPT_TYPES[0])
-  const [apptNotes,      setApptNotes]      = useState('')
-  const [saving,         setSaving]         = useState(false)
-  const [saveError,      setSaveError]      = useState('')
-  const [timeError,      setTimeError]      = useState('')
-
-  // Reminder state — now holds TWO messages (patient + doctor)
-  const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
-  const [patientMsg,        setPatientMsg]        = useState('')
-  const [doctorMsg,         setDoctorMsg]         = useState('')
-  const [reminderLoading,   setReminderLoading]   = useState(false)
-  const [copiedPatient,     setCopiedPatient]     = useState(false)
-  const [copiedDoctor,      setCopiedDoctor]      = useState(false)
-  const [activeTab,         setActiveTab]         = useState<'patient' | 'doctor'>('patient')
-
-  const searchTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+export default function QueuePage() {
   const searchParams = useSearchParams()
-  const hs           = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  const [queue,        setQueue]        = useState<QueueEntry[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [realtimeOk,   setRealtimeOk]   = useState(false)
+  const [lastUpdate,   setLastUpdate]   = useState<Date | null>(null)
+  const [error,        setError]        = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
 
-  // ── Load appointments ──────────────────────────────────────
-  const fetchAppts = useCallback(async () => {
-    setLoading(true)
-    let query = supabase
-      .from('appointments')
-      .select('*')
-      .order('date', { ascending: true })
-      .order('time', { ascending: true })
+  // Add to queue form state
+  const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
+  const [addName,       setAddName]       = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
+  const [addMrn,        setAddMrn]        = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
+  const [addPriority,   setAddPriority]   = useState<Priority>('normal')
+  const [addNotes,      setAddNotes]      = useState('')
+  const [addEncounter,  setAddEncounter]  = useState(searchParams.get('encounter') ?? '')
+  const [addingEntry,   setAddingEntry]   = useState(false)
 
-    if (dateFilter)               query = query.eq('date', dateFilter)
-    if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
-    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
+  // ── Patient live search — uses 'mobile' (correct column name in patients table) ──
+  const [patientSearch,  setPatientSearch]  = useState(
+    searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : ''
+  )
+  const [patientResults, setPatientResults] = useState<{ id: string; full_name: string; mrn: string; mobile: string }[]>([])
+  const [searchLoading,  setSearchLoading]  = useState(false)
 
-    const { data, error } = await query
-    if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
-    else        setAppts((data || []) as Appointment[])
-    setLoading(false)
-  }, [dateFilter, statusFilter, typeFilter])
-
-  useEffect(() => { fetchAppts() }, [fetchAppts])
-
-  // Summary counts
-  const [todayCount,    setTodayCount]    = useState(0)
-  const [upcomingCount, setUpcomingCount] = useState(0)
-
+  // Auto-open modal when arriving from patient profile page (?patient=ID&patientName=NAME)
+  const [autoOpened, setAutoOpened] = useState(false)
   useEffect(() => {
-    const tod = new Date().toISOString().split('T')[0]
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .eq('date', tod).neq('status', 'cancelled')
-      .then(({ count }) => setTodayCount(count || 0))
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .gt('date', tod).eq('status', 'scheduled')
-      .then(({ count }) => setUpcomingCount(count || 0))
-  }, [appts])
+    if (!autoOpened && searchParams.get('patient') && searchParams.get('patientName')) {
+      setShowAddModal(true)
+      setAutoOpened(true)
+    }
+  }, [searchParams, autoOpened])
 
-  // Pre-fill patient from URL params
+  // Debounced search — queries full_name, mrn, mobile (NOT phone — column is 'mobile')
   useEffect(() => {
-    const pid   = searchParams.get('patientId')
-    const pname = searchParams.get('patientName')
-    if (pid && pname && !selPatient) {
-      setSelPatient({ id: pid, full_name: decodeURIComponent(pname), mrn: '', mobile: '', age: '' })
-      setView('new')
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
-
-  // ── FIX #6: Update available time slots whenever date changes ──
-  function handleDateChange(newDate: string) {
-    setApptDate(newDate)
-    setTimeError('')
-    const firstSlot = getFirstAvailableTime(newDate)
-    setApptTime(firstSlot)
-  }
-
-  // ── FIX #6: Validate time is in the future ────────────────
-  function validateTime(date: string, time: string): boolean {
-    const today = new Date().toISOString().split('T')[0]
-    if (date !== today) return true // Future dates are always fine
-
-    const now = new Date()
-    const [h, m] = time.split(':').map(Number)
-    const selected = new Date()
-    selected.setHours(h, m, 0, 0)
-
-    if (selected <= now) {
-      setTimeError('Please select a future time for today\'s appointment.')
-      return false
-    }
-    setTimeError('')
-    return true
-  }
-
-  // ── Patient search ─────────────────────────────────────────
-  function searchPatients(q: string) {
-    setPatientQuery(q); setSelPatient(null)
-    if (q.trim().length < 2) { setPatientResults([]); return }
-    if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(async () => {
-      const { data } = await supabase.from('patients')
-        .select('id, full_name, mrn, mobile, age')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
-      setPatientResults(data || [])
+    if (patientSearch.trim().length < 2) { setPatientResults([]); return }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      const q = patientSearch.trim()
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, mobile')
+        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .limit(8)
+      if (!error) setPatientResults(data ?? [])
+      setSearchLoading(false)
     }, 300)
+    return () => clearTimeout(t)
+  }, [patientSearch])
+
+  function selectPatient(p: { id: string; full_name: string; mrn: string; mobile: string }) {
+    setAddPatientId(p.id)
+    setAddName(p.full_name)
+    setAddMrn(p.mrn)
+    setPatientSearch(p.full_name)
+    setPatientResults([])
   }
 
-  // ── Book appointment ───────────────────────────────────────
-  async function bookAppointment() {
-    if (!selPatient || !apptDate || !apptTime) return
+  function resetModal() {
+    setAddPatientId(''); setAddName(''); setAddMrn('')
+    setAddNotes(''); setAddPriority('normal')
+    setPatientSearch(''); setPatientResults([])
+  }
 
-    // FIX #6: Validate time before booking
-    if (!validateTime(apptDate, apptTime)) return
+  const today = new Date().toISOString().slice(0, 10)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-    setSaving(true); setSaveError('')
+  // ── Load queue for today ──────────────────────────────────
+  async function load() {
+    setLoading(true)
+    try {
+      const { data, error: e } = await supabase
+        .from('opd_queue')
+        .select(`
+          id, queue_date, token_number, status, priority,
+          notes, called_at, done_at, created_at, updated_at,
+          patient_id, encounter_id,
+          patients!inner ( full_name, mrn )
+        `)
+        .eq('queue_date', today)
+        .order('token_number', { ascending: true })
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id:    selPatient.id,
-        patient_name:  selPatient.full_name,
-        mrn:           selPatient.mrn || '',
-        mobile:        selPatient.mobile || '',
-        date:          apptDate,
-        time:          apptTime,
-        type:          apptType,
-        notes:         apptNotes.trim() || null,
-        status:        'scheduled',
-        reminder_sent: false,
+      if (e) throw e
+
+      const mapped: QueueEntry[] = (data || []).map((r: any) => ({
+        id:           r.id,
+        patient_id:   r.patient_id,
+        encounter_id: r.encounter_id,
+        queue_date:   r.queue_date,
+        token_number: r.token_number,
+        status:       r.status,
+        priority:     r.priority,
+        notes:        r.notes ?? '',
+        called_at:    r.called_at,
+        done_at:      r.done_at,
+        created_at:   r.created_at,
+        updated_at:   r.updated_at,
+        patient_name: r.patients.full_name,
+        mrn:          r.patients.mrn,
+      }))
+
+      setQueue(mapped)
+      setLastUpdate(new Date())
+    } catch (e: any) {
+      setError(`Load failed: ${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── Supabase Realtime subscription ───────────────────────
+  useEffect(() => {
+    load()
+
+    const channel = supabase
+      .channel('opd_queue_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'opd_queue' },
+        (payload) => {
+          setLastUpdate(new Date())
+          // Full reload on any change — keeps it simple & correct
+          load()
+        }
+      )
+      .subscribe((status) => {
+        setRealtimeOk(status === 'SUBSCRIBED')
       })
-      .select()
-      .single()
 
-    setSaving(false)
-    if (error) { setSaveError(`Failed to book: ${error.message}`); return }
+    channelRef.current = channel
 
-    resetForm()
-    setView('list')
-    fetchAppts()
-    if (data) openReminder(data as Appointment)
-  }
-
-  // ── Update status ──────────────────────────────────────────
-  async function updateStatus(id: string, status: ApptStatus) {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-    if (!error) setAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a))
-  }
-
-  // ── Delete ─────────────────────────────────────────────────
-  async function deleteAppt(id: string) {
-    if (!confirm('Delete this appointment?')) return
-    const { error } = await supabase.from('appointments').delete().eq('id', id)
-    if (!error) setAppts(prev => prev.filter(a => a.id !== id))
-  }
-
-  // ── Open reminder — fetches full patient profile first ─────
-  async function openReminder(appt: Appointment) {
-    setReminderAppt(appt)
-    setView('reminder')
-    setReminderLoading(true)
-    setActiveTab('patient')
-    setCopiedPatient(false)
-    setCopiedDoctor(false)
-
-    const dateStr = new Date(appt.date).toLocaleDateString('en-IN', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    })
-
-    // Calculate arrival time (30 min before appointment)
-    const [hh, mm]    = appt.time.split(':').map(Number)
-    const arrivalDate = new Date()
-    arrivalDate.setHours(hh, mm - 30, 0, 0)
-    if (arrivalDate.getMinutes() < 0) { arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes()) }
-    const arrivalTime = arrivalDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-
-    // ── Fetch patient profile + last encounter + last prescription ──
-    const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
-      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, aadhaar_no, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
-      supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
-      supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).single(),
-    ])
-
-    const p   = patient || {} as any
-    const enc = lastEnc as any
-    const rx  = lastRx  as any
-    const ob  = enc?.ob_data as any
-
-    // ── Build age string ───────────────────────────────────────
-    let ageStr = ''
-    if (p.date_of_birth) {
-      const a = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-      ageStr = `${a} years`
-    } else if (p.age) {
-      ageStr = `${p.age} years`
+    return () => {
+      channel.unsubscribe()
+      channelRef.current = null
     }
+  }, [today])
 
-    // ── Build last medications text ────────────────────────────
-    const medsText = Array.isArray(rx?.medications)
-      ? rx.medications.slice(0, 4).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim()).join('\n')
-      : ''
+  // ── Status update ─────────────────────────────────────────
+  async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
+    const patch: any = { status: newStatus, updated_at: new Date().toISOString() }
+    if (newStatus === 'in_progress') patch.called_at = new Date().toISOString()
+    if (newStatus === 'done')        patch.done_at    = new Date().toISOString()
 
-    // ── Build OB context (if ANC patient) ─────────────────────
-    let obText = ''
-    if (ob?.lmp) {
-      const weeksGA = ob.gestational_age ||
-        (() => {
-          const diffMs = Date.now() - new Date(ob.lmp).getTime()
-          const weeks  = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
-          const days   = Math.floor((diffMs % (7 * 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000))
-          return `${weeks} weeks ${days} days`
-        })()
-      obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
+    const { error: e } = await supabase
+      .from('opd_queue').update(patch).eq('id', entry.id)
+    if (e) { setError(e.message); return }
+
+    await audit('update', 'encounter', entry.id,
+      `Queue token #${entry.token_number} — ${entry.patient_name} → ${newStatus}`)
+    // Realtime will trigger reload
+  }
+
+  // ── Next token number ─────────────────────────────────────
+  async function nextTokenNumber(): Promise<number> {
+    const { data } = await supabase
+      .from('opd_queue')
+      .select('token_number')
+      .eq('queue_date', today)
+      .order('token_number', { ascending: false })
+      .limit(1)
+    return ((data?.[0]?.token_number ?? 0) as number) + 1
+  }
+
+  // ── Add to queue ──────────────────────────────────────────
+  async function handleAddToQueue() {
+    if (!addPatientId) { setError('Select a patient.'); return }
+    setAddingEntry(true); setError('')
+
+    try {
+      const token = await nextTokenNumber()
+      const { data, error: e } = await supabase
+        .from('opd_queue')
+        .insert({
+          patient_id:   addPatientId,
+          encounter_id: addEncounter || null,
+          queue_date:   today,
+          token_number: token,
+          status:       'waiting',
+          priority:     addPriority,
+          notes:        addNotes.trim(),
+        })
+        .select().single()
+
+      if (e) throw e
+      await audit('create', 'encounter', data?.id,
+        `Queue token #${token} — ${addName || addPatientId}`)
+
+      setShowAddModal(false)
+      resetModal()
+    } catch (e: any) {
+      setError(`Failed to add: ${e.message}`)
+    } finally {
+      setAddingEntry(false)
     }
-
-    const apptType = appt.type
-
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 1 — FOR PATIENT
-    // ═══════════════════════════════════════════════════════════
-    const pMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
-
-Namaste ${appt.patient_name} ji 🙏
-
-This is a reminder for your *upcoming appointment*.
-
-📅 *Date:* ${dateStr}
-🕐 *Appointment Time:* ${appt.time}
-⏰ *Please arrive by:* ${arrivalTime} *(30 minutes early)*
-🏥 *Visit Type:* ${appt.type}
-📍 *Address:* ${hs.address || 'Hospital address'}
-
-📋 *Please bring:*
-✅ Previous prescriptions & reports
-✅ Any lab reports / USG reports done recently
-✅ Aadhaar card / ID proof${p.mediclaim ? '\n✅ Insurance / Mediclaim card' : ''}
-${rx?.reports_needed ? `\n🔬 *Pending tests to get done:*\n${rx.reports_needed}` : ''}
-${appt.notes ? `\n📝 *Note from doctor:* ${appt.notes}` : ''}
-
-For queries call: ${hs.phone || 'our helpdesk'}
-
----
-${appt.patient_name} ji, ${apptType === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
-
-_${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
-
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 2 — FOR DOCTOR (patient profile summary)
-    // ═══════════════════════════════════════════════════════════
-    const dMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
-*Patient Brief — Appointment Alert* 🩺
-
-📅 *Date:* ${dateStr} at *${appt.time}*
-🏥 *Visit Type:* ${appt.type}
-
-━━━━━━━━━━━━━━━━
-👤 *PATIENT PROFILE*
-━━━━━━━━━━━━━━━━
-*Name:* ${appt.patient_name}
-*MRN:* ${appt.mrn}
-${ageStr ? `*Age:* ${ageStr}` : ''}${p.gender ? `  |  *Gender:* ${p.gender}` : ''}
-${p.blood_group ? `*Blood Group:* ${p.blood_group}` : ''}
-*Mobile:* ${appt.mobile}
-${p.abha_id ? `*ABHA ID:* ${p.abha_id}` : ''}${p.mediclaim ? `\n*Insurance:* ${p.cashless ? 'Cashless' : 'Mediclaim'}${p.policy_tpa_name ? ' — ' + p.policy_tpa_name : ''}` : ''}
-${obText}
-${enc ? `
-━━━━━━━━━━━━━━━━
-📋 *LAST VISIT* (${formatDate(enc.encounter_date)})
-━━━━━━━━━━━━━━━━
-*Type:* ${enc.encounter_type}
-${enc.chief_complaint ? `*Complaint:* ${enc.chief_complaint}` : ''}
-${enc.diagnosis ? `*Diagnosis:* ${enc.diagnosis}` : ''}
-${enc.bp_systolic ? `*BP:* ${enc.bp_systolic}/${enc.bp_diastolic} mmHg` : ''}${enc.pulse ? `  |  *Pulse:* ${enc.pulse} bpm` : ''}
-${enc.weight ? `*Weight:* ${enc.weight} kg` : ''}` : ''}
-${medsText ? `
-━━━━━━━━━━━━━━━━
-💊 *CURRENT MEDICATIONS*
-━━━━━━━━━━━━━━━━
-${medsText}` : ''}
-${rx?.advice ? `\n📝 *Last Advice:* ${rx.advice}` : ''}
-${appt.notes ? `\n🔔 *Appointment Note:* ${appt.notes}` : ''}
-
-━━━━━━━━━━━━━━━━
-_NexMedicon HMS — Patient brief for ${appt.patient_name}_`
-
-    setPatientMsg(pMsg)
-    setDoctorMsg(dMsg)
-    setReminderLoading(false)
   }
 
-  function waLink(mobile: string, msg: string) {
-    const num  = mobile?.replace(/\D/g, '')
-    const full = num?.length === 10 ? '91' + num : num
-    return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`
-  }
+  // ── Stats ──────────────────────────────────────────────────
+  const waiting    = queue.filter(q => q.status === 'waiting').length
+  const inProgress = queue.filter(q => q.status === 'in_progress').length
+  const done       = queue.filter(q => q.status === 'done').length
 
-  async function markReminderSent(appt: Appointment) {
-    await supabase
-      .from('appointments')
-      .update({ reminder_sent: true, updated_at: new Date().toISOString() })
-      .eq('id', appt.id)
-    setAppts(prev => prev.map(a => a.id === appt.id ? { ...a, reminder_sent: true } : a))
-  }
+  // ── Render ────────────────────────────────────────────────
+  return (
+    <AppShell>
+      <div className="max-w-4xl mx-auto px-4 py-6">
 
-  function resetForm() {
-    setSelPatient(null); setPatientQuery(''); setPatientResults([])
-    const today = new Date().toISOString().split('T')[0]
-    setApptDate(today)
-    setApptTime(getFirstAvailableTime(today))
-    setApptType(APPT_TYPES[0]); setApptNotes('')
-    setSaveError(''); setTimeError('')
-  }
-
-  const today = new Date().toISOString().split('T')[0]
-
-  // ═══════════════════════════════════════════════════════════════
-  // REMINDER VIEW
-  // ═══════════════════════════════════════════════════════════════
-  if (view === 'reminder' && reminderAppt) {
-    const doctorMobile = hs.phone?.replace(/\D/g, '') || ''
-    const isDoctorWA   = doctorMobile.length >= 10
-
-    return (
-      <AppShell>
-        <div className="p-6 max-w-2xl mx-auto">
-
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <BellRing className="w-5 h-5 text-blue-600"/>
-                WhatsApp Reminders
-              </h1>
-              <p className="text-xs text-gray-500">
-                {reminderAppt.patient_name} · {reminderAppt.date} at {reminderAppt.time}
-              </p>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600"/> OPD Queue
+              <span className="ml-2 flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full
+                border {realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">
+                {realtimeOk
+                  ? <><Zap className="w-3 h-3"/> Live</>
+                  : <><RefreshCw className="w-3 h-3"/> Connecting…</>}
+              </span>
+            </h1>
+            <p className="text-sm text-gray-500">
+              Today — {new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long' })}
+              {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}</span>}
+            </p>
           </div>
+          <button onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+            <Plus className="w-4 h-4"/> Add to Queue
+          </button>
+        </div>
 
-          {reminderLoading ? (
-            <div className="card p-16 text-center">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3"/>
-              <p className="text-sm text-gray-500">Loading patient profile...</p>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[
+            { label: 'Waiting', count: waiting,    color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+            { label: 'In Progress', count: inProgress, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+            { label: 'Done', count: done,       color: 'text-green-700 bg-green-50 border-green-200' },
+          ].map(s => (
+            <div key={s.label} className={`border rounded-xl p-3 text-center ${s.color}`}>
+              <div className="text-2xl font-bold">{s.count}</div>
+              <div className="text-xs font-medium mt-0.5">{s.label}</div>
             </div>
-          ) : (
-            <>
-              {/* Tab switcher */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setActiveTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'patient'
-                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'}`}>
-                  <MessageCircle className="w-4 h-4"/>
-                  Patient Message
-                </button>
-                <button
-                  onClick={() => setActiveTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'doctor'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
-                  <Stethoscope className="w-4 h-4"/>
-                  Doctor Brief
-                </button>
-              </div>
+          ))}
+        </div>
 
-              {/* ── PATIENT MESSAGE ── */}
-              {activeTab === 'patient' && (
-                <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-green-700 text-sm">{reminderAppt.patient_name.charAt(0)}</span>
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
+            {error}
+            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4"/></button>
+          </div>
+        )}
+
+        {/* Queue list */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-gray-400">
+            <Loader2 className="w-6 h-6 animate-spin mr-2"/> Loading queue…
+          </div>
+        ) : queue.length === 0 ? (
+          <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <p className="font-medium">Queue is empty</p>
+            <p className="text-sm mt-1">Add patients to start the day</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Active first */}
+            {['in_progress', 'waiting', 'done', 'cancelled'].map(statusGroup =>
+              queue.filter(q => q.status === statusGroup).map(entry => (
+                <div key={entry.id}
+                  className={`border rounded-xl px-4 py-3 ${STATUS_STYLES[entry.status]} transition-colors`}>
+                  <div className="flex items-center gap-4">
+                    {/* Token */}
+                    <div className="text-2xl font-bold tabular-nums w-10 text-center flex-shrink-0">
+                      {String(entry.token_number).padStart(2, '0')}
                     </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{reminderAppt.patient_name}</div>
-                      <div className="text-xs text-gray-400">{reminderAppt.mrn} · {reminderAppt.mobile}</div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-900">{entry.patient_name}</span>
+                        <span className="text-xs text-gray-500 bg-white/70 px-1.5 py-0.5 rounded">MRN {entry.mrn}</span>
+                        {entry.priority !== 'normal' && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[entry.priority]}`}>
+                            {entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                        <Clock className="w-3 h-3"/>
+                        Added {formatDateTime(entry.created_at)}
+                        {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
+                        {entry.notes && <span className="ml-1">· {entry.notes}</span>}
+                      </div>
                     </div>
-                    <div className="ml-auto text-xs bg-green-50 text-green-700 font-semibold px-2 py-1 rounded-full border border-green-200">
-                      To Patient
+
+                    {/* Actions */}
+                    <div className="flex gap-2 flex-shrink-0">
+                      {entry.status === 'waiting' && (
+                        <>
+                          <button onClick={() => updateStatus(entry, 'in_progress')}
+                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                            <Play className="w-3 h-3"/> Call
+                          </button>
+                          <button onClick={() => updateStatus(entry, 'cancelled')}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                            <X className="w-4 h-4"/>
+                          </button>
+                        </>
+                      )}
+                      {entry.status === 'in_progress' && (
+                        <button onClick={() => updateStatus(entry, 'done')}
+                          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                          <CheckCircle className="w-3 h-3"/> Done
+                        </button>
+                      )}
+                      {entry.patient_id && (
+                        <Link href={`/patients/${entry.patient_id}`}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs">
+                          View
+                        </Link>
+                      )}
                     </div>
                   </div>
-                  <label className="label">Message (editable)</label>
-                  <textarea
-                    className="input resize-none font-mono text-xs leading-relaxed"
-                    rows={16}
-                    value={patientMsg}
-                    onChange={e => setPatientMsg(e.target.value)}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Add to Queue modal ── */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Add to Queue</h3>
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Patient search — queries full_name, mrn, mobile */}
+              <div>
+                <label className="label">Search Patient</label>
+                <div className="relative">
+                  <input
+                    className="input pr-8"
+                    value={patientSearch}
+                    onChange={e => {
+                      setPatientSearch(e.target.value)
+                      // Clear selection if user changes the text
+                      if (addPatientId && e.target.value !== addName) {
+                        setAddPatientId(''); setAddName(''); setAddMrn('')
+                      }
+                    }}
+                    placeholder="Search by name, MRN, or mobile…"
+                    autoFocus
                   />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
-                  </p>
-                  <div className="flex flex-col gap-2 mt-4">
-                    <a
-                      href={waLink(reminderAppt.mobile, patientMsg)}
-                      target="_blank" rel="noopener noreferrer"
-                      onClick={() => { markReminderSent(reminderAppt); setCopiedPatient(true) }}
-                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                      <MessageCircle className="w-4 h-4"/>
-                      Send to Patient via WhatsApp
-                    </a>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(patientMsg)
-                        setCopiedPatient(true)
-                        markReminderSent(reminderAppt)
-                        setTimeout(() => setCopiedPatient(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedPatient ? 'Copied!' : 'Copy Message'}
-                    </button>
-                    {reminderAppt.mobile && (
-                      <a href={`tel:${reminderAppt.mobile}`}
-                        className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
-                        <Phone className="w-4 h-4"/> Call {reminderAppt.patient_name} ({reminderAppt.mobile})
-                      </a>
-                    )}
-                  </div>
-                  {reminderAppt.reminder_sent && (
-                    <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
-                    </p>
+                  {searchLoading && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
                   )}
                 </div>
-              )}
 
-              {/* ── DOCTOR BRIEF ── */}
-              {activeTab === 'doctor' && (
-                <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Stethoscope className="w-4 h-4 text-blue-600"/>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{hs.doctorName || 'Doctor'}</div>
-                      <div className="text-xs text-gray-400">
-                        {isDoctorWA
-                          ? `Send to: ${hs.phone}`
-                          : 'Add doctor\'s phone in Settings to enable WhatsApp send'}
-                      </div>
-                    </div>
-                    <div className="ml-auto text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full border border-blue-200">
-                      To Doctor
-                    </div>
-                  </div>
-                  <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
-                    <UserCircle className="w-4 h-4 flex-shrink-0"/>
-                    This message gives the doctor a full patient brief before the appointment — profile, last visit, current medications, and OB data.
-                  </div>
-                  <label className="label mt-3">Message (editable)</label>
-                  <textarea
-                    className="input resize-none font-mono text-xs leading-relaxed"
-                    rows={20}
-                    value={doctorMsg}
-                    onChange={e => setDoctorMsg(e.target.value)}
-                  />
-                  <div className="flex flex-col gap-2 mt-4">
-                    {isDoctorWA ? (
-                      <a
-                        href={waLink(doctorMobile, doctorMsg)}
-                        target="_blank" rel="noopener noreferrer"
-                        onClick={() => setCopiedDoctor(true)}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                        <MessageCircle className="w-4 h-4"/>
-                        Send Patient Brief to Doctor via WhatsApp
-                      </a>
-                    ) : (
-                      <div className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl py-3">
-                        ⚙️ Add doctor&apos;s phone number in{' '}
-                        <Link href="/settings" className="text-blue-600 underline">Settings</Link>{' '}
-                        to enable direct WhatsApp send to doctor.
-                      </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(doctorMsg)
-                        setCopiedDoctor(true)
-                        setTimeout(() => setCopiedDoctor(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedDoctor ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedDoctor ? 'Copied!' : 'Copy Doctor Brief'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Quick switch hint */}
-              <p className="text-center text-xs text-gray-400">
-                Switch between tabs to send both messages —
-                <button onClick={() => setActiveTab(activeTab === 'patient' ? 'doctor' : 'patient')}
-                  className="text-blue-500 underline ml-1">
-                  {activeTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
-                </button>
-              </p>
-            </>
-          )}
-        </div>
-      </AppShell>
-    )
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // NEW APPOINTMENT VIEW
-  // ═══════════════════════════════════════════════════════════════
-  if (view === 'new') {
-    const availableSlots = getAvailableTimeSlots(apptDate)
-
-    return (
-      <AppShell>
-        <div className="p-6 max-w-2xl mx-auto">
-          <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
-            </button>
-            <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
-          </div>
-
-          {saveError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
-              <span>{saveError}</span>
-            </div>
-          )}
-
-          {/* Patient */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">Patient</h2>
-            {selPatient ? (
-              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-                <div>
-                  <div className="font-semibold text-gray-900">{selPatient.full_name}</div>
-                  <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.mobile}</div>
-                </div>
-                <button onClick={() => { setSelPatient(null); setPatientQuery('') }}>
-                  <X className="w-4 h-4 text-gray-400 hover:text-red-500"/>
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-                <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)}/>
-                {patientResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                {/* Live dropdown results */}
+                {patientResults.length > 0 && !addPatientId && (
+                  <div className="border border-gray-200 rounded-lg shadow-md mt-1 bg-white overflow-hidden">
                     {patientResults.map(p => (
-                      <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50 text-sm border-b border-gray-50 last:border-0">
-                        <span className="font-semibold text-gray-900">{p.full_name}</span>
-                        <span className="text-gray-400 ml-2 text-xs">{p.mrn} · {p.mobile}</span>
+                      <button key={p.id} type="button"
+                        onClick={() => selectPatient(p)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex items-center gap-3 border-b last:border-0 transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-700 font-bold text-xs">{p.full_name.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                          <div className="text-xs text-gray-400">
+                            MRN: {p.mrn}{p.mobile ? ` · ${p.mobile}` : ''}
+                          </div>
+                        </div>
+                        <CheckCircle className="w-4 h-4 text-blue-300 flex-shrink-0"/>
                       </button>
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
 
-          {/* Date, time, type */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">Appointment Details</h2>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="label">Date</label>
-                <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => handleDateChange(e.target.value)}/>
-              </div>
-              <div>
-                <label className="label">Time</label>
-                {/* FIX #6: Show only future time slots */}
-                <select className={`input ${timeError ? 'border-red-300' : ''}`}
-                  value={apptTime}
-                  onChange={e => { setApptTime(e.target.value); setTimeError('') }}>
-                  {availableSlots.length === 0 ? (
-                    <option value="">No slots available today</option>
-                  ) : (
-                    availableSlots.map(t => <option key={t}>{t}</option>)
-                  )}
-                </select>
-                {timeError && (
-                  <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3"/> {timeError}
+                {/* No results message */}
+                {patientSearch.trim().length >= 2 && !searchLoading && patientResults.length === 0 && !addPatientId && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+                    No patients found for "{patientSearch}". Check spelling or try MRN / mobile number.
                   </p>
                 )}
-                {apptDate === today && availableSlots.length > 0 && (
-                  <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3"/> Showing future slots only for today
+
+                {/* Search hint */}
+                {patientSearch.trim().length < 2 && !addPatientId && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Type at least 2 characters — searches name, MRN and mobile number.
                   </p>
                 )}
-                {apptDate === today && availableSlots.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    No more slots available today. Please select tomorrow or a future date.
-                  </p>
+
+                {/* Selected patient confirmation */}
+                {addPatientId && addName && (
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+                    <span className="flex-1 truncate"><strong>{addName}</strong>{addMrn ? ` · MRN: ${addMrn}` : ''}</span>
+                    <button type="button"
+                      className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      onClick={() => { setAddPatientId(''); setAddName(''); setAddMrn(''); setPatientSearch('') }}>
+                      <X className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
                 )}
               </div>
-              <div className="col-span-2">
-                <label className="label">Visit Type</label>
-                <select className="input" value={apptType} onChange={e => setApptType(e.target.value)}>
-                  {APPT_TYPES.map(t => <option key={t}>{t}</option>)}
+
+              <div>
+                <label className="label">Priority</label>
+                <select className="input" value={addPriority} onChange={e => setAddPriority(e.target.value as Priority)}>
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="emergency">Emergency</option>
                 </select>
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="label">Notes (optional)</label>
-                <textarea className="input resize-none" rows={2}
-                  placeholder="e.g. Bring previous USG reports, fasting required…"
-                  value={apptNotes} onChange={e => setApptNotes(e.target.value)}/>
+                <input className="input" value={addNotes} onChange={e => setAddNotes(e.target.value)}
+                  placeholder="e.g. Follow-up, fasting, wheelchair"/>
               </div>
             </div>
-          </div>
 
-          <div className="flex justify-between">
-            <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
-            <button onClick={bookAppointment}
-              disabled={saving || !selPatient || !apptDate || !apptTime || availableSlots.length === 0}
-              className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
-              {saving ? 'Booking…' : 'Book & Generate Reminder'}
-            </button>
-          </div>
-        </div>
-      </AppShell>
-    )
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LIST VIEW
-  // ═══════════════════════════════════════════════════════════════
-  return (
-    <AppShell>
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600"/> Appointments
-            </h1>
-            <p className="text-sm text-gray-500">
-              {todayCount} today · {upcomingCount} upcoming
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={fetchAppts} className="btn-secondary flex items-center gap-1.5 text-xs">
-              <RefreshCw className="w-3.5 h-3.5"/> Refresh
-            </button>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4"/> Book Appointment
-            </button>
-          </div>
-        </div>
-
-        {/* Filter bar */}
-        <div className="card p-4 mb-5 flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="label">Date</label>
-            <div className="flex gap-2">
-              <input className="input w-40" type="date"
-                value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
-              <button onClick={() => setDateFilter(today)}
-                className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg font-medium">
-                Today
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleAddToQueue} disabled={addingEntry || !addPatientId}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+                {addingEntry ? 'Adding…' : 'Add to Queue'}
               </button>
-              <button onClick={() => setDateFilter('')}
-                className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-2 rounded-lg font-medium">
-                All dates
-              </button>
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="btn-secondary">Cancel</button>
             </div>
           </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input w-36" value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as any)}>
-              <option value="all">All statuses</option>
-              {(Object.keys(STATUS_CONFIG) as ApptStatus[]).map(s => (
-                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Type</label>
-            <select className="input w-44" value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}>
-              <option value="all">All types</option>
-              <option value="follow_up">Follow-up (auto)</option>
-              {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
         </div>
-
-        {/* List */}
-        {loading ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40"/>
-            <p className="text-sm">Loading appointments...</p>
-          </div>
-        ) : appts.length === 0 ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
-            <p className="font-medium mb-1">
-              {dateFilter || statusFilter !== 'all' ? 'No appointments match this filter' : 'No appointments yet'}
-            </p>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
-              <Plus className="w-3.5 h-3.5"/> Book First Appointment
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {appts.map(appt => {
-              const cfg     = STATUS_CONFIG[appt.status]
-              const isToday = appt.date === today
-              const isPast  = appt.date < today
-              return (
-                <div key={appt.id}
-                  className={`card p-4 flex items-center gap-4 ${isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''}`}>
-
-                  {/* Time block */}
-                  <div className="text-center min-w-[52px]">
-                    <div className="text-lg font-bold text-gray-800 leading-none">{appt.time}</div>
-                    {isToday
-                      ? <div className="text-xs text-blue-600 font-semibold">Today</div>
-                      : <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>}
-                  </div>
-
-                  {/* Patient info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900">{appt.patient_name}</span>
-                      <span className="text-xs text-gray-400">{appt.mrn}</span>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
-                      {appt.reminder_sent && (
-                        <span className="text-xs text-green-600 flex items-center gap-0.5">
-                          <CheckCircle className="w-3 h-3"/> Reminded
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
-                      {appt.type === 'follow_up' && (
-                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
-                      )}
-                      {appt.type !== 'follow_up' && appt.type}
-                    </div>
-                    {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {appt.status === 'scheduled' && (
-                      <>
-                        <button onClick={() => updateStatus(appt.id, 'confirmed')}
-                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">
-                          Confirm
-                        </button>
-                        <button onClick={() => updateStatus(appt.id, 'completed')}
-                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                          Done
-                        </button>
-                        <button onClick={() => updateStatus(appt.id, 'no-show')}
-                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">
-                          No-show
-                        </button>
-                      </>
-                    )}
-                    {appt.status === 'confirmed' && (
-                      <button onClick={() => updateStatus(appt.id, 'completed')}
-                        className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                        Mark Done
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openReminder(appt)}
-                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent
-                          ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                          : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                      }`}
-                      title="Send WhatsApp reminder to patient & doctor brief">
-                      <MessageCircle className="w-3.5 h-3.5"/>
-                      {appt.reminder_sent ? 'Re-send' : 'Remind'}
-                    </button>
-                    <Link href={`/opd/new?patient=${appt.patient_id}`}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      title="Start consultation">
-                      <Stethoscope className="w-4 h-4"/>
-                    </Link>
-                    <Link href={`/patients/${appt.patient_id}`}
-                      className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                      title="View patient">
-                      <User className="w-4 h-4"/>
-                    </Link>
-                    <button onClick={() => deleteAppt(appt.id)}
-                      className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                      title="Delete appointment">
-                      <Trash2 className="w-4 h-4"/>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      )}
     </AppShell>
   )
 }
