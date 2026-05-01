@@ -1,3 +1,4 @@
+
 'use client'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -15,7 +16,7 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download, ExternalLink, MessageCircle,
+  Shield, Download, ExternalLink, MessageCircle, Users,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
@@ -275,6 +276,19 @@ export default function PatientDetailPage() {
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors">
                     <Calendar className="w-4 h-4"/> Book Appointment
+                  </Link>
+                  {/* FIX #5: Add to OPD Queue directly from patient profile */}
+                  <Link
+                    href={`/queue?patient=${patient.id}`}
+                    onClick={async (e) => {
+                      // If queue page is already open, dispatch a custom event instead of navigating
+                      // This allows adding directly without leaving the patient profile
+                      e.preventDefault()
+                      // Navigate to queue page pre-filled with this patient
+                      window.location.href = `/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 hover:border-yellow-400 transition-colors font-medium">
+                    <Users className="w-4 h-4"/> Add to OPD Queue
                   </Link>
                   {bills.length === 0 && (
                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 font-medium w-full">

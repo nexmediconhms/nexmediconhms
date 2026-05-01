@@ -1,3 +1,4 @@
+
 'use client'
 import { useState, useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
@@ -394,7 +395,24 @@ function UserManagementSection() {
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+          <div className="flex-1">
+            <span>{error}</span>
+            {error.includes('requires one of: [admin]') && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-red-600">You are logged in with a doctor account. To manage users, sign in with your admin account.</span>
+                <button
+                  onClick={async () => {
+                    const { data: { session } } = await supabase.auth.getSession()
+                    await supabase.auth.signOut()
+                    window.location.href = '/login'
+                  }}
+                  className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  🔄 Switch to Admin Account
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -1,3 +1,4 @@
+
 'use client'
 /**
  * src/app/fund/page.tsx
@@ -192,31 +193,16 @@ export default function FundPage() {
             </button>
             {isAdmin && (
               <button onClick={() => setShowTopupForm(!showTopupForm)}
-                className="flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200 transition-colors">
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
                 <TrendingUp className="w-4 h-4"/> Add Funds
               </button>
             )}
             <button onClick={() => setShowAddForm(!showAddForm)}
-              className="btn-primary flex items-center gap-2 text-xs">
-              <Plus className="w-3.5 h-3.5"/> Record Expense
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
+              <Plus className="w-4 h-4"/> Record Expense
             </button>
           </div>
         </div>
-
-        {/* Admin guidance — always visible so admin knows how to add funds */}
-        {isAdmin && (
-          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
-            <TrendingUp className="w-5 h-5 text-emerald-600 flex-shrink-0"/>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-emerald-800">Admin: To add funds to the hospital operational fund,</p>
-              <p className="text-xs text-emerald-700">click the <strong>Add Funds</strong> button above. Staff can then submit expense requests for approval.</p>
-            </div>
-            <button onClick={() => setShowTopupForm(true)}
-              className="flex-shrink-0 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
-              <TrendingUp className="w-3.5 h-3.5"/> Add Funds Now
-            </button>
-          </div>
-        )}
 
         {/* Balance tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -241,8 +227,14 @@ export default function FundPage() {
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
             <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0"/>
             <span className="text-red-800">
-              Fund balance is low ({inr(balance)}). Ask admin to top up the fund.
+              Fund balance is low ({inr(balance)}). {isAdmin ? 'Click "Add Funds" above to top up.' : 'Ask admin to top up the fund.'}
             </span>
+            {isAdmin && (
+              <button onClick={() => setShowTopupForm(true)}
+                className="ml-auto flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                <TrendingUp className="w-3.5 h-3.5"/> Add Funds Now
+              </button>
+            )}
           </div>
         )}
 

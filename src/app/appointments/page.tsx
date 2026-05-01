@@ -1,3 +1,4 @@
+
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -32,6 +33,7 @@ interface Appointment {
 
 const APPT_TYPES = [
   'ANC Follow-up',
+  'Follow-up',
   'OPD Consultation',
   'Post-op Review',
   'Lab Report Discussion',
@@ -62,6 +64,7 @@ export default function AppointmentsPage() {
   const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
   const [dateFilter,   setDateFilter]   = useState(new Date().toISOString().split('T')[0])
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
+  const [typeFilter,   setTypeFilter]   = useState<string>('all')
 
   // New appointment form
   const [patientQuery,   setPatientQuery]   = useState('')
@@ -98,12 +101,14 @@ export default function AppointmentsPage() {
 
     if (dateFilter)               query = query.eq('date', dateFilter)
     if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
+    // FIX #3: filter by appointment type so follow-up appointments are visible
+    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
 
     const { data, error } = await query
     if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
     else        setAppts((data || []) as Appointment[])
     setLoading(false)
-  }, [dateFilter, statusFilter])
+  }, [dateFilter, statusFilter, typeFilter])
 
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
@@ -702,6 +707,16 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
+          {/* FIX #3: Type filter — lets doctor quickly filter follow-up appointments */}
+          <div>
+            <label className="label">Type</label>
+            <select className="input w-44" value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}>
+              <option value="all">All types</option>
+              <option value="follow_up">Follow-up (auto)</option>
+              {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* List */}
@@ -751,7 +766,12 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-gray-500 mt-0.5">{appt.type}</div>
+                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+                      {appt.type === 'follow_up' && (
+                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
+                      )}
+                      {appt.type !== 'follow_up' && appt.type}
+                    </div>
                     {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
                   </div>
 

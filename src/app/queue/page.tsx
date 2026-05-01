@@ -75,17 +75,52 @@ export default function QueuePage() {
 
   // Add to queue form state
   const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
-  const [addName,       setAddName]       = useState('')
-  const [addMrn,        setAddMrn]        = useState('')
+  const [addName,       setAddName]       = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
+  const [addMrn,        setAddMrn]        = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
   const [addPriority,   setAddPriority]   = useState<Priority>('normal')
   const [addNotes,      setAddNotes]      = useState('')
   const [addEncounter,  setAddEncounter]  = useState(searchParams.get('encounter') ?? '')
   const [addingEntry,   setAddingEntry]   = useState(false)
 
-  // ── Patient search for Add to Queue modal ──────────────────
-  const [patientSearch,   setPatientSearch]   = useState('')
-  const [patientResults,  setPatientResults]  = useState<{ id: string; full_name: string; mrn: string; phone: string }[]>([])
-  const [searchLoading,   setSearchLoading]   = useState(false)
+  // Auto-open modal if patient param is in URL (coming from patient profile)
+  const [autoOpened, setAutoOpened] = useState(false)
+  useEffect(() => {
+    if (!autoOpened && searchParams.get('patient') && searchParams.get('patientName')) {
+      setShowAddModal(true)
+      setAutoOpened(true)
+      // pre-fill the search field too
+      const pname = decodeURIComponent(searchParams.get('patientName') ?? '')
+      setPatientSearch(pname)
+    }
+  }, [searchParams, autoOpened])
+
+  // ── Patient search in modal ───────────────────────────────
+  const [patientSearch,  setPatientSearch]  = useState('')
+  const [patientResults, setPatientResults] = useState<{ id: string; full_name: string; mrn: string; phone: string }[]>([])
+  const [searchLoading,  setSearchLoading]  = useState(false)
+
+  useEffect(() => {
+    if (patientSearch.length < 2) { setPatientResults([]); return }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      const { data } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, phone')
+        .or(`full_name.ilike.%${patientSearch}%,mrn.ilike.%${patientSearch}%,phone.ilike.%${patientSearch}%`)
+        .limit(6)
+      setPatientResults(data ?? [])
+      setSearchLoading(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [patientSearch])
+
+  function selectPatient(p: { id: string; full_name: string; mrn: string; phone: string }) {
+    setAddPatientId(p.id)
+    setAddName(p.full_name)
+    setAddMrn(p.mrn)
+    setPatientSearch(p.full_name)
+    setPatientResults([])
+  }
 
   const today = new Date().toISOString().slice(0, 10)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -173,30 +208,6 @@ export default function QueuePage() {
     await audit('update', 'encounter', entry.id,
       `Queue token #${entry.token_number} — ${entry.patient_name} → ${newStatus}`)
     // Realtime will trigger reload
-  }
-
-  // ── Patient search for Add to Queue modal ──────────────────
-  useEffect(() => {
-    if (patientSearch.length < 2) { setPatientResults([]); return }
-    const t = setTimeout(async () => {
-      setSearchLoading(true)
-      const { data } = await supabase
-        .from('patients')
-        .select('id, full_name, mrn, phone')
-        .or(`full_name.ilike.%${patientSearch}%,mrn.ilike.%${patientSearch}%,phone.ilike.%${patientSearch}%`)
-        .limit(6)
-      setPatientResults(data ?? [])
-      setSearchLoading(false)
-    }, 300)
-    return () => clearTimeout(t)
-  }, [patientSearch])
-
-  function selectPatient(p: { id: string; full_name: string; mrn: string; phone: string }) {
-    setAddPatientId(p.id)
-    setAddName(p.full_name)
-    setAddMrn(p.mrn)
-    setPatientSearch(p.full_name)
-    setPatientResults([])
   }
 
   // ── Next token number ─────────────────────────────────────
@@ -398,7 +409,6 @@ export default function QueuePage() {
                     value={patientSearch}
                     onChange={e => {
                       setPatientSearch(e.target.value)
-                      // clear selection if user types something new
                       if (addPatientId && e.target.value !== addName) {
                         setAddPatientId(''); setAddName(''); setAddMrn('')
                       }
@@ -407,39 +417,52 @@ export default function QueuePage() {
                     autoFocus
                   />
                   {searchLoading && (
-                    <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
                   )}
                 </div>
-                {/* Dropdown results */}
+
+                {/* Live dropdown results */}
                 {patientResults.length > 0 && !addPatientId && (
-                  <div className="border border-gray-200 rounded-lg shadow-sm mt-1 bg-white overflow-hidden z-10">
+                  <div className="border border-gray-200 rounded-lg shadow-md mt-1 bg-white overflow-hidden">
                     {patientResults.map(p => (
                       <button key={p.id} type="button"
                         onClick={() => selectPatient(p)}
-                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex items-center gap-3 border-b last:border-0">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 truncate">{p.full_name}</div>
-                          <div className="text-xs text-gray-400">MRN: {p.mrn}{p.phone ? ` · ${p.phone}` : ''}</div>
+                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex items-center gap-3 border-b last:border-0 transition-colors">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-700 font-semibold text-xs">{p.full_name.charAt(0)}</span>
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                          <div className="text-xs text-gray-400">
+                            MRN: {p.mrn}{p.phone ? ` · ${p.phone}` : ''}
+                          </div>
+                        </div>
+                        <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0 opacity-0 group-hover:opacity-100"/>
                       </button>
                     ))}
                   </div>
                 )}
-                {/* Selected patient confirmation */}
+
+                {/* No results hint */}
+                {patientSearch.length >= 2 && !searchLoading && patientResults.length === 0 && !addPatientId && (
+                  <p className="text-xs text-amber-700 mt-1">No patients found for "{patientSearch}". Check spelling or search by MRN.</p>
+                )}
+
+                {/* Selected patient confirmation chip */}
                 {addPatientId && addName && (
-                  <div className="mt-1.5 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
                     <span><strong>{addName}</strong> · MRN: {addMrn}</span>
-                    <button type="button" className="ml-auto text-gray-400 hover:text-red-500"
+                    <button type="button" className="ml-auto text-gray-400 hover:text-red-500 transition-colors"
                       onClick={() => { setAddPatientId(''); setAddName(''); setAddMrn(''); setPatientSearch('') }}>
                       <X className="w-3.5 h-3.5"/>
                     </button>
                   </div>
                 )}
-                {/* Direct UUID fallback tip */}
+
                 {!addPatientId && patientSearch.length === 0 && (
                   <p className="text-xs text-gray-400 mt-1">
-                    Type a name, MRN or phone. Or open a patient record and use the "Add to Queue" button there for auto-fill.
+                    Type at least 2 characters to search. Or open a patient record and use the "Add to Queue" button there.
                   </p>
                 )}
               </div>

@@ -1,3 +1,4 @@
+
 'use client'
 /**
  * src/components/layout/AppShell.tsx — FIXED
@@ -33,7 +34,7 @@ import { AlertTriangle, X } from 'lucide-react'
 
 // ── Optional additions — comment out if files don't exist yet ──
 // import SessionTimeout  from './SessionTimeout'
-import VoiceAssistant  from '@/components/voice/VoiceAssistant'
+// import VoiceAssistant  from '@/components/voice/VoiceAssistant'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -170,17 +171,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* Role badge */}
+          {/* Role badge with sign-out — clicking shows a small dropdown */}
           {clinicUser && (
             <div className="no-print fixed top-2 right-4 z-40 hidden md:block">
-              <div className={`text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm ${
-                clinicUser.role === 'admin'  ? 'bg-purple-100 text-purple-700' :
-                clinicUser.role === 'doctor' ? 'bg-blue-100 text-blue-700' :
-                                               'bg-green-100 text-green-700'
-              }`}>
-                {clinicUser.role === 'admin'  ? '👑 Admin' :
-                 clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
-                {' · '}{clinicUser.full_name}
+              <div className="relative group">
+                {/* Badge button */}
+                <button
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
+                    clinicUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                    clinicUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                                   'bg-green-100 text-green-700 hover:bg-green-200'
+                  }`}
+                >
+                  {clinicUser.role === 'admin'  ? '👑 Admin' :
+                   clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {' · '}{clinicUser.full_name}
+                  <span className="ml-0.5 opacity-50">▾</span>
+                </button>
+
+                {/* Dropdown — shows on hover */}
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                  <div className="px-3 py-2 border-b border-gray-50">
+                    <p className="text-xs font-semibold text-gray-700 truncate">{clinicUser.full_name}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{clinicUser.email}</p>
+                  </div>
+                  {/* Switch account — sign out then sign back in as different email */}
+                  <button
+                    onClick={async () => {
+                      if (confirm('Sign out to switch accounts? You can log back in as a different user.')) {
+                        await supabase.auth.signOut()
+                        router.push('/login')
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    🔄 Switch Account / Role
+                  </button>
+                  <button
+                    onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
+                    🚪 Sign Out
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -192,7 +225,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* ── Uncomment these when the files exist: ────────── */}
         {/* <SessionTimeout /> */}
-        <VoiceAssistant />
+        {/* <VoiceAssistant /> */}
 
       </div>
     </AuthContext.Provider>
