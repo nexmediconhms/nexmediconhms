@@ -1,3 +1,4 @@
+
 'use client'
 /**
  * src/components/voice/VoiceAssistant.tsx — FIXED v2
@@ -23,6 +24,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 import { Mic, MicOff, Loader2, X, HelpCircle } from 'lucide-react'
 import {
   INTENT_ROUTES,
@@ -188,9 +190,15 @@ export default function VoiceAssistant() {
 
       // AI resolution
       try {
+        // FIX: Pass Supabase auth token to avoid 401 error on /api/voice-command
+        const { data: { session } } = await supabase.auth.getSession()
+        const authHeader = session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {}
+
         const res = await fetch('/api/voice-command', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({
             transcript:  raw,
             currentPage: pathnameRef.current,

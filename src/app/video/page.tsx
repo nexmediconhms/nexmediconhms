@@ -568,12 +568,76 @@ export default function VideoConsultPage() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — comprehensive how-to guide */}
         {!loading && appointments.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <Video className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium">No video appointments yet</p>
-            <p className="text-sm mt-1">Create slots above and share links with patients via WhatsApp</p>
+          <div className="max-w-2xl mx-auto py-8">
+            <div className="text-center mb-6">
+              <Video className="w-12 h-12 mx-auto mb-3 text-blue-300" />
+              <p className="font-semibold text-gray-700 text-lg">No video appointments yet</p>
+              <p className="text-sm text-gray-400 mt-1">Follow the steps below to start your first video consultation</p>
+            </div>
+
+            {/* Doctor steps */}
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-4">
+              <h3 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold">Dr</span>
+                Steps for the Doctor
+              </h3>
+              <ol className="space-y-2.5">
+                {[
+                  { n: 1, text: 'Click "Create Slots" above → choose date, time, and number of slots.' },
+                  { n: 2, text: 'Each slot gets a unique Jitsi Meet video link (no account needed).' },
+                  { n: 3, text: 'Optionally attach a patient directly when creating the slot.' },
+                  { n: 4, text: 'Click the "WhatsApp" button on a booked slot to send the patient their link.' },
+                  { n: 5, text: 'At consultation time, click "Join" → the video call opens right here in the app.' },
+                  { n: 6, text: 'Click "Done" when finished to mark the appointment as completed.' },
+                ].map(s => (
+                  <li key={s.n} className="flex items-start gap-3 text-sm text-blue-800">
+                    <span className="w-5 h-5 bg-blue-200 text-blue-800 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{s.n}</span>
+                    {s.text}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Patient steps */}
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-6">
+              <h3 className="font-bold text-green-800 mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-green-600 text-white rounded-full text-xs flex items-center justify-center font-bold">Pt</span>
+                Steps for the Patient
+              </h3>
+              <ol className="space-y-2.5">
+                {[
+                  { n: 1, text: 'Patient receives a WhatsApp message with their video link.' },
+                  { n: 2, text: 'At appointment time, patient taps the link in WhatsApp.' },
+                  { n: 3, text: 'The link opens directly in Chrome/Safari — no app download needed.' },
+                  { n: 4, text: 'Patient clicks "Allow" when the browser asks for camera & microphone.' },
+                  { n: 5, text: 'Patient is in the call! The doctor joins from this page by clicking "Join".' },
+                ].map(s => (
+                  <li key={s.n} className="flex items-start gap-3 text-sm text-green-800">
+                    <span className="w-5 h-5 bg-green-200 text-green-800 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{s.n}</span>
+                    {s.text}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Info box */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">
+              <p>✅ <strong>No account needed</strong> — Jitsi Meet is free and browser-based.</p>
+              <p>✅ <strong>Works on mobile</strong> — patients can join from any Android or iPhone browser.</p>
+              <p>✅ <strong>Encrypted</strong> — calls are end-to-end encrypted.</p>
+              <p>✅ <strong>Live updates</strong> — this page refreshes automatically when a patient books.</p>
+            </div>
+
+            {can('encounters.create') && (
+              <div className="text-center mt-6">
+                <button onClick={() => setShowCreate(true)}
+                  className="btn-primary flex items-center gap-2 mx-auto text-sm px-6 py-2.5">
+                  <Plus className="w-4 h-4" /> Create Your First Video Slot
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

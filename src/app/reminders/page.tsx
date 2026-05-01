@@ -135,6 +135,7 @@ export default function RemindersPage() {
   const [sent,         setSent]         = useState<Set<string>>(new Set())
   const [expanded,     setExpanded]     = useState<string | null>(null)
   const [generatedAt,  setGeneratedAt]  = useState<string>('')
+  // Realtime
   const [realtimeOk,   setRealtimeOk]   = useState(false)
   const [lastLiveAt,   setLastLiveAt]   = useState<Date | null>(null)
 
@@ -178,12 +179,9 @@ export default function RemindersPage() {
 
   useEffect(() => { load() }, [load])
 
-  // ── Supabase Realtime — appointments, prescriptions, bills ───
-  // Any INSERT/UPDATE on these tables triggers a silent reload so
-  // today's newly-scheduled appointments appear without a manual Refresh.
+  // ── Supabase Realtime — new/updated appointments appear instantly ──
   useEffect(() => {
-    const channel = supabase
-      .channel('reminders_live_watch')
+    const ch = supabase.channel('reminders_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' },
         () => { setLastLiveAt(new Date()); load(true) })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' },
@@ -196,17 +194,12 @@ export default function RemindersPage() {
         () => { load(true) })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bills' },
         () => { load(true) })
-      .subscribe(status => setRealtimeOk(status === 'SUBSCRIBED'))
+      .subscribe(s => setRealtimeOk(s === 'SUBSCRIBED'))
 
-    // Fallback poll every 60s when Realtime isn't enabled on the table
-    const pollId = setInterval(() => {
-      if (!realtimeOk) load(true)
-    }, 60_000)
+    // Fallback poll every 60 s when Realtime table replication isn't enabled
+    const poll = setInterval(() => { if (!realtimeOk) load(true) }, 60_000)
 
-    return () => {
-      channel.unsubscribe()
-      clearInterval(pollId)
-    }
+    return () => { ch.unsubscribe(); clearInterval(poll) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -228,7 +221,6 @@ export default function RemindersPage() {
     })
   }
 
-  // today's date in IST (YYYY-MM-DD)
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
   const filtered = (() => {
@@ -379,11 +371,6 @@ export default function RemindersPage() {
               {generatedAt && (
                 <span className="ml-2 text-xs text-gray-400">
                   Last refreshed: {new Date(generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              {lastLiveAt && (
-                <span className="ml-2 text-xs text-green-600 animate-pulse">
-                  ↻ Live update {lastLiveAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
               )}
             </p>

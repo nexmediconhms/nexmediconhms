@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import SmartMic from '@/components/shared/SmartMic'
+import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble
@@ -109,6 +110,33 @@ export default function IPDNursingPage() {
       setNotes(stored.notes || [])
     })
   }, [bedId])
+
+  // Listen for OCR autofill from ConsultationAttachments photo upload
+  // When a photo of a doctor/nurse note is read, populate the note field
+  useEffect(() => {
+    function handleAutofill(e: CustomEvent) {
+      const { fields, formType } = e.detail || {}
+      if (!fields) return
+      // Build a readable note from extracted fields
+      const lines: string[] = []
+      if (fields.chief_complaint)      lines.push(`C/O: ${fields.chief_complaint}`)
+      if (fields.examination_findings)  lines.push(`O/E: ${fields.examination_findings}`)
+      if (fields.diagnosis)             lines.push(`Dx: ${fields.diagnosis}`)
+      if (fields.treatment_plan)        lines.push(`Plan: ${fields.treatment_plan}`)
+      if (fields.advice)                lines.push(`Advice: ${fields.advice}`)
+      // vitals
+      if (fields.bp_systolic)           lines.push(`BP: ${fields.bp_systolic}/${fields.bp_diastolic || '?'}`)
+      if (fields.pulse)                 lines.push(`PR: ${fields.pulse}`)
+      if (fields.temperature)           lines.push(`Temp: ${fields.temperature}`)
+      if (fields.spo2)                  lines.push(`SpO2: ${fields.spo2}%`)
+      if (lines.length > 0) {
+        setNewNote(prev => prev ? prev + '\n' + lines.join('\n') : lines.join('\n'))
+        setActiveTab('notes')
+      }
+    }
+    window.addEventListener('autofill-fields', handleAutofill as EventListener)
+    return () => window.removeEventListener('autofill-fields', handleAutofill as EventListener)
+  }, [])
 
   async function loadBed() {
     const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
@@ -451,6 +479,24 @@ export default function IPDNursingPage() {
                     <Plus className="w-3.5 h-3.5"/> Add Note
                   </button>
                 </div>
+
+                {/* ── Photo Upload with OCR Auto-fill ─────────────────────
+                    Upload a photo of a handwritten nursing/doctor note.
+                    Click the "Read Handwriting" (📖) button on any image to
+                    transcribe it. The transcribed text is placed into the
+                    Note field above automatically via the autofill-fields event. */}
+                {patient?.id && (
+                  <div className="mb-5">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      📷 Upload Doctor / Nursing Note Photos
+                      <span className="text-xs text-gray-400 font-normal">— click 📖 on an image to read handwriting &amp; fill the note field above</span>
+                    </h3>
+                    <ConsultationAttachments
+                      patientId={patient.id}
+                      compact={true}
+                    />
+                  </div>
+                )}
 
                 {notes.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6">No nursing notes yet.</p>

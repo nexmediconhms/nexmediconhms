@@ -14,6 +14,7 @@ import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { Plus, Trash2, Printer, Save, ArrowLeft, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
+import SmartMic from '@/components/shared/SmartMic'
 
 const ROUTES = ['Oral','IV','IM','Topical','Sublingual','Inhalation','Rectal','Nasal']
 const FREQS  = ['Once daily','Twice daily','Thrice daily','Four times daily',
@@ -226,6 +227,40 @@ export default function PrescriptionPage() {
     // Audit the prescription save
     await audit('create', 'prescription', encounterId, patient?.full_name || '')
 
+    // ── FIX #8: Sync follow-up date → appointments table ─────────────
+    // When a follow-up date is set, automatically create (or update) a
+    // corresponding appointment so it appears in the Appointments page
+    // and the Reminders queue without the doctor having to do it manually.
+    if (followUpDate) {
+      try {
+        // Check if a follow-up appointment already exists for this encounter
+        const { data: existing_appt } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patient.id)
+          .eq('type', 'follow_up')
+          .eq('date', followUpDate)
+          .maybeSingle()
+
+        if (!existing_appt) {
+          await supabase.from('appointments').insert({
+            patient_id:   patient.id,
+            patient_name: patient.full_name,
+            mrn:          patient.mrn,
+            mobile:       patient.phone || null,
+            date:         followUpDate,
+            time:         '10:00',
+            type:         'follow_up',
+            status:       'scheduled',
+            notes:        `Follow-up from encounter on ${encounter?.encounter_date || 'recent visit'}`,
+          })
+        }
+      } catch (e) {
+        // Non-fatal — prescription still saved even if appointment sync fails
+        console.warn('[Prescription] follow-up appointment sync failed:', e)
+      }
+    }
+
     setSaving(false); setSaved(true); setTimeout(()=>setSaved(false), 3000)
   }
 
@@ -350,13 +385,13 @@ export default function PrescriptionPage() {
           <h2 className="section-title">Advice & Follow-up</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Specific Advice</label>
+              <label className="label flex items-center gap-2">Specific Advice <SmartMic field="advice" value={advice} onChange={setAdvice} context="Patient advice and instructions" size="sm"/></label>
               <textarea className="input resize-none" rows={3}
                 placeholder="Rest, avoid intercourse, etc."
                 value={advice} onChange={e=>setAdvice(e.target.value)} />
             </div>
             <div>
-              <label className="label">Dietary Advice</label>
+              <label className="label flex items-center gap-2">Dietary Advice <SmartMic field="dietary_advice" value={dietaryAdvice} onChange={setDietaryAdvice} context="Dietary advice and nutrition" size="sm"/></label>
               <textarea className="input resize-none" rows={3}
                 placeholder="High protein diet, iron-rich foods..."
                 value={dietaryAdvice} onChange={e=>setDietaryAdvice(e.target.value)} />
