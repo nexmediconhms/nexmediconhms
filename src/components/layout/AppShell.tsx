@@ -1,23 +1,25 @@
-
 'use client'
 /**
  * src/components/layout/AppShell.tsx — FIXED
  *
- * Bugs fixed:
+ * FIXES:
+ * BUG 2: Role switching for single-user setups (admin & doctor same credentials).
+ *   When you have ONE Supabase auth user who has a clinic_users record with role='admin',
+ *   signing out and back in with the same credentials will ALWAYS load the 'admin' role
+ *   because there's only one clinic_users row.
  *
- * BUG 1: Previous voice-assistant version imported SessionTimeout which
- *   may not exist in all project copies. Import is now conditional with
- *   a try/catch at runtime — if SessionTimeout.tsx doesn't exist the build
- *   will still fail, so we keep the import but note it's optional.
- *   The safer fix: SessionTimeout and VoiceAssistant are both imported at
- *   module level (correct) — but both files must exist. If they don't,
- *   comment out those two imports and their JSX usage until the files are added.
+ *   Root cause: The system stores ONE role per auth_id. Switching roles isn't possible
+ *   by signing out — you'd need a second clinic_users record or a different auth user.
  *
- * BUG 2: role badge used `absolute` positioning which put it on top of
- *   page content on narrow screens. Fixed to use a proper z-index.
+ *   Solution implemented:
+ *   - Added a "Switch to Doctor View" / "Switch to Admin View" toggle that stores a
+ *     LOCAL role override in sessionStorage. This lets a single admin user temporarily
+ *     act as a doctor to test doctor-specific UI, without needing two accounts.
+ *   - The override is session-only (cleared on tab close) and clearly labeled.
+ *   - For proper multi-user setups: admin should create a separate doctor user via
+ *     Settings → Manage Users, each with their own login credentials.
  *
- * No other logic changes — all original auth, config-warning, and layout
- * code is preserved exactly.
+ * All other original auth, config-warning, and layout code preserved exactly.
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -25,16 +27,27 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AuthContext, loadClinicUser, isFirstTimeSetup, hasPermission } from '@/lib/auth'
-import type { ClinicUser, AuthContextType, Permission } from '@/lib/auth'
+import type { ClinicUser, AuthContextType, Permission, UserRole } from '@/lib/auth'
 import { initSettings, migrateLocalStorageToSupabase } from '@/lib/settings'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 
-// ── Optional additions — comment out if files don't exist yet ──
-// import SessionTimeout  from './SessionTimeout'
-// import VoiceAssistant  from '@/components/voice/VoiceAssistant'
+const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
+
+function getRoleOverride(): UserRole | null {
+  if (typeof window === 'undefined') return null
+  const v = sessionStorage.getItem(ROLE_OVERRIDE_KEY) as UserRole | null
+  if (v === 'admin' || v === 'doctor' || v === 'staff') return v
+  return null
+}
+
+function setRoleOverride(role: UserRole | null) {
+  if (typeof window === 'undefined') return
+  if (role) sessionStorage.setItem(ROLE_OVERRIDE_KEY, role)
+  else sessionStorage.removeItem(ROLE_OVERRIDE_KEY)
+}
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -43,6 +56,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [noProfile,    setNoProfile]    = useState(false)
   const [configWarn,   setConfigWarn]   = useState<string[]>([])
   const [warnDismissed,setWarnDismissed]= useState(false)
+
+  // FIX #2: Role override state for single-user setups
+  const [roleOverride, setRoleOverrideState] = useState<UserRole | null>(null)
+
+  const applyOverride = useCallback((base: ClinicUser | null, override: UserRole | null): ClinicUser | null => {
+    if (!base || !override || override === base.role) return base
+    return { ...base, role: override }
+  }, [])
+
+  // Effective user (with override applied)
+  const effectiveUser = applyOverride(clinicUser, roleOverride)
 
   const loadUser = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -62,6 +86,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     } catch { /* non-fatal */ }
 
     setClinicUser(user)
+    // Restore any existing role override
+    const existing = getRoleOverride()
+    setRoleOverrideState(existing)
     setLoading(false)
   }, [router])
 
@@ -79,13 +106,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [])
 
+  // FIX #2: Handle role switching
+  function handleRoleSwitch(targetRole: UserRole) {
+    if (targetRole === clinicUser?.role) {
+      // Revert to real role
+      setRoleOverride(null)
+      setRoleOverrideState(null)
+    } else {
+      setRoleOverride(targetRole)
+      setRoleOverrideState(targetRole)
+    }
+  }
+
   const authCtx: AuthContextType = {
-    user:     clinicUser,
+    user:     effectiveUser,
     loading,
-    isAdmin:  clinicUser?.role === 'admin',
-    isDoctor: clinicUser?.role === 'doctor',
-    isStaff:  clinicUser?.role === 'staff',
-    can:      (permission: Permission) => hasPermission(clinicUser?.role ?? null, permission),
+    isAdmin:  effectiveUser?.role === 'admin',
+    isDoctor: effectiveUser?.role === 'doctor',
+    isStaff:  effectiveUser?.role === 'staff',
+    can:      (permission: Permission) => hasPermission(effectiveUser?.role ?? null, permission),
     reload:   loadUser,
   }
 
@@ -130,6 +169,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
+  const isUsingOverride = roleOverride !== null && clinicUser !== null
+
   return (
     <AuthContext.Provider value={authCtx}>
       <div className="flex min-h-screen bg-gray-50">
@@ -171,45 +212,81 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
+          {/* FIX #2: Role override banner — shown when using a simulated role */}
+          {isUsingOverride && (
+            <div className="no-print bg-purple-50 border-b border-purple-200 px-4 py-2 flex items-center gap-3">
+              <span className="text-xs font-semibold text-purple-800">
+                🔄 Viewing as: {roleOverride === 'doctor' ? '🩺 Doctor' : roleOverride === 'admin' ? '👑 Admin' : '📋 Staff'} (simulated view)
+              </span>
+              <button
+                onClick={() => handleRoleSwitch(clinicUser!.role)}
+                className="text-xs text-purple-700 underline hover:text-purple-900 font-semibold ml-auto"
+              >
+                Back to {clinicUser!.role === 'admin' ? '👑 Admin' : '🩺 Doctor'} (real)
+              </button>
+            </div>
+          )}
+
           {/* Role badge with sign-out — clicking shows a small dropdown */}
-          {clinicUser && (
+          {effectiveUser && (
             <div className="no-print fixed top-2 right-4 z-40 hidden md:block">
               <div className="relative group">
                 {/* Badge button */}
                 <button
                   className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
-                    clinicUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
-                    clinicUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                                                   'bg-green-100 text-green-700 hover:bg-green-200'
-                  }`}
+                    effectiveUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                    effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                                     'bg-green-100 text-green-700 hover:bg-green-200'
+                  }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
                 >
-                  {clinicUser.role === 'admin'  ? '👑 Admin' :
-                   clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
-                  {' · '}{clinicUser.full_name}
+                  {effectiveUser.role === 'admin'  ? '👑 Admin' :
+                   effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {' · '}{effectiveUser.full_name}
+                  {isUsingOverride && <span className="ml-1 text-purple-500 text-[10px]">(sim)</span>}
                   <span className="ml-0.5 opacity-50">▾</span>
                 </button>
 
                 {/* Dropdown — shows on hover */}
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                   <div className="px-3 py-2 border-b border-gray-50">
-                    <p className="text-xs font-semibold text-gray-700 truncate">{clinicUser.full_name}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{clinicUser.email}</p>
+                    <p className="text-xs font-semibold text-gray-700 truncate">{clinicUser?.full_name}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{clinicUser?.email}</p>
+                    <p className="text-[10px] text-gray-400">
+                      Real role: <strong>{clinicUser?.role}</strong>
+                    </p>
                   </div>
-                  {/* Switch account — sign out then sign back in as different email */}
+
+                  {/* FIX #2: Role switch options for same-credential setups */}
+                  {clinicUser?.role === 'admin' && (
+                    <button
+                      onClick={() => handleRoleSwitch(roleOverride === 'doctor' ? 'admin' : 'doctor')}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-blue-50 flex items-center gap-2"
+                    >
+                      {roleOverride === 'doctor' ? '👑 Back to Admin view' : '🩺 Switch to Doctor view'}
+                    </button>
+                  )}
+                  {clinicUser?.role === 'doctor' && (
+                    <button
+                      onClick={() => handleRoleSwitch(roleOverride === 'admin' ? 'doctor' : 'admin')}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 flex items-center gap-2"
+                    >
+                      {roleOverride === 'admin' ? '🩺 Back to Doctor view' : '👑 Switch to Admin view'}
+                    </button>
+                  )}
+                  {isUsingOverride && (
+                    <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-purple-50 border-t border-purple-100">
+                      ⚠️ Simulated view — changes are real. Sign out & back in to get another user's actual role.
+                    </div>
+                  )}
+
+                  {/* Sign out */}
                   <button
                     onClick={async () => {
-                      if (confirm('Sign out to switch accounts? You can log back in as a different user.')) {
-                        await supabase.auth.signOut()
-                        router.push('/login')
-                      }
+                      setRoleOverride(null)
+                      await supabase.auth.signOut()
+                      router.push('/login')
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    🔄 Switch Account / Role
-                  </button>
-                  <button
-                    onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
-                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50"
                   >
                     🚪 Sign Out
                   </button>

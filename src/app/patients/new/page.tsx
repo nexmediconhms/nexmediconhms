@@ -11,7 +11,7 @@ import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
   Heart, Shield, Stethoscope, FileText, QrCode, Globe, ScanLine,
-  Loader2
+  Loader2, Users
 } from 'lucide-react'
 import { verifyABHANumber, isValidABHANumber, mapABDMGender, buildDOBFromProfile, calculateAgeFromProfile, formatABHANumber, loadABDMConfig } from '@/lib/abdm'
 import type { ABHAProfile } from '@/lib/abdm'
@@ -495,6 +495,15 @@ export default function NewPatientPage() {
                 <div className="text-left">
                   <div className="font-semibold">Start OPD Consultation</div>
                   <div className="text-xs text-blue-200">Record vitals, diagnosis, prescription</div>
+                </div>
+              </Link>
+              <Link
+                href={`/queue?patient=${successId}&patientName=${encodeURIComponent(success.name)}&mrn=${success.mrn}`}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold transition-all shadow-sm">
+                <Users className="w-5 h-5" />
+                <div className="text-left">
+                  <div className="font-semibold">Add to OPD Queue</div>
+                  <div className="text-xs text-green-100">Assign token number for today</div>
                 </div>
               </Link>
               <Link href={`/patients/${successId}`}

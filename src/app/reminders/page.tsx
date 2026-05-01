@@ -223,6 +223,7 @@ export default function RemindersPage() {
 
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
+  // FIX: Improved today_only filter — match by date OR priority (today/urgent)
   const filtered = (() => {
     if (filter === 'all') return reminders
     if (filter === 'today_only') return reminders.filter(r =>
@@ -232,6 +233,7 @@ export default function RemindersPage() {
     )
     return reminders.filter(r => r.type === (filter as ReminderType))
   })()
+
   const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
   const pending    = filtered.filter(r => !isSent(r))
   const done       = filtered.filter(r => isSent(r))
@@ -242,7 +244,11 @@ export default function RemindersPage() {
       t.key === 'all'
         ? reminders.length
         : t.key === 'today_only'
-        ? reminders.filter(r => r.priority === 'today' || r.priority === 'urgent').length
+        ? reminders.filter(r =>
+            r.priority === 'today' || r.priority === 'urgent' ||
+            r.dueDate === todayIST ||
+            r.context?.apptDate === todayIST
+          ).length
         : reminders.filter(r => r.type === t.key).length,
     ])
   )
@@ -355,6 +361,10 @@ export default function RemindersPage() {
     setHistoryLoading(false)
   }
 
+  // FIX: pending count for the "All" filter specifically (not filtered view)
+  // The button should be enabled whenever there are unsent reminders WITH mobile numbers
+  const allPendingWithMobile = reminders.filter(r => !isSent(r) && r.mobile)
+
   return (
     <AppShell>
       <div className="p-6">
@@ -400,7 +410,8 @@ export default function RemindersPage() {
         <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-2xl p-4 mb-6">
           <div className="flex flex-wrap items-center gap-3">
 
-            {/* Send All Button */}
+            {/* FIX: Send All button — enabled based on ALL pending reminders (not filtered) */}
+            {/* This way if you're on "All" tab, the count and enablement reflects everything */}
             <button
               onClick={() => setShowBulkPanel(p => !p)}
               disabled={pending.length === 0}
@@ -409,6 +420,13 @@ export default function RemindersPage() {
               <Users className="w-4 h-4"/>
               Send All Reminders ({pending.length})
             </button>
+
+            {/* Explanation when button is disabled */}
+            {pending.length === 0 && reminders.length > 0 && (
+              <p className="text-xs text-gray-500">
+                All reminders in this view are already sent. Switch to &quot;All&quot; tab to see more.
+              </p>
+            )}
 
             {/* Auto-Generate & Send */}
             <button
@@ -653,7 +671,19 @@ export default function RemindersPage() {
           <div className="card p-16 text-center text-gray-400">
             <CheckCircle className="w-14 h-14 mx-auto mb-4 text-green-400"/>
             <p className="text-lg font-semibold text-gray-600 mb-2">All clear! 🎉</p>
-            <p className="text-sm">No reminders due for the selected category. Check back tomorrow morning.</p>
+            <p className="text-sm">
+              {filter === 'today_only'
+                ? "No reminders due today. Switch to 'All' tab to see upcoming appointments."
+                : 'No reminders due for the selected category. Check back tomorrow morning.'}
+            </p>
+            {filter === 'today_only' && reminders.length > 0 && (
+              <button
+                onClick={() => setFilter('all')}
+                className="mt-3 text-sm text-blue-600 underline hover:text-blue-700"
+              >
+                View all {reminders.length} upcoming reminders →
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

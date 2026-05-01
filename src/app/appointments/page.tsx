@@ -1,4 +1,3 @@
-
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -54,9 +53,33 @@ const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: strin
   'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
 }
 
-const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
-  [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
-).flat().filter(t => t >= '08:00' && t <= '19:45')
+// ── FIX #6: Generate time slots that are AFTER the current time when today is selected ──
+function getAvailableTimeSlots(selectedDate: string): string[] {
+  const allSlots = Array.from({ length: 24 }, (_, h) =>
+    [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
+  ).flat().filter(t => t >= '08:00' && t <= '19:45')
+
+  const today = new Date().toISOString().split('T')[0]
+  if (selectedDate !== today) return allSlots
+
+  // For today, only show slots that are at least 15 minutes from now
+  const now = new Date()
+  const currentHour = now.getHours()
+  const currentMinute = now.getMinutes()
+  // Add 15 min buffer
+  const bufferMinutes = currentHour * 60 + currentMinute + 15
+
+  return allSlots.filter(slot => {
+    const [h, m] = slot.split(':').map(Number)
+    return h * 60 + m >= bufferMinutes
+  })
+}
+
+// ── Get first available time slot ────────────────────────────
+function getFirstAvailableTime(selectedDate: string): string {
+  const slots = getAvailableTimeSlots(selectedDate)
+  return slots.length > 0 ? slots[0] : '09:00'
+}
 
 export default function AppointmentsPage() {
   const [appts,        setAppts]        = useState<Appointment[]>([])
@@ -71,11 +94,12 @@ export default function AppointmentsPage() {
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selPatient,     setSelPatient]     = useState<any>(null)
   const [apptDate,       setApptDate]       = useState(new Date().toISOString().split('T')[0])
-  const [apptTime,       setApptTime]       = useState('09:00')
+  const [apptTime,       setApptTime]       = useState(() => getFirstAvailableTime(new Date().toISOString().split('T')[0]))
   const [apptType,       setApptType]       = useState(APPT_TYPES[0])
   const [apptNotes,      setApptNotes]      = useState('')
   const [saving,         setSaving]         = useState(false)
   const [saveError,      setSaveError]      = useState('')
+  const [timeError,      setTimeError]      = useState('')
 
   // Reminder state — now holds TWO messages (patient + doctor)
   const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
@@ -101,7 +125,6 @@ export default function AppointmentsPage() {
 
     if (dateFilter)               query = query.eq('date', dateFilter)
     if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
-    // FIX #3: filter by appointment type so follow-up appointments are visible
     if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
 
     const { data, error } = await query
@@ -137,6 +160,32 @@ export default function AppointmentsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
+  // ── FIX #6: Update available time slots whenever date changes ──
+  function handleDateChange(newDate: string) {
+    setApptDate(newDate)
+    setTimeError('')
+    const firstSlot = getFirstAvailableTime(newDate)
+    setApptTime(firstSlot)
+  }
+
+  // ── FIX #6: Validate time is in the future ────────────────
+  function validateTime(date: string, time: string): boolean {
+    const today = new Date().toISOString().split('T')[0]
+    if (date !== today) return true // Future dates are always fine
+
+    const now = new Date()
+    const [h, m] = time.split(':').map(Number)
+    const selected = new Date()
+    selected.setHours(h, m, 0, 0)
+
+    if (selected <= now) {
+      setTimeError('Please select a future time for today\'s appointment.')
+      return false
+    }
+    setTimeError('')
+    return true
+  }
+
   // ── Patient search ─────────────────────────────────────────
   function searchPatients(q: string) {
     setPatientQuery(q); setSelPatient(null)
@@ -153,6 +202,10 @@ export default function AppointmentsPage() {
   // ── Book appointment ───────────────────────────────────────
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
+
+    // FIX #6: Validate time before booking
+    if (!validateTime(apptDate, apptTime)) return
+
     setSaving(true); setSaveError('')
 
     const { data, error } = await supabase
@@ -256,6 +309,8 @@ export default function AppointmentsPage() {
       obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
     }
 
+    const apptType = appt.type
+
     // ═══════════════════════════════════════════════════════════
     // MESSAGE 1 — FOR PATIENT
     // ═══════════════════════════════════════════════════════════
@@ -347,9 +402,11 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
 
   function resetForm() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
-    setApptDate(new Date().toISOString().split('T')[0])
-    setApptTime('09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
-    setSaveError('')
+    const today = new Date().toISOString().split('T')[0]
+    setApptDate(today)
+    setApptTime(getFirstAvailableTime(today))
+    setApptType(APPT_TYPES[0]); setApptNotes('')
+    setSaveError(''); setTimeError('')
   }
 
   const today = new Date().toISOString().split('T')[0]
@@ -413,8 +470,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               {/* ── PATIENT MESSAGE ── */}
               {activeTab === 'patient' && (
                 <div className="card p-5 mb-4">
-
-                  {/* Patient chip */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
                     <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="font-bold text-green-700 text-sm">{reminderAppt.patient_name.charAt(0)}</span>
@@ -427,7 +482,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       To Patient
                     </div>
                   </div>
-
                   <label className="label">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -438,7 +492,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                   <p className="text-xs text-gray-400 mt-1">
                     Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
                   </p>
-
                   <div className="flex flex-col gap-2 mt-4">
                     <a
                       href={waLink(reminderAppt.mobile, patientMsg)}
@@ -466,7 +519,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       </a>
                     )}
                   </div>
-
                   {reminderAppt.reminder_sent && (
                     <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
                       <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
@@ -478,8 +530,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               {/* ── DOCTOR BRIEF ── */}
               {activeTab === 'doctor' && (
                 <div className="card p-5 mb-4">
-
-                  {/* Doctor chip */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
                     <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <Stethoscope className="w-4 h-4 text-blue-600"/>
@@ -496,12 +546,10 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       To Doctor
                     </div>
                   </div>
-
                   <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
                     <UserCircle className="w-4 h-4 flex-shrink-0"/>
                     This message gives the doctor a full patient brief before the appointment — profile, last visit, current medications, and OB data.
                   </div>
-
                   <label className="label mt-3">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -509,7 +557,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                     value={doctorMsg}
                     onChange={e => setDoctorMsg(e.target.value)}
                   />
-
                   <div className="flex flex-col gap-2 mt-4">
                     {isDoctorWA ? (
                       <a
@@ -560,6 +607,8 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
   // NEW APPOINTMENT VIEW
   // ═══════════════════════════════════════════════════════════════
   if (view === 'new') {
+    const availableSlots = getAvailableTimeSlots(apptDate)
+
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
@@ -617,13 +666,35 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)}/>
+                  value={apptDate} onChange={e => handleDateChange(e.target.value)}/>
               </div>
               <div>
                 <label className="label">Time</label>
-                <select className="input" value={apptTime} onChange={e => setApptTime(e.target.value)}>
-                  {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
+                {/* FIX #6: Show only future time slots */}
+                <select className={`input ${timeError ? 'border-red-300' : ''}`}
+                  value={apptTime}
+                  onChange={e => { setApptTime(e.target.value); setTimeError('') }}>
+                  {availableSlots.length === 0 ? (
+                    <option value="">No slots available today</option>
+                  ) : (
+                    availableSlots.map(t => <option key={t}>{t}</option>)
+                  )}
                 </select>
+                {timeError && (
+                  <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3"/> {timeError}
+                  </p>
+                )}
+                {apptDate === today && availableSlots.length > 0 && (
+                  <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3"/> Showing future slots only for today
+                  </p>
+                )}
+                {apptDate === today && availableSlots.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    No more slots available today. Please select tomorrow or a future date.
+                  </p>
+                )}
               </div>
               <div className="col-span-2">
                 <label className="label">Visit Type</label>
@@ -643,7 +714,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           <div className="flex justify-between">
             <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
             <button onClick={bookAppointment}
-              disabled={saving || !selPatient || !apptDate || !apptTime}
+              disabled={saving || !selPatient || !apptDate || !apptTime || availableSlots.length === 0}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
               {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
               {saving ? 'Booking…' : 'Book & Generate Reminder'}
@@ -707,7 +778,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
-          {/* FIX #3: Type filter — lets doctor quickly filter follow-up appointments */}
           <div>
             <label className="label">Type</label>
             <select className="input w-44" value={typeFilter}
@@ -799,7 +869,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         Mark Done
                       </button>
                     )}
-                    {/* Send Reminder button — prominent green */}
                     <button
                       onClick={() => openReminder(appt)}
                       className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
@@ -811,19 +880,16 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       <MessageCircle className="w-3.5 h-3.5"/>
                       {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
-                    {/* Start consultation */}
                     <Link href={`/opd/new?patient=${appt.patient_id}`}
                       className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
                       title="Start consultation">
                       <Stethoscope className="w-4 h-4"/>
                     </Link>
-                    {/* View patient */}
                     <Link href={`/patients/${appt.patient_id}`}
                       className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
                       title="View patient">
                       <User className="w-4 h-4"/>
                     </Link>
-                    {/* Delete */}
                     <button onClick={() => deleteAppt(appt.id)}
                       className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
                       title="Delete appointment">

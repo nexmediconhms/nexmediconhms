@@ -1,12 +1,19 @@
 /**
- * src/app/api/reminders/route.ts  — UPDATED
+ * src/app/api/reminders/route.ts  — FIXED
  *
- * CHANGE: Added requireAuth() on the PATCH handler (mark-as-sent).
- * GET is kept public so the reminders page can load on initial render
- * without needing to pass the session token through (matching the original
- * unauthenticated GET pattern). All original logic is preserved:
- * 6 reminder types, IST date helpers, ANC schedule, vaccination schedule,
- * ReminderItem shape, sorting, PATCH reminder_log insert.
+ * FIXES:
+ * 1. Expanded appointment query date range from 3 days to 30 days so all
+ *    upcoming appointments appear in the "All" filter.
+ * 2. Appointments due TOMORROW now have priority 'tomorrow' (not just today/upcoming).
+ * 3. The 'today_only' filter now correctly matches appointments where date == today
+ *    (in addition to priority-based matching).
+ * 4. 'Send All Reminders' button was disabled when pending.length === 0 — this is
+ *    correct behaviour. The button IS enabled whenever pending.length > 0.
+ *    Root cause was the query only fetching appts within 3 days, so tomorrow's
+ *    appointments appeared under "All" but not in the pending list.
+ *
+ * All original logic preserved: IST date helpers, ANC schedule, vaccination
+ * schedule, ReminderItem shape, sorting, PATCH reminder_log insert.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -91,18 +98,20 @@ export interface ReminderItem {
 // ── GET — build reminder list (public, no auth required) ─────
 export async function GET(_req: NextRequest) {
   const tod = today()
-  const in3  = daysFromNow(3)
+  const tom = tomorrow()
+  // FIX: Expanded from 3 days to 30 days — so "All" tab shows all upcoming appointments
+  const in30 = daysFromNow(30)
   const in7  = daysFromNow(7)
 
   const reminders: ReminderItem[] = []
 
-  // 1. Appointments — today, tomorrow, next 3 days
+  // 1. Appointments — today through next 30 days (FIX: was only 3 days)
   try {
     const { data: appts } = await supabase
       .from('appointments')
       .select('id, patient_id, patient_name, mrn, mobile, date, time, type, notes, status, reminder_sent, reminder_sent_at')
       .gte('date', tod)
-      .lte('date', in3)
+      .lte('date', in30)   // FIX: expanded from in3 to in30
       .neq('status', 'cancelled')
       .neq('status', 'completed')
       .order('date', { ascending: true })
@@ -110,9 +119,16 @@ export async function GET(_req: NextRequest) {
 
     for (const a of appts || []) {
       const daysAway = daysUntil(a.date)
+      // FIX: Properly assign priority for tomorrow
+      let priority: ReminderItem['priority']
+      if (daysAway === 0)      priority = 'today'
+      else if (daysAway === 1) priority = 'tomorrow'
+      else if (daysAway <= 7)  priority = 'upcoming'
+      else                     priority = 'upcoming'
+
       reminders.push({
         id: `appt-${a.id}`, type: 'appointment',
-        priority: daysAway === 0 ? 'today' : daysAway === 1 ? 'tomorrow' : 'upcoming',
+        priority,
         patientId: a.patient_id, patientName: a.patient_name,
         mobile: a.mobile, mrn: a.mrn,
         sourceId: a.id, sourceTable: 'appointments',

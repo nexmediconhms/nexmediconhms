@@ -4908,6 +4908,7 @@ export async function POST(req: NextRequest) {
     const fd      = await req.formData()
     const file    = fd.get('image') as File | null
     const context = (fd.get('context') as string | null) ?? ''
+    const mode    = (fd.get('mode')    as string | null) ?? 'ocr'
 
     if (!file) {
       return NextResponse.json({ error: 'No image file provided.' }, { status: 400 })
@@ -4929,6 +4930,63 @@ export async function POST(req: NextRequest) {
     const mediaType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) as
                       'image/jpeg' | 'image/png' | 'image/webp'
 
+    // ── Autofill mode — extract structured fields for form population ──
+    if (mode === 'autofill') {
+      const autofillPrompt = `You are a medical data extraction assistant for an Indian hospital management system.
+
+Analyse this medical document image carefully.
+
+Determine which form type it belongs to:
+- "ob_exam": Gyn/OB examination (LMP, EDD, gravida/para, fundal height, FHS, presentation, liquor, BP, oedema, haemoglobin)
+- "vitals": Vitals & Complaints (weight, height, BP, temperature, pulse, SpO2, chief complaints, allergies)
+- "encounter": Consultation/Diagnosis (diagnosis, symptoms, lab tests, medicines, follow-up dates)
+- "unknown": Cannot determine
+
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "formType": "ob_exam" | "vitals" | "encounter" | "unknown",
+  "confidence": 0.0-1.0,
+  "fields": {
+    // ob_exam: lmp, edd, gravida, para, living, abortions, gestational_age_weeks, fundal_height,
+    //   presentation, engagement, fhs, liquor, haemoglobin, bp_systolic, bp_diastolic,
+    //   weight, oedema, urine_protein, urine_sugar, risk_factors, plan
+    // vitals: weight, height, bp_systolic, bp_diastolic, pulse, temperature, spo2,
+    //   chief_complaint, duration, allergies, past_history
+    // encounter: diagnosis, symptoms, investigations, follow_up_date, advice,
+    //   medicines: [{name, dose, frequency, days}]
+    // Only include fields you are reasonably confident about
+  }
+}
+
+Convert BP like "120/80" → bp_systolic: 120, bp_diastolic: 80.
+Use YYYY-MM-DD for dates.`
+
+      const autofillResult = await analyzeImage({
+        base64,
+        mediaType,
+        prompt:    autofillPrompt,
+        system:    SYSTEM_PROMPT,
+        maxTokens: 2048,
+      })
+
+      const jsonString = autofillResult.text
+        .replace(/^\`\`\`json\s*/im, '')
+        .replace(/^\`\`\`\s*/im, '')
+        .replace(/\s*\`\`\`$/im, '')
+        .trim()
+
+      try {
+        const parsed = JSON.parse(jsonString)
+        return NextResponse.json({ ...parsed, _provider: autofillResult.provider })
+      } catch {
+        return NextResponse.json({
+          formType: 'unknown', confidence: 0, fields: {},
+          _provider: autofillResult.provider, _parse_error: true,
+        })
+      }
+    }
+
+    // ── Original OCR / transcription mode (unchanged) ─────────────────────────
     // Build user prompt with optional context hint
     let userPrompt = 'Please transcribe this handwritten doctor note. Include all text, even if partially illegible.'
     if (context.trim()) {
@@ -8685,6 +8743,7 @@ Return ONLY the corrected text. No explanations.`,
 # src\app\appointments\page.tsx
 
 ```tsx
+
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -8719,6 +8778,7 @@ interface Appointment {
 
 const APPT_TYPES = [
   'ANC Follow-up',
+  'Follow-up',
   'OPD Consultation',
   'Post-op Review',
   'Lab Report Discussion',
@@ -8749,6 +8809,7 @@ export default function AppointmentsPage() {
   const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
   const [dateFilter,   setDateFilter]   = useState(new Date().toISOString().split('T')[0])
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
+  const [typeFilter,   setTypeFilter]   = useState<string>('all')
 
   // New appointment form
   const [patientQuery,   setPatientQuery]   = useState('')
@@ -8785,12 +8846,14 @@ export default function AppointmentsPage() {
 
     if (dateFilter)               query = query.eq('date', dateFilter)
     if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
+    // FIX #3: filter by appointment type so follow-up appointments are visible
+    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
 
     const { data, error } = await query
     if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
     else        setAppts((data || []) as Appointment[])
     setLoading(false)
-  }, [dateFilter, statusFilter])
+  }, [dateFilter, statusFilter, typeFilter])
 
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
@@ -9389,6 +9452,16 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
+          {/* FIX #3: Type filter — lets doctor quickly filter follow-up appointments */}
+          <div>
+            <label className="label">Type</label>
+            <select className="input w-44" value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}>
+              <option value="all">All types</option>
+              <option value="follow_up">Follow-up (auto)</option>
+              {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* List */}
@@ -9438,7 +9511,12 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-gray-500 mt-0.5">{appt.type}</div>
+                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+                      {appt.type === 'follow_up' && (
+                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
+                      )}
+                      {appt.type !== 'follow_up' && appt.type}
+                    </div>
                     {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
                   </div>
 
@@ -9506,6 +9584,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     </AppShell>
   )
 }
+
 ```
 
 # src\app\audit-log\page.tsx
@@ -12194,6 +12273,7 @@ export default function FormsPage() {
 # src\app\fund\page.tsx
 
 ```tsx
+
 'use client'
 /**
  * src/app/fund/page.tsx
@@ -12388,13 +12468,13 @@ export default function FundPage() {
             </button>
             {isAdmin && (
               <button onClick={() => setShowTopupForm(!showTopupForm)}
-                className="btn-secondary flex items-center gap-2 text-xs border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
-                <TrendingUp className="w-3.5 h-3.5"/> Top Up Fund
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
+                <TrendingUp className="w-4 h-4"/> Add Funds
               </button>
             )}
             <button onClick={() => setShowAddForm(!showAddForm)}
-              className="btn-primary flex items-center gap-2 text-xs">
-              <Plus className="w-3.5 h-3.5"/> Record Expense
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
+              <Plus className="w-4 h-4"/> Record Expense
             </button>
           </div>
         </div>
@@ -12422,8 +12502,14 @@ export default function FundPage() {
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
             <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0"/>
             <span className="text-red-800">
-              Fund balance is low ({inr(balance)}). Ask admin to top up the fund.
+              Fund balance is low ({inr(balance)}). {isAdmin ? 'Click "Add Funds" above to top up.' : 'Ask admin to top up the fund.'}
             </span>
+            {isAdmin && (
+              <button onClick={() => setShowTopupForm(true)}
+                className="ml-auto flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                <TrendingUp className="w-3.5 h-3.5"/> Add Funds Now
+              </button>
+            )}
           </div>
         )}
 
@@ -12615,6 +12701,7 @@ export default function FundPage() {
     </AppShell>
   )
 }
+
 ```
 
 # src\app\globals.css
@@ -13281,6 +13368,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import SmartMic from '@/components/shared/SmartMic'
+import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble
@@ -13384,6 +13472,33 @@ export default function IPDNursingPage() {
       setNotes(stored.notes || [])
     })
   }, [bedId])
+
+  // Listen for OCR autofill from ConsultationAttachments photo upload
+  // When a photo of a doctor/nurse note is read, populate the note field
+  useEffect(() => {
+    function handleAutofill(e: CustomEvent) {
+      const { fields, formType } = e.detail || {}
+      if (!fields) return
+      // Build a readable note from extracted fields
+      const lines: string[] = []
+      if (fields.chief_complaint)      lines.push(`C/O: ${fields.chief_complaint}`)
+      if (fields.examination_findings)  lines.push(`O/E: ${fields.examination_findings}`)
+      if (fields.diagnosis)             lines.push(`Dx: ${fields.diagnosis}`)
+      if (fields.treatment_plan)        lines.push(`Plan: ${fields.treatment_plan}`)
+      if (fields.advice)                lines.push(`Advice: ${fields.advice}`)
+      // vitals
+      if (fields.bp_systolic)           lines.push(`BP: ${fields.bp_systolic}/${fields.bp_diastolic || '?'}`)
+      if (fields.pulse)                 lines.push(`PR: ${fields.pulse}`)
+      if (fields.temperature)           lines.push(`Temp: ${fields.temperature}`)
+      if (fields.spo2)                  lines.push(`SpO2: ${fields.spo2}%`)
+      if (lines.length > 0) {
+        setNewNote(prev => prev ? prev + '\n' + lines.join('\n') : lines.join('\n'))
+        setActiveTab('notes')
+      }
+    }
+    window.addEventListener('autofill-fields', handleAutofill as EventListener)
+    return () => window.removeEventListener('autofill-fields', handleAutofill as EventListener)
+  }, [])
 
   async function loadBed() {
     const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
@@ -13727,6 +13842,24 @@ export default function IPDNursingPage() {
                   </button>
                 </div>
 
+                {/* ── Photo Upload with OCR Auto-fill ─────────────────────
+                    Upload a photo of a handwritten nursing/doctor note.
+                    Click the "Read Handwriting" (📖) button on any image to
+                    transcribe it. The transcribed text is placed into the
+                    Note field above automatically via the autofill-fields event. */}
+                {patient?.id && (
+                  <div className="mb-5">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      📷 Upload Doctor / Nursing Note Photos
+                      <span className="text-xs text-gray-400 font-normal">— click 📖 on an image to read handwriting &amp; fill the note field above</span>
+                    </h3>
+                    <ConsultationAttachments
+                      patientId={patient.id}
+                      compact={true}
+                    />
+                  </div>
+                )}
+
                 {notes.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6">No nursing notes yet.</p>
                 ) : (
@@ -13756,7 +13889,6 @@ export default function IPDNursingPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\ipd\page.tsx
@@ -17047,6 +17179,7 @@ import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { Plus, Trash2, Printer, Save, ArrowLeft, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
+import SmartMic from '@/components/shared/SmartMic'
 
 const ROUTES = ['Oral','IV','IM','Topical','Sublingual','Inhalation','Rectal','Nasal']
 const FREQS  = ['Once daily','Twice daily','Thrice daily','Four times daily',
@@ -17259,6 +17392,40 @@ export default function PrescriptionPage() {
     // Audit the prescription save
     await audit('create', 'prescription', encounterId, patient?.full_name || '')
 
+    // ── FIX #8: Sync follow-up date → appointments table ─────────────
+    // When a follow-up date is set, automatically create (or update) a
+    // corresponding appointment so it appears in the Appointments page
+    // and the Reminders queue without the doctor having to do it manually.
+    if (followUpDate) {
+      try {
+        // Check if a follow-up appointment already exists for this encounter
+        const { data: existing_appt } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patient.id)
+          .eq('type', 'follow_up')
+          .eq('date', followUpDate)
+          .maybeSingle()
+
+        if (!existing_appt) {
+          await supabase.from('appointments').insert({
+            patient_id:   patient.id,
+            patient_name: patient.full_name,
+            mrn:          patient.mrn,
+            mobile:       patient.phone || null,
+            date:         followUpDate,
+            time:         '10:00',
+            type:         'follow_up',
+            status:       'scheduled',
+            notes:        `Follow-up from encounter on ${encounter?.encounter_date || 'recent visit'}`,
+          })
+        }
+      } catch (e) {
+        // Non-fatal — prescription still saved even if appointment sync fails
+        console.warn('[Prescription] follow-up appointment sync failed:', e)
+      }
+    }
+
     setSaving(false); setSaved(true); setTimeout(()=>setSaved(false), 3000)
   }
 
@@ -17383,13 +17550,13 @@ export default function PrescriptionPage() {
           <h2 className="section-title">Advice & Follow-up</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Specific Advice</label>
+              <label className="label flex items-center gap-2">Specific Advice <SmartMic field="advice" value={advice} onChange={setAdvice} context="Patient advice and instructions" size="sm"/></label>
               <textarea className="input resize-none" rows={3}
                 placeholder="Rest, avoid intercourse, etc."
                 value={advice} onChange={e=>setAdvice(e.target.value)} />
             </div>
             <div>
-              <label className="label">Dietary Advice</label>
+              <label className="label flex items-center gap-2">Dietary Advice <SmartMic field="dietary_advice" value={dietaryAdvice} onChange={setDietaryAdvice} context="Dietary advice and nutrition" size="sm"/></label>
               <textarea className="input resize-none" rows={3}
                 placeholder="High protein diet, iron-rich foods..."
                 value={dietaryAdvice} onChange={e=>setDietaryAdvice(e.target.value)} />
@@ -18288,10 +18455,150 @@ export default function NewConsultationPage() {
                     <label className="label capitalize">{k}</label>
                     <input className={oc(k)} type="number" min="0" placeholder="0"
                       value={(ob as any)[k] ?? ''}
-                      onChange={e => setO(k, parseInt(e.target.value) || 0)} />
+                      onChange={e => {
+                        const val = parseInt(e.target.value) || 0
+                        setO(k, val)
+                        // ── Auto-sync abortion entries when count changes ──
+                        if (k === 'abortion') {
+                          const current = ob.abortion_entries || []
+                          if (val > current.length) {
+                            // Add blank entries to match count
+                            const toAdd = Array.from({ length: val - current.length }, () => ({
+                              type: '' as AbortionEntry['type'],
+                              weeks: '',
+                              method: '' as AbortionEntry['method'],
+                              years_ago: '',
+                            }))
+                            setO('abortion_entries', [...current, ...toAdd])
+                          } else if (val < current.length) {
+                            // Trim extra entries
+                            setO('abortion_entries', current.slice(0, val))
+                          }
+                        }
+                      }} />
                   </div>
                 ))}
               </div>
+
+              {/* ── Abortion Details — inline, auto-shown when abortion > 0 ── */}
+              {(ob.abortion ?? 0) > 0 && (
+                <div className="mt-4 border border-orange-200 rounded-xl bg-orange-50/40 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-orange-800 flex items-center gap-2">
+                      📋 Abortion Details
+                      <span className="text-xs font-normal text-orange-600">
+                        — {ob.abortion} {(ob.abortion ?? 0) === 1 ? 'entry' : 'entries'} (fill details below)
+                      </span>
+                    </h3>
+                    {/* Allow manual add if count doesn't match */}
+                    {(ob.abortion_entries || []).length < (ob.abortion ?? 0) && (
+                      <button type="button"
+                        className="text-xs btn-secondary py-1 px-3"
+                        onClick={() => setO('abortion_entries', [
+                          ...(ob.abortion_entries || []),
+                          { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
+                        ])}>
+                        + Add Entry
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Column headers */}
+                  <div className="hidden sm:grid grid-cols-4 gap-3 text-xs font-semibold text-orange-700 uppercase tracking-wide mb-2 px-1">
+                    <span>1. Type</span>
+                    <span>2. Duration (weeks)</span>
+                    <span>3. Method</span>
+                    <span>4. Year</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(ob.abortion_entries || []).map((entry, idx) => (
+                      <div key={idx}
+                        className="grid grid-cols-4 gap-3 items-end border border-orange-200 rounded-lg px-3 py-3 bg-white relative">
+
+                        {/* Remove button */}
+                        <button type="button"
+                          className="absolute top-1.5 right-2 text-red-400 hover:text-red-600 text-xs font-bold leading-none"
+                          title="Remove this entry"
+                          onClick={() => {
+                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
+                            setO('abortion_entries', updated)
+                            setO('abortion', updated.length)
+                          }}>✕</button>
+
+                        {/* Abortion number label */}
+                        <div className="absolute -left-3 -top-2 w-5 h-5 bg-orange-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold">
+                          {idx + 1}
+                        </div>
+
+                        {/* 1. Type — Spontaneous or Induced */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Type</label>
+                          <select className="input bg-white text-sm"
+                            value={entry.type || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select type…</option>
+                            <option value="Spontaneous">Spontaneous</option>
+                            <option value="Induced">Induced</option>
+                          </select>
+                        </div>
+
+                        {/* 2. Duration in weeks */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Duration (weeks)</label>
+                          <input className="input text-sm" type="number" min="4" max="28"
+                            placeholder="e.g. 8"
+                            value={entry.weeks || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], weeks: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                          <p className="text-[10px] text-gray-400 mt-0.5">gestation at time of abortion</p>
+                        </div>
+
+                        {/* 3. Method — MTP Kit, D&C, etc. */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Method</label>
+                          <select className="input bg-white text-sm"
+                            value={entry.method || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
+                              setO('abortion_entries', updated)
+                            }}>
+                            <option value="">Select method…</option>
+                            <option value="MTP Kit">MTP Kit</option>
+                            <option value="D&C">D&amp;C (Dilation &amp; Curettage)</option>
+                            <option value="Suction Evacuation">Suction Evacuation (MVA)</option>
+                            <option value="Natural">Natural / Expectant</option>
+                            <option value="Surgical">Surgical (Other)</option>
+                          </select>
+                        </div>
+
+                        {/* 4. Year */}
+                        <div>
+                          <label className="label text-xs text-orange-700">Year</label>
+                          <input className="input text-sm" type="number"
+                            min="1970" max={new Date().getFullYear()}
+                            placeholder={`e.g. ${new Date().getFullYear() - 2}`}
+                            value={entry.years_ago || ''}
+                            onChange={e => {
+                              const updated = [...(ob.abortion_entries || [])]
+                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
+                              setO('abortion_entries', updated)
+                            }} />
+                          <p className="text-[10px] text-gray-400 mt-0.5">year it occurred</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ── Per-pregnancy details table (NEW) ── */}
               <div className="mt-5">
@@ -18394,93 +18701,6 @@ export default function NewConsultationPage() {
                 )}
               </div>
             </div>
-
-            {/* ── ABORTION DETAILS (NEW) — shown only when abortion > 0 ── */}
-            {(ob.abortion ?? 0) > 0 && (
-              <div className="card p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="section-title mb-0">Abortion Details</h2>
-                  <button type="button"
-                    className="text-xs btn-secondary py-1 px-3"
-                    onClick={() => {
-                      setO('abortion_entries', [
-                        ...(ob.abortion_entries || []),
-                        { type: '', weeks: '', method: '', years_ago: '' } as AbortionEntry,
-                      ])
-                    }}>
-                    + Add Entry
-                  </button>
-                </div>
-
-                {(!ob.abortion_entries || ob.abortion_entries.length === 0) ? (
-                  <p className="text-xs text-gray-400 italic">Click "+ Add Entry" to record abortion details.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {(ob.abortion_entries || []).map((entry, idx) => (
-                      <div key={idx}
-                        className="grid grid-cols-4 gap-3 border border-gray-200 rounded-lg p-3 bg-gray-50 relative">
-                        <button type="button"
-                          className="absolute top-2 right-2 text-red-400 hover:text-red-600 text-xs font-bold"
-                          onClick={() => {
-                            const updated = (ob.abortion_entries || []).filter((_, i) => i !== idx)
-                            setO('abortion_entries', updated)
-                          }}>✕</button>
-                        <div>
-                          <label className="label">Type</label>
-                          <select className="input bg-white"
-                            value={entry.type || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], type: e.target.value as AbortionEntry['type'] }
-                              setO('abortion_entries', updated)
-                            }}>
-                            <option value="">Select</option>
-                            <option>Spontaneous</option>
-                            <option>Induced</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label">At Weeks (gestation)</label>
-                          <input className="input" type="number" min="4" max="28"
-                            placeholder="e.g. 8"
-                            value={entry.weeks || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], weeks: e.target.value }
-                              setO('abortion_entries', updated)
-                            }} />
-                        </div>
-                        <div>
-                          <label className="label">Method</label>
-                          <select className="input bg-white"
-                            value={entry.method || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], method: e.target.value as AbortionEntry['method'] }
-                              setO('abortion_entries', updated)
-                            }}>
-                            <option value="">Select</option>
-                            <option>Medicines</option>
-                            <option>Surgery</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label">How Many Years Ago</label>
-                          <input className="input" type="number" min="0" max="50"
-                            placeholder="e.g. 2"
-                            value={entry.years_ago || ''}
-                            onChange={e => {
-                              const updated = [...(ob.abortion_entries || [])]
-                              updated[idx] = { ...updated[idx], years_ago: e.target.value }
-                              setO('abortion_entries', updated)
-                            }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* B — ANC */}
             <div className="card p-5">
@@ -18911,6 +19131,7 @@ function VitalCard({
     </div>
   )
 }
+
 ```
 
 # src\app\opd\page.tsx
@@ -19875,6 +20096,7 @@ export default function EditPatientPage() {
 # src\app\patients\[id]\page.tsx
 
 ```tsx
+
 'use client'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -19892,7 +20114,7 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download, ExternalLink, MessageCircle,
+  Shield, Download, ExternalLink, MessageCircle, Users,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
@@ -20152,6 +20374,19 @@ export default function PatientDetailPage() {
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors">
                     <Calendar className="w-4 h-4"/> Book Appointment
+                  </Link>
+                  {/* FIX #5: Add to OPD Queue directly from patient profile */}
+                  <Link
+                    href={`/queue?patient=${patient.id}`}
+                    onClick={async (e) => {
+                      // If queue page is already open, dispatch a custom event instead of navigating
+                      // This allows adding directly without leaving the patient profile
+                      e.preventDefault()
+                      // Navigate to queue page pre-filled with this patient
+                      window.location.href = `/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 hover:border-yellow-400 transition-colors font-medium">
+                    <Users className="w-4 h-4"/> Add to OPD Queue
                   </Link>
                   {bills.length === 0 && (
                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 font-medium w-full">
@@ -23026,6 +23261,7 @@ export default function PortalPage() {
 # src\app\queue\page.tsx
 
 ```tsx
+
 'use client'
 /**
  * src/app/queue/page.tsx  (UPDATED — B. OPD Queue → Supabase Realtime)
@@ -23103,12 +23339,59 @@ export default function QueuePage() {
 
   // Add to queue form state
   const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
-  const [addName,       setAddName]       = useState('')
-  const [addMrn,        setAddMrn]        = useState('')
+  const [addName,       setAddName]       = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
+  const [addMrn,        setAddMrn]        = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
   const [addPriority,   setAddPriority]   = useState<Priority>('normal')
   const [addNotes,      setAddNotes]      = useState('')
   const [addEncounter,  setAddEncounter]  = useState(searchParams.get('encounter') ?? '')
   const [addingEntry,   setAddingEntry]   = useState(false)
+
+  // ── Patient live search — uses 'mobile' (correct column name in patients table) ──
+  const [patientSearch,  setPatientSearch]  = useState(
+    searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : ''
+  )
+  const [patientResults, setPatientResults] = useState<{ id: string; full_name: string; mrn: string; mobile: string }[]>([])
+  const [searchLoading,  setSearchLoading]  = useState(false)
+
+  // Auto-open modal when arriving from patient profile page (?patient=ID&patientName=NAME)
+  const [autoOpened, setAutoOpened] = useState(false)
+  useEffect(() => {
+    if (!autoOpened && searchParams.get('patient') && searchParams.get('patientName')) {
+      setShowAddModal(true)
+      setAutoOpened(true)
+    }
+  }, [searchParams, autoOpened])
+
+  // Debounced search — queries full_name, mrn, mobile (NOT phone — column is 'mobile')
+  useEffect(() => {
+    if (patientSearch.trim().length < 2) { setPatientResults([]); return }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      const q = patientSearch.trim()
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, mobile')
+        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .limit(8)
+      if (!error) setPatientResults(data ?? [])
+      setSearchLoading(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [patientSearch])
+
+  function selectPatient(p: { id: string; full_name: string; mrn: string; mobile: string }) {
+    setAddPatientId(p.id)
+    setAddName(p.full_name)
+    setAddMrn(p.mrn)
+    setPatientSearch(p.full_name)
+    setPatientResults([])
+  }
+
+  function resetModal() {
+    setAddPatientId(''); setAddName(''); setAddMrn('')
+    setAddNotes(''); setAddPriority('normal')
+    setPatientSearch(''); setPatientResults([])
+  }
 
   const today = new Date().toISOString().slice(0, 10)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -23234,8 +23517,7 @@ export default function QueuePage() {
         `Queue token #${token} — ${addName || addPatientId}`)
 
       setShowAddModal(false)
-      setAddPatientId(''); setAddName(''); setAddMrn('')
-      setAddNotes(''); setAddPriority('normal')
+      resetModal()
     } catch (e: any) {
       setError(`Failed to add: ${e.message}`)
     } finally {
@@ -23382,18 +23664,84 @@ export default function QueuePage() {
           <div className="bg-white rounded-xl max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Add to Queue</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-700">
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="text-gray-400 hover:text-gray-700">
                 <X className="w-5 h-5"/>
               </button>
             </div>
 
             <div className="space-y-3">
+              {/* Patient search — queries full_name, mrn, mobile */}
               <div>
-                <label className="label">Patient ID (or search)</label>
-                <input className="input" value={addPatientId} onChange={e => setAddPatientId(e.target.value)}
-                  placeholder="Patient UUID or search…"/>
-                <p className="text-xs text-gray-400 mt-1">Tip: open a patient and use the "Add to Queue" button there for auto-fill.</p>
+                <label className="label">Search Patient</label>
+                <div className="relative">
+                  <input
+                    className="input pr-8"
+                    value={patientSearch}
+                    onChange={e => {
+                      setPatientSearch(e.target.value)
+                      // Clear selection if user changes the text
+                      if (addPatientId && e.target.value !== addName) {
+                        setAddPatientId(''); setAddName(''); setAddMrn('')
+                      }
+                    }}
+                    placeholder="Search by name, MRN, or mobile…"
+                    autoFocus
+                  />
+                  {searchLoading && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
+                  )}
+                </div>
+
+                {/* Live dropdown results */}
+                {patientResults.length > 0 && !addPatientId && (
+                  <div className="border border-gray-200 rounded-lg shadow-md mt-1 bg-white overflow-hidden">
+                    {patientResults.map(p => (
+                      <button key={p.id} type="button"
+                        onClick={() => selectPatient(p)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex items-center gap-3 border-b last:border-0 transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-700 font-bold text-xs">{p.full_name.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                          <div className="text-xs text-gray-400">
+                            MRN: {p.mrn}{p.mobile ? ` · ${p.mobile}` : ''}
+                          </div>
+                        </div>
+                        <CheckCircle className="w-4 h-4 text-blue-300 flex-shrink-0"/>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* No results message */}
+                {patientSearch.trim().length >= 2 && !searchLoading && patientResults.length === 0 && !addPatientId && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+                    No patients found for "{patientSearch}". Check spelling or try MRN / mobile number.
+                  </p>
+                )}
+
+                {/* Search hint */}
+                {patientSearch.trim().length < 2 && !addPatientId && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Type at least 2 characters — searches name, MRN and mobile number.
+                  </p>
+                )}
+
+                {/* Selected patient confirmation */}
+                {addPatientId && addName && (
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+                    <span className="flex-1 truncate"><strong>{addName}</strong>{addMrn ? ` · MRN: ${addMrn}` : ''}</span>
+                    <button type="button"
+                      className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      onClick={() => { setAddPatientId(''); setAddName(''); setAddMrn(''); setPatientSearch('') }}>
+                      <X className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
+                )}
               </div>
+
               <div>
                 <label className="label">Priority</label>
                 <select className="input" value={addPriority} onChange={e => setAddPriority(e.target.value as Priority)}>
@@ -23414,7 +23762,7 @@ export default function QueuePage() {
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
                 {addingEntry ? 'Adding…' : 'Add to Queue'}
               </button>
-              <button onClick={() => setShowAddModal(false)} className="btn-secondary">Cancel</button>
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="btn-secondary">Cancel</button>
             </div>
           </div>
         </div>
@@ -23422,6 +23770,7 @@ export default function QueuePage() {
     </AppShell>
   )
 }
+
 ```
 
 # src\app\reminders\page.tsx
@@ -23430,6 +23779,7 @@ export default function QueuePage() {
 'use client'
 import { useCallback, useEffect, useState, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
 import { getHospitalSettings } from '@/lib/utils'
 import { whatsAppUrl } from '@/lib/whatsapp-templates'
 import {
@@ -23498,8 +23848,9 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
 }
 
-const FILTER_TABS: { key: ReminderType | 'all'; label: string; emoji: string }[] = [
+const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [
   { key: 'all',           label: 'All',            emoji: '📋' },
+  { key: 'today_only',    label: "Today's",        emoji: '🔔' },
   { key: 'appointment',   label: 'Appointments',   emoji: '📅' },
   { key: 'follow_up',     label: 'Follow-ups',     emoji: '🔁' },
   { key: 'anc',           label: 'ANC',            emoji: '🤰' },
@@ -23558,10 +23909,13 @@ export default function RemindersPage() {
   const [reminders,    setReminders]    = useState<ReminderItem[]>([])
   const [loading,      setLoading]      = useState(true)
   const [refreshing,   setRefreshing]   = useState(false)
-  const [filter,       setFilter]       = useState<ReminderType | 'all'>('all')
+  const [filter,       setFilter]       = useState<ReminderType | 'all' | 'today_only'>('today_only')
   const [sent,         setSent]         = useState<Set<string>>(new Set())
   const [expanded,     setExpanded]     = useState<string | null>(null)
   const [generatedAt,  setGeneratedAt]  = useState<string>('')
+  // Realtime
+  const [realtimeOk,   setRealtimeOk]   = useState(false)
+  const [lastLiveAt,   setLastLiveAt]   = useState<Date | null>(null)
 
   // ── Bulk send state ─────────────────────────────────────────
   const [sendingAll,     setSendingAll]     = useState(false)
@@ -23603,6 +23957,30 @@ export default function RemindersPage() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Supabase Realtime — new/updated appointments appear instantly ──
+  useEffect(() => {
+    const ch = supabase.channel('reminders_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' },
+        () => { setLastLiveAt(new Date()); load(true) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' },
+        () => { setLastLiveAt(new Date()); load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'prescriptions' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prescriptions' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'discharge_summaries' },
+        () => { load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bills' },
+        () => { load(true) })
+      .subscribe(s => setRealtimeOk(s === 'SUBSCRIBED'))
+
+    // Fallback poll every 60 s when Realtime table replication isn't enabled
+    const poll = setInterval(() => { if (!realtimeOk) load(true) }, 60_000)
+
+    return () => { ch.unsubscribe(); clearInterval(poll) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Mark a single reminder as sent in Supabase + local state
   async function markSent(r: ReminderItem) {
     setSent(prev => new Set(Array.from(prev).concat(r.id)))
@@ -23621,7 +23999,17 @@ export default function RemindersPage() {
     })
   }
 
-  const filtered   = filter === 'all' ? reminders : reminders.filter(r => r.type === filter)
+  const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+
+  const filtered = (() => {
+    if (filter === 'all') return reminders
+    if (filter === 'today_only') return reminders.filter(r =>
+      r.priority === 'today' || r.priority === 'urgent' ||
+      r.dueDate === todayIST ||
+      r.context?.apptDate === todayIST
+    )
+    return reminders.filter(r => r.type === (filter as ReminderType))
+  })()
   const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
   const pending    = filtered.filter(r => !isSent(r))
   const done       = filtered.filter(r => isSent(r))
@@ -23631,6 +24019,8 @@ export default function RemindersPage() {
       t.key,
       t.key === 'all'
         ? reminders.length
+        : t.key === 'today_only'
+        ? reminders.filter(r => r.priority === 'today' || r.priority === 'urgent').length
         : reminders.filter(r => r.type === t.key).length,
     ])
   )
@@ -23770,6 +24160,12 @@ export default function RemindersPage() {
                 {urgentCount} Urgent
               </span>
             )}
+            <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full border ${
+              realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}>
+              <Zap className="w-3 h-3"/>
+              {realtimeOk ? 'Live' : 'Connecting…'}
+            </span>
             <button onClick={() => load(true)} disabled={refreshing}
               className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}/>
@@ -26193,6 +26589,7 @@ export default function DoctorsPage() {
 # src\app\settings\page.tsx
 
 ```tsx
+
 'use client'
 import { useState, useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
@@ -26589,7 +26986,24 @@ function UserManagementSection() {
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+          <div className="flex-1">
+            <span>{error}</span>
+            {error.includes('requires one of: [admin]') && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-red-600">You are logged in with a doctor account. To manage users, sign in with your admin account.</span>
+                <button
+                  onClick={async () => {
+                    const { data: { session } } = await supabase.auth.getSession()
+                    await supabase.auth.signOut()
+                    window.location.href = '/login'
+                  }}
+                  className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  🔄 Switch to Admin Account
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -26694,6 +27108,7 @@ function UserManagementSection() {
     </div>
   )
 }
+
 ```
 
 # src\app\setup\page.tsx
@@ -27877,12 +28292,76 @@ export default function VideoConsultPage() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — comprehensive how-to guide */}
         {!loading && appointments.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <Video className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium">No video appointments yet</p>
-            <p className="text-sm mt-1">Create slots above and share links with patients via WhatsApp</p>
+          <div className="max-w-2xl mx-auto py-8">
+            <div className="text-center mb-6">
+              <Video className="w-12 h-12 mx-auto mb-3 text-blue-300" />
+              <p className="font-semibold text-gray-700 text-lg">No video appointments yet</p>
+              <p className="text-sm text-gray-400 mt-1">Follow the steps below to start your first video consultation</p>
+            </div>
+
+            {/* Doctor steps */}
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-4">
+              <h3 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold">Dr</span>
+                Steps for the Doctor
+              </h3>
+              <ol className="space-y-2.5">
+                {[
+                  { n: 1, text: 'Click "Create Slots" above → choose date, time, and number of slots.' },
+                  { n: 2, text: 'Each slot gets a unique Jitsi Meet video link (no account needed).' },
+                  { n: 3, text: 'Optionally attach a patient directly when creating the slot.' },
+                  { n: 4, text: 'Click the "WhatsApp" button on a booked slot to send the patient their link.' },
+                  { n: 5, text: 'At consultation time, click "Join" → the video call opens right here in the app.' },
+                  { n: 6, text: 'Click "Done" when finished to mark the appointment as completed.' },
+                ].map(s => (
+                  <li key={s.n} className="flex items-start gap-3 text-sm text-blue-800">
+                    <span className="w-5 h-5 bg-blue-200 text-blue-800 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{s.n}</span>
+                    {s.text}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Patient steps */}
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-6">
+              <h3 className="font-bold text-green-800 mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-green-600 text-white rounded-full text-xs flex items-center justify-center font-bold">Pt</span>
+                Steps for the Patient
+              </h3>
+              <ol className="space-y-2.5">
+                {[
+                  { n: 1, text: 'Patient receives a WhatsApp message with their video link.' },
+                  { n: 2, text: 'At appointment time, patient taps the link in WhatsApp.' },
+                  { n: 3, text: 'The link opens directly in Chrome/Safari — no app download needed.' },
+                  { n: 4, text: 'Patient clicks "Allow" when the browser asks for camera & microphone.' },
+                  { n: 5, text: 'Patient is in the call! The doctor joins from this page by clicking "Join".' },
+                ].map(s => (
+                  <li key={s.n} className="flex items-start gap-3 text-sm text-green-800">
+                    <span className="w-5 h-5 bg-green-200 text-green-800 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{s.n}</span>
+                    {s.text}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Info box */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">
+              <p>✅ <strong>No account needed</strong> — Jitsi Meet is free and browser-based.</p>
+              <p>✅ <strong>Works on mobile</strong> — patients can join from any Android or iPhone browser.</p>
+              <p>✅ <strong>Encrypted</strong> — calls are end-to-end encrypted.</p>
+              <p>✅ <strong>Live updates</strong> — this page refreshes automatically when a patient books.</p>
+            </div>
+
+            {can('encounters.create') && (
+              <div className="text-center mt-6">
+                <button onClick={() => setShowCreate(true)}
+                  className="btn-primary flex items-center gap-2 mx-auto text-sm px-6 py-2.5">
+                  <Plus className="w-4 h-4" /> Create Your First Video Slot
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -28873,6 +29352,7 @@ export default function ClinicalSafetyModal({
 # src\components\layout\AppShell.tsx
 
 ```tsx
+
 'use client'
 /**
  * src/components/layout/AppShell.tsx — FIXED
@@ -29045,17 +29525,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* Role badge */}
+          {/* Role badge with sign-out — clicking shows a small dropdown */}
           {clinicUser && (
             <div className="no-print fixed top-2 right-4 z-40 hidden md:block">
-              <div className={`text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm ${
-                clinicUser.role === 'admin'  ? 'bg-purple-100 text-purple-700' :
-                clinicUser.role === 'doctor' ? 'bg-blue-100 text-blue-700' :
-                                               'bg-green-100 text-green-700'
-              }`}>
-                {clinicUser.role === 'admin'  ? '👑 Admin' :
-                 clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
-                {' · '}{clinicUser.full_name}
+              <div className="relative group">
+                {/* Badge button */}
+                <button
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
+                    clinicUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                    clinicUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                                   'bg-green-100 text-green-700 hover:bg-green-200'
+                  }`}
+                >
+                  {clinicUser.role === 'admin'  ? '👑 Admin' :
+                   clinicUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {' · '}{clinicUser.full_name}
+                  <span className="ml-0.5 opacity-50">▾</span>
+                </button>
+
+                {/* Dropdown — shows on hover */}
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                  <div className="px-3 py-2 border-b border-gray-50">
+                    <p className="text-xs font-semibold text-gray-700 truncate">{clinicUser.full_name}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{clinicUser.email}</p>
+                  </div>
+                  {/* Switch account — sign out then sign back in as different email */}
+                  <button
+                    onClick={async () => {
+                      if (confirm('Sign out to switch accounts? You can log back in as a different user.')) {
+                        await supabase.auth.signOut()
+                        router.push('/login')
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    🔄 Switch Account / Role
+                  </button>
+                  <button
+                    onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
+                    🚪 Sign Out
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -29073,6 +29585,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
+
 ```
 
 # src\components\layout\ConnectionBanner.tsx
@@ -29766,7 +30279,7 @@ import {
   Paperclip, Upload, Camera, X, FileText,
   Image, Trash2, Download, Eye, Loader2,
   AlertCircle, CheckCircle, Info, BookOpen,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react'
 
 function buildDoctorNoteFileName(originalFile: File): string {
@@ -29839,6 +30352,11 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   const [ocrResult,   setOcrResult]   = useState<OCRResult | null>(null)
   const [ocrError,    setOcrError]    = useState('')
   const [showOcrRaw,  setShowOcrRaw]  = useState(false)
+
+  // ── Autofill state ────────────────────────────────────────
+  const [autofilling,       setAutofilling]       = useState<string | null>(null)   // attachment id
+  const [autofillDoneId,    setAutofillDoneId]    = useState<string | null>(null)   // id of last success
+  const [autofillError,     setAutofillError]     = useState('')
 
   const uid    = useId()
   const fileId = `attach-file-${uid}`
@@ -30063,6 +30581,68 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   }
 
   function closeOcr() { setOcrTarget(null); setOcrResult(null); setOcrError('') }
+
+  // ── Extract & Autofill ────────────────────────────────────
+  // Sends the file to /api/doctor-note-ocr in 'autofill' mode.
+  // The API returns structured fields + a formType (ob_exam | vitals | encounter).
+  // We fire a custom DOM event 'autofill-fields' so the parent OPD/ANC page
+  // can listen and populate its own form state automatically.
+  async function extractAndFill(att: Attachment) {
+    setAutofilling(att.id)
+    setAutofillDoneId(null)
+    setAutofillError('')
+
+    try {
+      // Get the image blob the same way readDoctorNote does
+      let imageBlob: Blob | null = null
+      if (att.source === 'storage' && att.storage_key) {
+        const { data } = await supabase.storage.from(BUCKET).download(att.storage_key)
+        imageBlob = data
+      } else if (att.source === 'db' && att.file_data) {
+        const byteChars = atob(att.file_data)
+        const bytes     = new Uint8Array(byteChars.length)
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+        imageBlob = new Blob([bytes], { type: att.file_type })
+      }
+      if (!imageBlob) throw new Error('Could not retrieve image data.')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Not authenticated.')
+
+      const fd = new FormData()
+      fd.append('image', new File([imageBlob], att.file_name, { type: att.file_type }))
+      fd.append('context', `Extract structured fields for autofill. File: ${att.file_name}`)
+      fd.append('mode', 'autofill')
+
+      const res  = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Extraction failed.')
+
+      const { formType, fields } = data as { formType: string; fields: Record<string, any> }
+      if (!fields || Object.keys(fields).length === 0) {
+        throw new Error('Could not extract structured fields from this image. Try a clearer photo.')
+      }
+
+      // Dispatch DOM event so OPD/ANC pages can pick up and fill their forms
+      window.dispatchEvent(new CustomEvent('autofill-fields', {
+        detail: { formType, fields, sourceFile: att.file_name },
+      }))
+
+      await audit('autofill', 'attachment', att.id, att.file_name)
+      setAutofillDoneId(att.id)
+      setTimeout(() => setAutofillDoneId(null), 4000)
+    } catch (e: any) {
+      setAutofillError(e.message || 'Extract failed.')
+      setTimeout(() => setAutofillError(''), 5000)
+    } finally {
+      setAutofilling(null)
+    }
+  }
 
   const fmtSize = (b: number) =>
     b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
@@ -30292,7 +30872,7 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
         </div>
         <p className="text-xs text-gray-400 mt-1.5">
           JPG, PNG, WebP photos · PDF documents · Max {storageMode === 'db' ? DB_MAX_MB : MAX_MB} MB
-          <span className="ml-2 text-blue-500">· Image uploads: tap <BookOpen className="w-3 h-3 inline"/> to read handwriting (cursive OK)</span>
+          <span className="ml-2 text-blue-500">· Image uploads: tap <BookOpen className="w-3 h-3 inline"/> to read handwriting (cursive OK) · tap <Sparkles className="w-3 h-3 inline text-emerald-500"/> to extract &amp; autofill form fields</span>
         </p>
       </div>
 
@@ -30301,6 +30881,14 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
           <span>{error}</span>
           <button onClick={() => setError('')} className="ml-auto flex-shrink-0"><X className="w-3 h-3"/></button>
+        </div>
+      )}
+
+      {autofillError && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
+          <span><strong>Extract &amp; Fill:</strong> {autofillError}</span>
+          <button onClick={() => setAutofillError('')} className="ml-auto flex-shrink-0"><X className="w-3 h-3"/></button>
         </div>
       )}
 
@@ -30333,6 +30921,22 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
                 {att.file_type.startsWith('image/') && (
                   <button onClick={() => readDoctorNote(att)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg" title="Read handwriting with AI">
                     <BookOpen className="w-3.5 h-3.5"/>
+                  </button>
+                )}
+                {/* ── Extract & Fill Fields — NEW ── */}
+                {att.file_type.startsWith('image/') && (
+                  <button
+                    onClick={() => extractAndFill(att)}
+                    disabled={autofilling === att.id}
+                    title="Extract data and autofill form fields"
+                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg disabled:opacity-50"
+                  >
+                    {autofilling === att.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin"/>
+                      : autofillDoneId === att.id
+                      ? <CheckCircle className="w-3.5 h-3.5 text-green-500"/>
+                      : <Sparkles className="w-3.5 h-3.5"/>
+                    }
                   </button>
                 )}
                 <button onClick={() => deleteAttachment(att)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg" title="Delete">
@@ -31307,6 +31911,7 @@ export default function SmartMic({
 # src\components\voice\VoiceAssistant.tsx
 
 ```tsx
+
 'use client'
 /**
  * src/components/voice/VoiceAssistant.tsx — FIXED v2
@@ -31332,6 +31937,7 @@ export default function SmartMic({
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 import { Mic, MicOff, Loader2, X, HelpCircle } from 'lucide-react'
 import {
   INTENT_ROUTES,
@@ -31497,9 +32103,15 @@ export default function VoiceAssistant() {
 
       // AI resolution
       try {
+        // FIX: Pass Supabase auth token to avoid 401 error on /api/voice-command
+        const { data: { session } } = await supabase.auth.getSession()
+        const authHeader = session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {}
+
         const res = await fetch('/api/voice-command', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({
             transcript:  raw,
             currentPage: pathnameRef.current,
@@ -32954,7 +33566,7 @@ export type AuditAction =
   | 'create' | 'update' | 'delete'
   | 'view'   | 'print'
   | 'login'  | 'logout'
-  | 'export' | 'scan'
+  | 'export' | 'scan' | 'autofill'
   | 'safety_override' | 'mfa_enroll' | 'mfa_verify'
   | 'backup' | 'purge'
 
@@ -39521,9 +40133,9 @@ export interface ObstetricEntry {
 
 export interface AbortionEntry {
   type?:      'Spontaneous' | 'Induced' | ''
-  weeks?:     string
-  method?:    'Medicines' | 'Surgery' | ''
-  years_ago?: string
+  weeks?:     string   // gestational age in weeks at time of abortion
+  method?:    'MTP Kit' | 'D&C' | 'Suction Evacuation' | 'Natural' | 'Surgical' | 'Medicines' | 'Surgery' | ''
+  years_ago?: string   // actual year it occurred (e.g. "2019") — field name kept for backward compat
 }
 
 export interface OBData {
@@ -39652,6 +40264,7 @@ export interface DischargeSummary {
   updated_at: string
   encounter_id?: string
 }
+
 ```
 
 # SUGGESTIONS.md
