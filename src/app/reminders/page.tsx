@@ -234,7 +234,12 @@ export default function RemindersPage() {
     return reminders.filter(r => r.type === (filter as ReminderType))
   })()
 
-  const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
+  // FIXED: isSent uses only the local sent set (this session's sends).
+  // reminderSentAt from DB is shown as a visual badge but does NOT hide items from pending —
+  // otherwise all previously-reminded patients vanish from the list on next load even if
+  // they have new appointments or overdue follow-ups.
+  const isSent     = (r: ReminderItem) => sent.has(r.id)
+  const isAlreadySentBefore = (r: ReminderItem) => r.reminderSentAt != null && r.type !== 'high_risk_anc'
   const pending    = filtered.filter(r => !isSent(r))
   const done       = filtered.filter(r => isSent(r))
 
@@ -256,7 +261,8 @@ export default function RemindersPage() {
 
   // ── Bulk Send All — opens WhatsApp for each pending reminder sequentially ──
   async function handleSendAll() {
-    const toSend = pending.filter(r => r.mobile)
+    // FIXED: send ALL unsent reminders across all filter tabs, not just the current filtered view
+    const toSend = allPendingWithMobile
     if (toSend.length === 0) return
 
     setSendingAll(true)
@@ -347,10 +353,13 @@ export default function RemindersPage() {
   }
 
   // ── Load send history ───────────────────────────────────────
-  async function loadHistory() {
+  const [historyDays, setHistoryDays] = useState(7)
+
+  async function loadHistory(days = historyDays) {
     setHistoryLoading(true)
     try {
-      const res = await fetch('/api/reminders/history')
+      // FIXED: pass days param so we can load more than just "today"
+      const res = await fetch(`/api/reminders/history?days=${days}`)
       if (res.ok) {
         const data = await res.json()
         setHistory(data.logs || [])
@@ -361,8 +370,7 @@ export default function RemindersPage() {
     setHistoryLoading(false)
   }
 
-  // FIX: pending count for the "All" filter specifically (not filtered view)
-  // The button should be enabled whenever there are unsent reminders WITH mobile numbers
+  // FIX: pending count across ALL reminders (not just current filter view) for Send All button
   const allPendingWithMobile = reminders.filter(r => !isSent(r) && r.mobile)
 
   return (
@@ -410,21 +418,21 @@ export default function RemindersPage() {
         <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-2xl p-4 mb-6">
           <div className="flex flex-wrap items-center gap-3">
 
-            {/* FIX: Send All button — enabled based on ALL pending reminders (not filtered) */}
-            {/* This way if you're on "All" tab, the count and enablement reflects everything */}
+            {/* FIXED: Send All button — always uses allPendingWithMobile (all filters, not just current view)
+                so it's never wrongly disabled when you're on a sub-filter tab */}
             <button
               onClick={() => setShowBulkPanel(p => !p)}
-              disabled={pending.length === 0}
+              disabled={allPendingWithMobile.length === 0}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm py-2.5 px-5 rounded-xl transition-colors shadow-sm shadow-green-200"
             >
               <Users className="w-4 h-4"/>
-              Send All Reminders ({pending.length})
+              Send All Reminders ({allPendingWithMobile.length})
             </button>
 
             {/* Explanation when button is disabled */}
-            {pending.length === 0 && reminders.length > 0 && (
+            {allPendingWithMobile.length === 0 && reminders.length > 0 && (
               <p className="text-xs text-gray-500">
-                All reminders in this view are already sent. Switch to &quot;All&quot; tab to see more.
+                All reminders are already sent.
               </p>
             )}
 
@@ -446,7 +454,7 @@ export default function RemindersPage() {
             <button
               onClick={() => {
                 setShowHistory(h => !h)
-                if (!showHistory) loadHistory()
+                if (!showHistory) loadHistory(historyDays)
               }}
               className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-sm py-2.5 px-4 rounded-xl border border-gray-200 transition-colors"
             >
@@ -499,7 +507,7 @@ export default function RemindersPage() {
                     Bulk Send via WhatsApp
                   </h3>
                   <p className="text-xs text-gray-500 mb-3">
-                    This will open WhatsApp for each of the <strong>{pending.length}</strong> pending patients
+                    This will open WhatsApp for each of the <strong>{allPendingWithMobile.length}</strong> pending patients
                     one by one (1.5s delay between each). Each message will be pre-filled — you just need to tap Send in WhatsApp.
                   </p>
                   <div className="flex gap-2">
@@ -508,7 +516,7 @@ export default function RemindersPage() {
                       className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors"
                     >
                       <PlayCircle className="w-4 h-4"/>
-                      Start Sending ({pending.length} patients)
+                      Start Sending ({allPendingWithMobile.length} patients)
                     </button>
                     <button
                       onClick={() => setShowBulkPanel(false)}
@@ -577,18 +585,34 @@ export default function RemindersPage() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                 <History className="w-4 h-4 text-gray-500"/>
-                Recent Send History
+                Send History
               </h3>
-              <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600">
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {/* FIXED: date range selector so past reminders are visible */}
+                <select
+                  value={historyDays}
+                  onChange={e => { const d = Number(e.target.value); setHistoryDays(d); loadHistory(d) }}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white"
+                >
+                  <option value={1}>Today</option>
+                  <option value={7}>Last 7 days</option>
+                  <option value={30}>Last 30 days</option>
+                  <option value={90}>Last 3 months</option>
+                </select>
+                <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600">
+                  Close
+                </button>
+              </div>
             </div>
             {historyLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 text-blue-500 animate-spin"/>
               </div>
             ) : history.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No reminders sent yet today.</p>
+              /* FIXED: was "No reminders sent yet today" — now shows the correct period */
+              <p className="text-sm text-gray-400 text-center py-6">
+                No reminders sent in the last {historyDays === 1 ? 'day' : `${historyDays} days`}.
+              </p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {history.map((log: any, i: number) => (
@@ -702,13 +726,14 @@ export default function RemindersPage() {
                 </div>
                 <div className="space-y-3">
                   {pending.map(r => (
-                    <ReminderCard
+                <ReminderCard
                       key={r.id}
                       reminder={r}
                       hs={hs}
                       isExpanded={expanded === r.id}
                       onToggle={() => setExpanded(prev => prev === r.id ? null : r.id)}
                       onSent={() => markSent(r)}
+                      alreadySentBefore={isAlreadySentBefore(r)}
                     />
                   ))}
                 </div>
@@ -749,13 +774,14 @@ export default function RemindersPage() {
 
 // ── Reminder Card Component ───────────────────────────────────
 function ReminderCard({
-  reminder: r, hs, isExpanded, onToggle, onSent,
+  reminder: r, hs, isExpanded, onToggle, onSent, alreadySentBefore,
 }: {
-  reminder:   ReminderItem
-  hs:         any
-  isExpanded: boolean
-  onToggle:   () => void
-  onSent:     () => void
+  reminder:          ReminderItem
+  hs:                any
+  isExpanded:        boolean
+  onToggle:          () => void
+  onSent:            () => void
+  alreadySentBefore?: boolean
 }) {
   const [editing,   setEditing]   = useState(false)
   const [msgText,   setMsgText]   = useState('')
@@ -797,6 +823,12 @@ function ReminderCard({
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pCfg.bg} ${pCfg.text} border ${pCfg.border}`}>
               {pCfg.label}
             </span>
+            {/* FIXED: show "Previously sent" badge instead of hiding the card */}
+            {alreadySentBefore && (
+              <span className="text-xs text-green-600 font-semibold flex items-center gap-0.5 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200">
+                <CheckCircle className="w-3 h-3"/> Sent before
+              </span>
+            )}
           </div>
           <div className="text-xs text-gray-700 font-semibold">{r.title}</div>
           <div className="text-xs text-gray-400 truncate">{r.subtitle}</div>

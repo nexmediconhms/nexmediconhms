@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
-import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine } from 'lucide-react'
+import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
 
 // ── Tab types ─────────────────────────────────────────────────
 type Tab = 'vitals' | 'consultation' | 'obgyn'
@@ -28,7 +28,7 @@ const EMPTY_VITALS: Vitals = {
 // ── Highlight tracking ────────────────────────────────────────
 type VitalsHL  = Partial<Record<keyof Vitals, boolean>>
 type OBHL      = Partial<Record<keyof OBData, boolean>>
-interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean }
+interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean; hpi?: boolean }
 
 // ── Ordinal suffix helper ─────────────────────────────────────
 function ordinal(n: number): string {
@@ -60,6 +60,13 @@ export default function NewConsultationPage() {
   const [vHL,  setVHL]  = useState<VitalsHL>({})
   const [obHL, setObHL] = useState<OBHL>({})
   const [cHL,  setCHL]  = useState<ConsultHL>({})
+
+  // ── Doctor note camera state ──────────────────────────────────
+  const [noteOcrLoading,  setNoteOcrLoading]  = useState(false)
+  const [noteOcrPreview,  setNoteOcrPreview]  = useState<any>(null)
+  const [noteOcrError,    setNoteOcrError]    = useState('')
+  const [noteApplied,     setNoteApplied]     = useState(false)
+  const [noteMedsQueue,   setNoteMedsQueue]   = useState('')
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -245,7 +252,122 @@ export default function NewConsultationPage() {
 
   // startVoice removed — SmartMic handles STT + AI correction
 
-  // ── Save ──────────────────────────────────────────────────────
+  // ── Doctor Note Camera: send photo to OCR API ─────────────────
+  async function handleNotePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setNoteOcrLoading(true)
+    setNoteOcrError('')
+    setNoteOcrPreview(null)
+    setNoteApplied(false)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('mode', 'autofill')
+      fd.append('context', `OPD consultation note for gynecology patient ${patient?.full_name || ''} — extract chief complaint, diagnosis, vitals, history, plan, medications, follow-up`)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `OCR failed (${res.status})`)
+      }
+      const data = await res.json()
+      setNoteOcrPreview(data)
+    } catch (err: any) {
+      setNoteOcrError(err.message || 'Failed to read note. Ensure AI key is configured (/ai-setup).')
+    } finally {
+      setNoteOcrLoading(false)
+    }
+  }
+
+  // ── Doctor Note Camera: apply extracted fields to form ─────────
+  const handleDoctorNote = useCallback((data: any) => {
+    const f = data?.fields || {}
+    const vitalsHL: VitalsHL  = {}
+    const cHL_:     ConsultHL = {}
+    const obHL_:    OBHL      = {}
+
+    // Vitals
+    if (f.pulse)        { setV('pulse',        String(f.pulse));        vitalsHL.pulse        = true }
+    if (f.bp_systolic)  { setV('bp_systolic',  String(f.bp_systolic));  vitalsHL.bp_systolic  = true }
+    if (f.bp_diastolic) { setV('bp_diastolic', String(f.bp_diastolic)); vitalsHL.bp_diastolic = true }
+    if (f.temperature)  { setV('temperature',  String(f.temperature));  vitalsHL.temperature  = true }
+    if (f.spo2)         { setV('spo2',         String(f.spo2));         vitalsHL.spo2         = true }
+    if (f.weight)       { setV('weight',       String(f.weight));       vitalsHL.weight       = true }
+    if (f.height)       { setV('height',       String(f.height));       vitalsHL.height       = true }
+
+    // Chief complaint — only fill if currently empty
+    if (f.chief_complaint) {
+      setChiefComplaint(prev => prev.trim() ? prev : f.chief_complaint)
+      cHL_.chiefComplaint = true
+    }
+    // Diagnosis — only fill if currently empty
+    if (f.diagnosis) {
+      setDiagnosis(prev => prev.trim() ? prev : f.diagnosis)
+      cHL_.diagnosis = true
+    }
+
+    // HPI — build from history + duration
+    const hpiLines: string[] = []
+    if (f.history)  hpiLines.push(f.history)
+    if (f.duration) hpiLines.push(`Duration: ${f.duration}`)
+    if (hpiLines.length > 0) {
+      setHpi(prev => prev.trim() ? prev : hpiLines.join('\n'))
+      cHL_.hpi = true
+    }
+
+    // Clinical notes — build from findings, plan, investigations, advice, follow-up
+    const noteLines: string[] = []
+    if (f.examination_findings)   noteLines.push(`O/E: ${f.examination_findings}`)
+    if (f.treatment_plan)         noteLines.push(`Plan: ${f.treatment_plan}`)
+    if (f.investigations_ordered) noteLines.push(`Ix: ${f.investigations_ordered}`)
+    if (f.advice)                 noteLines.push(`Advice: ${f.advice}`)
+    if (f.follow_up_date)         noteLines.push(`Follow-up: ${f.follow_up_date}`)
+    if (noteLines.length > 0) {
+      setNotes(prev => prev.trim() ? prev + '\n\n' + noteLines.join('\n') : noteLines.join('\n'))
+      cHL_.notes = true
+    }
+
+    // Medications → queue as amber banner for prescription reference
+    if (Array.isArray(f.medicines) && f.medicines.length > 0) {
+      const medStr = f.medicines
+        .map((m: any) => `• ${m.name || ''} ${m.dose || ''} ${m.frequency || ''} ${m.days ? `× ${m.days}` : ''}`.trim())
+        .join('\n')
+      setNoteMedsQueue(medStr)
+    }
+
+    // OB/GYN fields (if ANC note)
+    if (f.lmp)               { setO('lmp', f.lmp);                           (obHL_ as any).lmp            = true }
+    if (f.edd)               { setO('edd', f.edd);                           (obHL_ as any).edd            = true }
+    if (f.gravida != null)   { setO('gravida', f.gravida);                   (obHL_ as any).gravida        = true }
+    if (f.para    != null)   { setO('para',    f.para);                      (obHL_ as any).para           = true }
+    if (f.gestational_age_weeks) { setO('gestational_age', `${f.gestational_age_weeks} weeks`); (obHL_ as any).gestational_age = true }
+    if (f.fundal_height)     { setO('fundal_height', f.fundal_height);       (obHL_ as any).fundal_height  = true }
+    if (f.fhs)               { setO('fhs', f.fhs);                           (obHL_ as any).fhs            = true }
+
+    // Flash highlights and auto-jump to most-filled tab
+    flashHL(setVHL, vitalsHL)
+    flashHL(setCHL, cHL_)
+    flashHL(setObHL, obHL_)
+
+    const vc = Object.keys(vitalsHL).length
+    const cc = Object.keys(cHL_).length
+    const oc = Object.keys(obHL_).length
+    if (oc > 0 && oc >= vc && oc >= cc) setTab('obgyn')
+    else if (cc > 0) setTab('consultation')
+    else if (vc > 0) setTab('vitals')
+
+    setNoteApplied(true)
+    setTimeout(() => setNoteApplied(false), 4000)
+  }, [patient])
+
+
   async function handleSave() {
     if (!patientId) return
     if (!chiefComplaint.trim() && !diagnosis.trim()) {
@@ -387,6 +509,116 @@ export default function NewConsultationPage() {
             Automatically fills vitals, complaints, diagnosis, and OB/GYN fields.
           </p>
         </div>
+
+        {/* ══ DOCTOR NOTE CAMERA ════════════════════════════════════
+            Doctor clicks a photo of their handwritten note during
+            the consultation. AI extracts chief complaint, diagnosis,
+            vitals, history, plan, and medications — each placed into
+            the correct field automatically.
+        ════════════════════════════════════════════════════════ */}
+        <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">🩺 Click Photo of Doctor's Note</p>
+              <p className="text-xs text-blue-500 mt-0.5">
+                Take a photo of your handwritten note — AI reads it and fills in complaint, diagnosis, vitals, and plan automatically.
+              </p>
+            </div>
+            <label className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
+              ${noteOcrLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}>
+              {noteOcrLoading
+                ? <><Loader2 className="w-4 h-4 animate-spin"/> Reading…</>
+                : <><Camera className="w-4 h-4"/> Click Note Photo</>}
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                onChange={handleNotePhoto}
+                disabled={noteOcrLoading}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* Error */}
+          {noteOcrError && (
+            <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2 text-xs text-red-700">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
+              <span className="flex-1">{noteOcrError}</span>
+              <button onClick={() => setNoteOcrError('')}><X className="w-3.5 h-3.5"/></button>
+            </div>
+          )}
+
+          {/* Applied success */}
+          {noteApplied && (
+            <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+              Doctor note applied! Fields highlighted in yellow were auto-filled — please review before saving.
+            </div>
+          )}
+
+          {/* Preview panel — shown before applying */}
+          {noteOcrPreview && !noteApplied && (
+            <div className="mt-3 bg-white border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-blue-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5"/>
+                  AI Extracted — review before applying
+                  <span className="font-normal text-blue-500 ml-1">
+                    ({Math.round((noteOcrPreview.confidence || 0) * 100)}% confidence)
+                  </span>
+                </p>
+                <button onClick={() => setNoteOcrPreview(null)} className="text-blue-300 hover:text-blue-600">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs mb-3">
+                {Object.entries(noteOcrPreview.fields || {}).map(([k, v]: any) => {
+                  if (!v || typeof v === 'object') return null
+                  return (
+                    <div key={k} className="flex gap-1.5">
+                      <span className="text-blue-400 capitalize min-w-[110px] font-medium">{k.replace(/_/g,' ')}:</span>
+                      <span className="text-blue-900 font-semibold">{String(v)}</span>
+                    </div>
+                  )
+                })}
+                {Array.isArray(noteOcrPreview.fields?.medicines) && noteOcrPreview.fields.medicines.length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-blue-400 font-medium">Medications:</span>
+                    <ul className="mt-0.5 space-y-0.5 pl-2">
+                      {noteOcrPreview.fields.medicines.map((m: any, i: number) => (
+                        <li key={i} className="text-blue-900">• {m.name} {m.dose||''} {m.frequency||''} {m.days ? `× ${m.days}` : ''}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { handleDoctorNote(noteOcrPreview); setNoteOcrPreview(null) }}
+                  className="btn-primary text-xs flex items-center gap-1.5 py-1.5">
+                  <Sparkles className="w-3.5 h-3.5"/> Apply to Form
+                </button>
+                <button onClick={() => setNoteOcrPreview(null)} className="btn-secondary text-xs py-1.5">
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Medications queued from doctor note */}
+        {noteMedsQueue && (
+          <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <span className="text-base flex-shrink-0">💊</span>
+            <div className="flex-1">
+              <p className="text-xs font-bold text-amber-700 mb-1">Medications from doctor note — add these in the Prescription step:</p>
+              <pre className="text-xs text-amber-800 font-mono whitespace-pre-wrap">{noteMedsQueue}</pre>
+            </div>
+            <button onClick={() => setNoteMedsQueue('')} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
+              <X className="w-4 h-4"/>
+            </button>
+          </div>
+        )}
 
         {/* Tab Bar */}
         <div className="flex border-b border-gray-200 mb-5 bg-white rounded-t-xl overflow-hidden shadow-sm">

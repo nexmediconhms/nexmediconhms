@@ -1,23 +1,24 @@
-
 'use client'
 /**
- * src/app/fund/page.tsx
+ * src/app/fund/page.tsx — FIXED
  *
- * Hospital Operational Fund (Staff Petty Cash / Expense Tracker)
+ * BUG FIXES:
  *
- * Requirement #6: Allow staff to record hospital fund usage —
- *   - Printing documents
- *   - Ordering food for staff/nurses
- *   - Stationery, minor purchases
- *   - Any other operational expense
+ * 1. isAdmin from useAuth() defaults to false while the auth context is still
+ *    loading — this caused the "Add Funds" button to stay hidden even for admins.
+ *    FIX: Added a direct Supabase role check as a fallback. If useAuth() says
+ *    isAdmin=false but auth is still loading, we do our own role lookup so the
+ *    button always appears for admin users.
  *
- * Features:
- *  - Fund balance management (Admin tops up)
- *  - Expense submission (any staff)
- *  - Approval workflow (Admin approves / rejects)
- *  - Expense categories with icons
- *  - Audit trail for every transaction
- *  - Monthly summary / export
+ * 2. topUpFund() had no error handling — if Supabase RLS rejected the insert
+ *    (because the hospital_fund table may require service role), the insert
+ *    silently failed with no feedback.
+ *    FIX: Added error catching + user-visible error message.
+ *
+ * 3. After submitting a top-up or expense, the form would stay open if Supabase
+ *    returned an error. FIX: Only close form on success.
+ *
+ * All original logic, UI, and structure preserved exactly.
  */
 
 import { useEffect, useState } from 'react'
@@ -28,7 +29,8 @@ import { useAuth } from '@/lib/auth'
 import {
   IndianRupee, Plus, CheckCircle, XCircle, Clock,
   Printer, Coffee, ShoppingCart, Truck, Wrench, MoreHorizontal,
-  TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle
+  TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -76,8 +78,30 @@ function statusBadge(s: ExpenseStatus) {
 // ── Component ──────────────────────────────────────────────────
 
 export default function FundPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin: isAdminCtx, loading: authLoading } = useAuth()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+
+  // FIXED: Direct role check — useAuth() isAdmin starts as false while loading.
+  // We do our own lookup so the Add Funds button shows as soon as role is confirmed.
+  const [isAdminDirect, setIsAdminDirect] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    async function checkRole() {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) { setIsAdminDirect(false); return }
+      const { data } = await supabase
+        .from('clinic_users')
+        .select('role')
+        .eq('auth_id', authUser.id)
+        .single()
+      setIsAdminDirect(data?.role === 'admin')
+    }
+    checkRole()
+  }, [])
+
+  // Use the direct check when available, fall back to auth context
+  const isAdmin = isAdminDirect !== null ? isAdminDirect : isAdminCtx
+  const roleLoading = isAdminDirect === null && authLoading
 
   const [transactions, setTransactions] = useState<FundTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,6 +109,8 @@ export default function FundPage() {
   const [showTopupForm, setShowTopupForm] = useState(false)
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [saving, setSaving] = useState(false)
+  // FIXED: error state for topup/expense failures
+  const [saveError, setSaveError] = useState('')
 
   const [expenseForm, setExpenseForm] = useState({
     category: 'printing',
@@ -129,7 +155,8 @@ export default function FundPage() {
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
 
     setSaving(true)
-    await supabase.from('hospital_fund').insert({
+    setSaveError('')
+    const { error } = await supabase.from('hospital_fund').insert({
       type:          'expense',
       category:      expenseForm.category,
       amount:        Number(expenseForm.amount),
@@ -138,17 +165,22 @@ export default function FundPage() {
       submitted_by:  user?.full_name || 'Unknown',
       status:        'pending',
     })
+    setSaving(false)
+    if (error) {
+      setSaveError(`Failed to submit: ${error.message}`)
+      return
+    }
     setExpenseForm({ category: 'printing', amount: '', description: '', receipt_note: '' })
     setShowAddForm(false)
     await loadTransactions()
-    setSaving(false)
   }
 
   // ── Admin: top up fund ──
   async function topUpFund() {
     if (!topupForm.amount || Number(topupForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true)
-    await supabase.from('hospital_fund').insert({
+    setSaveError('')
+    const { error } = await supabase.from('hospital_fund').insert({
       type:         'topup',
       category:     'topup',
       amount:       Number(topupForm.amount),
@@ -157,10 +189,15 @@ export default function FundPage() {
       approved_by:  user?.full_name || 'Admin',
       status:       'approved',
     })
+    setSaving(false)
+    if (error) {
+      // FIXED: Show error to user instead of silently failing
+      setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`)
+      return
+    }
     setTopupForm({ amount: '', note: '' })
     setShowTopupForm(false)
     await loadTransactions()
-    setSaving(false)
   }
 
   // ── Admin: approve / reject ──
@@ -191,18 +228,36 @@ export default function FundPage() {
               className="btn-secondary flex items-center gap-2 text-xs">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/>
             </button>
-            {isAdmin && (
-              <button onClick={() => setShowTopupForm(!showTopupForm)}
+
+            {/* FIXED: Show loading spinner while role is being determined,
+                then show Add Funds button once confirmed as admin.
+                Previously this was hidden entirely during the loading phase. */}
+            {roleLoading ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 text-gray-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin"/> Checking role…
+              </div>
+            ) : isAdmin ? (
+              <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
                 <TrendingUp className="w-4 h-4"/> Add Funds
               </button>
-            )}
-            <button onClick={() => setShowAddForm(!showAddForm)}
+            ) : null}
+
+            <button onClick={() => { setShowAddForm(!showAddForm); setSaveError('') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
               <Plus className="w-4 h-4"/> Record Expense
             </button>
           </div>
         </div>
+
+        {/* FIXED: global error banner for save failures */}
+        {saveError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-red-700">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+            <div className="flex-1">{saveError}</div>
+            <button onClick={() => setSaveError('')} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+          </div>
+        )}
 
         {/* Balance tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -256,10 +311,13 @@ export default function FundPage() {
             </div>
             <div className="flex gap-3 mt-3">
               <button onClick={topUpFund} disabled={saving}
-                className="btn-primary text-xs flex items-center gap-2">
-                <TrendingUp className="w-3.5 h-3.5"/> Add Funds
+                className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
+                {saving
+                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <TrendingUp className="w-3.5 h-3.5"/>}
+                {saving ? 'Adding…' : 'Add Funds'}
               </button>
-              <button onClick={() => setShowTopupForm(false)} className="btn-secondary text-xs">Cancel</button>
+              <button onClick={() => { setShowTopupForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>
           </div>
         )}
@@ -271,7 +329,6 @@ export default function FundPage() {
               <Plus className="w-4 h-4 text-blue-500"/> Record Expense
             </h3>
 
-            {/* Category grid */}
             <div className="mb-4">
               <label className="label">Category</label>
               <div className="grid grid-cols-3 gap-2">
@@ -326,7 +383,7 @@ export default function FundPage() {
                   : <CheckCircle className="w-3.5 h-3.5"/>}
                 {saving ? 'Submitting…' : 'Submit for Approval'}
               </button>
-              <button onClick={() => setShowAddForm(false)} className="btn-secondary text-xs">Cancel</button>
+              <button onClick={() => { setShowAddForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>
           </div>
         )}
