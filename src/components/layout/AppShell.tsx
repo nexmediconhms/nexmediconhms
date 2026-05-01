@@ -34,7 +34,7 @@ import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout'; 
-import VoiceAssistant from '../voice/VoiceAssistant'; 
+import VoiceAssistant from '../voice/VoiceAssistant';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
