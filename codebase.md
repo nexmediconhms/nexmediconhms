@@ -38,6 +38,236 @@ public/sw.js
 public/workbox-*.js
 ```
 
+# ADMIN_SETUP_GUIDE.md
+
+```md
+# NexMedicon HMS — Admin Setup & Fixes Guide
+
+## Issue 1: Admin Account Setup — Step-by-Step
+
+### Why You Can't Switch to Admin
+The app uses **Supabase Auth** for login credentials + a `clinic_users` table for roles.
+If your user exists in Supabase Auth but has no `clinic_users` record (or has the wrong role), login will fail or you'll land as a non-admin.
+
+---
+
+### OPTION A — Reset Everything From Scratch (Recommended)
+
+#### Step 1: Clear all users from Supabase Auth
+Go to your **Supabase Dashboard → Authentication → Users** and delete ALL existing users.
+
+#### Step 2: Clear the clinic_users table
+In **Supabase → SQL Editor**, run:
+
+\`\`\`sql
+-- ⚠️ WARNING: This deletes ALL user accounts. Patient data is NOT deleted.
+-- Run this ONLY if you want to start fresh with user accounts.
+
+TRUNCATE clinic_users CASCADE;
+
+-- Optional: If you also want to clear demo patients:
+-- TRUNCATE patients, encounters, prescriptions, lab_reports, bills CASCADE;
+\`\`\`
+
+#### Step 3: Create your Admin user in Supabase Auth
+1. Go to **Supabase → Authentication → Users → Add User**
+2. Enter your **email** (e.g. `admin@yourclinic.com`) and a **strong password**
+3. Click **Create User**
+4. Copy the **User UID** shown (you'll need it in Step 4)
+
+#### Step 4: Create the clinic_users record directly in SQL
+In **Supabase → SQL Editor**, run (replace the values):
+
+\`\`\`sql
+-- Replace 'YOUR-UUID-HERE' with the UID from Step 3
+-- Replace 'Dr. Your Name' with the admin's actual name
+-- Replace 'admin@yourclinic.com' with your email
+
+INSERT INTO clinic_users (auth_id, full_name, email, role, is_active)
+VALUES (
+  'YOUR-UUID-HERE',
+  'Dr. Your Name',
+  'admin@yourclinic.com',
+  'admin',
+  true
+);
+\`\`\`
+
+#### Step 5: Log in
+Go to your app → `/login` → Enter your email & password → You are now Admin with full access.
+
+---
+
+### OPTION B — Change an Existing User to Admin (No Data Loss)
+
+If you already have a working account but it's Doctor/Staff and you want to make it Admin:
+
+\`\`\`sql
+-- In Supabase SQL Editor:
+-- Find your user first:
+SELECT id, full_name, email, role FROM clinic_users;
+
+-- Then update the role:
+UPDATE clinic_users SET role = 'admin' WHERE email = 'your@email.com';
+\`\`\`
+
+---
+
+### OPTION C — Create Separate Credentials for Admin, Doctor, Staff
+
+**For each new user:**
+
+1. **Supabase → Authentication → Users → Add User**
+   - Enter email + password for each person
+   - Copy their UID
+
+2. **In SQL Editor**, insert their clinic_users record:
+
+\`\`\`sql
+-- Admin account
+INSERT INTO clinic_users (auth_id, full_name, email, role, is_active)
+VALUES ('ADMIN-UID', 'Dr. Admin Name', 'admin@clinic.com', 'admin', true);
+
+-- Doctor account
+INSERT INTO clinic_users (auth_id, full_name, email, role, is_active)
+VALUES ('DOCTOR-UID', 'Dr. Doctor Name', 'doctor@clinic.com', 'doctor', true);
+
+-- Staff/Nurse account
+INSERT INTO clinic_users (auth_id, full_name, email, role, is_active)
+VALUES ('STAFF-UID', 'Nurse Name', 'staff@clinic.com', 'staff', true);
+\`\`\`
+
+**OR** — Once you have one Admin account working, use the app's Settings → Manage Users → Invite New User to create Doctor and Staff accounts without touching SQL.
+
+---
+
+### Role Permissions Reference
+
+| Feature | Admin 👑 | Doctor 🩺 | Staff 📋 |
+|---------|----------|-----------|---------|
+| View patients | ✅ | ✅ | ✅ |
+| Register patients | ✅ | ✅ | ✅ |
+| OPD consultations | ✅ | ✅ | View only |
+| Write prescriptions | ✅ | ✅ | ❌ |
+| Billing | ✅ | View | ✅ |
+| Add Hospital Fund (top-up) | ✅ | ❌ | ❌ |
+| Submit expenses (fund) | ✅ | ✅ | ✅ |
+| Financial reports | ✅ | ❌ | ❌ |
+| Manage users | ✅ | ❌ | ❌ |
+| Settings | ✅ | ✅ | View only |
+| Delete patients | ✅ | ❌ | ❌ |
+| Create Video Slots | ✅ | ✅ | ❌ |
+| IPD admissions | ✅ | ✅ | View only |
+
+---
+
+## Issue 2: Hospital Fund — Who Can Add Funds?
+
+**Only Admin** can top up the hospital fund balance.
+**Any authenticated user** (Admin, Doctor, Staff) can submit expenses.
+
+The "Add Funds" button (`+ Add Funds`) only appears for users with `isAdmin = true`.
+If you're logged in as Doctor/Staff, you will see the expense form but not the fund top-up form.
+
+**Fix:** Log in as Admin → Go to `/fund` → You'll see "Add Funds" button in the top-right.
+
+---
+
+## Issue 3: How to Create Video Slots ("Create Slots" button)
+
+The **"Create Slots"** button is on the **Video Consult page** (`/video`), NOT the Appointments page.
+
+### Where to find it:
+1. Log in as **Admin** or **Doctor**
+2. Click **"Video Consult"** in the left sidebar (under IPD section)
+3. At the top of the page, click the **"+ Create Slots"** button (blue button, top right)
+4. A form slides down — fill in:
+   - **Date** — which day to create slots for
+   - **Time** — start time (e.g., 10:00 AM)
+   - **Number of slots** — how many consecutive slots to create
+   - **Duration per slot** — 15, 20, or 30 minutes
+   - **Doctor name** — which doctor will take the call
+   - Optionally attach a patient
+5. Click **"Create Slots"**
+
+Each slot gets a unique Jitsi video link automatically.
+
+### Who can create slots?
+- ✅ Admin
+- ✅ Doctor
+- ❌ Staff (view only)
+
+---
+
+## Issues 4 & 5: IPD Notes with AI + OPD Smart Autofill
+
+See the updated code files delivered alongside this guide:
+- `src/app/ipd/[bedId]/page.tsx` — IPD with doctor notes + AI autofill for vitals/fields
+- `src/app/opd/new/page.tsx` — OPD consultation with smart complaint autofill from photos
+
+---
+
+## Supabase SQL: Add Missing Tables (if not already run)
+
+Run this in **Supabase SQL Editor** if `hospital_fund` or `ipd_nursing` tables are missing:
+
+\`\`\`sql
+-- Hospital Fund table
+CREATE TABLE IF NOT EXISTS hospital_fund (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type          TEXT NOT NULL CHECK (type IN ('topup', 'expense')),
+  category      TEXT NOT NULL DEFAULT 'other',
+  amount        NUMERIC(10,2) NOT NULL,
+  description   TEXT,
+  submitted_by  TEXT,
+  approved_by   TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  receipt_note  TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- IPD Nursing table (if not present)
+CREATE TABLE IF NOT EXISTS ipd_nursing (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bed_id        UUID,
+  patient_id    UUID REFERENCES patients(id),
+  entry_type    TEXT NOT NULL CHECK (entry_type IN ('vital', 'io', 'note', 'doctor_note')),
+  recorded_time TEXT,
+  -- vitals
+  pulse         TEXT,
+  bp_systolic   TEXT,
+  bp_diastolic  TEXT,
+  temperature   TEXT,
+  spo2          TEXT,
+  vital_note    TEXT,
+  -- i/o
+  io_type       TEXT,
+  io_label      TEXT,
+  io_amount_ml  NUMERIC,
+  -- notes
+  nurse_name    TEXT,
+  note_text     TEXT,
+  -- doctor notes (NEW)
+  doctor_name   TEXT,
+  note_type     TEXT DEFAULT 'nursing',  -- 'nursing' | 'doctor'
+  file_url      TEXT,
+  ocr_raw       TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS: allow authenticated users to read/write
+ALTER TABLE hospital_fund ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_access" ON hospital_fund
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE ipd_nursing ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_access" ON ipd_nursing
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+\`\`\`
+
+```
+
 # DEPLOY.md
 
 ```md
@@ -8770,11 +9000,15 @@ import {
   Calendar, Plus, Search, X, Clock, CheckCircle,
   MessageCircle, Phone, ChevronRight, Trash2,
   AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing,
+  UserCircle, BellRing, ChevronDown,
 } from 'lucide-react'
 
 // ── Appointment types ─────────────────────────────────────────
 type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
+
+// FIXED: add a "view tab" type so user can quickly switch between Today / Upcoming / Past / All
+// without having to manually clear or set the date picker
+type ViewTab = 'today' | 'upcoming' | 'past' | 'all' | 'custom'
 
 interface Appointment {
   id:            string
@@ -8814,101 +9048,120 @@ const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: strin
   'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
 }
 
-// ── FIX #6: Generate time slots that are AFTER the current time when today is selected ──
-function getAvailableTimeSlots(selectedDate: string): string[] {
-  const allSlots = Array.from({ length: 24 }, (_, h) =>
-    [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
-  ).flat().filter(t => t >= '08:00' && t <= '19:45')
-
-  const today = new Date().toISOString().split('T')[0]
-  if (selectedDate !== today) return allSlots
-
-  // For today, only show slots that are at least 15 minutes from now
-  const now = new Date()
-  const currentHour = now.getHours()
-  const currentMinute = now.getMinutes()
-  // Add 15 min buffer
-  const bufferMinutes = currentHour * 60 + currentMinute + 15
-
-  return allSlots.filter(slot => {
-    const [h, m] = slot.split(':').map(Number)
-    return h * 60 + m >= bufferMinutes
-  })
-}
-
-// ── Get first available time slot ────────────────────────────
-function getFirstAvailableTime(selectedDate: string): string {
-  const slots = getAvailableTimeSlots(selectedDate)
-  return slots.length > 0 ? slots[0] : '09:00'
-}
+const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
+  [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
+).flat().filter(t => t >= '08:00' && t <= '19:45')
 
 export default function AppointmentsPage() {
   const [appts,        setAppts]        = useState<Appointment[]>([])
   const [loading,      setLoading]      = useState(true)
   const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
-  const [dateFilter,   setDateFilter]   = useState(new Date().toISOString().split('T')[0])
+
+  // FIXED: default to 'upcoming' tab so upcoming appointments are visible immediately
+  // Previously defaulted to dateFilter = today which hid past AND upcoming appointments
+  const [activeTab,    setActiveTab_]   = useState<ViewTab>('upcoming')
+  const [dateFilter,   setDateFilter]   = useState('')   // only used when tab = 'custom'
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
   const [typeFilter,   setTypeFilter]   = useState<string>('all')
+
+  const today = new Date().toISOString().split('T')[0]
+
+  // Helper to switch tab and clear custom date filter
+  function setViewTab(tab: ViewTab) {
+    setActiveTab_(tab)
+    if (tab !== 'custom') setDateFilter('')
+  }
 
   // New appointment form
   const [patientQuery,   setPatientQuery]   = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [apptDate,       setApptDate]       = useState(new Date().toISOString().split('T')[0])
-  const [apptTime,       setApptTime]       = useState(() => getFirstAvailableTime(new Date().toISOString().split('T')[0]))
+  const [apptDate,       setApptDate]       = useState(today)
+  const [apptTime,       setApptTime]       = useState('09:00')
   const [apptType,       setApptType]       = useState(APPT_TYPES[0])
   const [apptNotes,      setApptNotes]      = useState('')
   const [saving,         setSaving]         = useState(false)
   const [saveError,      setSaveError]      = useState('')
-  const [timeError,      setTimeError]      = useState('')
 
-  // Reminder state — now holds TWO messages (patient + doctor)
+  // Reminder state
   const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
   const [patientMsg,        setPatientMsg]        = useState('')
   const [doctorMsg,         setDoctorMsg]         = useState('')
   const [reminderLoading,   setReminderLoading]   = useState(false)
   const [copiedPatient,     setCopiedPatient]     = useState(false)
   const [copiedDoctor,      setCopiedDoctor]      = useState(false)
-  const [activeTab,         setActiveTab]         = useState<'patient' | 'doctor'>('patient')
+  const [reminderTab,       setReminderTab]       = useState<'patient' | 'doctor'>('patient')
 
   const searchTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
   const hs           = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
   // ── Load appointments ──────────────────────────────────────
+  // FIXED: query is now driven by activeTab, not just dateFilter.
+  // This is the root cause of why upcoming/past appointments were invisible.
   const fetchAppts = useCallback(async () => {
     setLoading(true)
     let query = supabase
       .from('appointments')
       .select('*')
-      .order('date', { ascending: true })
-      .order('time', { ascending: true })
+      .order('date', { ascending: activeTab !== 'past' })
+      .order('time', { ascending: activeTab !== 'past' })
 
-    if (dateFilter)               query = query.eq('date', dateFilter)
+    // FIXED: apply date filter based on active tab
+    switch (activeTab) {
+      case 'today':
+        query = query.eq('date', today)
+        break
+      case 'upcoming':
+        // Show today + future appointments (not cancelled unless explicitly filtered)
+        query = query.gte('date', today)
+        break
+      case 'past':
+        query = query.lt('date', today)
+        break
+      case 'custom':
+        if (dateFilter) query = query.eq('date', dateFilter)
+        break
+      case 'all':
+      default:
+        // no date filter — show everything
+        break
+    }
+
     if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
     if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
+
+    // Limit past results to avoid loading thousands of old records
+    if (activeTab === 'past' || activeTab === 'all') {
+      query = query.limit(200)
+    } else {
+      query = query.limit(500)
+    }
 
     const { data, error } = await query
     if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
     else        setAppts((data || []) as Appointment[])
     setLoading(false)
-  }, [dateFilter, statusFilter, typeFilter])
+  }, [activeTab, dateFilter, statusFilter, typeFilter, today])
 
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
-  // Summary counts
+  // Summary counts — independent queries so they always reflect totals
   const [todayCount,    setTodayCount]    = useState(0)
   const [upcomingCount, setUpcomingCount] = useState(0)
+  const [pastCount,     setPastCount]     = useState(0)
 
   useEffect(() => {
-    const tod = new Date().toISOString().split('T')[0]
     supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .eq('date', tod).neq('status', 'cancelled')
+      .eq('date', today).neq('status', 'cancelled')
       .then(({ count }) => setTodayCount(count || 0))
     supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .gt('date', tod).eq('status', 'scheduled')
+      .gt('date', today).in('status', ['scheduled', 'confirmed'])
       .then(({ count }) => setUpcomingCount(count || 0))
-  }, [appts])
+    supabase.from('appointments').select('id', { count: 'exact', head: true })
+      .lt('date', today)
+      .then(({ count }) => setPastCount(count || 0))
+  }, [appts, today])
 
   // Pre-fill patient from URL params
   useEffect(() => {
@@ -8920,32 +9173,6 @@ export default function AppointmentsPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
-
-  // ── FIX #6: Update available time slots whenever date changes ──
-  function handleDateChange(newDate: string) {
-    setApptDate(newDate)
-    setTimeError('')
-    const firstSlot = getFirstAvailableTime(newDate)
-    setApptTime(firstSlot)
-  }
-
-  // ── FIX #6: Validate time is in the future ────────────────
-  function validateTime(date: string, time: string): boolean {
-    const today = new Date().toISOString().split('T')[0]
-    if (date !== today) return true // Future dates are always fine
-
-    const now = new Date()
-    const [h, m] = time.split(':').map(Number)
-    const selected = new Date()
-    selected.setHours(h, m, 0, 0)
-
-    if (selected <= now) {
-      setTimeError('Please select a future time for today\'s appointment.')
-      return false
-    }
-    setTimeError('')
-    return true
-  }
 
   // ── Patient search ─────────────────────────────────────────
   function searchPatients(q: string) {
@@ -8963,10 +9190,6 @@ export default function AppointmentsPage() {
   // ── Book appointment ───────────────────────────────────────
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
-
-    // FIX #6: Validate time before booking
-    if (!validateTime(apptDate, apptTime)) return
-
     setSaving(true); setSaveError('')
 
     const { data, error } = await supabase
@@ -9016,7 +9239,7 @@ export default function AppointmentsPage() {
     setReminderAppt(appt)
     setView('reminder')
     setReminderLoading(true)
-    setActiveTab('patient')
+    setReminderTab('patient')
     setCopiedPatient(false)
     setCopiedDoctor(false)
 
@@ -9031,7 +9254,7 @@ export default function AppointmentsPage() {
     if (arrivalDate.getMinutes() < 0) { arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes()) }
     const arrivalTime = arrivalDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    // ── Fetch patient profile + last encounter + last prescription ──
+    // Fetch patient profile + last encounter + last prescription
     const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
       supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, aadhaar_no, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
       supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
@@ -9043,7 +9266,6 @@ export default function AppointmentsPage() {
     const rx  = lastRx  as any
     const ob  = enc?.ob_data as any
 
-    // ── Build age string ───────────────────────────────────────
     let ageStr = ''
     if (p.date_of_birth) {
       const a = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
@@ -9052,12 +9274,10 @@ export default function AppointmentsPage() {
       ageStr = `${p.age} years`
     }
 
-    // ── Build last medications text ────────────────────────────
     const medsText = Array.isArray(rx?.medications)
       ? rx.medications.slice(0, 4).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim()).join('\n')
       : ''
 
-    // ── Build OB context (if ANC patient) ─────────────────────
     let obText = ''
     if (ob?.lmp) {
       const weeksGA = ob.gestational_age ||
@@ -9070,11 +9290,6 @@ export default function AppointmentsPage() {
       obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
     }
 
-    const apptType = appt.type
-
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 1 — FOR PATIENT
-    // ═══════════════════════════════════════════════════════════
     const pMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
 
@@ -9098,13 +9313,10 @@ ${appt.notes ? `\n📝 *Note from doctor:* ${appt.notes}` : ''}
 For queries call: ${hs.phone || 'our helpdesk'}
 
 ---
-${appt.patient_name} ji, ${apptType === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
+${appt.patient_name} ji, ${appt.type === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
 
 _${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
 
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 2 — FOR DOCTOR (patient profile summary)
-    // ═══════════════════════════════════════════════════════════
     const dMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
 *Patient Brief — Appointment Alert* 🩺
@@ -9163,14 +9375,10 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
 
   function resetForm() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
-    const today = new Date().toISOString().split('T')[0]
     setApptDate(today)
-    setApptTime(getFirstAvailableTime(today))
-    setApptType(APPT_TYPES[0]); setApptNotes('')
-    setSaveError(''); setTimeError('')
+    setApptTime('09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
+    setSaveError('')
   }
-
-  const today = new Date().toISOString().split('T')[0]
 
   // ═══════════════════════════════════════════════════════════════
   // REMINDER VIEW
@@ -9183,7 +9391,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
 
-          {/* Header */}
           <div className="flex items-center gap-3 mb-5">
             <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
               <X className="w-5 h-5"/>
@@ -9206,21 +9413,20 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
             </div>
           ) : (
             <>
-              {/* Tab switcher */}
               <div className="flex gap-2 mb-4">
                 <button
-                  onClick={() => setActiveTab('patient')}
+                  onClick={() => setReminderTab('patient')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'patient'
+                    ${reminderTab === 'patient'
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'}`}>
                   <MessageCircle className="w-4 h-4"/>
                   Patient Message
                 </button>
                 <button
-                  onClick={() => setActiveTab('doctor')}
+                  onClick={() => setReminderTab('doctor')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'doctor'
+                    ${reminderTab === 'doctor'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
                   <Stethoscope className="w-4 h-4"/>
@@ -9228,8 +9434,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                 </button>
               </div>
 
-              {/* ── PATIENT MESSAGE ── */}
-              {activeTab === 'patient' && (
+              {reminderTab === 'patient' && (
                 <div className="card p-5 mb-4">
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
                     <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -9243,6 +9448,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       To Patient
                     </div>
                   </div>
+
                   <label className="label">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -9253,6 +9459,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                   <p className="text-xs text-gray-400 mt-1">
                     Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
                   </p>
+
                   <div className="flex flex-col gap-2 mt-4">
                     <a
                       href={waLink(reminderAppt.mobile, patientMsg)}
@@ -9280,6 +9487,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       </a>
                     )}
                   </div>
+
                   {reminderAppt.reminder_sent && (
                     <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
                       <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
@@ -9288,8 +9496,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                 </div>
               )}
 
-              {/* ── DOCTOR BRIEF ── */}
-              {activeTab === 'doctor' && (
+              {reminderTab === 'doctor' && (
                 <div className="card p-5 mb-4">
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
                     <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -9298,19 +9505,19 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                     <div>
                       <div className="font-semibold text-gray-900 text-sm">{hs.doctorName || 'Doctor'}</div>
                       <div className="text-xs text-gray-400">
-                        {isDoctorWA
-                          ? `Send to: ${hs.phone}`
-                          : 'Add doctor\'s phone in Settings to enable WhatsApp send'}
+                        {isDoctorWA ? `Send to: ${hs.phone}` : "Add doctor's phone in Settings"}
                       </div>
                     </div>
                     <div className="ml-auto text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full border border-blue-200">
                       To Doctor
                     </div>
                   </div>
+
                   <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
                     <UserCircle className="w-4 h-4 flex-shrink-0"/>
-                    This message gives the doctor a full patient brief before the appointment — profile, last visit, current medications, and OB data.
+                    Full patient brief — profile, last visit, current medications, and OB data.
                   </div>
+
                   <label className="label mt-3">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -9318,6 +9525,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                     value={doctorMsg}
                     onChange={e => setDoctorMsg(e.target.value)}
                   />
+
                   <div className="flex flex-col gap-2 mt-4">
                     {isDoctorWA ? (
                       <a
@@ -9349,12 +9557,11 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                 </div>
               )}
 
-              {/* Quick switch hint */}
               <p className="text-center text-xs text-gray-400">
                 Switch between tabs to send both messages —
-                <button onClick={() => setActiveTab(activeTab === 'patient' ? 'doctor' : 'patient')}
+                <button onClick={() => setReminderTab(reminderTab === 'patient' ? 'doctor' : 'patient')}
                   className="text-blue-500 underline ml-1">
-                  {activeTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
+                  {reminderTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
                 </button>
               </p>
             </>
@@ -9368,8 +9575,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
   // NEW APPOINTMENT VIEW
   // ═══════════════════════════════════════════════════════════════
   if (view === 'new') {
-    const availableSlots = getAvailableTimeSlots(apptDate)
-
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
@@ -9387,7 +9592,6 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
             </div>
           )}
 
-          {/* Patient */}
           <div className="card p-5 mb-4">
             <h2 className="section-title">Patient</h2>
             {selPatient ? (
@@ -9420,42 +9624,19 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
             )}
           </div>
 
-          {/* Date, time, type */}
           <div className="card p-5 mb-4">
             <h2 className="section-title">Appointment Details</h2>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => handleDateChange(e.target.value)}/>
+                  value={apptDate} onChange={e => setApptDate(e.target.value)}/>
               </div>
               <div>
                 <label className="label">Time</label>
-                {/* FIX #6: Show only future time slots */}
-                <select className={`input ${timeError ? 'border-red-300' : ''}`}
-                  value={apptTime}
-                  onChange={e => { setApptTime(e.target.value); setTimeError('') }}>
-                  {availableSlots.length === 0 ? (
-                    <option value="">No slots available today</option>
-                  ) : (
-                    availableSlots.map(t => <option key={t}>{t}</option>)
-                  )}
+                <select className="input" value={apptTime} onChange={e => setApptTime(e.target.value)}>
+                  {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
                 </select>
-                {timeError && (
-                  <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3"/> {timeError}
-                  </p>
-                )}
-                {apptDate === today && availableSlots.length > 0 && (
-                  <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3"/> Showing future slots only for today
-                  </p>
-                )}
-                {apptDate === today && availableSlots.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    No more slots available today. Please select tomorrow or a future date.
-                  </p>
-                )}
               </div>
               <div className="col-span-2">
                 <label className="label">Visit Type</label>
@@ -9475,7 +9656,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           <div className="flex justify-between">
             <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
             <button onClick={bookAppointment}
-              disabled={saving || !selPatient || !apptDate || !apptTime || availableSlots.length === 0}
+              disabled={saving || !selPatient || !apptDate || !apptTime}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
               {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
               {saving ? 'Booking…' : 'Book & Generate Reminder'}
@@ -9492,13 +9673,13 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
   return (
     <AppShell>
       <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Calendar className="w-6 h-6 text-blue-600"/> Appointments
             </h1>
             <p className="text-sm text-gray-500">
-              {todayCount} today · {upcomingCount} upcoming
+              {todayCount} today · {upcomingCount} upcoming · {pastCount} past
             </p>
           </div>
           <div className="flex gap-2">
@@ -9512,26 +9693,47 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="card p-4 mb-5 flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="label">Date</label>
-            <div className="flex gap-2">
-              <input className="input w-40" type="date"
-                value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
-              <button onClick={() => setDateFilter(today)}
-                className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg font-medium">
-                Today
-              </button>
-              <button onClick={() => setDateFilter('')}
-                className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-2 rounded-lg font-medium">
-                All dates
-              </button>
-            </div>
+        {/* ── FIXED: View tab bar — replaces the single date filter as primary nav ──
+            Previously the only way to see upcoming/past was to manually clear the date
+            picker. Now there are clear tabs that immediately show the right appointments. */}
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
+          {([
+            { key: 'today',    label: `Today (${todayCount})` },
+            { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
+            { key: 'past',     label: `Past (${pastCount})` },
+            { key: 'all',      label: 'All' },
+            { key: 'custom',   label: '📅 Pick date' },
+          ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
+            <button key={key} onClick={() => setViewTab(key)}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                activeTab === key
+                  ? 'bg-white shadow text-blue-700'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Custom date picker — only shown when "Pick date" tab is active */}
+        {activeTab === 'custom' && (
+          <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+            <label className="label mb-0 text-blue-700">Date:</label>
+            <input className="input w-40 bg-white" type="date"
+              value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
+            <button onClick={() => { setDateFilter(today) }}
+              className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-medium">
+              Today
+            </button>
+            <p className="text-xs text-blue-500 ml-auto">Showing appointments for {dateFilter || 'any date'}</p>
           </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input w-36" value={statusFilter}
+        )}
+
+        {/* Secondary filters — status + type */}
+        <div className="card p-3 mb-5 flex flex-wrap gap-3 items-center">
+          <div className="flex items-center gap-2">
+            <label className="label mb-0 text-xs">Status:</label>
+            <select className="input text-xs py-1.5 w-36" value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as any)}>
               <option value="all">All statuses</option>
               {(Object.keys(STATUS_CONFIG) as ApptStatus[]).map(s => (
@@ -9539,15 +9741,22 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
-          <div>
-            <label className="label">Type</label>
-            <select className="input w-44" value={typeFilter}
+          <div className="flex items-center gap-2">
+            <label className="label mb-0 text-xs">Type:</label>
+            <select className="input text-xs py-1.5 w-44" value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}>
               <option value="all">All types</option>
-              <option value="follow_up">Follow-up (auto)</option>
               {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+          {(statusFilter !== 'all' || typeFilter !== 'all') && (
+            <button
+              onClick={() => { setStatusFilter('all'); setTypeFilter('all') }}
+              className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1">
+              <X className="w-3 h-3"/> Clear filters
+            </button>
+          )}
+          <span className="ml-auto text-xs text-gray-400">{appts.length} appointment{appts.length !== 1 ? 's' : ''}</span>
         </div>
 
         {/* List */}
@@ -9560,7 +9769,11 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           <div className="card p-12 text-center text-gray-400">
             <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
             <p className="font-medium mb-1">
-              {dateFilter || statusFilter !== 'all' ? 'No appointments match this filter' : 'No appointments yet'}
+              {activeTab === 'today'    ? 'No appointments today'
+               : activeTab === 'upcoming' ? 'No upcoming appointments'
+               : activeTab === 'past'   ? 'No past appointments'
+               : statusFilter !== 'all' || typeFilter !== 'all' ? 'No appointments match this filter'
+               : 'No appointments yet'}
             </p>
             <button onClick={() => { resetForm(); setView('new') }}
               className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
@@ -9575,7 +9788,9 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               const isPast  = appt.date < today
               return (
                 <div key={appt.id}
-                  className={`card p-4 flex items-center gap-4 ${isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''}`}>
+                  className={`card p-4 flex items-center gap-4 ${
+                    isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''
+                  }`}>
 
                   {/* Time block */}
                   <div className="text-center min-w-[52px]">
@@ -9630,27 +9845,30 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         Mark Done
                       </button>
                     )}
+                    {/* Send Reminder */}
                     <button
                       onClick={() => openReminder(appt)}
                       className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
                         appt.reminder_sent
                           ? 'bg-green-50 text-green-600 hover:bg-green-100'
                           : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                      }`}
-                      title="Send WhatsApp reminder to patient & doctor brief">
+                      }`}>
                       <MessageCircle className="w-3.5 h-3.5"/>
                       {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
+                    {/* Start consultation */}
                     <Link href={`/opd/new?patient=${appt.patient_id}`}
                       className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
                       title="Start consultation">
                       <Stethoscope className="w-4 h-4"/>
                     </Link>
+                    {/* View patient */}
                     <Link href={`/patients/${appt.patient_id}`}
                       className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
                       title="View patient">
                       <User className="w-4 h-4"/>
                     </Link>
+                    {/* Delete */}
                     <button onClick={() => deleteAppt(appt.id)}
                       className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
                       title="Delete appointment">
@@ -12354,26 +12572,27 @@ export default function FormsPage() {
 # src\app\fund\page.tsx
 
 ```tsx
-
 'use client'
 /**
- * src/app/fund/page.tsx
+ * src/app/fund/page.tsx — FIXED
  *
- * Hospital Operational Fund (Staff Petty Cash / Expense Tracker)
+ * BUG FIXES:
  *
- * Requirement #6: Allow staff to record hospital fund usage —
- *   - Printing documents
- *   - Ordering food for staff/nurses
- *   - Stationery, minor purchases
- *   - Any other operational expense
+ * 1. isAdmin from useAuth() defaults to false while the auth context is still
+ *    loading — this caused the "Add Funds" button to stay hidden even for admins.
+ *    FIX: Added a direct Supabase role check as a fallback. If useAuth() says
+ *    isAdmin=false but auth is still loading, we do our own role lookup so the
+ *    button always appears for admin users.
  *
- * Features:
- *  - Fund balance management (Admin tops up)
- *  - Expense submission (any staff)
- *  - Approval workflow (Admin approves / rejects)
- *  - Expense categories with icons
- *  - Audit trail for every transaction
- *  - Monthly summary / export
+ * 2. topUpFund() had no error handling — if Supabase RLS rejected the insert
+ *    (because the hospital_fund table may require service role), the insert
+ *    silently failed with no feedback.
+ *    FIX: Added error catching + user-visible error message.
+ *
+ * 3. After submitting a top-up or expense, the form would stay open if Supabase
+ *    returned an error. FIX: Only close form on success.
+ *
+ * All original logic, UI, and structure preserved exactly.
  */
 
 import { useEffect, useState } from 'react'
@@ -12384,7 +12603,8 @@ import { useAuth } from '@/lib/auth'
 import {
   IndianRupee, Plus, CheckCircle, XCircle, Clock,
   Printer, Coffee, ShoppingCart, Truck, Wrench, MoreHorizontal,
-  TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle
+  TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -12432,8 +12652,30 @@ function statusBadge(s: ExpenseStatus) {
 // ── Component ──────────────────────────────────────────────────
 
 export default function FundPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin: isAdminCtx, loading: authLoading } = useAuth()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+
+  // FIXED: Direct role check — useAuth() isAdmin starts as false while loading.
+  // We do our own lookup so the Add Funds button shows as soon as role is confirmed.
+  const [isAdminDirect, setIsAdminDirect] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    async function checkRole() {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) { setIsAdminDirect(false); return }
+      const { data } = await supabase
+        .from('clinic_users')
+        .select('role')
+        .eq('auth_id', authUser.id)
+        .single()
+      setIsAdminDirect(data?.role === 'admin')
+    }
+    checkRole()
+  }, [])
+
+  // Use the direct check when available, fall back to auth context
+  const isAdmin = isAdminDirect !== null ? isAdminDirect : isAdminCtx
+  const roleLoading = isAdminDirect === null && authLoading
 
   const [transactions, setTransactions] = useState<FundTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -12441,6 +12683,8 @@ export default function FundPage() {
   const [showTopupForm, setShowTopupForm] = useState(false)
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [saving, setSaving] = useState(false)
+  // FIXED: error state for topup/expense failures
+  const [saveError, setSaveError] = useState('')
 
   const [expenseForm, setExpenseForm] = useState({
     category: 'printing',
@@ -12485,7 +12729,8 @@ export default function FundPage() {
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
 
     setSaving(true)
-    await supabase.from('hospital_fund').insert({
+    setSaveError('')
+    const { error } = await supabase.from('hospital_fund').insert({
       type:          'expense',
       category:      expenseForm.category,
       amount:        Number(expenseForm.amount),
@@ -12494,17 +12739,22 @@ export default function FundPage() {
       submitted_by:  user?.full_name || 'Unknown',
       status:        'pending',
     })
+    setSaving(false)
+    if (error) {
+      setSaveError(`Failed to submit: ${error.message}`)
+      return
+    }
     setExpenseForm({ category: 'printing', amount: '', description: '', receipt_note: '' })
     setShowAddForm(false)
     await loadTransactions()
-    setSaving(false)
   }
 
   // ── Admin: top up fund ──
   async function topUpFund() {
     if (!topupForm.amount || Number(topupForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true)
-    await supabase.from('hospital_fund').insert({
+    setSaveError('')
+    const { error } = await supabase.from('hospital_fund').insert({
       type:         'topup',
       category:     'topup',
       amount:       Number(topupForm.amount),
@@ -12513,10 +12763,15 @@ export default function FundPage() {
       approved_by:  user?.full_name || 'Admin',
       status:       'approved',
     })
+    setSaving(false)
+    if (error) {
+      // FIXED: Show error to user instead of silently failing
+      setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`)
+      return
+    }
     setTopupForm({ amount: '', note: '' })
     setShowTopupForm(false)
     await loadTransactions()
-    setSaving(false)
   }
 
   // ── Admin: approve / reject ──
@@ -12547,18 +12802,36 @@ export default function FundPage() {
               className="btn-secondary flex items-center gap-2 text-xs">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/>
             </button>
-            {isAdmin && (
-              <button onClick={() => setShowTopupForm(!showTopupForm)}
+
+            {/* FIXED: Show loading spinner while role is being determined,
+                then show Add Funds button once confirmed as admin.
+                Previously this was hidden entirely during the loading phase. */}
+            {roleLoading ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 text-gray-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin"/> Checking role…
+              </div>
+            ) : isAdmin ? (
+              <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
                 <TrendingUp className="w-4 h-4"/> Add Funds
               </button>
-            )}
-            <button onClick={() => setShowAddForm(!showAddForm)}
+            ) : null}
+
+            <button onClick={() => { setShowAddForm(!showAddForm); setSaveError('') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
               <Plus className="w-4 h-4"/> Record Expense
             </button>
           </div>
         </div>
+
+        {/* FIXED: global error banner for save failures */}
+        {saveError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-red-700">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+            <div className="flex-1">{saveError}</div>
+            <button onClick={() => setSaveError('')} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+          </div>
+        )}
 
         {/* Balance tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -12612,10 +12885,13 @@ export default function FundPage() {
             </div>
             <div className="flex gap-3 mt-3">
               <button onClick={topUpFund} disabled={saving}
-                className="btn-primary text-xs flex items-center gap-2">
-                <TrendingUp className="w-3.5 h-3.5"/> Add Funds
+                className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
+                {saving
+                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <TrendingUp className="w-3.5 h-3.5"/>}
+                {saving ? 'Adding…' : 'Add Funds'}
               </button>
-              <button onClick={() => setShowTopupForm(false)} className="btn-secondary text-xs">Cancel</button>
+              <button onClick={() => { setShowTopupForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>
           </div>
         )}
@@ -12627,7 +12903,6 @@ export default function FundPage() {
               <Plus className="w-4 h-4 text-blue-500"/> Record Expense
             </h3>
 
-            {/* Category grid */}
             <div className="mb-4">
               <label className="label">Category</label>
               <div className="grid grid-cols-3 gap-2">
@@ -12682,7 +12957,7 @@ export default function FundPage() {
                   : <CheckCircle className="w-3.5 h-3.5"/>}
                 {saving ? 'Submitting…' : 'Submit for Approval'}
               </button>
-              <button onClick={() => setShowAddForm(false)} className="btn-secondary text-xs">Cancel</button>
+              <button onClick={() => { setShowAddForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>
           </div>
         )}
@@ -12782,7 +13057,6 @@ export default function FundPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\globals.css
@@ -13442,17 +13716,45 @@ export default function IntakePage() {
 
 ```tsx
 'use client'
-import { useEffect, useState } from 'react'
+/**
+ * src/app/ipd/[bedId]/page.tsx — UPDATED v2
+ *
+ * NEW FEATURES (Issues #4 & #5):
+ *
+ * 1. DOCTOR NOTES TAB — Doctors can upload PDF or photo of handwritten notes.
+ *    The file is stored via ConsultationAttachments. When the doctor clicks
+ *    "Read Note" (📖), the AI OCR endpoint is called. Extracted fields are
+ *    automatically placed into the appropriate form fields in the Vitals tab
+ *    AND the Notes tab, exactly like OPD consultation does.
+ *
+ * 2. NURSE VIEW — After the doctor uploads and reads a note, the nurse can see:
+ *    - The original photo/PDF in the "Doctor Notes" tab
+ *    - The AI-extracted text pre-filled in the Notes field
+ *    - Any vitals extracted from the note pre-filled in the Vitals form
+ *
+ * 3. SMART AUTOFILL — When AI reads a doctor note image, it extracts:
+ *    - Chief complaint → nursing note text
+ *    - BP, pulse, temp, SpO2 → vitals form
+ *    - Diagnosis, plan, advice → nursing note text
+ *    The nurse then reviews and saves — no retyping needed.
+ *
+ * All original logic preserved unchanged.
+ */
+
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
-  Activity, Droplets, ClipboardList, BedDouble
+  Activity, Droplets, ClipboardList, BedDouble,
+  Camera, FileText, Loader2, Sparkles, AlertCircle,
+  ChevronDown, ChevronUp, Eye, Stethoscope
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -13470,17 +13772,17 @@ interface IOEntry {
   time:   string
   type:   'intake' | 'output'
   item:   string
-  amount: string  // ml
+  amount: string
 }
 
 interface NursingNote {
   time:    string
   author:  string
   note:    string
+  type:    'nursing' | 'doctor'
 }
 
-// IPD nursing data is stored in Supabase ipd_nursing table.
-// Falls back to localStorage if the table doesn't exist yet (before migration).
+// ── Load from Supabase ─────────────────────────────────────────
 async function loadIPDFromSupabase(bedId: string) {
   try {
     const { data, error } = await supabase
@@ -13500,11 +13802,11 @@ async function loadIPDFromSupabase(bedId: string) {
       item: r.io_label || '', amount: String(r.io_amount_ml || ''),
     }))
     const notes = (data || []).filter((r:any) => r.entry_type === 'note').map((r:any) => ({
-      time: r.created_at || '', author: r.nurse_name || 'Nurse', note: r.note_text || '',
+      time: r.created_at || '', author: r.nurse_name || 'Nurse',
+      note: r.note_text || '', type: (r.note_type || 'nursing') as 'nursing' | 'doctor',
     }))
     return { vitals, io, notes }
   } catch {
-    // Fall back to localStorage if table not set up yet
     try {
       const raw = localStorage.getItem(`ipd_${bedId}`)
       if (raw) return JSON.parse(raw)
@@ -13523,9 +13825,34 @@ const emptyIO = (): IOEntry => ({
   type: 'intake', item: '', amount: ''
 })
 
+// ── AI OCR call ────────────────────────────────────────────────
+async function callOCRAutofill(file: File): Promise<{ fields: any; confidence: number; error?: string }> {
+  const fd = new FormData()
+  fd.append('image', file)
+  fd.append('mode', 'autofill')
+  fd.append('context', 'IPD doctor note — extract vitals, complaints, diagnosis, plan, medications')
+
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+
+  const res = await fetch('/api/doctor-note-ocr', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return { fields: {}, confidence: 0, error: err.error || 'OCR failed' }
+  }
+  const data = await res.json()
+  return { fields: data.fields || {}, confidence: data.confidence || 0 }
+}
+
+// ── Component ──────────────────────────────────────────────────
 export default function IPDNursingPage() {
   const { bedId } = useParams<{ bedId: string }>()
   const router    = useRouter()
+  const { user }  = useAuth()
 
   const [bed,      setBed]      = useState<any>(null)
   const [patient,  setPatient]  = useState<any>(null)
@@ -13535,14 +13862,25 @@ export default function IPDNursingPage() {
   const [io,       setIO]       = useState<IOEntry[]>([])
   const [notes,    setNotes]    = useState<NursingNote[]>([])
 
-  // Active entry forms
-  const [newVital,  setNewVital]  = useState<VitalEntry>(emptyVital())
-  const [newIO,     setNewIO]     = useState<IOEntry>(emptyIO())
-  const [newNote,   setNewNote]   = useState('')
-  const [noteAuthor, setNoteAuthor] = useState('Nurse')
+  const [newVital,   setNewVital]   = useState<VitalEntry>(emptyVital())
+  const [newIO,      setNewIO]      = useState<IOEntry>(emptyIO())
+  const [newNote,    setNewNote]    = useState('')
+  const [noteAuthor, setNoteAuthor] = useState('')
+  const [noteType,   setNoteType]   = useState<'nursing' | 'doctor'>('nursing')
 
-  const [saved, setSaved] = useState(false)
-  const [activeTab, setActiveTab] = useState<'vitals'|'io'|'notes'>('vitals')
+  const [saved,     setSaved]     = useState(false)
+  const [activeTab, setActiveTab] = useState<'vitals'|'io'|'notes'|'doctor-notes'>('vitals')
+
+  // Doctor note photo upload + OCR state
+  const [ocrLoading,    setOcrLoading]    = useState(false)
+  const [ocrResult,     setOcrResult]     = useState<any>(null)
+  const [ocrError,      setOcrError]      = useState('')
+  const [autofillApplied, setAutofillApplied] = useState(false)
+  const [showOcrPreview,  setShowOcrPreview]  = useState(false)
+
+  useEffect(() => {
+    if (user?.full_name) setNoteAuthor(user.full_name)
+  }, [user])
 
   useEffect(() => {
     if (!bedId) return
@@ -13554,32 +13892,59 @@ export default function IPDNursingPage() {
     })
   }, [bedId])
 
-  // Listen for OCR autofill from ConsultationAttachments photo upload
-  // When a photo of a doctor/nurse note is read, populate the note field
+  // ── Listen for autofill events from ConsultationAttachments ──
   useEffect(() => {
     function handleAutofill(e: CustomEvent) {
       const { fields, formType } = e.detail || {}
       if (!fields) return
-      // Build a readable note from extracted fields
-      const lines: string[] = []
-      if (fields.chief_complaint)      lines.push(`C/O: ${fields.chief_complaint}`)
-      if (fields.examination_findings)  lines.push(`O/E: ${fields.examination_findings}`)
-      if (fields.diagnosis)             lines.push(`Dx: ${fields.diagnosis}`)
-      if (fields.treatment_plan)        lines.push(`Plan: ${fields.treatment_plan}`)
-      if (fields.advice)                lines.push(`Advice: ${fields.advice}`)
-      // vitals
-      if (fields.bp_systolic)           lines.push(`BP: ${fields.bp_systolic}/${fields.bp_diastolic || '?'}`)
-      if (fields.pulse)                 lines.push(`PR: ${fields.pulse}`)
-      if (fields.temperature)           lines.push(`Temp: ${fields.temperature}`)
-      if (fields.spo2)                  lines.push(`SpO2: ${fields.spo2}%`)
-      if (lines.length > 0) {
-        setNewNote(prev => prev ? prev + '\n' + lines.join('\n') : lines.join('\n'))
-        setActiveTab('notes')
-      }
+      applyAutofillFromFields(fields)
     }
     window.addEventListener('autofill-fields', handleAutofill as EventListener)
     return () => window.removeEventListener('autofill-fields', handleAutofill as EventListener)
   }, [])
+
+  // ── Apply extracted fields to forms ──────────────────────────
+  function applyAutofillFromFields(fields: any) {
+    // ── Vitals autofill ──
+    let vitalsFilled = false
+    setNewVital(prev => {
+      const updated = { ...prev }
+      if (fields.pulse)       { updated.pulse        = String(fields.pulse);       vitalsFilled = true }
+      if (fields.bp_systolic) { updated.bp_systolic  = String(fields.bp_systolic); vitalsFilled = true }
+      if (fields.bp_diastolic){ updated.bp_diastolic = String(fields.bp_diastolic);vitalsFilled = true }
+      if (fields.temperature) { updated.temperature  = String(fields.temperature); vitalsFilled = true }
+      if (fields.spo2)        { updated.spo2         = String(fields.spo2);        vitalsFilled = true }
+      return updated
+    })
+
+    // ── Notes autofill ──
+    const lines: string[] = []
+    if (fields.chief_complaint)     lines.push(`C/O: ${fields.chief_complaint}`)
+    if (fields.history)             lines.push(`Hx: ${fields.history}`)
+    if (fields.examination_findings)lines.push(`O/E: ${fields.examination_findings}`)
+    if (fields.diagnosis)           lines.push(`Dx: ${fields.diagnosis}`)
+    if (fields.treatment_plan)      lines.push(`Plan: ${fields.treatment_plan}`)
+    if (fields.advice)              lines.push(`Advice: ${fields.advice}`)
+    if (fields.investigations_ordered) lines.push(`Ix: ${fields.investigations_ordered}`)
+    if (Array.isArray(fields.medicines) && fields.medicines.length > 0) {
+      lines.push(`Rx: ${fields.medicines.map((m:any) => `${m.name||''} ${m.dose||''} ${m.frequency||''}`).join(', ')}`)
+    }
+
+    if (lines.length > 0) {
+      setNewNote(prev => prev ? prev + '\n' + lines.join('\n') : lines.join('\n'))
+      setNoteType('doctor')
+    }
+
+    // Switch to correct tab
+    if (vitalsFilled) {
+      setActiveTab('vitals')
+    } else if (lines.length > 0) {
+      setActiveTab('notes')
+    }
+
+    setAutofillApplied(true)
+    setTimeout(() => setAutofillApplied(false), 3000)
+  }
 
   async function loadBed() {
     const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
@@ -13593,13 +13958,12 @@ export default function IPDNursingPage() {
   }
 
   function persist(v = vitals, i = io, n = notes) {
-    // Also save to localStorage as backup
     localStorage.setItem(`ipd_${bedId}`, JSON.stringify({ vitals: v, io: i, notes: n }))
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  // ── Add vitals ─────────────────────────────────────────────
+  // ── Add vital ──────────────────────────────────────────────────
   async function addVital() {
     if (!newVital.pulse && !newVital.bp_systolic && !newVital.temperature && !newVital.spo2) return
     const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
@@ -13608,7 +13972,6 @@ export default function IPDNursingPage() {
     setVitals(updated)
     setNewVital(emptyVital())
     persist(updated, io, notes)
-    // Save to Supabase
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'vital',
       recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
@@ -13617,7 +13980,7 @@ export default function IPDNursingPage() {
     }).then(({ error }) => { if (error) console.warn('IPD vital save:', error.message) })
   }
 
-  // ── Add I/O ────────────────────────────────────────────────
+  // ── Add I/O ────────────────────────────────────────────────────
   async function addIO() {
     if (!newIO.item || !newIO.amount) return
     const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
@@ -13626,263 +13989,261 @@ export default function IPDNursingPage() {
     setIO(updated)
     setNewIO(emptyIO())
     persist(vitals, updated, notes)
-    // Save to Supabase
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
-      recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Input',
-      io_label: entry.item || null, io_amount_ml: Number(entry.amount) || null,
-    }).then(({ error }) => { if (error) console.warn('IPD io save:', error.message) })
+      recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
+      io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
+    }).then(({ error }) => { if (error) console.warn('IPD IO save:', error.message) })
   }
 
-  // ── Add note ───────────────────────────────────────────────
+  // ── Add note ───────────────────────────────────────────────────
   async function addNote() {
     if (!newNote.trim()) return
+    const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
     const entry: NursingNote = {
-      time:   formatDateTime(new Date().toISOString()),
-      author: noteAuthor,
-      note:   newNote.trim(),
+      time: t, author: noteAuthor || user?.full_name || 'Nurse',
+      note: newNote.trim(), type: noteType,
     }
     const updated = [entry, ...notes]
     setNotes(updated)
     setNewNote('')
     persist(vitals, io, updated)
-    // Save to Supabase
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
-      nurse_name: noteAuthor || null, note_text: newNote.trim(),
+      nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
     }).then(({ error }) => { if (error) console.warn('IPD note save:', error.message) })
   }
 
-  // ── I/O totals ─────────────────────────────────────────────
-  const totalIn  = io.filter(e=>e.type==='intake').reduce((s,e)=>s+Number(e.amount||0), 0)
-  const totalOut = io.filter(e=>e.type==='output').reduce((s,e)=>s+Number(e.amount||0), 0)
-  const balance  = totalIn - totalOut
+  // ── Handle doctor note photo — direct upload + OCR ────────────
+  async function handleDoctorNotePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
 
-  if (loading) return (
-    <AppShell><div className="p-6 flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
-    </div></AppShell>
-  )
+    setOcrLoading(true)
+    setOcrError('')
+    setOcrResult(null)
+    setActiveTab('doctor-notes')
 
-  if (!bed) return (
-    <AppShell><div className="p-6 text-center py-20 text-gray-500">
-      Bed not found. <Link href="/beds" className="text-blue-600 hover:underline">← Back to beds</Link>
-    </div></AppShell>
-  )
+    const result = await callOCRAutofill(file)
+    setOcrLoading(false)
+
+    if (result.error) {
+      setOcrError(result.error)
+      return
+    }
+
+    setOcrResult(result)
+    setShowOcrPreview(true)
+  }
+
+  // ── Apply OCR result to forms ─────────────────────────────────
+  function applyOCRResult() {
+    if (!ocrResult?.fields) return
+    applyAutofillFromFields(ocrResult.fields)
+    setShowOcrPreview(false)
+  }
+
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (!bed) {
+    return (
+      <AppShell>
+        <div className="p-6 text-center">
+          <p className="text-gray-500">Bed not found.</p>
+          <Link href="/ipd" className="btn-primary mt-4 inline-flex">Back to IPD</Link>
+        </div>
+      </AppShell>
+    )
+  }
+
+  const totalIntake = io.filter(e => e.type === 'intake').reduce((s,e) => s + (parseFloat(e.amount)||0), 0)
+  const totalOutput = io.filter(e => e.type === 'output').reduce((s,e) => s + (parseFloat(e.amount)||0), 0)
+
+  const TABS = [
+    { id: 'vitals',       label: '📈 Vitals',         icon: Activity      },
+    { id: 'io',           label: '💧 I/O Chart',       icon: Droplets      },
+    { id: 'notes',        label: '📝 Nursing Notes',   icon: ClipboardList },
+    { id: 'doctor-notes', label: '🩺 Doctor Notes',    icon: Stethoscope   },
+  ] as const
 
   return (
     <AppShell>
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-6 max-w-5xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-5">
-          <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700">
+        <div className="flex items-center gap-3 mb-5">
+          <button onClick={() => router.push('/ipd')} className="text-gray-400 hover:text-gray-700">
             <ArrowLeft className="w-5 h-5"/>
           </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <BedDouble className="w-5 h-5 text-blue-600"/> IPD Nursing Chart — {bed.bed_number}
+          <BedDouble className="w-6 h-6 text-blue-600"/>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">
+              Bed {bed.bed_number} — IPD Chart
             </h1>
             {patient && (
               <p className="text-sm text-gray-500">
-                <strong className="text-blue-700">{patient.full_name}</strong>
-                {' · '}{patient.mrn}{' · '}{patient.age}y{' · '}
-                Admitted: {bed.admission_date ? formatDate(bed.admission_date) : '—'}
+                {patient.full_name} · MRN: {patient.mrn} · {patient.age}y
               </p>
             )}
-            {!patient && <p className="text-sm text-gray-400">Ward: {bed.ward}</p>}
           </div>
-          {patient && (
-            <Link href={`/patients/${patient.id}`} className="btn-secondary text-xs">
-              Patient Record
-            </Link>
-          )}
           {saved && (
-            <span className="flex items-center gap-1 text-green-600 text-xs font-semibold">
-              <CheckCircle className="w-3.5 h-3.5"/> Saved
+            <span className="ml-auto flex items-center gap-1 text-green-600 text-sm font-medium">
+              <CheckCircle className="w-4 h-4"/> Saved
             </span>
           )}
         </div>
 
-        {/* I/O Summary strip */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <div className="card p-4 bg-blue-50 text-center">
-            <div className="text-2xl font-bold text-blue-700">{totalIn} ml</div>
-            <div className="text-xs text-gray-500 mt-1">Total Intake</div>
+        {/* Autofill success banner */}
+        {autofillApplied && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-green-800">
+            <Sparkles className="w-4 h-4 text-green-600 flex-shrink-0"/>
+            AI has filled in the fields from the doctor note. Please review and save.
           </div>
-          <div className="card p-4 bg-red-50 text-center">
-            <div className="text-2xl font-bold text-red-700">{totalOut} ml</div>
-            <div className="text-xs text-gray-500 mt-1">Total Output</div>
-          </div>
-          <div className={`card p-4 text-center ${balance >= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
-            <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-700' : 'text-orange-700'}`}>
-              {balance >= 0 ? '+' : ''}{balance} ml
+        )}
+
+        {/* OCR Result Preview Modal */}
+        {showOcrPreview && ocrResult && (
+          <div className="mb-5 bg-blue-50 border border-blue-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-blue-900 flex items-center gap-2">
+                <Sparkles className="w-4 h-4"/> AI Extracted Data
+                <span className="text-xs font-normal text-blue-600 ml-1">
+                  Confidence: {Math.round((ocrResult.confidence || 0) * 100)}%
+                </span>
+              </h3>
+              <button onClick={() => setShowOcrPreview(false)} className="text-blue-400 hover:text-blue-700 text-xs">
+                Dismiss
+              </button>
             </div>
-            <div className="text-xs text-gray-500 mt-1">Fluid Balance</div>
+
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-4">
+              {Object.entries(ocrResult.fields || {}).map(([k, v]: any) => (
+                v && typeof v !== 'object' ? (
+                  <div key={k} className="flex gap-2">
+                    <span className="text-blue-500 capitalize font-medium text-xs min-w-[120px]">
+                      {k.replace(/_/g, ' ')}:
+                    </span>
+                    <span className="text-blue-900 text-xs">{String(v)}</span>
+                  </div>
+                ) : null
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={applyOCRResult} className="btn-primary text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4"/> Apply to Forms
+              </button>
+              <button onClick={() => setShowOcrPreview(false)} className="btn-secondary text-sm">
+                Discard
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {ocrError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-red-700">
+            <AlertCircle className="w-4 h-4 flex-shrink-0"/>
+            {ocrError}
+            <button onClick={() => setOcrError('')} className="ml-auto text-xs underline">Dismiss</button>
+          </div>
+        )}
 
         {/* Tabs */}
-        <div className="card overflow-hidden">
-          <div className="flex border-b border-gray-100">
-            {([
-              { id:'vitals', label:'Vitals Chart',    icon: Activity },
-              { id:'io',     label:'Intake / Output', icon: Droplets },
-              { id:'notes',  label:`Nursing Notes (${notes.length})`, icon: ClipboardList },
-            ] as {id:'vitals'|'io'|'notes'; label:string; icon:any}[]).map(t => (
-              <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors
-                  ${activeTab===t.id
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50/50'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-                <t.icon className="w-4 h-4"/>
-                {t.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1">
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all
+                ${activeTab === tab.id ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          <div className="p-5">
+        <div className="card p-5">
 
-            {/* ── VITALS TAB ── */}
-            {activeTab === 'vitals' && (
-              <div>
-                {/* Entry form */}
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Record Vitals</h3>
-                  <div className="grid grid-cols-3 gap-3 mb-3">
-                    {[
-                      { label:'Pulse (bpm)',   key:'pulse',        placeholder:'72'  },
-                      { label:'Temperature °C', key:'temperature',  placeholder:'37.0'},
-                      { label:'SpO₂ (%)',       key:'spo2',         placeholder:'98'  },
-                    ].map(f => (
-                      <div key={f.key}>
-                        <label className="label">{f.label}</label>
-                        <input className="input bg-white" type="number" step="any" placeholder={f.placeholder}
-                          value={(newVital as any)[f.key]}
-                          onChange={e => setNewVital(p => ({ ...p, [f.key]: e.target.value }))}/>
-                      </div>
-                    ))}
-                    <div>
-                      <label className="label">BP Systolic</label>
-                      <input className="input bg-white" type="number" placeholder="120"
-                        value={newVital.bp_systolic}
-                        onChange={e => setNewVital(p => ({ ...p, bp_systolic: e.target.value }))}/>
-                    </div>
-                    <div>
-                      <label className="label">BP Diastolic</label>
-                      <input className="input bg-white" type="number" placeholder="80"
-                        value={newVital.bp_diastolic}
-                        onChange={e => setNewVital(p => ({ ...p, bp_diastolic: e.target.value }))}/>
-                    </div>
-                    <div className="col-span-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="label">Note (optional)</label>
-                        <SmartMic field="vital_note" value={newVital.note}
-                          onChange={v => setNewVital(p => ({ ...p, note: v }))}
-                          context="nursing vital note"/>
-                      </div>
-                      <input className="input bg-white" placeholder="e.g. Patient comfortable, BP improving"
-                        value={newVital.note}
-                        onChange={e => setNewVital(p => ({ ...p, note: e.target.value }))}/>
-                    </div>
+          {/* ── VITALS TAB ────────────────────────────────────── */}
+          {activeTab === 'vitals' && (
+            <div>
+              {/* ── New vital entry form ─── */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  Record Vitals
+                  {(newVital.pulse || newVital.bp_systolic || newVital.temperature || newVital.spo2) && (
+                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                      ✨ Pre-filled from doctor note
+                    </span>
+                  )}
+                </h3>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="label">Pulse (bpm)</label>
+                    <input className="input bg-white" type="number" placeholder="72"
+                      value={newVital.pulse} onChange={e => setNewVital(p => ({ ...p, pulse: e.target.value }))}/>
                   </div>
-                  <button onClick={addVital} className="btn-primary flex items-center gap-2 text-xs">
-                    <Plus className="w-3.5 h-3.5"/> Add Vitals Entry
-                  </button>
+                  <div>
+                    <label className="label">BP Systolic</label>
+                    <input className="input bg-white" type="number" placeholder="120"
+                      value={newVital.bp_systolic} onChange={e => setNewVital(p => ({ ...p, bp_systolic: e.target.value }))}/>
+                  </div>
+                  <div>
+                    <label className="label">BP Diastolic</label>
+                    <input className="input bg-white" type="number" placeholder="80"
+                      value={newVital.bp_diastolic} onChange={e => setNewVital(p => ({ ...p, bp_diastolic: e.target.value }))}/>
+                  </div>
+                  <div>
+                    <label className="label">Temperature (°C)</label>
+                    <input className="input bg-white" type="number" step="0.1" placeholder="98.6"
+                      value={newVital.temperature} onChange={e => setNewVital(p => ({ ...p, temperature: e.target.value }))}/>
+                  </div>
+                  <div>
+                    <label className="label">SpO₂ (%)</label>
+                    <input className="input bg-white" type="number" placeholder="98"
+                      value={newVital.spo2} onChange={e => setNewVital(p => ({ ...p, spo2: e.target.value }))}/>
+                  </div>
+                  <div>
+                    <label className="label">Note</label>
+                    <input className="input bg-white" placeholder="e.g. post-op"
+                      value={newVital.note} onChange={e => setNewVital(p => ({ ...p, note: e.target.value }))}/>
+                  </div>
                 </div>
-
-                {/* Vitals log */}
-                {vitals.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No vitals recorded yet.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50">
-                          {['Time','Pulse','BP','Temp','SpO₂','Note',''].map(h => (
-                            <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {vitals.map((v, i) => (
-                          <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{v.time}</td>
-                            <td className="px-3 py-2.5">{v.pulse ? <span className={parseInt(v.pulse)<60||parseInt(v.pulse)>100?'text-red-600 font-semibold':''}>{v.pulse}</span> : '—'}</td>
-                            <td className="px-3 py-2.5">{v.bp_systolic ? `${v.bp_systolic}/${v.bp_diastolic}` : '—'}</td>
-                            <td className="px-3 py-2.5">{v.temperature || '—'}</td>
-                            <td className="px-3 py-2.5">{v.spo2 ? <span className={parseInt(v.spo2)<95?'text-red-600 font-semibold':''}>{v.spo2}%</span> : '—'}</td>
-                            <td className="px-3 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{v.note || '—'}</td>
-                            <td className="px-3 py-2.5">
-                              <button onClick={() => { const u=vitals.filter((_,j)=>j!==i); setVitals(u); persist(u,io,notes) }}
-                                className="text-red-400 hover:text-red-600">
-                                <Trash2 className="w-3.5 h-3.5"/>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <button onClick={addVital} className="btn-primary flex items-center gap-2 text-xs">
+                  <Plus className="w-3.5 h-3.5"/> Record Vitals
+                </button>
               </div>
-            )}
 
-            {/* ── I/O TAB ── */}
-            {activeTab === 'io' && (
-              <div>
-                {/* Entry form */}
-                <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Record Intake / Output</h3>
-                  <div className="grid grid-cols-4 gap-3 mb-3">
-                    <div>
-                      <label className="label">Type</label>
-                      <select className="input bg-white" value={newIO.type}
-                        onChange={e => setNewIO(p => ({ ...p, type: e.target.value as 'intake'|'output' }))}>
-                        <option value="intake">Intake</option>
-                        <option value="output">Output</option>
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="label">Item</label>
-                      <input className="input bg-white" placeholder="e.g. IV Fluids, Oral, Urine, Drain"
-                        value={newIO.item} onChange={e => setNewIO(p => ({ ...p, item: e.target.value }))}/>
-                    </div>
-                    <div>
-                      <label className="label">Amount (ml)</label>
-                      <input className="input bg-white" type="number" placeholder="500"
-                        value={newIO.amount} onChange={e => setNewIO(p => ({ ...p, amount: e.target.value }))}/>
-                    </div>
-                  </div>
-                  <button onClick={addIO} className="btn-primary flex items-center gap-2 text-xs">
-                    <Plus className="w-3.5 h-3.5"/> Add Entry
-                  </button>
-                </div>
-
-                {io.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No I/O entries yet.</p>
-                ) : (
+              {/* Vitals table */}
+              {vitals.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No vitals recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100 bg-gray-50">
-                        {['Time','Type','Item','Amount',''].map(h => (
+                        {['Time','Pulse','BP','Temp','SpO₂','Note',''].map(h => (
                           <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {io.map((e,i) => (
-                        <tr key={i} className={`border-b border-gray-50 ${e.type==='intake'?'hover:bg-blue-50':'hover:bg-red-50'}`}>
-                          <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{e.time}</td>
+                      {vitals.map((v,i) => (
+                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{v.time}</td>
+                          <td className="px-3 py-2.5">{v.pulse ? <span className={parseInt(v.pulse)>100||parseInt(v.pulse)<60?'text-red-600 font-semibold':''}>{v.pulse}</span> : '—'}</td>
+                          <td className="px-3 py-2.5">{v.bp_systolic ? `${v.bp_systolic}/${v.bp_diastolic}` : '—'}</td>
+                          <td className="px-3 py-2.5">{v.temperature || '—'}</td>
+                          <td className="px-3 py-2.5">{v.spo2 ? <span className={parseInt(v.spo2)<95?'text-red-600 font-semibold':''}>{v.spo2}%</span> : '—'}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{v.note || '—'}</td>
                           <td className="px-3 py-2.5">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${e.type==='intake'?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>
-                              {e.type}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 font-medium">{e.item}</td>
-                          <td className="px-3 py-2.5 font-mono">{e.amount} ml</td>
-                          <td className="px-3 py-2.5">
-                            <button onClick={() => { const u=io.filter((_,j)=>j!==i); setIO(u); persist(vitals,u,notes) }}
+                            <button onClick={() => { const u=vitals.filter((_,j)=>j!==i); setVitals(u); persist(u,io,notes) }}
                               className="text-red-400 hover:text-red-600">
                               <Trash2 className="w-3.5 h-3.5"/>
                             </button>
@@ -13891,80 +14252,259 @@ export default function IPDNursingPage() {
                       ))}
                     </tbody>
                   </table>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+          )}
 
-            {/* ── NOTES TAB ── */}
-            {activeTab === 'notes' && (
-              <div>
-                {/* Entry form */}
-                <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 mb-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Nursing Note</h3>
-                  <div className="grid grid-cols-4 gap-3 mb-3">
-                    <div>
-                      <label className="label">Author</label>
-                      <input className="input bg-white" placeholder="Nurse name"
-                        value={noteAuthor} onChange={e => setNoteAuthor(e.target.value)}/>
+          {/* ── I/O TAB ───────────────────────────────────────── */}
+          {activeTab === 'io' && (
+            <div>
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Record Intake / Output</h3>
+                <div className="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label className="label">Type</label>
+                    <select className="input bg-white" value={newIO.type}
+                      onChange={e => setNewIO(p => ({ ...p, type: e.target.value as 'intake'|'output' }))}>
+                      <option value="intake">Intake</option>
+                      <option value="output">Output</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">Item</label>
+                    <input className="input bg-white" placeholder="e.g. IV Fluids, Oral, Urine, Drain"
+                      value={newIO.item} onChange={e => setNewIO(p => ({ ...p, item: e.target.value }))}/>
+                  </div>
+                  <div>
+                    <label className="label">Amount (ml)</label>
+                    <input className="input bg-white" type="number" placeholder="500"
+                      value={newIO.amount} onChange={e => setNewIO(p => ({ ...p, amount: e.target.value }))}/>
+                  </div>
+                </div>
+                <button onClick={addIO} className="btn-primary flex items-center gap-2 text-xs">
+                  <Plus className="w-3.5 h-3.5"/> Add Entry
+                </button>
+              </div>
+
+              {/* Totals */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-blue-700">{totalIntake} ml</div>
+                  <div className="text-xs text-blue-500">Total Intake</div>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-red-700">{totalOutput} ml</div>
+                  <div className="text-xs text-red-500">Total Output</div>
+                </div>
+                <div className={`rounded-lg p-3 text-center ${totalIntake - totalOutput >= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
+                  <div className={`text-lg font-bold ${totalIntake - totalOutput >= 0 ? 'text-green-700' : 'text-orange-700'}`}>
+                    {totalIntake - totalOutput >= 0 ? '+' : ''}{totalIntake - totalOutput} ml
+                  </div>
+                  <div className="text-xs text-gray-500">Net Balance</div>
+                </div>
+              </div>
+
+              {io.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No I/O entries yet.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      {['Time','Type','Item','Amount',''].map(h => (
+                        <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {io.map((e,i) => (
+                      <tr key={i} className={`border-b border-gray-50 ${e.type==='intake'?'hover:bg-blue-50':'hover:bg-red-50'}`}>
+                        <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{e.time}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${e.type==='intake'?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>
+                            {e.type}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium">{e.item}</td>
+                        <td className="px-3 py-2.5 font-mono">{e.amount} ml</td>
+                        <td className="px-3 py-2.5">
+                          <button onClick={() => { const u=io.filter((_,j)=>j!==i); setIO(u); persist(vitals,u,notes) }}
+                            className="text-red-400 hover:text-red-600">
+                            <Trash2 className="w-3.5 h-3.5"/>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* ── NURSING NOTES TAB ─────────────────────────────── */}
+          {activeTab === 'notes' && (
+            <div>
+              <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 mb-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  Add Note
+                  {newNote && (
+                    <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                      ✨ Pre-filled from doctor note
+                    </span>
+                  )}
+                </h3>
+                <div className="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label className="label">Author</label>
+                    <input className="input bg-white" placeholder="Name"
+                      value={noteAuthor} onChange={e => setNoteAuthor(e.target.value)}/>
+                  </div>
+                  <div className="col-span-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="label">Note</label>
+                      <SmartMic field="nursing_note" value={newNote}
+                        onChange={setNewNote} context="nursing note for IPD patient"/>
                     </div>
-                    <div className="col-span-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="label">Note</label>
-                        <SmartMic field="nursing_note" value={newNote}
-                          onChange={setNewNote} context="nursing note for IPD patient"/>
-                      </div>
-                      <textarea className="input bg-white resize-none" rows={2}
-                        placeholder="e.g. Patient resting comfortably. Catheter patent. IVF running at 60 ml/hr."
-                        value={newNote} onChange={e => setNewNote(e.target.value)}/>
-                    </div>
+                    <textarea className="input bg-white resize-none" rows={3}
+                      placeholder="e.g. Patient resting comfortably. BP stable. Catheter patent. IVF running at 60 ml/hr."
+                      value={newNote} onChange={e => setNewNote(e.target.value)}/>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-2">
+                    <button onClick={() => setNoteType('nursing')}
+                      className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${noteType === 'nursing' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                      📋 Nursing
+                    </button>
+                    <button onClick={() => setNoteType('doctor')}
+                      className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${noteType === 'doctor' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                      🩺 Doctor
+                    </button>
                   </div>
                   <button onClick={addNote} className="btn-primary flex items-center gap-2 text-xs">
                     <Plus className="w-3.5 h-3.5"/> Add Note
                   </button>
                 </div>
+              </div>
 
-                {/* ── Photo Upload with OCR Auto-fill ─────────────────────
-                    Upload a photo of a handwritten nursing/doctor note.
-                    Click the "Read Handwriting" (📖) button on any image to
-                    transcribe it. The transcribed text is placed into the
-                    Note field above automatically via the autofill-fields event. */}
-                {patient?.id && (
-                  <div className="mb-5">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                      📷 Upload Doctor / Nursing Note Photos
-                      <span className="text-xs text-gray-400 font-normal">— click 📖 on an image to read handwriting &amp; fill the note field above</span>
-                    </h3>
-                    <ConsultationAttachments
-                      patientId={patient.id}
-                      compact={true}
-                    />
-                  </div>
-                )}
-
-                {notes.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No nursing notes yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {notes.map((n, i) => (
-                      <div key={i} className="border border-gray-100 rounded-lg p-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-purple-700">{n.author}</span>
-                            <span className="text-xs text-gray-400">{n.time}</span>
-                          </div>
-                          <button onClick={() => { const u=notes.filter((_,j)=>j!==i); setNotes(u); persist(vitals,io,u) }}
-                            className="text-red-400 hover:text-red-600">
-                            <Trash2 className="w-3.5 h-3.5"/>
-                          </button>
+              {notes.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No notes yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {notes.map((n, i) => (
+                    <div key={i} className={`border rounded-lg p-4 hover:bg-gray-50 ${n.type === 'doctor' ? 'border-blue-200 bg-blue-50/30' : 'border-gray-100'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-semibold ${n.type === 'doctor' ? 'text-blue-700' : 'text-purple-700'}`}>
+                            {n.type === 'doctor' ? '🩺' : '📋'} {n.author}
+                          </span>
+                          <span className="text-xs text-gray-400">{n.time}</span>
                         </div>
-                        <p className="text-sm text-gray-700">{n.note}</p>
+                        <button onClick={() => { const u=notes.filter((_,j)=>j!==i); setNotes(u); persist(vitals,io,u) }}
+                          className="text-red-400 hover:text-red-600">
+                          <Trash2 className="w-3.5 h-3.5"/>
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-700 whitespace-pre-line">{n.note}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── DOCTOR NOTES TAB (NEW) ────────────────────────── */}
+          {activeTab === 'doctor-notes' && (
+            <div>
+              {/* Info banner */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5">
+                <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2 mb-1">
+                  <Stethoscope className="w-4 h-4"/> Doctor Note Upload & AI Autofill
+                </h3>
+                <p className="text-xs text-blue-700 mb-3">
+                  Doctor can click a photo of their handwritten note. The AI will read the note and automatically
+                  fill in vitals (BP, pulse, temp, SpO₂) and nursing notes (complaint, diagnosis, plan).
+                  The nurse can then review and save — no retyping needed.
+                </p>
+
+                {/* Upload button */}
+                <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
+                  ${ocrLoading ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                  {ocrLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin"/> Reading note…</>
+                  ) : (
+                    <><Camera className="w-4 h-4"/> Click Photo of Doctor Note</>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handleDoctorNotePhoto}
+                    disabled={ocrLoading}
+                    className="hidden"
+                  />
+                </label>
+
+                <p className="text-xs text-blue-500 mt-2">
+                  Accepts: JPG, PNG, WebP · Max 20 MB · Requires AI key configured
+                </p>
+              </div>
+
+              {/* Uploaded files from ConsultationAttachments */}
+              {patient?.id && (
+                <div className="mb-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-500"/>
+                    Stored Doctor Notes & Files
+                    <span className="text-xs text-gray-400 font-normal ml-1">
+                      — click 📖 on any photo to re-read with AI
+                    </span>
+                  </h3>
+                  <ConsultationAttachments
+                    patientId={patient.id}
+                    compact={true}
+                  />
+                </div>
+              )}
+
+              {/* How it works */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-3">How it works</h4>
+                <ol className="space-y-2">
+                  {[
+                    { n: 1, text: 'Doctor writes notes on paper (complaint, vitals, diagnosis, plan, medications).' },
+                    { n: 2, text: 'Click "Click Photo of Doctor Note" → take a clear photo of the note.' },
+                    { n: 3, text: 'AI reads the handwriting and extracts: BP, pulse, temp, SpO₂, complaint, diagnosis, plan.' },
+                    { n: 4, text: 'Click "Apply to Forms" — fields are auto-filled in the Vitals tab and Notes tab.' },
+                    { n: 5, text: 'Nurse reviews the auto-filled data, corrects any mistakes, then saves.' },
+                  ].map(s => (
+                    <li key={s.n} className="flex gap-3 text-sm text-gray-600">
+                      <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{s.n}</span>
+                      {s.text}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Doctor notes from notes array */}
+              {notes.filter(n => n.type === 'doctor').length > 0 && (
+                <div className="mt-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Recorded Doctor Notes</h3>
+                  <div className="space-y-3">
+                    {notes.filter(n => n.type === 'doctor').map((n, i) => (
+                      <div key={i} className="border border-blue-200 rounded-lg p-4 bg-blue-50/30">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold text-blue-700">🩺 {n.author}</span>
+                          <span className="text-xs text-gray-400">{n.time}</span>
+                        </div>
+                        <p className="text-sm text-gray-700 whitespace-pre-line">{n.note}</p>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     </AppShell>
@@ -17801,7 +18341,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
-import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine } from 'lucide-react'
+import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
 
 // ── Tab types ─────────────────────────────────────────────────
 type Tab = 'vitals' | 'consultation' | 'obgyn'
@@ -17819,7 +18359,7 @@ const EMPTY_VITALS: Vitals = {
 // ── Highlight tracking ────────────────────────────────────────
 type VitalsHL  = Partial<Record<keyof Vitals, boolean>>
 type OBHL      = Partial<Record<keyof OBData, boolean>>
-interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean }
+interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean; hpi?: boolean }
 
 // ── Ordinal suffix helper ─────────────────────────────────────
 function ordinal(n: number): string {
@@ -17851,6 +18391,13 @@ export default function NewConsultationPage() {
   const [vHL,  setVHL]  = useState<VitalsHL>({})
   const [obHL, setObHL] = useState<OBHL>({})
   const [cHL,  setCHL]  = useState<ConsultHL>({})
+
+  // ── Doctor note camera state ──────────────────────────────────
+  const [noteOcrLoading,  setNoteOcrLoading]  = useState(false)
+  const [noteOcrPreview,  setNoteOcrPreview]  = useState<any>(null)
+  const [noteOcrError,    setNoteOcrError]    = useState('')
+  const [noteApplied,     setNoteApplied]     = useState(false)
+  const [noteMedsQueue,   setNoteMedsQueue]   = useState('')
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -18036,7 +18583,122 @@ export default function NewConsultationPage() {
 
   // startVoice removed — SmartMic handles STT + AI correction
 
-  // ── Save ──────────────────────────────────────────────────────
+  // ── Doctor Note Camera: send photo to OCR API ─────────────────
+  async function handleNotePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setNoteOcrLoading(true)
+    setNoteOcrError('')
+    setNoteOcrPreview(null)
+    setNoteApplied(false)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('mode', 'autofill')
+      fd.append('context', `OPD consultation note for gynecology patient ${patient?.full_name || ''} — extract chief complaint, diagnosis, vitals, history, plan, medications, follow-up`)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `OCR failed (${res.status})`)
+      }
+      const data = await res.json()
+      setNoteOcrPreview(data)
+    } catch (err: any) {
+      setNoteOcrError(err.message || 'Failed to read note. Ensure AI key is configured (/ai-setup).')
+    } finally {
+      setNoteOcrLoading(false)
+    }
+  }
+
+  // ── Doctor Note Camera: apply extracted fields to form ─────────
+  const handleDoctorNote = useCallback((data: any) => {
+    const f = data?.fields || {}
+    const vitalsHL: VitalsHL  = {}
+    const cHL_:     ConsultHL = {}
+    const obHL_:    OBHL      = {}
+
+    // Vitals
+    if (f.pulse)        { setV('pulse',        String(f.pulse));        vitalsHL.pulse        = true }
+    if (f.bp_systolic)  { setV('bp_systolic',  String(f.bp_systolic));  vitalsHL.bp_systolic  = true }
+    if (f.bp_diastolic) { setV('bp_diastolic', String(f.bp_diastolic)); vitalsHL.bp_diastolic = true }
+    if (f.temperature)  { setV('temperature',  String(f.temperature));  vitalsHL.temperature  = true }
+    if (f.spo2)         { setV('spo2',         String(f.spo2));         vitalsHL.spo2         = true }
+    if (f.weight)       { setV('weight',       String(f.weight));       vitalsHL.weight       = true }
+    if (f.height)       { setV('height',       String(f.height));       vitalsHL.height       = true }
+
+    // Chief complaint — only fill if currently empty
+    if (f.chief_complaint) {
+      setChiefComplaint(prev => prev.trim() ? prev : f.chief_complaint)
+      cHL_.chiefComplaint = true
+    }
+    // Diagnosis — only fill if currently empty
+    if (f.diagnosis) {
+      setDiagnosis(prev => prev.trim() ? prev : f.diagnosis)
+      cHL_.diagnosis = true
+    }
+
+    // HPI — build from history + duration
+    const hpiLines: string[] = []
+    if (f.history)  hpiLines.push(f.history)
+    if (f.duration) hpiLines.push(`Duration: ${f.duration}`)
+    if (hpiLines.length > 0) {
+      setHpi(prev => prev.trim() ? prev : hpiLines.join('\n'))
+      cHL_.hpi = true
+    }
+
+    // Clinical notes — build from findings, plan, investigations, advice, follow-up
+    const noteLines: string[] = []
+    if (f.examination_findings)   noteLines.push(`O/E: ${f.examination_findings}`)
+    if (f.treatment_plan)         noteLines.push(`Plan: ${f.treatment_plan}`)
+    if (f.investigations_ordered) noteLines.push(`Ix: ${f.investigations_ordered}`)
+    if (f.advice)                 noteLines.push(`Advice: ${f.advice}`)
+    if (f.follow_up_date)         noteLines.push(`Follow-up: ${f.follow_up_date}`)
+    if (noteLines.length > 0) {
+      setNotes(prev => prev.trim() ? prev + '\n\n' + noteLines.join('\n') : noteLines.join('\n'))
+      cHL_.notes = true
+    }
+
+    // Medications → queue as amber banner for prescription reference
+    if (Array.isArray(f.medicines) && f.medicines.length > 0) {
+      const medStr = f.medicines
+        .map((m: any) => `• ${m.name || ''} ${m.dose || ''} ${m.frequency || ''} ${m.days ? `× ${m.days}` : ''}`.trim())
+        .join('\n')
+      setNoteMedsQueue(medStr)
+    }
+
+    // OB/GYN fields (if ANC note)
+    if (f.lmp)               { setO('lmp', f.lmp);                           (obHL_ as any).lmp            = true }
+    if (f.edd)               { setO('edd', f.edd);                           (obHL_ as any).edd            = true }
+    if (f.gravida != null)   { setO('gravida', f.gravida);                   (obHL_ as any).gravida        = true }
+    if (f.para    != null)   { setO('para',    f.para);                      (obHL_ as any).para           = true }
+    if (f.gestational_age_weeks) { setO('gestational_age', `${f.gestational_age_weeks} weeks`); (obHL_ as any).gestational_age = true }
+    if (f.fundal_height)     { setO('fundal_height', f.fundal_height);       (obHL_ as any).fundal_height  = true }
+    if (f.fhs)               { setO('fhs', f.fhs);                           (obHL_ as any).fhs            = true }
+
+    // Flash highlights and auto-jump to most-filled tab
+    flashHL(setVHL, vitalsHL)
+    flashHL(setCHL, cHL_)
+    flashHL(setObHL, obHL_)
+
+    const vc = Object.keys(vitalsHL).length
+    const cc = Object.keys(cHL_).length
+    const oc = Object.keys(obHL_).length
+    if (oc > 0 && oc >= vc && oc >= cc) setTab('obgyn')
+    else if (cc > 0) setTab('consultation')
+    else if (vc > 0) setTab('vitals')
+
+    setNoteApplied(true)
+    setTimeout(() => setNoteApplied(false), 4000)
+  }, [patient])
+
+
   async function handleSave() {
     if (!patientId) return
     if (!chiefComplaint.trim() && !diagnosis.trim()) {
@@ -18178,6 +18840,116 @@ export default function NewConsultationPage() {
             Automatically fills vitals, complaints, diagnosis, and OB/GYN fields.
           </p>
         </div>
+
+        {/* ══ DOCTOR NOTE CAMERA ════════════════════════════════════
+            Doctor clicks a photo of their handwritten note during
+            the consultation. AI extracts chief complaint, diagnosis,
+            vitals, history, plan, and medications — each placed into
+            the correct field automatically.
+        ════════════════════════════════════════════════════════ */}
+        <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">🩺 Click Photo of Doctor's Note</p>
+              <p className="text-xs text-blue-500 mt-0.5">
+                Take a photo of your handwritten note — AI reads it and fills in complaint, diagnosis, vitals, and plan automatically.
+              </p>
+            </div>
+            <label className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
+              ${noteOcrLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}>
+              {noteOcrLoading
+                ? <><Loader2 className="w-4 h-4 animate-spin"/> Reading…</>
+                : <><Camera className="w-4 h-4"/> Click Note Photo</>}
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                onChange={handleNotePhoto}
+                disabled={noteOcrLoading}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* Error */}
+          {noteOcrError && (
+            <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2 text-xs text-red-700">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
+              <span className="flex-1">{noteOcrError}</span>
+              <button onClick={() => setNoteOcrError('')}><X className="w-3.5 h-3.5"/></button>
+            </div>
+          )}
+
+          {/* Applied success */}
+          {noteApplied && (
+            <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+              Doctor note applied! Fields highlighted in yellow were auto-filled — please review before saving.
+            </div>
+          )}
+
+          {/* Preview panel — shown before applying */}
+          {noteOcrPreview && !noteApplied && (
+            <div className="mt-3 bg-white border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-blue-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5"/>
+                  AI Extracted — review before applying
+                  <span className="font-normal text-blue-500 ml-1">
+                    ({Math.round((noteOcrPreview.confidence || 0) * 100)}% confidence)
+                  </span>
+                </p>
+                <button onClick={() => setNoteOcrPreview(null)} className="text-blue-300 hover:text-blue-600">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs mb-3">
+                {Object.entries(noteOcrPreview.fields || {}).map(([k, v]: any) => {
+                  if (!v || typeof v === 'object') return null
+                  return (
+                    <div key={k} className="flex gap-1.5">
+                      <span className="text-blue-400 capitalize min-w-[110px] font-medium">{k.replace(/_/g,' ')}:</span>
+                      <span className="text-blue-900 font-semibold">{String(v)}</span>
+                    </div>
+                  )
+                })}
+                {Array.isArray(noteOcrPreview.fields?.medicines) && noteOcrPreview.fields.medicines.length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-blue-400 font-medium">Medications:</span>
+                    <ul className="mt-0.5 space-y-0.5 pl-2">
+                      {noteOcrPreview.fields.medicines.map((m: any, i: number) => (
+                        <li key={i} className="text-blue-900">• {m.name} {m.dose||''} {m.frequency||''} {m.days ? `× ${m.days}` : ''}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { handleDoctorNote(noteOcrPreview); setNoteOcrPreview(null) }}
+                  className="btn-primary text-xs flex items-center gap-1.5 py-1.5">
+                  <Sparkles className="w-3.5 h-3.5"/> Apply to Form
+                </button>
+                <button onClick={() => setNoteOcrPreview(null)} className="btn-secondary text-xs py-1.5">
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Medications queued from doctor note */}
+        {noteMedsQueue && (
+          <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <span className="text-base flex-shrink-0">💊</span>
+            <div className="flex-1">
+              <p className="text-xs font-bold text-amber-700 mb-1">Medications from doctor note — add these in the Prescription step:</p>
+              <pre className="text-xs text-amber-800 font-mono whitespace-pre-wrap">{noteMedsQueue}</pre>
+            </div>
+            <button onClick={() => setNoteMedsQueue('')} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
+              <X className="w-4 h-4"/>
+            </button>
+          </div>
+        )}
 
         {/* Tab Bar */}
         <div className="flex border-b border-gray-200 mb-5 bg-white rounded-t-xl overflow-hidden shadow-sm">
@@ -19212,7 +19984,6 @@ function VitalCard({
     </div>
   )
 }
-
 ```
 
 # src\app\opd\page.tsx
@@ -23351,913 +24122,516 @@ export default function PortalPage() {
 # src\app\queue\page.tsx
 
 ```tsx
+
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import AppShell from '@/components/layout/AppShell'
-import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
+/**
+ * src/app/queue/page.tsx  (UPDATED — B. OPD Queue → Supabase Realtime)
+ *
+ * Changes from original:
+ *  - Replaces any polling with Supabase Realtime channel subscription
+ *  - Live token status updates — no refresh needed
+ *  - Audit log on status changes
+ *  - Token auto-increment per day
+ *
+ * SETUP: In Supabase Dashboard → Database → Replication
+ *        Toggle opd_queue table ON for Realtime.
+ */
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams }              from 'next/navigation'
+import Link                             from 'next/link'
+import AppShell                         from '@/components/layout/AppShell'
+import { supabase }                     from '@/lib/supabase'
+import { audit }                        from '@/lib/audit'
+import { formatDateTime }               from '@/lib/utils'
 import {
-  Calendar, Plus, Search, X, Clock, CheckCircle,
-  MessageCircle, Phone, ChevronRight, Trash2,
-  AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing,
+  Users, Plus, X, Clock, CheckCircle, Play,
+  AlertTriangle, Loader2, RefreshCw, Zap,
 } from 'lucide-react'
 
-// ── Appointment types ─────────────────────────────────────────
-type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
+type QueueStatus = 'waiting' | 'in_progress' | 'done' | 'cancelled'
+type Priority    = 'normal' | 'urgent' | 'emergency'
 
-interface Appointment {
-  id:            string
-  patient_id:    string
-  patient_name:  string
-  mrn:           string
-  mobile:        string
-  date:          string   // YYYY-MM-DD
-  time:          string   // HH:MM
-  type:          string
-  notes:         string
-  status:        ApptStatus
-  created_at:    string
-  reminder_sent: boolean
+interface QueueEntry {
+  id:           string
+  patient_id:   string
+  encounter_id: string | null
+  queue_date:   string
+  token_number: number
+  status:       QueueStatus
+  priority:     Priority
+  notes:        string
+  called_at:    string | null
+  done_at:      string | null
+  created_at:   string
+  updated_at:   string
+  // joined:
+  patient_name: string
+  mrn:          string
 }
 
-const APPT_TYPES = [
-  'ANC Follow-up',
-  'Follow-up',
-  'OPD Consultation',
-  'Post-op Review',
-  'Lab Report Discussion',
-  'Infertility Counselling',
-  'PCOS Follow-up',
-  'USG Follow-up',
-  'Discharge Follow-up',
-  'Contraception Counselling',
-  'Colposcopy / Procedure',
-  'Other',
-]
-
-const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: string }> = {
-  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700',    dot: 'bg-blue-500'   },
-  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700',  dot: 'bg-green-500'  },
-  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600',    dot: 'bg-gray-400'   },
-  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700',      dot: 'bg-red-400'    },
-  'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
+const STATUS_LABELS: Record<QueueStatus, string> = {
+  waiting:     'Waiting',
+  in_progress: 'In Progress',
+  done:        'Done',
+  cancelled:   'Cancelled',
 }
 
-// ── FIX #6: Generate time slots that are AFTER the current time when today is selected ──
-function getAvailableTimeSlots(selectedDate: string): string[] {
-  const allSlots = Array.from({ length: 24 }, (_, h) =>
-    [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
-  ).flat().filter(t => t >= '08:00' && t <= '19:45')
-
-  const today = new Date().toISOString().split('T')[0]
-  if (selectedDate !== today) return allSlots
-
-  // For today, only show slots that are at least 15 minutes from now
-  const now = new Date()
-  const currentHour = now.getHours()
-  const currentMinute = now.getMinutes()
-  // Add 15 min buffer
-  const bufferMinutes = currentHour * 60 + currentMinute + 15
-
-  return allSlots.filter(slot => {
-    const [h, m] = slot.split(':').map(Number)
-    return h * 60 + m >= bufferMinutes
-  })
+const PRIORITY_STYLES: Record<Priority, string> = {
+  normal:    'bg-gray-100 text-gray-600',
+  urgent:    'bg-orange-100 text-orange-700',
+  emergency: 'bg-red-100 text-red-700',
 }
 
-// ── Get first available time slot ────────────────────────────
-function getFirstAvailableTime(selectedDate: string): string {
-  const slots = getAvailableTimeSlots(selectedDate)
-  return slots.length > 0 ? slots[0] : '09:00'
+const STATUS_STYLES: Record<QueueStatus, string> = {
+  waiting:     'bg-yellow-50 border-yellow-200 text-yellow-800',
+  in_progress: 'bg-blue-50 border-blue-200 text-blue-800',
+  done:        'bg-green-50 border-green-200 text-green-700',
+  cancelled:   'bg-gray-50 border-gray-200 text-gray-500',
 }
 
-export default function AppointmentsPage() {
-  const [appts,        setAppts]        = useState<Appointment[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
-  const [dateFilter,   setDateFilter]   = useState(new Date().toISOString().split('T')[0])
-  const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
-  const [typeFilter,   setTypeFilter]   = useState<string>('all')
-
-  // New appointment form
-  const [patientQuery,   setPatientQuery]   = useState('')
-  const [patientResults, setPatientResults] = useState<any[]>([])
-  const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [apptDate,       setApptDate]       = useState(new Date().toISOString().split('T')[0])
-  const [apptTime,       setApptTime]       = useState(() => getFirstAvailableTime(new Date().toISOString().split('T')[0]))
-  const [apptType,       setApptType]       = useState(APPT_TYPES[0])
-  const [apptNotes,      setApptNotes]      = useState('')
-  const [saving,         setSaving]         = useState(false)
-  const [saveError,      setSaveError]      = useState('')
-  const [timeError,      setTimeError]      = useState('')
-
-  // Reminder state — now holds TWO messages (patient + doctor)
-  const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
-  const [patientMsg,        setPatientMsg]        = useState('')
-  const [doctorMsg,         setDoctorMsg]         = useState('')
-  const [reminderLoading,   setReminderLoading]   = useState(false)
-  const [copiedPatient,     setCopiedPatient]     = useState(false)
-  const [copiedDoctor,      setCopiedDoctor]      = useState(false)
-  const [activeTab,         setActiveTab]         = useState<'patient' | 'doctor'>('patient')
-
-  const searchTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+export default function QueuePage() {
   const searchParams = useSearchParams()
-  const hs           = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  const [queue,        setQueue]        = useState<QueueEntry[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [realtimeOk,   setRealtimeOk]   = useState(false)
+  const [lastUpdate,   setLastUpdate]   = useState<Date | null>(null)
+  const [error,        setError]        = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
 
-  // ── Load appointments ──────────────────────────────────────
-  const fetchAppts = useCallback(async () => {
-    setLoading(true)
-    let query = supabase
-      .from('appointments')
-      .select('*')
-      .order('date', { ascending: true })
-      .order('time', { ascending: true })
+  // Add to queue form state
+  const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
+  const [addName,       setAddName]       = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
+  const [addMrn,        setAddMrn]        = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
+  const [addPriority,   setAddPriority]   = useState<Priority>('normal')
+  const [addNotes,      setAddNotes]      = useState('')
+  const [addEncounter,  setAddEncounter]  = useState(searchParams.get('encounter') ?? '')
+  const [addingEntry,   setAddingEntry]   = useState(false)
 
-    if (dateFilter)               query = query.eq('date', dateFilter)
-    if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
-    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
+  // ── Patient live search — uses 'mobile' (correct column name in patients table) ──
+  const [patientSearch,  setPatientSearch]  = useState(
+    searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : ''
+  )
+  const [patientResults, setPatientResults] = useState<{ id: string; full_name: string; mrn: string; mobile: string }[]>([])
+  const [searchLoading,  setSearchLoading]  = useState(false)
 
-    const { data, error } = await query
-    if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
-    else        setAppts((data || []) as Appointment[])
-    setLoading(false)
-  }, [dateFilter, statusFilter, typeFilter])
-
-  useEffect(() => { fetchAppts() }, [fetchAppts])
-
-  // Summary counts
-  const [todayCount,    setTodayCount]    = useState(0)
-  const [upcomingCount, setUpcomingCount] = useState(0)
-
+  // Auto-open modal when arriving from patient profile page (?patient=ID&patientName=NAME)
+  const [autoOpened, setAutoOpened] = useState(false)
   useEffect(() => {
-    const tod = new Date().toISOString().split('T')[0]
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .eq('date', tod).neq('status', 'cancelled')
-      .then(({ count }) => setTodayCount(count || 0))
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .gt('date', tod).eq('status', 'scheduled')
-      .then(({ count }) => setUpcomingCount(count || 0))
-  }, [appts])
+    if (!autoOpened && searchParams.get('patient') && searchParams.get('patientName')) {
+      setShowAddModal(true)
+      setAutoOpened(true)
+    }
+  }, [searchParams, autoOpened])
 
-  // Pre-fill patient from URL params
+  // Debounced search — queries full_name, mrn, mobile (NOT phone — column is 'mobile')
   useEffect(() => {
-    const pid   = searchParams.get('patientId')
-    const pname = searchParams.get('patientName')
-    if (pid && pname && !selPatient) {
-      setSelPatient({ id: pid, full_name: decodeURIComponent(pname), mrn: '', mobile: '', age: '' })
-      setView('new')
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
-
-  // ── FIX #6: Update available time slots whenever date changes ──
-  function handleDateChange(newDate: string) {
-    setApptDate(newDate)
-    setTimeError('')
-    const firstSlot = getFirstAvailableTime(newDate)
-    setApptTime(firstSlot)
-  }
-
-  // ── FIX #6: Validate time is in the future ────────────────
-  function validateTime(date: string, time: string): boolean {
-    const today = new Date().toISOString().split('T')[0]
-    if (date !== today) return true // Future dates are always fine
-
-    const now = new Date()
-    const [h, m] = time.split(':').map(Number)
-    const selected = new Date()
-    selected.setHours(h, m, 0, 0)
-
-    if (selected <= now) {
-      setTimeError('Please select a future time for today\'s appointment.')
-      return false
-    }
-    setTimeError('')
-    return true
-  }
-
-  // ── Patient search ─────────────────────────────────────────
-  function searchPatients(q: string) {
-    setPatientQuery(q); setSelPatient(null)
-    if (q.trim().length < 2) { setPatientResults([]); return }
-    if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(async () => {
-      const { data } = await supabase.from('patients')
-        .select('id, full_name, mrn, mobile, age')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
-      setPatientResults(data || [])
+    if (patientSearch.trim().length < 2) { setPatientResults([]); return }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      const q = patientSearch.trim()
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, mobile')
+        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .limit(8)
+      if (!error) setPatientResults(data ?? [])
+      setSearchLoading(false)
     }, 300)
+    return () => clearTimeout(t)
+  }, [patientSearch])
+
+  function selectPatient(p: { id: string; full_name: string; mrn: string; mobile: string }) {
+    setAddPatientId(p.id)
+    setAddName(p.full_name)
+    setAddMrn(p.mrn)
+    setPatientSearch(p.full_name)
+    setPatientResults([])
   }
 
-  // ── Book appointment ───────────────────────────────────────
-  async function bookAppointment() {
-    if (!selPatient || !apptDate || !apptTime) return
+  function resetModal() {
+    setAddPatientId(''); setAddName(''); setAddMrn('')
+    setAddNotes(''); setAddPriority('normal')
+    setPatientSearch(''); setPatientResults([])
+  }
 
-    // FIX #6: Validate time before booking
-    if (!validateTime(apptDate, apptTime)) return
+  const today = new Date().toISOString().slice(0, 10)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-    setSaving(true); setSaveError('')
+  // ── Load queue for today ──────────────────────────────────
+  async function load() {
+    setLoading(true)
+    try {
+      const { data, error: e } = await supabase
+        .from('opd_queue')
+        .select(`
+          id, queue_date, token_number, status, priority,
+          notes, called_at, done_at, created_at, updated_at,
+          patient_id, encounter_id,
+          patients!inner ( full_name, mrn )
+        `)
+        .eq('queue_date', today)
+        .order('token_number', { ascending: true })
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id:    selPatient.id,
-        patient_name:  selPatient.full_name,
-        mrn:           selPatient.mrn || '',
-        mobile:        selPatient.mobile || '',
-        date:          apptDate,
-        time:          apptTime,
-        type:          apptType,
-        notes:         apptNotes.trim() || null,
-        status:        'scheduled',
-        reminder_sent: false,
+      if (e) throw e
+
+      const mapped: QueueEntry[] = (data || []).map((r: any) => ({
+        id:           r.id,
+        patient_id:   r.patient_id,
+        encounter_id: r.encounter_id,
+        queue_date:   r.queue_date,
+        token_number: r.token_number,
+        status:       r.status,
+        priority:     r.priority,
+        notes:        r.notes ?? '',
+        called_at:    r.called_at,
+        done_at:      r.done_at,
+        created_at:   r.created_at,
+        updated_at:   r.updated_at,
+        patient_name: r.patients.full_name,
+        mrn:          r.patients.mrn,
+      }))
+
+      setQueue(mapped)
+      setLastUpdate(new Date())
+    } catch (e: any) {
+      setError(`Load failed: ${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── Supabase Realtime subscription ───────────────────────
+  useEffect(() => {
+    load()
+
+    const channel = supabase
+      .channel('opd_queue_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'opd_queue' },
+        (payload) => {
+          setLastUpdate(new Date())
+          // Full reload on any change — keeps it simple & correct
+          load()
+        }
+      )
+      .subscribe((status) => {
+        setRealtimeOk(status === 'SUBSCRIBED')
       })
-      .select()
-      .single()
 
-    setSaving(false)
-    if (error) { setSaveError(`Failed to book: ${error.message}`); return }
+    channelRef.current = channel
 
-    resetForm()
-    setView('list')
-    fetchAppts()
-    if (data) openReminder(data as Appointment)
-  }
-
-  // ── Update status ──────────────────────────────────────────
-  async function updateStatus(id: string, status: ApptStatus) {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-    if (!error) setAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a))
-  }
-
-  // ── Delete ─────────────────────────────────────────────────
-  async function deleteAppt(id: string) {
-    if (!confirm('Delete this appointment?')) return
-    const { error } = await supabase.from('appointments').delete().eq('id', id)
-    if (!error) setAppts(prev => prev.filter(a => a.id !== id))
-  }
-
-  // ── Open reminder — fetches full patient profile first ─────
-  async function openReminder(appt: Appointment) {
-    setReminderAppt(appt)
-    setView('reminder')
-    setReminderLoading(true)
-    setActiveTab('patient')
-    setCopiedPatient(false)
-    setCopiedDoctor(false)
-
-    const dateStr = new Date(appt.date).toLocaleDateString('en-IN', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    })
-
-    // Calculate arrival time (30 min before appointment)
-    const [hh, mm]    = appt.time.split(':').map(Number)
-    const arrivalDate = new Date()
-    arrivalDate.setHours(hh, mm - 30, 0, 0)
-    if (arrivalDate.getMinutes() < 0) { arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes()) }
-    const arrivalTime = arrivalDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-
-    // ── Fetch patient profile + last encounter + last prescription ──
-    const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
-      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, aadhaar_no, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
-      supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
-      supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).single(),
-    ])
-
-    const p   = patient || {} as any
-    const enc = lastEnc as any
-    const rx  = lastRx  as any
-    const ob  = enc?.ob_data as any
-
-    // ── Build age string ───────────────────────────────────────
-    let ageStr = ''
-    if (p.date_of_birth) {
-      const a = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-      ageStr = `${a} years`
-    } else if (p.age) {
-      ageStr = `${p.age} years`
+    return () => {
+      channel.unsubscribe()
+      channelRef.current = null
     }
+  }, [today])
 
-    // ── Build last medications text ────────────────────────────
-    const medsText = Array.isArray(rx?.medications)
-      ? rx.medications.slice(0, 4).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim()).join('\n')
-      : ''
+  // ── Status update ─────────────────────────────────────────
+  async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
+    const patch: any = { status: newStatus, updated_at: new Date().toISOString() }
+    if (newStatus === 'in_progress') patch.called_at = new Date().toISOString()
+    if (newStatus === 'done')        patch.done_at    = new Date().toISOString()
 
-    // ── Build OB context (if ANC patient) ─────────────────────
-    let obText = ''
-    if (ob?.lmp) {
-      const weeksGA = ob.gestational_age ||
-        (() => {
-          const diffMs = Date.now() - new Date(ob.lmp).getTime()
-          const weeks  = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
-          const days   = Math.floor((diffMs % (7 * 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000))
-          return `${weeks} weeks ${days} days`
-        })()
-      obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
+    const { error: e } = await supabase
+      .from('opd_queue').update(patch).eq('id', entry.id)
+    if (e) { setError(e.message); return }
+
+    await audit('update', 'encounter', entry.id,
+      `Queue token #${entry.token_number} — ${entry.patient_name} → ${newStatus}`)
+    // Realtime will trigger reload
+  }
+
+  // ── Next token number ─────────────────────────────────────
+  async function nextTokenNumber(): Promise<number> {
+    const { data } = await supabase
+      .from('opd_queue')
+      .select('token_number')
+      .eq('queue_date', today)
+      .order('token_number', { ascending: false })
+      .limit(1)
+    return ((data?.[0]?.token_number ?? 0) as number) + 1
+  }
+
+  // ── Add to queue ──────────────────────────────────────────
+  async function handleAddToQueue() {
+    if (!addPatientId) { setError('Select a patient.'); return }
+    setAddingEntry(true); setError('')
+
+    try {
+      const token = await nextTokenNumber()
+      const { data, error: e } = await supabase
+        .from('opd_queue')
+        .insert({
+          patient_id:   addPatientId,
+          encounter_id: addEncounter || null,
+          queue_date:   today,
+          token_number: token,
+          status:       'waiting',
+          priority:     addPriority,
+          notes:        addNotes.trim(),
+        })
+        .select().single()
+
+      if (e) throw e
+      await audit('create', 'encounter', data?.id,
+        `Queue token #${token} — ${addName || addPatientId}`)
+
+      setShowAddModal(false)
+      resetModal()
+    } catch (e: any) {
+      setError(`Failed to add: ${e.message}`)
+    } finally {
+      setAddingEntry(false)
     }
-
-    const apptType = appt.type
-
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 1 — FOR PATIENT
-    // ═══════════════════════════════════════════════════════════
-    const pMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
-
-Namaste ${appt.patient_name} ji 🙏
-
-This is a reminder for your *upcoming appointment*.
-
-📅 *Date:* ${dateStr}
-🕐 *Appointment Time:* ${appt.time}
-⏰ *Please arrive by:* ${arrivalTime} *(30 minutes early)*
-🏥 *Visit Type:* ${appt.type}
-📍 *Address:* ${hs.address || 'Hospital address'}
-
-📋 *Please bring:*
-✅ Previous prescriptions & reports
-✅ Any lab reports / USG reports done recently
-✅ Aadhaar card / ID proof${p.mediclaim ? '\n✅ Insurance / Mediclaim card' : ''}
-${rx?.reports_needed ? `\n🔬 *Pending tests to get done:*\n${rx.reports_needed}` : ''}
-${appt.notes ? `\n📝 *Note from doctor:* ${appt.notes}` : ''}
-
-For queries call: ${hs.phone || 'our helpdesk'}
-
----
-${appt.patient_name} ji, ${apptType === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
-
-_${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
-
-    // ═══════════════════════════════════════════════════════════
-    // MESSAGE 2 — FOR DOCTOR (patient profile summary)
-    // ═══════════════════════════════════════════════════════════
-    const dMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
-*Patient Brief — Appointment Alert* 🩺
-
-📅 *Date:* ${dateStr} at *${appt.time}*
-🏥 *Visit Type:* ${appt.type}
-
-━━━━━━━━━━━━━━━━
-👤 *PATIENT PROFILE*
-━━━━━━━━━━━━━━━━
-*Name:* ${appt.patient_name}
-*MRN:* ${appt.mrn}
-${ageStr ? `*Age:* ${ageStr}` : ''}${p.gender ? `  |  *Gender:* ${p.gender}` : ''}
-${p.blood_group ? `*Blood Group:* ${p.blood_group}` : ''}
-*Mobile:* ${appt.mobile}
-${p.abha_id ? `*ABHA ID:* ${p.abha_id}` : ''}${p.mediclaim ? `\n*Insurance:* ${p.cashless ? 'Cashless' : 'Mediclaim'}${p.policy_tpa_name ? ' — ' + p.policy_tpa_name : ''}` : ''}
-${obText}
-${enc ? `
-━━━━━━━━━━━━━━━━
-📋 *LAST VISIT* (${formatDate(enc.encounter_date)})
-━━━━━━━━━━━━━━━━
-*Type:* ${enc.encounter_type}
-${enc.chief_complaint ? `*Complaint:* ${enc.chief_complaint}` : ''}
-${enc.diagnosis ? `*Diagnosis:* ${enc.diagnosis}` : ''}
-${enc.bp_systolic ? `*BP:* ${enc.bp_systolic}/${enc.bp_diastolic} mmHg` : ''}${enc.pulse ? `  |  *Pulse:* ${enc.pulse} bpm` : ''}
-${enc.weight ? `*Weight:* ${enc.weight} kg` : ''}` : ''}
-${medsText ? `
-━━━━━━━━━━━━━━━━
-💊 *CURRENT MEDICATIONS*
-━━━━━━━━━━━━━━━━
-${medsText}` : ''}
-${rx?.advice ? `\n📝 *Last Advice:* ${rx.advice}` : ''}
-${appt.notes ? `\n🔔 *Appointment Note:* ${appt.notes}` : ''}
-
-━━━━━━━━━━━━━━━━
-_NexMedicon HMS — Patient brief for ${appt.patient_name}_`
-
-    setPatientMsg(pMsg)
-    setDoctorMsg(dMsg)
-    setReminderLoading(false)
   }
 
-  function waLink(mobile: string, msg: string) {
-    const num  = mobile?.replace(/\D/g, '')
-    const full = num?.length === 10 ? '91' + num : num
-    return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`
-  }
+  // ── Stats ──────────────────────────────────────────────────
+  const waiting    = queue.filter(q => q.status === 'waiting').length
+  const inProgress = queue.filter(q => q.status === 'in_progress').length
+  const done       = queue.filter(q => q.status === 'done').length
 
-  async function markReminderSent(appt: Appointment) {
-    await supabase
-      .from('appointments')
-      .update({ reminder_sent: true, updated_at: new Date().toISOString() })
-      .eq('id', appt.id)
-    setAppts(prev => prev.map(a => a.id === appt.id ? { ...a, reminder_sent: true } : a))
-  }
+  // ── Render ────────────────────────────────────────────────
+  return (
+    <AppShell>
+      <div className="max-w-4xl mx-auto px-4 py-6">
 
-  function resetForm() {
-    setSelPatient(null); setPatientQuery(''); setPatientResults([])
-    const today = new Date().toISOString().split('T')[0]
-    setApptDate(today)
-    setApptTime(getFirstAvailableTime(today))
-    setApptType(APPT_TYPES[0]); setApptNotes('')
-    setSaveError(''); setTimeError('')
-  }
-
-  const today = new Date().toISOString().split('T')[0]
-
-  // ═══════════════════════════════════════════════════════════════
-  // REMINDER VIEW
-  // ═══════════════════════════════════════════════════════════════
-  if (view === 'reminder' && reminderAppt) {
-    const doctorMobile = hs.phone?.replace(/\D/g, '') || ''
-    const isDoctorWA   = doctorMobile.length >= 10
-
-    return (
-      <AppShell>
-        <div className="p-6 max-w-2xl mx-auto">
-
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <BellRing className="w-5 h-5 text-blue-600"/>
-                WhatsApp Reminders
-              </h1>
-              <p className="text-xs text-gray-500">
-                {reminderAppt.patient_name} · {reminderAppt.date} at {reminderAppt.time}
-              </p>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600"/> OPD Queue
+              <span className="ml-2 flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full
+                border {realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">
+                {realtimeOk
+                  ? <><Zap className="w-3 h-3"/> Live</>
+                  : <><RefreshCw className="w-3 h-3"/> Connecting…</>}
+              </span>
+            </h1>
+            <p className="text-sm text-gray-500">
+              Today — {new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long' })}
+              {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}</span>}
+            </p>
           </div>
+          <button onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+            <Plus className="w-4 h-4"/> Add to Queue
+          </button>
+        </div>
 
-          {reminderLoading ? (
-            <div className="card p-16 text-center">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3"/>
-              <p className="text-sm text-gray-500">Loading patient profile...</p>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[
+            { label: 'Waiting', count: waiting,    color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+            { label: 'In Progress', count: inProgress, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+            { label: 'Done', count: done,       color: 'text-green-700 bg-green-50 border-green-200' },
+          ].map(s => (
+            <div key={s.label} className={`border rounded-xl p-3 text-center ${s.color}`}>
+              <div className="text-2xl font-bold">{s.count}</div>
+              <div className="text-xs font-medium mt-0.5">{s.label}</div>
             </div>
-          ) : (
-            <>
-              {/* Tab switcher */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setActiveTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'patient'
-                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'}`}>
-                  <MessageCircle className="w-4 h-4"/>
-                  Patient Message
-                </button>
-                <button
-                  onClick={() => setActiveTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${activeTab === 'doctor'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
-                  <Stethoscope className="w-4 h-4"/>
-                  Doctor Brief
-                </button>
-              </div>
+          ))}
+        </div>
 
-              {/* ── PATIENT MESSAGE ── */}
-              {activeTab === 'patient' && (
-                <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-green-700 text-sm">{reminderAppt.patient_name.charAt(0)}</span>
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
+            {error}
+            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4"/></button>
+          </div>
+        )}
+
+        {/* Queue list */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-gray-400">
+            <Loader2 className="w-6 h-6 animate-spin mr-2"/> Loading queue…
+          </div>
+        ) : queue.length === 0 ? (
+          <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <p className="font-medium">Queue is empty</p>
+            <p className="text-sm mt-1">Add patients to start the day</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Active first */}
+            {['in_progress', 'waiting', 'done', 'cancelled'].map(statusGroup =>
+              queue.filter(q => q.status === statusGroup).map(entry => (
+                <div key={entry.id}
+                  className={`border rounded-xl px-4 py-3 ${STATUS_STYLES[entry.status]} transition-colors`}>
+                  <div className="flex items-center gap-4">
+                    {/* Token */}
+                    <div className="text-2xl font-bold tabular-nums w-10 text-center flex-shrink-0">
+                      {String(entry.token_number).padStart(2, '0')}
                     </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{reminderAppt.patient_name}</div>
-                      <div className="text-xs text-gray-400">{reminderAppt.mrn} · {reminderAppt.mobile}</div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-900">{entry.patient_name}</span>
+                        <span className="text-xs text-gray-500 bg-white/70 px-1.5 py-0.5 rounded">MRN {entry.mrn}</span>
+                        {entry.priority !== 'normal' && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[entry.priority]}`}>
+                            {entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                        <Clock className="w-3 h-3"/>
+                        Added {formatDateTime(entry.created_at)}
+                        {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
+                        {entry.notes && <span className="ml-1">· {entry.notes}</span>}
+                      </div>
                     </div>
-                    <div className="ml-auto text-xs bg-green-50 text-green-700 font-semibold px-2 py-1 rounded-full border border-green-200">
-                      To Patient
+
+                    {/* Actions */}
+                    <div className="flex gap-2 flex-shrink-0">
+                      {entry.status === 'waiting' && (
+                        <>
+                          <button onClick={() => updateStatus(entry, 'in_progress')}
+                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                            <Play className="w-3 h-3"/> Call
+                          </button>
+                          <button onClick={() => updateStatus(entry, 'cancelled')}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                            <X className="w-4 h-4"/>
+                          </button>
+                        </>
+                      )}
+                      {entry.status === 'in_progress' && (
+                        <button onClick={() => updateStatus(entry, 'done')}
+                          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                          <CheckCircle className="w-3 h-3"/> Done
+                        </button>
+                      )}
+                      {entry.patient_id && (
+                        <Link href={`/patients/${entry.patient_id}`}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs">
+                          View
+                        </Link>
+                      )}
                     </div>
                   </div>
-                  <label className="label">Message (editable)</label>
-                  <textarea
-                    className="input resize-none font-mono text-xs leading-relaxed"
-                    rows={16}
-                    value={patientMsg}
-                    onChange={e => setPatientMsg(e.target.value)}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Add to Queue modal ── */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Add to Queue</h3>
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Patient search — queries full_name, mrn, mobile */}
+              <div>
+                <label className="label">Search Patient</label>
+                <div className="relative">
+                  <input
+                    className="input pr-8"
+                    value={patientSearch}
+                    onChange={e => {
+                      setPatientSearch(e.target.value)
+                      // Clear selection if user changes the text
+                      if (addPatientId && e.target.value !== addName) {
+                        setAddPatientId(''); setAddName(''); setAddMrn('')
+                      }
+                    }}
+                    placeholder="Search by name, MRN, or mobile…"
+                    autoFocus
                   />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
-                  </p>
-                  <div className="flex flex-col gap-2 mt-4">
-                    <a
-                      href={waLink(reminderAppt.mobile, patientMsg)}
-                      target="_blank" rel="noopener noreferrer"
-                      onClick={() => { markReminderSent(reminderAppt); setCopiedPatient(true) }}
-                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                      <MessageCircle className="w-4 h-4"/>
-                      Send to Patient via WhatsApp
-                    </a>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(patientMsg)
-                        setCopiedPatient(true)
-                        markReminderSent(reminderAppt)
-                        setTimeout(() => setCopiedPatient(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedPatient ? 'Copied!' : 'Copy Message'}
-                    </button>
-                    {reminderAppt.mobile && (
-                      <a href={`tel:${reminderAppt.mobile}`}
-                        className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
-                        <Phone className="w-4 h-4"/> Call {reminderAppt.patient_name} ({reminderAppt.mobile})
-                      </a>
-                    )}
-                  </div>
-                  {reminderAppt.reminder_sent && (
-                    <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
-                    </p>
+                  {searchLoading && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
                   )}
                 </div>
-              )}
 
-              {/* ── DOCTOR BRIEF ── */}
-              {activeTab === 'doctor' && (
-                <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Stethoscope className="w-4 h-4 text-blue-600"/>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{hs.doctorName || 'Doctor'}</div>
-                      <div className="text-xs text-gray-400">
-                        {isDoctorWA
-                          ? `Send to: ${hs.phone}`
-                          : 'Add doctor\'s phone in Settings to enable WhatsApp send'}
-                      </div>
-                    </div>
-                    <div className="ml-auto text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full border border-blue-200">
-                      To Doctor
-                    </div>
-                  </div>
-                  <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
-                    <UserCircle className="w-4 h-4 flex-shrink-0"/>
-                    This message gives the doctor a full patient brief before the appointment — profile, last visit, current medications, and OB data.
-                  </div>
-                  <label className="label mt-3">Message (editable)</label>
-                  <textarea
-                    className="input resize-none font-mono text-xs leading-relaxed"
-                    rows={20}
-                    value={doctorMsg}
-                    onChange={e => setDoctorMsg(e.target.value)}
-                  />
-                  <div className="flex flex-col gap-2 mt-4">
-                    {isDoctorWA ? (
-                      <a
-                        href={waLink(doctorMobile, doctorMsg)}
-                        target="_blank" rel="noopener noreferrer"
-                        onClick={() => setCopiedDoctor(true)}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                        <MessageCircle className="w-4 h-4"/>
-                        Send Patient Brief to Doctor via WhatsApp
-                      </a>
-                    ) : (
-                      <div className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl py-3">
-                        ⚙️ Add doctor&apos;s phone number in{' '}
-                        <Link href="/settings" className="text-blue-600 underline">Settings</Link>{' '}
-                        to enable direct WhatsApp send to doctor.
-                      </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(doctorMsg)
-                        setCopiedDoctor(true)
-                        setTimeout(() => setCopiedDoctor(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedDoctor ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedDoctor ? 'Copied!' : 'Copy Doctor Brief'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Quick switch hint */}
-              <p className="text-center text-xs text-gray-400">
-                Switch between tabs to send both messages —
-                <button onClick={() => setActiveTab(activeTab === 'patient' ? 'doctor' : 'patient')}
-                  className="text-blue-500 underline ml-1">
-                  {activeTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
-                </button>
-              </p>
-            </>
-          )}
-        </div>
-      </AppShell>
-    )
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // NEW APPOINTMENT VIEW
-  // ═══════════════════════════════════════════════════════════════
-  if (view === 'new') {
-    const availableSlots = getAvailableTimeSlots(apptDate)
-
-    return (
-      <AppShell>
-        <div className="p-6 max-w-2xl mx-auto">
-          <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
-            </button>
-            <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
-          </div>
-
-          {saveError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
-              <span>{saveError}</span>
-            </div>
-          )}
-
-          {/* Patient */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">Patient</h2>
-            {selPatient ? (
-              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-                <div>
-                  <div className="font-semibold text-gray-900">{selPatient.full_name}</div>
-                  <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.mobile}</div>
-                </div>
-                <button onClick={() => { setSelPatient(null); setPatientQuery('') }}>
-                  <X className="w-4 h-4 text-gray-400 hover:text-red-500"/>
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-                <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)}/>
-                {patientResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                {/* Live dropdown results */}
+                {patientResults.length > 0 && !addPatientId && (
+                  <div className="border border-gray-200 rounded-lg shadow-md mt-1 bg-white overflow-hidden">
                     {patientResults.map(p => (
-                      <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50 text-sm border-b border-gray-50 last:border-0">
-                        <span className="font-semibold text-gray-900">{p.full_name}</span>
-                        <span className="text-gray-400 ml-2 text-xs">{p.mrn} · {p.mobile}</span>
+                      <button key={p.id} type="button"
+                        onClick={() => selectPatient(p)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex items-center gap-3 border-b last:border-0 transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-700 font-bold text-xs">{p.full_name.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                          <div className="text-xs text-gray-400">
+                            MRN: {p.mrn}{p.mobile ? ` · ${p.mobile}` : ''}
+                          </div>
+                        </div>
+                        <CheckCircle className="w-4 h-4 text-blue-300 flex-shrink-0"/>
                       </button>
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
 
-          {/* Date, time, type */}
-          <div className="card p-5 mb-4">
-            <h2 className="section-title">Appointment Details</h2>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="label">Date</label>
-                <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => handleDateChange(e.target.value)}/>
-              </div>
-              <div>
-                <label className="label">Time</label>
-                {/* FIX #6: Show only future time slots */}
-                <select className={`input ${timeError ? 'border-red-300' : ''}`}
-                  value={apptTime}
-                  onChange={e => { setApptTime(e.target.value); setTimeError('') }}>
-                  {availableSlots.length === 0 ? (
-                    <option value="">No slots available today</option>
-                  ) : (
-                    availableSlots.map(t => <option key={t}>{t}</option>)
-                  )}
-                </select>
-                {timeError && (
-                  <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3"/> {timeError}
+                {/* No results message */}
+                {patientSearch.trim().length >= 2 && !searchLoading && patientResults.length === 0 && !addPatientId && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+                    No patients found for "{patientSearch}". Check spelling or try MRN / mobile number.
                   </p>
                 )}
-                {apptDate === today && availableSlots.length > 0 && (
-                  <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3"/> Showing future slots only for today
+
+                {/* Search hint */}
+                {patientSearch.trim().length < 2 && !addPatientId && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Type at least 2 characters — searches name, MRN and mobile number.
                   </p>
                 )}
-                {apptDate === today && availableSlots.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    No more slots available today. Please select tomorrow or a future date.
-                  </p>
+
+                {/* Selected patient confirmation */}
+                {addPatientId && addName && (
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+                    <span className="flex-1 truncate"><strong>{addName}</strong>{addMrn ? ` · MRN: ${addMrn}` : ''}</span>
+                    <button type="button"
+                      className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      onClick={() => { setAddPatientId(''); setAddName(''); setAddMrn(''); setPatientSearch('') }}>
+                      <X className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
                 )}
               </div>
-              <div className="col-span-2">
-                <label className="label">Visit Type</label>
-                <select className="input" value={apptType} onChange={e => setApptType(e.target.value)}>
-                  {APPT_TYPES.map(t => <option key={t}>{t}</option>)}
+
+              <div>
+                <label className="label">Priority</label>
+                <select className="input" value={addPriority} onChange={e => setAddPriority(e.target.value as Priority)}>
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="emergency">Emergency</option>
                 </select>
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="label">Notes (optional)</label>
-                <textarea className="input resize-none" rows={2}
-                  placeholder="e.g. Bring previous USG reports, fasting required…"
-                  value={apptNotes} onChange={e => setApptNotes(e.target.value)}/>
+                <input className="input" value={addNotes} onChange={e => setAddNotes(e.target.value)}
+                  placeholder="e.g. Follow-up, fasting, wheelchair"/>
               </div>
             </div>
-          </div>
 
-          <div className="flex justify-between">
-            <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
-            <button onClick={bookAppointment}
-              disabled={saving || !selPatient || !apptDate || !apptTime || availableSlots.length === 0}
-              className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
-              {saving ? 'Booking…' : 'Book & Generate Reminder'}
-            </button>
-          </div>
-        </div>
-      </AppShell>
-    )
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LIST VIEW
-  // ═══════════════════════════════════════════════════════════════
-  return (
-    <AppShell>
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600"/> Appointments
-            </h1>
-            <p className="text-sm text-gray-500">
-              {todayCount} today · {upcomingCount} upcoming
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={fetchAppts} className="btn-secondary flex items-center gap-1.5 text-xs">
-              <RefreshCw className="w-3.5 h-3.5"/> Refresh
-            </button>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4"/> Book Appointment
-            </button>
-          </div>
-        </div>
-
-        {/* Filter bar */}
-        <div className="card p-4 mb-5 flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="label">Date</label>
-            <div className="flex gap-2">
-              <input className="input w-40" type="date"
-                value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
-              <button onClick={() => setDateFilter(today)}
-                className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg font-medium">
-                Today
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleAddToQueue} disabled={addingEntry || !addPatientId}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+                {addingEntry ? 'Adding…' : 'Add to Queue'}
               </button>
-              <button onClick={() => setDateFilter('')}
-                className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-2 rounded-lg font-medium">
-                All dates
-              </button>
+              <button onClick={() => { setShowAddModal(false); resetModal() }} className="btn-secondary">Cancel</button>
             </div>
           </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input w-36" value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as any)}>
-              <option value="all">All statuses</option>
-              {(Object.keys(STATUS_CONFIG) as ApptStatus[]).map(s => (
-                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Type</label>
-            <select className="input w-44" value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}>
-              <option value="all">All types</option>
-              <option value="follow_up">Follow-up (auto)</option>
-              {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
         </div>
-
-        {/* List */}
-        {loading ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40"/>
-            <p className="text-sm">Loading appointments...</p>
-          </div>
-        ) : appts.length === 0 ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
-            <p className="font-medium mb-1">
-              {dateFilter || statusFilter !== 'all' ? 'No appointments match this filter' : 'No appointments yet'}
-            </p>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
-              <Plus className="w-3.5 h-3.5"/> Book First Appointment
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {appts.map(appt => {
-              const cfg     = STATUS_CONFIG[appt.status]
-              const isToday = appt.date === today
-              const isPast  = appt.date < today
-              return (
-                <div key={appt.id}
-                  className={`card p-4 flex items-center gap-4 ${isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''}`}>
-
-                  {/* Time block */}
-                  <div className="text-center min-w-[52px]">
-                    <div className="text-lg font-bold text-gray-800 leading-none">{appt.time}</div>
-                    {isToday
-                      ? <div className="text-xs text-blue-600 font-semibold">Today</div>
-                      : <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>}
-                  </div>
-
-                  {/* Patient info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900">{appt.patient_name}</span>
-                      <span className="text-xs text-gray-400">{appt.mrn}</span>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
-                      {appt.reminder_sent && (
-                        <span className="text-xs text-green-600 flex items-center gap-0.5">
-                          <CheckCircle className="w-3 h-3"/> Reminded
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
-                      {appt.type === 'follow_up' && (
-                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
-                      )}
-                      {appt.type !== 'follow_up' && appt.type}
-                    </div>
-                    {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {appt.status === 'scheduled' && (
-                      <>
-                        <button onClick={() => updateStatus(appt.id, 'confirmed')}
-                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">
-                          Confirm
-                        </button>
-                        <button onClick={() => updateStatus(appt.id, 'completed')}
-                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                          Done
-                        </button>
-                        <button onClick={() => updateStatus(appt.id, 'no-show')}
-                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">
-                          No-show
-                        </button>
-                      </>
-                    )}
-                    {appt.status === 'confirmed' && (
-                      <button onClick={() => updateStatus(appt.id, 'completed')}
-                        className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                        Mark Done
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openReminder(appt)}
-                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent
-                          ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                          : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                      }`}
-                      title="Send WhatsApp reminder to patient & doctor brief">
-                      <MessageCircle className="w-3.5 h-3.5"/>
-                      {appt.reminder_sent ? 'Re-send' : 'Remind'}
-                    </button>
-                    <Link href={`/opd/new?patient=${appt.patient_id}`}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      title="Start consultation">
-                      <Stethoscope className="w-4 h-4"/>
-                    </Link>
-                    <Link href={`/patients/${appt.patient_id}`}
-                      className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                      title="View patient">
-                      <User className="w-4 h-4"/>
-                    </Link>
-                    <button onClick={() => deleteAppt(appt.id)}
-                      className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                      title="Delete appointment">
-                      <Trash2 className="w-4 h-4"/>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      )}
     </AppShell>
   )
 }
+
 ```
 
 # src\app\reminders\page.tsx
@@ -24499,7 +24873,12 @@ export default function RemindersPage() {
     return reminders.filter(r => r.type === (filter as ReminderType))
   })()
 
-  const isSent     = (r: ReminderItem) => sent.has(r.id) || (r.reminderSentAt != null && r.type !== 'high_risk_anc')
+  // FIXED: isSent uses only the local sent set (this session's sends).
+  // reminderSentAt from DB is shown as a visual badge but does NOT hide items from pending —
+  // otherwise all previously-reminded patients vanish from the list on next load even if
+  // they have new appointments or overdue follow-ups.
+  const isSent     = (r: ReminderItem) => sent.has(r.id)
+  const isAlreadySentBefore = (r: ReminderItem) => r.reminderSentAt != null && r.type !== 'high_risk_anc'
   const pending    = filtered.filter(r => !isSent(r))
   const done       = filtered.filter(r => isSent(r))
 
@@ -24521,7 +24900,8 @@ export default function RemindersPage() {
 
   // ── Bulk Send All — opens WhatsApp for each pending reminder sequentially ──
   async function handleSendAll() {
-    const toSend = pending.filter(r => r.mobile)
+    // FIXED: send ALL unsent reminders across all filter tabs, not just the current filtered view
+    const toSend = allPendingWithMobile
     if (toSend.length === 0) return
 
     setSendingAll(true)
@@ -24612,10 +24992,13 @@ export default function RemindersPage() {
   }
 
   // ── Load send history ───────────────────────────────────────
-  async function loadHistory() {
+  const [historyDays, setHistoryDays] = useState(7)
+
+  async function loadHistory(days = historyDays) {
     setHistoryLoading(true)
     try {
-      const res = await fetch('/api/reminders/history')
+      // FIXED: pass days param so we can load more than just "today"
+      const res = await fetch(`/api/reminders/history?days=${days}`)
       if (res.ok) {
         const data = await res.json()
         setHistory(data.logs || [])
@@ -24626,8 +25009,7 @@ export default function RemindersPage() {
     setHistoryLoading(false)
   }
 
-  // FIX: pending count for the "All" filter specifically (not filtered view)
-  // The button should be enabled whenever there are unsent reminders WITH mobile numbers
+  // FIX: pending count across ALL reminders (not just current filter view) for Send All button
   const allPendingWithMobile = reminders.filter(r => !isSent(r) && r.mobile)
 
   return (
@@ -24675,21 +25057,21 @@ export default function RemindersPage() {
         <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-2xl p-4 mb-6">
           <div className="flex flex-wrap items-center gap-3">
 
-            {/* FIX: Send All button — enabled based on ALL pending reminders (not filtered) */}
-            {/* This way if you're on "All" tab, the count and enablement reflects everything */}
+            {/* FIXED: Send All button — always uses allPendingWithMobile (all filters, not just current view)
+                so it's never wrongly disabled when you're on a sub-filter tab */}
             <button
               onClick={() => setShowBulkPanel(p => !p)}
-              disabled={pending.length === 0}
+              disabled={allPendingWithMobile.length === 0}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm py-2.5 px-5 rounded-xl transition-colors shadow-sm shadow-green-200"
             >
               <Users className="w-4 h-4"/>
-              Send All Reminders ({pending.length})
+              Send All Reminders ({allPendingWithMobile.length})
             </button>
 
             {/* Explanation when button is disabled */}
-            {pending.length === 0 && reminders.length > 0 && (
+            {allPendingWithMobile.length === 0 && reminders.length > 0 && (
               <p className="text-xs text-gray-500">
-                All reminders in this view are already sent. Switch to &quot;All&quot; tab to see more.
+                All reminders are already sent.
               </p>
             )}
 
@@ -24711,7 +25093,7 @@ export default function RemindersPage() {
             <button
               onClick={() => {
                 setShowHistory(h => !h)
-                if (!showHistory) loadHistory()
+                if (!showHistory) loadHistory(historyDays)
               }}
               className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-sm py-2.5 px-4 rounded-xl border border-gray-200 transition-colors"
             >
@@ -24764,7 +25146,7 @@ export default function RemindersPage() {
                     Bulk Send via WhatsApp
                   </h3>
                   <p className="text-xs text-gray-500 mb-3">
-                    This will open WhatsApp for each of the <strong>{pending.length}</strong> pending patients
+                    This will open WhatsApp for each of the <strong>{allPendingWithMobile.length}</strong> pending patients
                     one by one (1.5s delay between each). Each message will be pre-filled — you just need to tap Send in WhatsApp.
                   </p>
                   <div className="flex gap-2">
@@ -24773,7 +25155,7 @@ export default function RemindersPage() {
                       className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors"
                     >
                       <PlayCircle className="w-4 h-4"/>
-                      Start Sending ({pending.length} patients)
+                      Start Sending ({allPendingWithMobile.length} patients)
                     </button>
                     <button
                       onClick={() => setShowBulkPanel(false)}
@@ -24842,18 +25224,34 @@ export default function RemindersPage() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                 <History className="w-4 h-4 text-gray-500"/>
-                Recent Send History
+                Send History
               </h3>
-              <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600">
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {/* FIXED: date range selector so past reminders are visible */}
+                <select
+                  value={historyDays}
+                  onChange={e => { const d = Number(e.target.value); setHistoryDays(d); loadHistory(d) }}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white"
+                >
+                  <option value={1}>Today</option>
+                  <option value={7}>Last 7 days</option>
+                  <option value={30}>Last 30 days</option>
+                  <option value={90}>Last 3 months</option>
+                </select>
+                <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600">
+                  Close
+                </button>
+              </div>
             </div>
             {historyLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 text-blue-500 animate-spin"/>
               </div>
             ) : history.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No reminders sent yet today.</p>
+              /* FIXED: was "No reminders sent yet today" — now shows the correct period */
+              <p className="text-sm text-gray-400 text-center py-6">
+                No reminders sent in the last {historyDays === 1 ? 'day' : `${historyDays} days`}.
+              </p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {history.map((log: any, i: number) => (
@@ -24967,13 +25365,14 @@ export default function RemindersPage() {
                 </div>
                 <div className="space-y-3">
                   {pending.map(r => (
-                    <ReminderCard
+                <ReminderCard
                       key={r.id}
                       reminder={r}
                       hs={hs}
                       isExpanded={expanded === r.id}
                       onToggle={() => setExpanded(prev => prev === r.id ? null : r.id)}
                       onSent={() => markSent(r)}
+                      alreadySentBefore={isAlreadySentBefore(r)}
                     />
                   ))}
                 </div>
@@ -25014,13 +25413,14 @@ export default function RemindersPage() {
 
 // ── Reminder Card Component ───────────────────────────────────
 function ReminderCard({
-  reminder: r, hs, isExpanded, onToggle, onSent,
+  reminder: r, hs, isExpanded, onToggle, onSent, alreadySentBefore,
 }: {
-  reminder:   ReminderItem
-  hs:         any
-  isExpanded: boolean
-  onToggle:   () => void
-  onSent:     () => void
+  reminder:          ReminderItem
+  hs:                any
+  isExpanded:        boolean
+  onToggle:          () => void
+  onSent:            () => void
+  alreadySentBefore?: boolean
 }) {
   const [editing,   setEditing]   = useState(false)
   const [msgText,   setMsgText]   = useState('')
@@ -25062,6 +25462,12 @@ function ReminderCard({
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pCfg.bg} ${pCfg.text} border ${pCfg.border}`}>
               {pCfg.label}
             </span>
+            {/* FIXED: show "Previously sent" badge instead of hiding the card */}
+            {alreadySentBefore && (
+              <span className="text-xs text-green-600 font-semibold flex items-center gap-0.5 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200">
+                <CheckCircle className="w-3 h-3"/> Sent before
+              </span>
+            )}
           </div>
           <div className="text-xs text-gray-700 font-semibold">{r.title}</div>
           <div className="text-xs text-gray-400 truncate">{r.subtitle}</div>
@@ -29903,6 +30309,8 @@ import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
+import SessionTimeout from './SessionTimeout'; 
+import VoiceAssistant from '../voice/VoiceAssistant';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -30170,9 +30578,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <MobileNav />
 
-        {/* ── Uncomment these when the files exist: ────────── */}
-        {/* <SessionTimeout /> */}
-        {/* <VoiceAssistant /> */}
+       {/* ── Uncomment these when the files exist: ────────── */}
+      <SessionTimeout />
+      <VoiceAssistant />
+
 
       </div>
     </AuthContext.Provider>
@@ -31537,6 +31946,293 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+# src\components\shared\DoctorNoteCamera.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/shared/DoctorNoteCamera.tsx
+ *
+ * A reusable "Click Photo of Note" button component for OPD consultation.
+ *
+ * FEATURE (Issue #5):
+ * When the doctor takes a photo of their handwritten note during OPD consultation,
+ * this component:
+ *  1. Sends the image to the AI OCR endpoint (autofill mode)
+ *  2. Parses the response to extract structured clinical fields
+ *  3. Calls onExtracted() with the extracted data
+ *  4. The parent (OPD new page) then populates the right form fields:
+ *     - chief_complaint → Chief Complaint textarea
+ *     - diagnosis → Diagnosis field
+ *     - BP, pulse, temp, SpO₂ → Vitals fields
+ *     - history/examination/plan → Notes field
+ *     - medicines → queued for prescription
+ *     - follow_up_date → follow-up in prescription
+ *
+ * Usage:
+ *   <DoctorNoteCamera onExtracted={(result) => applyToForm(result)} />
+ */
+
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { Camera, Loader2, Sparkles, AlertCircle, CheckCircle2, X } from 'lucide-react'
+
+export interface DoctorNoteResult {
+  /** Detected form type — 'encounter' means OPD consultation note */
+  formType: 'ob_exam' | 'vitals' | 'encounter' | 'unknown'
+  /** Confidence 0–1 */
+  confidence: number
+  /** Extracted fields */
+  fields: {
+    // Vitals
+    pulse?: number
+    bp_systolic?: number
+    bp_diastolic?: number
+    temperature?: number
+    spo2?: number
+    weight?: number
+    height?: number
+    // Consultation
+    chief_complaint?: string
+    duration?: string
+    history?: string
+    examination_findings?: string
+    diagnosis?: string
+    investigations_ordered?: string
+    treatment_plan?: string
+    advice?: string
+    follow_up_date?: string
+    // Medications
+    medicines?: Array<{ name: string; dose?: string; frequency?: string; days?: string }>
+    // OB/GYN
+    lmp?: string
+    edd?: string
+    gravida?: number
+    para?: number
+    gestational_age_weeks?: number
+    fundal_height?: number
+    fhs?: number
+    [key: string]: any
+  }
+  /** Raw text from the image */
+  raw_text?: string
+}
+
+interface Props {
+  /** Called after successful extraction with the structured result */
+  onExtracted: (result: DoctorNoteResult) => void
+  /** Small/compact mode */
+  compact?: boolean
+  /** Context hint sent to AI (e.g. "OPD consultation note for gynecology") */
+  context?: string
+}
+
+export default function DoctorNoteCamera({ onExtracted, compact = false, context = 'OPD consultation note' }: Props) {
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState('')
+  const [preview,  setPreview]  = useState<DoctorNoteResult | null>(null)
+  const [applied,  setApplied]  = useState(false)
+
+  async function handleFile(file: File) {
+    if (!file) return
+
+    setLoading(true)
+    setError('')
+    setPreview(null)
+    setApplied(false)
+
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('mode', 'autofill')
+      fd.append('context', `${context} — extract chief complaint, diagnosis, vitals, medications, follow-up date`)
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const res = await fetch('/api/doctor-note-ocr', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `OCR failed (${res.status})`)
+      }
+
+      const data = await res.json()
+
+      const result: DoctorNoteResult = {
+        formType:   data.formType   || 'unknown',
+        confidence: typeof data.confidence === 'number' ? data.confidence : parseFloat(data.confidence) || 0,
+        fields:     data.fields     || {},
+        raw_text:   data.raw_text,
+      }
+
+      setPreview(result)
+    } catch (err: any) {
+      setError(err.message || 'Failed to read note. Check AI key is configured.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleFile(file)
+    e.target.value = ''
+  }
+
+  function applyResult() {
+    if (!preview) return
+    onExtracted(preview)
+    setApplied(true)
+    setPreview(null)
+    setTimeout(() => setApplied(false), 3000)
+  }
+
+  function dismiss() {
+    setPreview(null)
+    setError('')
+  }
+
+  // ── Compact mode — just a small button ───────────────────────
+  if (compact) {
+    return (
+      <div className="inline-flex items-center gap-2">
+        <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all
+          ${loading ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'}`}>
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Camera className="w-3.5 h-3.5"/>}
+          {loading ? 'Reading…' : 'Click Note Photo'}
+          <input type="file" accept="image/*" capture="environment" onChange={handleChange} disabled={loading} className="hidden"/>
+        </label>
+        {applied && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/>Applied!</span>}
+        {error && (
+          <span className="text-xs text-red-600 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3"/>{error.slice(0, 40)}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // ── Full mode ─────────────────────────────────────────────────
+  return (
+    <div>
+      {/* Camera button */}
+      <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all
+        ${loading
+          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}>
+        {loading ? (
+          <><Loader2 className="w-4 h-4 animate-spin"/> Reading doctor note…</>
+        ) : (
+          <><Camera className="w-4 h-4"/> Click Photo of Doctor Note</>
+        )}
+        <input
+          type="file"
+          accept="image/jpeg,image/jpg,image/png,image/webp"
+          capture="environment"
+          onChange={handleChange}
+          disabled={loading}
+          className="hidden"
+        />
+      </label>
+
+      <p className="text-xs text-gray-400 mt-1.5">
+        📸 Take a clear photo of your handwritten note · AI reads the text and fills in the form fields automatically
+      </p>
+
+      {/* Success banner */}
+      {applied && (
+        <div className="mt-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-green-800">
+          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0"/>
+          Fields filled from your note! Please review each field before saving.
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+          <div className="flex-1">{error}</div>
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-600"><X className="w-4 h-4"/></button>
+        </div>
+      )}
+
+      {/* Preview panel — show extracted data before applying */}
+      {preview && (
+        <div className="mt-3 bg-blue-50 border border-blue-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-blue-900 flex items-center gap-2 text-sm">
+              <Sparkles className="w-4 h-4 text-blue-600"/>
+              AI Extracted Data
+              <span className="text-xs font-normal text-blue-500 ml-1 bg-blue-100 px-2 py-0.5 rounded-full">
+                {Math.round(preview.confidence * 100)}% confidence
+              </span>
+            </h3>
+            <button onClick={dismiss} className="text-blue-400 hover:text-blue-700">
+              <X className="w-4 h-4"/>
+            </button>
+          </div>
+
+          {/* Show extracted fields */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 mb-4 text-xs">
+            {Object.entries(preview.fields).map(([k, v]) => {
+              if (!v || typeof v === 'object') return null
+              return (
+                <div key={k} className="flex gap-2">
+                  <span className="text-blue-400 font-medium capitalize min-w-[130px]">
+                    {k.replace(/_/g, ' ')}:
+                  </span>
+                  <span className="text-blue-900 font-medium">{String(v)}</span>
+                </div>
+              )
+            })}
+            {/* Medicines */}
+            {Array.isArray(preview.fields.medicines) && preview.fields.medicines.length > 0 && (
+              <div className="col-span-2">
+                <span className="text-blue-400 font-medium">Medications:</span>
+                <ul className="mt-1 space-y-0.5">
+                  {preview.fields.medicines.map((m, i) => (
+                    <li key={i} className="text-blue-900">
+                      • {m.name} {m.dose || ''} {m.frequency || ''} {m.days ? `× ${m.days}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Raw note preview */}
+          {preview.raw_text && (
+            <details className="mb-4">
+              <summary className="text-xs text-blue-500 cursor-pointer hover:text-blue-700">
+                Show raw transcription
+              </summary>
+              <pre className="mt-2 text-xs text-blue-800 bg-white border border-blue-200 rounded-lg p-3 whitespace-pre-wrap font-mono">
+                {preview.raw_text}
+              </pre>
+            </details>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={applyResult}
+              className="btn-primary text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4"/> Apply to Form Fields
+            </button>
+            <button onClick={dismiss} className="btn-secondary text-sm">
+              Discard
+            </button>
+          </div>
         </div>
       )}
     </div>

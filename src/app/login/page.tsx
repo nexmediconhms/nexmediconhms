@@ -93,6 +93,19 @@ export default function LoginPage() {
   const [enrollLoading, setEnrollLoading] = useState(false)
   const [enrollDone,    setEnrollDone]    = useState(false)
 
+  // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          // User arrived via a password reset link — redirect to reset page
+          router.push('/reset-password')
+        }
+      }
+    )
+    return () => { subscription.unsubscribe() }
+  }, [router])
+
   // Redirect if already logged in
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -261,7 +274,7 @@ export default function LoginPage() {
     setError('')
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
     })
     setLoading(false)
     if (resetError) setError(resetError.message)
