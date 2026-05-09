@@ -5,7 +5,7 @@
  *
  * Client-side auth callback handler.
  * Processes the `code` query parameter from Supabase auth redirects (PKCE flow).
- * Exchanges the code for a session, then redirects based on the type.
+ * Exchanges the code for a session, then redirects based on the auth event type.
  */
 
 import { useEffect, useState } from 'react'
@@ -19,7 +19,26 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const code = searchParams.get('code')
-    const type = searchParams.get('type')
+    let redirected = false
+
+    // Listen for auth events to determine the type of callback
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (redirected) return
+        if (event === 'PASSWORD_RECOVERY') {
+          redirected = true
+          router.push('/reset-password')
+        } else if (event === 'SIGNED_IN' && session) {
+          // Wait a moment to see if PASSWORD_RECOVERY fires after SIGNED_IN
+          setTimeout(() => {
+            if (!redirected) {
+              redirected = true
+              router.push('/dashboard')
+            }
+          }, 1000)
+        }
+      }
+    )
 
     async function handleCallback() {
       if (code) {
@@ -31,21 +50,35 @@ export default function AuthCallbackPage() {
           return
         }
 
-        // If this is a password recovery, redirect to the reset password page
-        if (type === 'recovery') {
-          router.push('/reset-password')
-          return
-        }
-
-        // For other types (email confirmation, magic link), go to dashboard
-        router.push('/dashboard')
+        // After successful exchange, wait for onAuthStateChange to determine type
+        // If no event fires within 3 seconds, default to reset-password
+        setTimeout(() => {
+          if (!redirected) {
+            redirected = true
+            router.push('/reset-password')
+          }
+        }, 3000)
       } else {
-        // No code — redirect to login
-        router.push('/login')
+        // No code — check if there's a hash fragment (implicit flow)
+        if (typeof window !== 'undefined' && window.location.hash) {
+          // Supabase client will auto-process the hash
+          // Wait for onAuthStateChange to fire
+          setTimeout(() => {
+            if (!redirected) {
+              redirected = true
+              router.push('/reset-password')
+            }
+          }, 3000)
+        } else {
+          // No code, no hash — redirect to login
+          router.push('/login')
+        }
       }
     }
 
     handleCallback()
+
+    return () => { subscription.unsubscribe() }
   }, [searchParams, router])
 
   if (error) {

@@ -97,7 +97,21 @@ export default function LoginPage() {
   // and redirect if already logged in — combined to avoid race conditions
   useEffect(() => {
     let isRecovery = false
-    let codeHandled = false
+    let redirected = false
+
+    // Set up auth state listener FIRST — this catches PASSWORD_RECOVERY events
+    // that fire after code exchange or hash fragment processing
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (redirected) return
+        if (event === 'PASSWORD_RECOVERY') {
+          // User arrived via a password reset link — redirect to reset page
+          isRecovery = true
+          redirected = true
+          router.push('/reset-password')
+        }
+      }
+    )
 
     async function handleAuthFlow() {
       if (typeof window !== 'undefined') {
@@ -107,50 +121,51 @@ export default function LoginPage() {
         // Check if the URL hash contains a recovery token (implicit flow)
         if (hash && hash.includes('type=recovery')) {
           isRecovery = true
+          // Supabase client will auto-process the hash and fire PASSWORD_RECOVERY
+          // Just wait for the onAuthStateChange callback above
+          return
         }
 
-        // Check if URL has a code parameter (PKCE flow) — exchange it directly
+        // Check if URL has a code parameter (PKCE flow) — exchange it
         const code = params.get('code')
-        const type = params.get('type')
         if (code) {
-          codeHandled = true
+          isRecovery = true // Assume recovery — codes only arrive at /login from password reset
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (!exchangeError) {
-            if (type === 'recovery') {
-              router.push('/reset-password')
-            } else {
-              router.push('/dashboard')
-            }
-          } else {
+          if (exchangeError) {
             setError('Password reset link expired or invalid. Please request a new one.')
+            return
+          }
+          // Code exchanged successfully — redirect to reset password immediately
+          // In PKCE flow, PASSWORD_RECOVERY event may not fire, so don't wait for it
+          if (!redirected) {
+            redirected = true
+            router.push('/reset-password')
           }
           return
         }
       }
 
-      // Only check session redirect if NOT a recovery flow and no code was handled
-      if (!isRecovery && !codeHandled) {
+      // No code or hash — check if already logged in
+      if (!isRecovery) {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) return
+        if (redirected) return
         try {
           const firstTime = await isFirstTimeSetup()
+          if (redirected) return
           if (firstTime) setView('setup')
-          else if (!isRecovery) router.push('/dashboard')
+          else {
+            redirected = true
+            router.push('/dashboard')
+          }
         } catch {
-          if (!isRecovery) router.push('/dashboard')
+          if (!redirected) {
+            redirected = true
+            router.push('/dashboard')
+          }
         }
       }
     }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          // User arrived via a password reset link — redirect to reset page
-          isRecovery = true
-          router.push('/reset-password')
-        }
-      }
-    )
 
     handleAuthFlow()
 

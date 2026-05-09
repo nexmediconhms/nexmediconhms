@@ -4,7 +4,7 @@
  * src/app/reset-password/page.tsx
  *
  * Password reset page — shown after user clicks the reset link from email.
- * The user arrives here with an active session (set by the auth callback).
+ * The user arrives here with an active session (set by the auth callback or login page).
  * They can now enter a new password.
  */
 
@@ -23,42 +23,53 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [sessionChecked, setSessionChecked] = useState(false)
+  const [checking, setChecking] = useState(true)
   const [hasSession, setHasSession] = useState(false)
 
   // Check if user has a valid session (from the recovery link)
   useEffect(() => {
     let mounted = true
+    let timeoutId: NodeJS.Timeout
 
-    // Listen for auth state changes - Supabase may fire PASSWORD_RECOVERY event
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (!mounted) return
-        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-          setHasSession(true)
-          setSessionChecked(true)
+        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session) {
+            setHasSession(true)
+            setChecking(false)
+          }
         }
       }
     )
 
-    // Also check existing session (user may already have one from callback)
-    const checkExistingSession = async () => {
-      // Small delay to allow Supabase to process any hash fragments
-      await new Promise(resolve => setTimeout(resolve, 500))
+    // Check existing session with retries (session may take a moment to be available)
+    async function checkSession(attempt = 0) {
       if (!mounted) return
 
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         setHasSession(true)
+        setChecking(false)
+        return
       }
-      setSessionChecked(true)
+
+      // Retry up to 5 times with increasing delays (session may still be loading)
+      if (attempt < 5) {
+        timeoutId = setTimeout(() => checkSession(attempt + 1), 500 * (attempt + 1))
+      } else {
+        // After all retries, show invalid link message
+        setChecking(false)
+      }
     }
 
-    checkExistingSession()
+    checkSession()
 
     return () => {
       mounted = false
       subscription.unsubscribe()
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [])
 
@@ -89,23 +100,27 @@ export default function ResetPasswordPage() {
       setError(updateError.message)
     } else {
       setSuccess(true)
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
+      // Sign out and redirect to login after 3 seconds
+      setTimeout(async () => {
+        await supabase.auth.signOut()
         router.push('/login')
       }, 3000)
     }
   }
 
   // Show loading while checking session
-  if (!sessionChecked) {
+  if (checking) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
-        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white text-sm">Verifying your reset link…</p>
+        </div>
       </div>
     )
   }
 
-  // No valid session — user may have navigated here directly
+  // No valid session — user may have navigated here directly or link expired
   if (!hasSession) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
@@ -126,7 +141,7 @@ export default function ResetPasswordPage() {
           <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Invalid or Expired Link</h2>
             <p className="text-sm text-gray-500 mb-6">
-              This password reset link is invalid or has expired. Please request a new one.
+              This password reset link is invalid or has expired. Please request a new one from the login page.
             </p>
             <button
               onClick={() => router.push('/login')}
