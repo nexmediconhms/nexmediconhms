@@ -5,53 +5,62 @@
  *
  * Client-side auth callback handler.
  * Processes the `code` query parameter from Supabase auth redirects (PKCE flow).
- * Exchanges the code for a session, then redirects based on the auth event type.
+ * Exchanges the code for a session, then redirects to /reset-password.
+ *
+ * Uses window.location.search instead of useSearchParams() to avoid
+ * Next.js 14 Suspense boundary requirement.
  */
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const code = searchParams.get('code')
     let redirected = false
 
-    // Listen for auth events to determine the type of callback
+    // Listen for auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (redirected) return
         if (event === 'PASSWORD_RECOVERY') {
           redirected = true
           router.push('/reset-password')
-        } else if (event === 'SIGNED_IN' && session) {
-          // Wait a moment to see if PASSWORD_RECOVERY fires after SIGNED_IN
-          setTimeout(() => {
-            if (!redirected) {
-              redirected = true
-              router.push('/dashboard')
-            }
-          }, 1000)
         }
       }
     )
 
     async function handleCallback() {
+      if (typeof window === 'undefined') return
+
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      const hash = window.location.hash
+
       if (code) {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
         if (exchangeError) {
           setError('Failed to verify the link. It may have expired. Please request a new one.')
-          setTimeout(() => router.push('/login'), 3000)
+          setTimeout(() => {
+            if (!redirected) {
+              redirected = true
+              router.push('/login')
+            }
+          }, 3000)
           return
         }
 
-        // After successful exchange, wait for onAuthStateChange to determine type
-        // If no event fires within 3 seconds, default to reset-password
+        // Code exchanged successfully — redirect to reset password
+        if (!redirected) {
+          redirected = true
+          router.push('/reset-password')
+        }
+      } else if (hash && hash.includes('type=recovery')) {
+        // Implicit flow — wait for PASSWORD_RECOVERY event from onAuthStateChange
         setTimeout(() => {
           if (!redirected) {
             redirected = true
@@ -59,18 +68,9 @@ export default function AuthCallbackPage() {
           }
         }, 3000)
       } else {
-        // No code — check if there's a hash fragment (implicit flow)
-        if (typeof window !== 'undefined' && window.location.hash) {
-          // Supabase client will auto-process the hash
-          // Wait for onAuthStateChange to fire
-          setTimeout(() => {
-            if (!redirected) {
-              redirected = true
-              router.push('/reset-password')
-            }
-          }, 3000)
-        } else {
-          // No code, no hash — redirect to login
+        // No code, no hash — redirect to login
+        if (!redirected) {
+          redirected = true
           router.push('/login')
         }
       }
@@ -79,7 +79,7 @@ export default function AuthCallbackPage() {
     handleCallback()
 
     return () => { subscription.unsubscribe() }
-  }, [searchParams, router])
+  }, [router])
 
   if (error) {
     return (
