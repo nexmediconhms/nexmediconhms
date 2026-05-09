@@ -28,30 +28,38 @@ export default function ResetPasswordPage() {
 
   // Check if user has a valid session (from the recovery link)
   useEffect(() => {
-    const checkSession = async () => {
-      // Listen for auth state changes - Supabase may fire PASSWORD_RECOVERY event
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          if (event === 'PASSWORD_RECOVERY') {
-            setHasSession(true)
-            setSessionChecked(true)
-          }
-        }
-      )
+    let mounted = true
 
-      // Also check existing session
+    // Listen for auth state changes - Supabase may fire PASSWORD_RECOVERY event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) return
+        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+          setHasSession(true)
+          setSessionChecked(true)
+        }
+      }
+    )
+
+    // Also check existing session (user may already have one from callback)
+    const checkExistingSession = async () => {
+      // Small delay to allow Supabase to process any hash fragments
+      await new Promise(resolve => setTimeout(resolve, 500))
+      if (!mounted) return
+
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         setHasSession(true)
       }
       setSessionChecked(true)
-
-      return () => {
-        subscription.unsubscribe()
-      }
     }
 
-    checkSession()
+    checkExistingSession()
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function handleResetPassword(e: React.FormEvent) {

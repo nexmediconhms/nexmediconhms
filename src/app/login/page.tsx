@@ -94,31 +94,67 @@ export default function LoginPage() {
   const [enrollDone,    setEnrollDone]    = useState(false)
 
   // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
+  // and redirect if already logged in — combined to avoid race conditions
   useEffect(() => {
+    let isRecovery = false
+    let codeHandled = false
+
+    async function handleAuthFlow() {
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash
+        const params = new URLSearchParams(window.location.search)
+
+        // Check if the URL hash contains a recovery token (implicit flow)
+        if (hash && hash.includes('type=recovery')) {
+          isRecovery = true
+        }
+
+        // Check if URL has a code parameter (PKCE flow) — exchange it directly
+        const code = params.get('code')
+        const type = params.get('type')
+        if (code) {
+          codeHandled = true
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          if (!exchangeError) {
+            if (type === 'recovery') {
+              router.push('/reset-password')
+            } else {
+              router.push('/dashboard')
+            }
+          } else {
+            setError('Password reset link expired or invalid. Please request a new one.')
+          }
+          return
+        }
+      }
+
+      // Only check session redirect if NOT a recovery flow and no code was handled
+      if (!isRecovery && !codeHandled) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        try {
+          const firstTime = await isFirstTimeSetup()
+          if (firstTime) setView('setup')
+          else if (!isRecovery) router.push('/dashboard')
+        } catch {
+          if (!isRecovery) router.push('/dashboard')
+        }
+      }
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
           // User arrived via a password reset link — redirect to reset page
+          isRecovery = true
           router.push('/reset-password')
         }
       }
     )
-    return () => { subscription.unsubscribe() }
-  }, [router])
 
-  // Redirect if already logged in
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) return
-      try {
-        isFirstTimeSetup().then(firstTime => {
-          if (firstTime) setView('setup')
-          else router.push('/dashboard')
-        })
-      } catch {
-        router.push('/dashboard')
-      }
-    })
+    handleAuthFlow()
+
+    return () => { subscription.unsubscribe() }
   }, [router])
 
   // Auto-focus OTP field when switching to MFA screens
