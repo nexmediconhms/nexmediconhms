@@ -114,8 +114,8 @@ const PERMISSIONS: Record<Permission, UserRole[]> = {
   'beds.view':            ['admin', 'doctor', 'staff'],
   'beds.manage':          ['admin', 'doctor', 'staff'],
 
-  // FIX: doctor should be able to VIEW billing (not create — that's reception)
-  'billing.view':         ['admin', 'doctor', 'staff'],
+  // FIX: Only admin sees full billing; doctor sees own patient bills; staff can create but not view all
+  'billing.view':         ['admin', 'doctor'],
   'billing.create':       ['admin', 'staff'],
 
   'reports.view':         ['admin', 'doctor'],

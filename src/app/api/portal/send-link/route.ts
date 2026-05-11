@@ -1,9 +1,14 @@
 /**
- * src/app/api/portal/send-link/route.ts  — UPDATED
+ * src/app/api/portal/send-link/route.ts
  *
- * CHANGE: Replaced the manual inline Bearer token check and supabase.auth.getUser()
- * with requireAuth() so auth logic is consistent. Everything else — expire-old-tokens
- * query, new token insert, WhatsApp message format, 24-hour expiry — is preserved.
+ * Patient Portal — Send Magic Link (Staff-initiated)
+ *
+ * Called by clinic staff to send a patient their portal access link.
+ * Now generates BOTH:
+ *  1. Legacy magic link (portal_tokens) for backward compat
+ *  2. New OTP + magic link (portal_otp) for the new login flow
+ *
+ * The WhatsApp message includes both the direct link and OTP.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -33,7 +38,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'mrn is required' }, { status: 400 })
   }
 
-  // Generate token (UUID)
+  // Normalize mobile
+  const normalizedMobile = mobile ? mobile.replace(/\D/g, '').slice(-10) : ''
+
+  // ── 1. Generate legacy portal token ──────────────────────────
   const portalToken = crypto.randomUUID()
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
@@ -45,7 +53,7 @@ export async function POST(req: NextRequest) {
     .eq('is_used', false)
 
   // Insert new token
-  const { error: insertErr } = await supabase
+  await supabase
     .from('portal_tokens')
     .insert({
       mrn,
@@ -56,26 +64,70 @@ export async function POST(req: NextRequest) {
       created_by:  auth.user.id,
     })
 
-  if (insertErr) {
-    return NextResponse.json({ error: insertErr.message }, { status: 500 })
+  // ── 2. Generate new OTP + magic link ─────────────────────────
+  let otpCode = ''
+  let magicLinkToken = ''
+
+  if (normalizedMobile && patient_id) {
+    otpCode = String(Math.floor(100000 + Math.random() * 900000))
+    magicLinkToken = crypto.randomUUID()
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+
+    // Expire old OTPs
+    await supabase
+      .from('portal_otp')
+      .update({ verified: true })
+      .eq('mobile', normalizedMobile)
+      .eq('verified', false)
+
+    // Insert new OTP
+    await supabase
+      .from('portal_otp')
+      .insert({
+        mobile:     normalizedMobile,
+        otp_code:   otpCode,
+        token:      magicLinkToken,
+        patient_id: patient_id,
+        mrn:        mrn,
+        expires_at: otpExpiry,
+      })
   }
 
-  // Build the magic link
-  const portalUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
+  // ── Build URLs ───────────────────────────────────────────────
+  const legacyUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
+  const newPortalUrl = magicLinkToken
+    ? `${siteUrl}/portal/verify?token=${encodeURIComponent(magicLinkToken)}`
+    : `${siteUrl}/portal/login`
 
-  // Build WhatsApp message
+  // ── Build WhatsApp message ───────────────────────────────────
   const firstName = (patient_name || 'Patient').split(' ')[0]
-  const waMessage = `Namaste ${firstName} ji,\n\nYou can now view your health records, prescriptions, upcoming appointments, and bills securely:\n\n▶ ${portalUrl}\n\nThis link is valid for 24 hours. Do not share it with others.\n\n— ${hospitalName}`
-  const waNumber  = mobile ? mobile.replace(/\D/g, '').slice(-10) : ''
-  const waLink    = waNumber
-    ? `https://wa.me/91${waNumber}?text=${encodeURIComponent(waMessage)}`
+  let waMessage = `Namaste ${firstName} ji,\n\n`
+  waMessage += `Your ${hospitalName} Patient Portal is ready! 🏥\n\n`
+
+  if (otpCode) {
+    waMessage += `🔑 Your OTP: *${otpCode}* (valid 10 min)\n\n`
+  }
+
+  waMessage += `▶ Click to access your portal:\n${newPortalUrl}\n\n`
+  waMessage += `You can view:\n`
+  waMessage += `• 💊 Prescriptions & medications\n`
+  waMessage += `• 🧪 Lab reports\n`
+  waMessage += `• 💳 Bills & online payment\n`
+  waMessage += `• 📅 Book follow-up appointments\n\n`
+  waMessage += `🔒 Do not share this link/OTP with anyone.\n\n`
+  waMessage += `— ${hospitalName}`
+
+  const waLink = normalizedMobile
+    ? `https://wa.me/91${normalizedMobile}?text=${encodeURIComponent(waMessage)}`
     : null
 
   return NextResponse.json({
     success:       true,
-    portal_url:    portalUrl,
+    portal_url:    newPortalUrl,
+    legacy_url:    legacyUrl,
     expires_at:    expiresAt,
     whatsapp_link: waLink,
     message:       waMessage,
+    otp_code:      process.env.NODE_ENV === 'development' ? otpCode : undefined,
   })
 }

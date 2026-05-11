@@ -160,11 +160,15 @@ export async function initSettings(): Promise<HospitalSettings> {
     return _cache
   }
 
-  // Fallback: localStorage
+  // Supabase has no data — check localStorage for migration
   const local = readFromLocalStorage()
   if (local) {
     _cache = local
     _initialized = true
+    // Auto-migrate localStorage → Supabase so all environments stay in sync
+    writeToSupabase(local).then(ok => {
+      if (ok) console.info('[settings] Auto-migrated localStorage settings to Supabase')
+    }).catch(() => { /* non-fatal */ })
     return _cache
   }
 
@@ -221,9 +225,9 @@ export async function refreshSettings(): Promise<HospitalSettings> {
 }
 
 /**
- * Migrate existing localStorage settings to Supabase.
- * Called once during initSettings if Supabase has no data but localStorage does.
- * This ensures a smooth transition for existing users.
+ * Migrate existing localStorage settings to Supabase (legacy helper).
+ * NOTE: initSettings() now auto-migrates when Supabase has no data but localStorage does.
+ * This function is kept for backward compatibility but is no longer required externally.
  */
 export async function migrateLocalStorageToSupabase(): Promise<void> {
   const local = readFromLocalStorage()

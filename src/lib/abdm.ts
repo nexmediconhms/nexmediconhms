@@ -68,26 +68,112 @@ export interface ABHACreateResult {
 }
 
 // ── Settings Storage ─────────────────────────────────────────
-const ABDM_SETTINGS_KEY = 'nexmedicon_abdm_settings'
+// Supabase-backed with localStorage as offline fallback (mirrors hospital settings pattern)
+import { supabase } from './supabase'
 
-export function loadABDMConfig(): ABDMConfig {
-  const defaults: ABDMConfig = {
-    clientId:     '',
-    clientSecret: '',
-    environment:  'sandbox',
-    enabled:      false,
-  }
-  if (typeof window === 'undefined') return defaults
-  try {
-    const raw = localStorage.getItem(ABDM_SETTINGS_KEY)
-    if (raw) return { ...defaults, ...JSON.parse(raw) }
-  } catch {}
-  return defaults
+const ABDM_SETTINGS_KEY = 'nexmedicon_abdm_settings'
+const ABDM_SUPABASE_KEY = 'abdm_settings'
+
+const ABDM_DEFAULTS: ABDMConfig = {
+  clientId:     '',
+  clientSecret: '',
+  environment:  'sandbox',
+  enabled:      false,
 }
 
-export function saveABDMConfig(config: ABDMConfig): void {
+// In-memory cache for synchronous access
+let _abdmCache: ABDMConfig = { ...ABDM_DEFAULTS }
+let _abdmInitialized = false
+
+function readABDMFromLocalStorage(): ABDMConfig | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(ABDM_SETTINGS_KEY)
+    if (raw) return { ...ABDM_DEFAULTS, ...JSON.parse(raw) }
+  } catch {}
+  return null
+}
+
+function persistABDMToLocalStorage(config: ABDMConfig): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(ABDM_SETTINGS_KEY, JSON.stringify(config))
+  try {
+    localStorage.setItem(ABDM_SETTINGS_KEY, JSON.stringify(config))
+  } catch {}
+}
+
+/**
+ * Initialize ABDM config from Supabase → localStorage → defaults.
+ * Call once on app boot (called from initABDMConfig or lazily).
+ */
+export async function initABDMConfig(): Promise<ABDMConfig> {
+  try {
+    const { data, error } = await supabase
+      .from('clinic_settings')
+      .select('value')
+      .eq('key', ABDM_SUPABASE_KEY)
+      .maybeSingle()
+
+    if (!error && data?.value) {
+      const remote = { ...ABDM_DEFAULTS, ...JSON.parse(data.value) }
+      _abdmCache = remote
+      _abdmInitialized = true
+      persistABDMToLocalStorage(remote)
+      return _abdmCache
+    }
+  } catch {}
+
+  // Fallback: localStorage (auto-migrate to Supabase if found)
+  const local = readABDMFromLocalStorage()
+  if (local) {
+    _abdmCache = local
+    _abdmInitialized = true
+    // Auto-migrate to Supabase (fire-and-forget)
+    ;(async () => {
+      try {
+        await supabase
+          .from('clinic_settings')
+          .upsert({ key: ABDM_SUPABASE_KEY, value: JSON.stringify(local), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      } catch { /* non-fatal */ }
+    })()
+    return _abdmCache
+  }
+
+  _abdmCache = { ...ABDM_DEFAULTS }
+  _abdmInitialized = true
+  return _abdmCache
+}
+
+/**
+ * Synchronous read — returns cached config (falls back to localStorage → defaults).
+ */
+export function loadABDMConfig(): ABDMConfig {
+  if (_abdmInitialized) return _abdmCache
+  const local = readABDMFromLocalStorage()
+  if (local) {
+    _abdmCache = local
+    return _abdmCache
+  }
+  return ABDM_DEFAULTS
+}
+
+/**
+ * Save ABDM config to Supabase + cache + localStorage.
+ */
+export async function saveABDMConfig(config: ABDMConfig): Promise<void> {
+  _abdmCache = { ...config }
+  _abdmInitialized = true
+  persistABDMToLocalStorage(config)
+
+  try {
+    await supabase
+      .from('clinic_settings')
+      .upsert(
+        { key: ABDM_SUPABASE_KEY, value: JSON.stringify(config), updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      )
+  } catch {
+    console.warn('[abdm] Saved to localStorage only — Supabase write failed')
+  }
 }
 
 // ── Helper: Get base URL ─────────────────────────────────────

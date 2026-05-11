@@ -27,8 +27,8 @@ export default function ABDMSetupPage() {
     setConfig(prev => ({ ...prev, [field]: value }))
   }
 
-  function handleSave() {
-    saveABDMConfig(config)
+  async function handleSave() {
+    await saveABDMConfig(config)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }

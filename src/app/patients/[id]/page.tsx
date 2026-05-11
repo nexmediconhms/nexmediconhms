@@ -146,10 +146,17 @@ export default function PatientDetailPage() {
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => {
-    try {
-      const all = JSON.parse(localStorage.getItem('nexmedicon_labs') || '[]')
-      setLabReports(all.filter((r: any) => r.patient_id === id))
-    } catch {}
+    if (!id) return
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('lab_reports')
+          .select('*')
+          .eq('patient_id', id)
+          .order('created_at', { ascending: false })
+        if (data) setLabReports(data)
+      } catch { /* non-fatal */ }
+    })()
   }, [id])
 
   async function loadAll() {

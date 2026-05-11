@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-// Hospital print settings loaded dynamically from localStorage via getHospitalSettings()
+// Hospital print settings loaded from Supabase-backed in-memory cache via getHospitalSettings()
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
@@ -123,7 +123,7 @@ export default function DischargeSummaryPage() {
   const [isFinal,       setIsFinal]       = useState(false)
   const [aiError,       setAiError]       = useState('')
   const [loading,       setLoading]       = useState(true)
-  // Live hospital settings for print view — reads from localStorage
+  // Live hospital settings for print view — reads from Supabase-backed in-memory cache
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : { hospitalName:'NexMedicon Demo Hospital', address:'123 Hospital Road, City', phone:'+91 98765 43210', regNo:'MH/12345', gstin:'27ABCDE1234F1Z5', doctorName:'Dr. Demo', doctorQual:'MBBS, MD (OBG)', doctorReg:'MH/12345' }
 
   useEffect(() => { if (patientId) loadAll() }, [patientId])

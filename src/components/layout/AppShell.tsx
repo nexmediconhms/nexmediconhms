@@ -28,7 +28,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AuthContext, loadClinicUser, isFirstTimeSetup, hasPermission } from '@/lib/auth'
 import type { ClinicUser, AuthContextType, Permission, UserRole } from '@/lib/auth'
-import { initSettings, migrateLocalStorageToSupabase } from '@/lib/settings'
+import { initSettings } from '@/lib/settings'
+import { initABDMConfig } from '@/lib/abdm'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
@@ -83,8 +84,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!user) { setNoProfile(true); setLoading(false); return }
 
     try {
-      await migrateLocalStorageToSupabase()
       await initSettings()
+      await initABDMConfig()
     } catch { /* non-fatal */ }
 
     setClinicUser(user)
