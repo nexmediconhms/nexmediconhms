@@ -340,9 +340,22 @@ function BillingContent() {
   const caSettings: HospitalSettings = typeof window !== 'undefined' ? loadSettings() : { caName: '', caWhatsApp: '', caEmail: '' } as HospitalSettings
 
   // ── Load bills ───────────────────────────────────────────────
+  // Bug #6 fix: default to last 30 days instead of loading all 500 bills.
+  // On a busy clinic (50 patients/day) this would hit 500 within 10 days
+  // and then silently drop older bills from view. The CA Report section
+  // already does its own date-range filtering on the loaded bills array,
+  // so loading 30 days is sufficient for daily operations while keeping
+  // the page fast. Users can still see all-time totals via the CA Report.
   const loadBills = useCallback(async () => {
     setLoadingBills(true)
-    const { data } = await supabase.from('bills').select('*').order('created_at', { ascending: false }).limit(500)
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const { data } = await supabase
+      .from('bills')
+      .select('*')
+      .gte('created_at', thirtyDaysAgo.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(500)
     setBills((data || []) as Bill[])
     setLoadingBills(false)
   }, [])

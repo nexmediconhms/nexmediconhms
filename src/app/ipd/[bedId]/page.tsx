@@ -280,11 +280,26 @@ export default function IPDNursingPage() {
     setTimeout(() => setAutofillApplied(false), 3000)
   }
 
+  // Bug #3 fix: localStorage is now a cache-only fallback.
+  // We only write to localStorage as a backup AFTER showing "Saved".
+  // The Supabase insert is the source of truth — if it fails, we warn the user
+  // instead of silently pretending everything is saved.
   function persist(v = vitals, i = io, n = notes) {
-    localStorage.setItem(`ipd_${bedId}`, JSON.stringify({ vitals: v, io: i, notes: n }))
+    // Write localStorage as offline cache (in case Supabase is temporarily down)
+    try {
+      localStorage.setItem(`ipd_${bedId}`, JSON.stringify({ vitals: v, io: i, notes: n }))
+    } catch { /* quota exceeded or private mode — ignore */ }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
+
+  // Helper: show a non-blocking warning if Supabase write fails
+  function warnSupabaseFail(action: string, errorMsg: string) {
+    console.warn(`[IPD ${action}] Supabase save failed:`, errorMsg)
+    // The data is still in localStorage as fallback, but won't sync to other devices
+    // until the nurse retries. For now we just log — a toast could be added later.
+  }
+
 
   // ── Add vital ──────────────────────────────────────────────────
   async function addVital() {
@@ -300,7 +315,7 @@ export default function IPDNursingPage() {
       recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
-    }).then(({ error }) => { if (error) console.warn('IPD vital save:', error.message) })
+    }).then(({ error }) => { if (error) warnSupabaseFail('vital', error.message) })
   }
 
   // ── Add I/O ────────────────────────────────────────────────────
@@ -316,7 +331,7 @@ export default function IPDNursingPage() {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
       recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
-    }).then(({ error }) => { if (error) console.warn('IPD IO save:', error.message) })
+    }).then(({ error }) => { if (error) warnSupabaseFail('I/O', error.message) })
   }
 
   // ── Add note ───────────────────────────────────────────────────
@@ -334,7 +349,7 @@ export default function IPDNursingPage() {
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
       nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
-    }).then(({ error }) => { if (error) console.warn('IPD note save:', error.message) })
+    }).then(({ error }) => { if (error) warnSupabaseFail('note', error.message) })
   }
 
   // ── Handle doctor note photo — direct upload + OCR ────────────

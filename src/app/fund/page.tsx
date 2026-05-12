@@ -24,7 +24,7 @@
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   IndianRupee, Plus, CheckCircle, XCircle, Clock,
@@ -81,27 +81,12 @@ export default function FundPage() {
   const { user, isAdmin: isAdminCtx, loading: authLoading } = useAuth()
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
-  // FIXED: Direct role check — useAuth() isAdmin starts as false while loading.
-  // We do our own lookup so the Add Funds button shows as soon as role is confirmed.
-  const [isAdminDirect, setIsAdminDirect] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    async function checkRole() {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (!authUser) { setIsAdminDirect(false); return }
-      const { data } = await supabase
-        .from('clinic_users')
-        .select('role')
-        .eq('auth_id', authUser.id)
-        .single()
-      setIsAdminDirect(data?.role === 'admin')
-    }
-    checkRole()
-  }, [])
-
-  // Use the direct check when available, fall back to auth context
-  const isAdmin = isAdminDirect !== null ? isAdminDirect : isAdminCtx
-  const roleLoading = isAdminDirect === null && authLoading
+  // Bug #5 fix: removed the duplicate role-check that caused race conditions.
+  // useAuth() now provides isAdmin reliably (the AuthContext provider in AppShell
+  // already waits for clinic_users to load before setting loading:false).
+  // Using a single source of truth eliminates button flicker.
+  const isAdmin = isAdminCtx
+  const roleLoading = authLoading
 
   const [transactions, setTransactions] = useState<FundTransaction[]>([])
   const [loading, setLoading] = useState(true)
