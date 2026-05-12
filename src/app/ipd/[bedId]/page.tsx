@@ -42,27 +42,27 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────
 interface VitalEntry {
-  time:        string
-  pulse:       string
+  time: string
+  pulse: string
   bp_systolic: string
-  bp_diastolic:string
+  bp_diastolic: string
   temperature: string
-  spo2:        string
-  note:        string
+  spo2: string
+  note: string
 }
 
 interface IOEntry {
-  time:   string
-  type:   'intake' | 'output'
-  item:   string
+  time: string
+  type: 'intake' | 'output'
+  item: string
   amount: string
 }
 
 interface NursingNote {
-  time:    string
-  author:  string
-  note:    string
-  type:    'nursing' | 'doctor'
+  time: string
+  author: string
+  note: string
+  type: 'nursing' | 'doctor'
 }
 
 // ── Load from Supabase ─────────────────────────────────────────
@@ -75,16 +75,16 @@ async function loadIPDFromSupabase(bedId: string) {
       .order('created_at', { ascending: false })
       .limit(200)
     if (error) throw error
-    const vitals = (data || []).filter((r:any) => r.entry_type === 'vital').map((r:any) => ({
+    const vitals = (data || []).filter((r: any) => r.entry_type === 'vital').map((r: any) => ({
       time: r.recorded_time || '', pulse: r.pulse || '', bp_systolic: r.bp_systolic || '',
       bp_diastolic: r.bp_diastolic || '', temperature: r.temperature || '',
       spo2: r.spo2 || '', note: r.vital_note || '',
     }))
-    const io = (data || []).filter((r:any) => r.entry_type === 'io').map((r:any) => ({
+    const io = (data || []).filter((r: any) => r.entry_type === 'io').map((r: any) => ({
       time: r.recorded_time || '', type: r.io_type === 'Output' ? 'output' : 'intake',
       item: r.io_label || '', amount: String(r.io_amount_ml || ''),
     }))
-    const notes = (data || []).filter((r:any) => r.entry_type === 'note').map((r:any) => ({
+    const notes = (data || []).filter((r: any) => r.entry_type === 'note').map((r: any) => ({
       time: r.created_at || '', author: r.nurse_name || 'Nurse',
       note: r.note_text || '', type: (r.note_type || 'nursing') as 'nursing' | 'doctor',
     }))
@@ -93,18 +93,18 @@ async function loadIPDFromSupabase(bedId: string) {
     try {
       const raw = localStorage.getItem(`ipd_${bedId}`)
       if (raw) return JSON.parse(raw)
-    } catch {}
+    } catch { }
     return { vitals: [], io: [], notes: [] }
   }
 }
 
 const emptyVital = (): VitalEntry => ({
-  time: new Date().toTimeString().slice(0,5),
-  pulse:'', bp_systolic:'', bp_diastolic:'', temperature:'', spo2:'', note:''
+  time: new Date().toTimeString().slice(0, 5),
+  pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', note: ''
 })
 
 const emptyIO = (): IOEntry => ({
-  time: new Date().toTimeString().slice(0,5),
+  time: new Date().toTimeString().slice(0, 5),
   type: 'intake', item: '', amount: ''
 })
 
@@ -134,46 +134,97 @@ async function callOCRAutofill(file: File): Promise<{ fields: any; confidence: n
 // ── Component ──────────────────────────────────────────────────
 export default function IPDNursingPage() {
   const { bedId } = useParams<{ bedId: string }>()
-  const router    = useRouter()
-  const { user }  = useAuth()
+  const router = useRouter()
+  const { user } = useAuth()
 
-  const [bed,      setBed]      = useState<any>(null)
-  const [patient,  setPatient]  = useState<any>(null)
-  const [loading,  setLoading]  = useState(true)
+  const [bed, setBed] = useState<any>(null)
+  const [patient, setPatient] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
-  const [vitals,   setVitals]   = useState<VitalEntry[]>([])
-  const [io,       setIO]       = useState<IOEntry[]>([])
-  const [notes,    setNotes]    = useState<NursingNote[]>([])
+  const [vitals, setVitals] = useState<VitalEntry[]>([])
+  const [io, setIO] = useState<IOEntry[]>([])
+  const [notes, setNotes] = useState<NursingNote[]>([])
 
-  const [newVital,   setNewVital]   = useState<VitalEntry>(emptyVital())
-  const [newIO,      setNewIO]      = useState<IOEntry>(emptyIO())
-  const [newNote,    setNewNote]    = useState('')
+  const [newVital, setNewVital] = useState<VitalEntry>(emptyVital())
+  const [newIO, setNewIO] = useState<IOEntry>(emptyIO())
+  const [newNote, setNewNote] = useState('')
   const [noteAuthor, setNoteAuthor] = useState('')
-  const [noteType,   setNoteType]   = useState<'nursing' | 'doctor'>('nursing')
+  const [noteType, setNoteType] = useState<'nursing' | 'doctor'>('nursing')
 
-  const [saved,     setSaved]     = useState(false)
-  const [activeTab, setActiveTab] = useState<'vitals'|'io'|'notes'|'doctor-notes'>('vitals')
+  const [saved, setSaved] = useState(false)
+  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes'>('vitals')
 
   // Doctor note photo upload + OCR state
-  const [ocrLoading,    setOcrLoading]    = useState(false)
-  const [ocrResult,     setOcrResult]     = useState<any>(null)
-  const [ocrError,      setOcrError]      = useState('')
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrResult, setOcrResult] = useState<any>(null)
+  const [ocrError, setOcrError] = useState('')
   const [autofillApplied, setAutofillApplied] = useState(false)
-  const [showOcrPreview,  setShowOcrPreview]  = useState(false)
+  const [showOcrPreview, setShowOcrPreview] = useState(false)
 
   useEffect(() => {
     if (user?.full_name) setNoteAuthor(user.full_name)
   }, [user])
 
+  // Bug #7 fix ─────────────────────────────────────────────────
+  // Problems in original code:
+  //
+  // 1. loadBed() was a plain function defined BELOW the useEffect that called
+  //    it, so React could not track it as a dependency. If bedId changed (nurse
+  //    navigates to a different bed in the same session) the effect re-ran but
+  //    loadBed() had already closed over the *old* bedId value.
+  //
+  // 2. loadIPDFromSupabase(bedId) returns a Promise with no cancellation token.
+  //    If bedId changes before the promise resolves, the .then() callback would
+  //    still fire and overwrite the new bed's freshly-loaded state with stale
+  //    data from the old bed.
+  //
+  // Fix:
+  //   - loadBed is now a useCallback (see below) so it can be a stable dep.
+  //   - A `cancelled` flag is set in the effect cleanup. The Supabase .then()
+  //     checks the flag before calling setState, so stale responses from a
+  //     previous bedId are silently discarded.
+
+  const loadBed = useCallback(async () => {
+    if (!bedId) return
+    const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
+    if (!b) { setLoading(false); return }
+    setBed(b)
+    if (b.patient_id) {
+      const { data: p } = await supabase.from('patients').select('*').eq('id', b.patient_id).single()
+      setPatient(p)
+    }
+    setLoading(false)
+  }, [bedId])
+
   useEffect(() => {
     if (!bedId) return
+
+    // Reset UI state immediately when switching beds so stale data
+    // from the previous bed is never visible while the new data loads.
+    setLoading(true)
+    setBed(null)
+    setPatient(null)
+    setVitals([])
+    setIO([])
+    setNotes([])
+
+    // Cancellation flag — set to true in cleanup so in-flight .then()
+    // callbacks for the *previous* bedId do not touch state.
+    let cancelled = false
+
     loadBed()
+
     loadIPDFromSupabase(bedId).then(stored => {
+      if (cancelled) return   // ← bedId changed before this resolved — discard
       setVitals(stored.vitals || [])
       setIO(stored.io || [])
       setNotes(stored.notes || [])
     })
-  }, [bedId])
+
+    return () => {
+      cancelled = true
+    }
+  }, [bedId, loadBed])
 
   // ── Listen for autofill events from ConsultationAttachments ──
   useEffect(() => {
@@ -192,25 +243,25 @@ export default function IPDNursingPage() {
     let vitalsFilled = false
     setNewVital(prev => {
       const updated = { ...prev }
-      if (fields.pulse)       { updated.pulse        = String(fields.pulse);       vitalsFilled = true }
-      if (fields.bp_systolic) { updated.bp_systolic  = String(fields.bp_systolic); vitalsFilled = true }
-      if (fields.bp_diastolic){ updated.bp_diastolic = String(fields.bp_diastolic);vitalsFilled = true }
-      if (fields.temperature) { updated.temperature  = String(fields.temperature); vitalsFilled = true }
-      if (fields.spo2)        { updated.spo2         = String(fields.spo2);        vitalsFilled = true }
+      if (fields.pulse) { updated.pulse = String(fields.pulse); vitalsFilled = true }
+      if (fields.bp_systolic) { updated.bp_systolic = String(fields.bp_systolic); vitalsFilled = true }
+      if (fields.bp_diastolic) { updated.bp_diastolic = String(fields.bp_diastolic); vitalsFilled = true }
+      if (fields.temperature) { updated.temperature = String(fields.temperature); vitalsFilled = true }
+      if (fields.spo2) { updated.spo2 = String(fields.spo2); vitalsFilled = true }
       return updated
     })
 
     // ── Notes autofill ──
     const lines: string[] = []
-    if (fields.chief_complaint)     lines.push(`C/O: ${fields.chief_complaint}`)
-    if (fields.history)             lines.push(`Hx: ${fields.history}`)
-    if (fields.examination_findings)lines.push(`O/E: ${fields.examination_findings}`)
-    if (fields.diagnosis)           lines.push(`Dx: ${fields.diagnosis}`)
-    if (fields.treatment_plan)      lines.push(`Plan: ${fields.treatment_plan}`)
-    if (fields.advice)              lines.push(`Advice: ${fields.advice}`)
+    if (fields.chief_complaint) lines.push(`C/O: ${fields.chief_complaint}`)
+    if (fields.history) lines.push(`Hx: ${fields.history}`)
+    if (fields.examination_findings) lines.push(`O/E: ${fields.examination_findings}`)
+    if (fields.diagnosis) lines.push(`Dx: ${fields.diagnosis}`)
+    if (fields.treatment_plan) lines.push(`Plan: ${fields.treatment_plan}`)
+    if (fields.advice) lines.push(`Advice: ${fields.advice}`)
     if (fields.investigations_ordered) lines.push(`Ix: ${fields.investigations_ordered}`)
     if (Array.isArray(fields.medicines) && fields.medicines.length > 0) {
-      lines.push(`Rx: ${fields.medicines.map((m:any) => `${m.name||''} ${m.dose||''} ${m.frequency||''}`).join(', ')}`)
+      lines.push(`Rx: ${fields.medicines.map((m: any) => `${m.name || ''} ${m.dose || ''} ${m.frequency || ''}`).join(', ')}`)
     }
 
     if (lines.length > 0) {
@@ -229,17 +280,6 @@ export default function IPDNursingPage() {
     setTimeout(() => setAutofillApplied(false), 3000)
   }
 
-  async function loadBed() {
-    const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
-    if (!b) { setLoading(false); return }
-    setBed(b)
-    if (b.patient_id) {
-      const { data: p } = await supabase.from('patients').select('*').eq('id', b.patient_id).single()
-      setPatient(p)
-    }
-    setLoading(false)
-  }
-
   function persist(v = vitals, i = io, n = notes) {
     localStorage.setItem(`ipd_${bedId}`, JSON.stringify({ vitals: v, io: i, notes: n }))
     setSaved(true)
@@ -249,7 +289,7 @@ export default function IPDNursingPage() {
   // ── Add vital ──────────────────────────────────────────────────
   async function addVital() {
     if (!newVital.pulse && !newVital.bp_systolic && !newVital.temperature && !newVital.spo2) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
+    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     const entry = { ...newVital, time: t }
     const updated = [entry, ...vitals]
     setVitals(updated)
@@ -266,7 +306,7 @@ export default function IPDNursingPage() {
   // ── Add I/O ────────────────────────────────────────────────────
   async function addIO() {
     if (!newIO.item || !newIO.amount) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
+    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     const entry = { ...newIO, time: t }
     const updated = [entry, ...io]
     setIO(updated)
@@ -282,7 +322,7 @@ export default function IPDNursingPage() {
   // ── Add note ───────────────────────────────────────────────────
   async function addNote() {
     if (!newNote.trim()) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })
+    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     const entry: NursingNote = {
       time: t, author: noteAuthor || user?.full_name || 'Nurse',
       note: newNote.trim(), type: noteType,
@@ -331,7 +371,7 @@ export default function IPDNursingPage() {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       </AppShell>
     )
@@ -348,14 +388,14 @@ export default function IPDNursingPage() {
     )
   }
 
-  const totalIntake = io.filter(e => e.type === 'intake').reduce((s,e) => s + (parseFloat(e.amount)||0), 0)
-  const totalOutput = io.filter(e => e.type === 'output').reduce((s,e) => s + (parseFloat(e.amount)||0), 0)
+  const totalIntake = io.filter(e => e.type === 'intake').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
+  const totalOutput = io.filter(e => e.type === 'output').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
 
   const TABS = [
-    { id: 'vitals',       label: '📈 Vitals',         icon: Activity      },
-    { id: 'io',           label: '💧 I/O Chart',       icon: Droplets      },
-    { id: 'notes',        label: '📝 Nursing Notes',   icon: ClipboardList },
-    { id: 'doctor-notes', label: '🩺 Doctor Notes',    icon: Stethoscope   },
+    { id: 'vitals', label: '📈 Vitals', icon: Activity },
+    { id: 'io', label: '💧 I/O Chart', icon: Droplets },
+    { id: 'notes', label: '📝 Nursing Notes', icon: ClipboardList },
+    { id: 'doctor-notes', label: '🩺 Doctor Notes', icon: Stethoscope },
   ] as const
 
   return (
@@ -365,9 +405,9 @@ export default function IPDNursingPage() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-5">
           <button onClick={() => router.push('/ipd')} className="text-gray-400 hover:text-gray-700">
-            <ArrowLeft className="w-5 h-5"/>
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <BedDouble className="w-6 h-6 text-blue-600"/>
+          <BedDouble className="w-6 h-6 text-blue-600" />
           <div>
             <h1 className="text-xl font-bold text-gray-900">
               Bed {bed.bed_number} — IPD Chart
@@ -380,7 +420,7 @@ export default function IPDNursingPage() {
           </div>
           {saved && (
             <span className="ml-auto flex items-center gap-1 text-green-600 text-sm font-medium">
-              <CheckCircle className="w-4 h-4"/> Saved
+              <CheckCircle className="w-4 h-4" /> Saved
             </span>
           )}
         </div>
@@ -388,7 +428,7 @@ export default function IPDNursingPage() {
         {/* Autofill success banner */}
         {autofillApplied && (
           <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-green-800">
-            <Sparkles className="w-4 h-4 text-green-600 flex-shrink-0"/>
+            <Sparkles className="w-4 h-4 text-green-600 flex-shrink-0" />
             AI has filled in the fields from the doctor note. Please review and save.
           </div>
         )}
@@ -398,7 +438,7 @@ export default function IPDNursingPage() {
           <div className="mb-5 bg-blue-50 border border-blue-200 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-blue-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4"/> AI Extracted Data
+                <Sparkles className="w-4 h-4" /> AI Extracted Data
                 <span className="text-xs font-normal text-blue-600 ml-1">
                   Confidence: {Math.round((ocrResult.confidence || 0) * 100)}%
                 </span>
@@ -423,7 +463,7 @@ export default function IPDNursingPage() {
 
             <div className="flex gap-3">
               <button onClick={applyOCRResult} className="btn-primary text-sm flex items-center gap-2">
-                <Sparkles className="w-4 h-4"/> Apply to Forms
+                <Sparkles className="w-4 h-4" /> Apply to Forms
               </button>
               <button onClick={() => setShowOcrPreview(false)} className="btn-secondary text-sm">
                 Discard
@@ -434,7 +474,7 @@ export default function IPDNursingPage() {
 
         {ocrError && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-red-700">
-            <AlertCircle className="w-4 h-4 flex-shrink-0"/>
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             {ocrError}
             <button onClick={() => setOcrError('')} className="ml-auto text-xs underline">Dismiss</button>
           </div>
@@ -470,36 +510,36 @@ export default function IPDNursingPage() {
                   <div>
                     <label className="label">Pulse (bpm)</label>
                     <input className="input bg-white" type="number" placeholder="72"
-                      value={newVital.pulse} onChange={e => setNewVital(p => ({ ...p, pulse: e.target.value }))}/>
+                      value={newVital.pulse} onChange={e => setNewVital(p => ({ ...p, pulse: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">BP Systolic</label>
                     <input className="input bg-white" type="number" placeholder="120"
-                      value={newVital.bp_systolic} onChange={e => setNewVital(p => ({ ...p, bp_systolic: e.target.value }))}/>
+                      value={newVital.bp_systolic} onChange={e => setNewVital(p => ({ ...p, bp_systolic: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">BP Diastolic</label>
                     <input className="input bg-white" type="number" placeholder="80"
-                      value={newVital.bp_diastolic} onChange={e => setNewVital(p => ({ ...p, bp_diastolic: e.target.value }))}/>
+                      value={newVital.bp_diastolic} onChange={e => setNewVital(p => ({ ...p, bp_diastolic: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">Temperature (°C)</label>
                     <input className="input bg-white" type="number" step="0.1" placeholder="98.6"
-                      value={newVital.temperature} onChange={e => setNewVital(p => ({ ...p, temperature: e.target.value }))}/>
+                      value={newVital.temperature} onChange={e => setNewVital(p => ({ ...p, temperature: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">SpO₂ (%)</label>
                     <input className="input bg-white" type="number" placeholder="98"
-                      value={newVital.spo2} onChange={e => setNewVital(p => ({ ...p, spo2: e.target.value }))}/>
+                      value={newVital.spo2} onChange={e => setNewVital(p => ({ ...p, spo2: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">Note</label>
                     <input className="input bg-white" placeholder="e.g. post-op"
-                      value={newVital.note} onChange={e => setNewVital(p => ({ ...p, note: e.target.value }))}/>
+                      value={newVital.note} onChange={e => setNewVital(p => ({ ...p, note: e.target.value }))} />
                   </div>
                 </div>
                 <button onClick={addVital} className="btn-primary flex items-center gap-2 text-xs">
-                  <Plus className="w-3.5 h-3.5"/> Record Vitals
+                  <Plus className="w-3.5 h-3.5" /> Record Vitals
                 </button>
               </div>
 
@@ -511,24 +551,24 @@ export default function IPDNursingPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100 bg-gray-50">
-                        {['Time','Pulse','BP','Temp','SpO₂','Note',''].map(h => (
+                        {['Time', 'Pulse', 'BP', 'Temp', 'SpO₂', 'Note', ''].map(h => (
                           <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {vitals.map((v,i) => (
+                      {vitals.map((v, i) => (
                         <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
                           <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{v.time}</td>
-                          <td className="px-3 py-2.5">{v.pulse ? <span className={parseInt(v.pulse)>100||parseInt(v.pulse)<60?'text-red-600 font-semibold':''}>{v.pulse}</span> : '—'}</td>
+                          <td className="px-3 py-2.5">{v.pulse ? <span className={parseInt(v.pulse) > 100 || parseInt(v.pulse) < 60 ? 'text-red-600 font-semibold' : ''}>{v.pulse}</span> : '—'}</td>
                           <td className="px-3 py-2.5">{v.bp_systolic ? `${v.bp_systolic}/${v.bp_diastolic}` : '—'}</td>
                           <td className="px-3 py-2.5">{v.temperature || '—'}</td>
-                          <td className="px-3 py-2.5">{v.spo2 ? <span className={parseInt(v.spo2)<95?'text-red-600 font-semibold':''}>{v.spo2}%</span> : '—'}</td>
+                          <td className="px-3 py-2.5">{v.spo2 ? <span className={parseInt(v.spo2) < 95 ? 'text-red-600 font-semibold' : ''}>{v.spo2}%</span> : '—'}</td>
                           <td className="px-3 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{v.note || '—'}</td>
                           <td className="px-3 py-2.5">
-                            <button onClick={() => { const u=vitals.filter((_,j)=>j!==i); setVitals(u); persist(u,io,notes) }}
+                            <button onClick={() => { const u = vitals.filter((_, j) => j !== i); setVitals(u); persist(u, io, notes) }}
                               className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3.5 h-3.5"/>
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </td>
                         </tr>
@@ -549,7 +589,7 @@ export default function IPDNursingPage() {
                   <div>
                     <label className="label">Type</label>
                     <select className="input bg-white" value={newIO.type}
-                      onChange={e => setNewIO(p => ({ ...p, type: e.target.value as 'intake'|'output' }))}>
+                      onChange={e => setNewIO(p => ({ ...p, type: e.target.value as 'intake' | 'output' }))}>
                       <option value="intake">Intake</option>
                       <option value="output">Output</option>
                     </select>
@@ -557,16 +597,16 @@ export default function IPDNursingPage() {
                   <div className="col-span-2">
                     <label className="label">Item</label>
                     <input className="input bg-white" placeholder="e.g. IV Fluids, Oral, Urine, Drain"
-                      value={newIO.item} onChange={e => setNewIO(p => ({ ...p, item: e.target.value }))}/>
+                      value={newIO.item} onChange={e => setNewIO(p => ({ ...p, item: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">Amount (ml)</label>
                     <input className="input bg-white" type="number" placeholder="500"
-                      value={newIO.amount} onChange={e => setNewIO(p => ({ ...p, amount: e.target.value }))}/>
+                      value={newIO.amount} onChange={e => setNewIO(p => ({ ...p, amount: e.target.value }))} />
                   </div>
                 </div>
                 <button onClick={addIO} className="btn-primary flex items-center gap-2 text-xs">
-                  <Plus className="w-3.5 h-3.5"/> Add Entry
+                  <Plus className="w-3.5 h-3.5" /> Add Entry
                 </button>
               </div>
 
@@ -594,26 +634,26 @@ export default function IPDNursingPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      {['Time','Type','Item','Amount',''].map(h => (
+                      {['Time', 'Type', 'Item', 'Amount', ''].map(h => (
                         <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {io.map((e,i) => (
-                      <tr key={i} className={`border-b border-gray-50 ${e.type==='intake'?'hover:bg-blue-50':'hover:bg-red-50'}`}>
+                    {io.map((e, i) => (
+                      <tr key={i} className={`border-b border-gray-50 ${e.type === 'intake' ? 'hover:bg-blue-50' : 'hover:bg-red-50'}`}>
                         <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{e.time}</td>
                         <td className="px-3 py-2.5">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${e.type==='intake'?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${e.type === 'intake' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
                             {e.type}
                           </span>
                         </td>
                         <td className="px-3 py-2.5 font-medium">{e.item}</td>
                         <td className="px-3 py-2.5 font-mono">{e.amount} ml</td>
                         <td className="px-3 py-2.5">
-                          <button onClick={() => { const u=io.filter((_,j)=>j!==i); setIO(u); persist(vitals,u,notes) }}
+                          <button onClick={() => { const u = io.filter((_, j) => j !== i); setIO(u); persist(vitals, u, notes) }}
                             className="text-red-400 hover:text-red-600">
-                            <Trash2 className="w-3.5 h-3.5"/>
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </td>
                       </tr>
@@ -640,17 +680,17 @@ export default function IPDNursingPage() {
                   <div>
                     <label className="label">Author</label>
                     <input className="input bg-white" placeholder="Name"
-                      value={noteAuthor} onChange={e => setNoteAuthor(e.target.value)}/>
+                      value={noteAuthor} onChange={e => setNoteAuthor(e.target.value)} />
                   </div>
                   <div className="col-span-3">
                     <div className="flex items-center justify-between mb-1">
                       <label className="label">Note</label>
                       <SmartMic field="nursing_note" value={newNote}
-                        onChange={setNewNote} context="nursing note for IPD patient"/>
+                        onChange={setNewNote} context="nursing note for IPD patient" />
                     </div>
                     <textarea className="input bg-white resize-none" rows={3}
                       placeholder="e.g. Patient resting comfortably. BP stable. Catheter patent. IVF running at 60 ml/hr."
-                      value={newNote} onChange={e => setNewNote(e.target.value)}/>
+                      value={newNote} onChange={e => setNewNote(e.target.value)} />
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -665,7 +705,7 @@ export default function IPDNursingPage() {
                     </button>
                   </div>
                   <button onClick={addNote} className="btn-primary flex items-center gap-2 text-xs">
-                    <Plus className="w-3.5 h-3.5"/> Add Note
+                    <Plus className="w-3.5 h-3.5" /> Add Note
                   </button>
                 </div>
               </div>
@@ -683,9 +723,9 @@ export default function IPDNursingPage() {
                           </span>
                           <span className="text-xs text-gray-400">{n.time}</span>
                         </div>
-                        <button onClick={() => { const u=notes.filter((_,j)=>j!==i); setNotes(u); persist(vitals,io,u) }}
+                        <button onClick={() => { const u = notes.filter((_, j) => j !== i); setNotes(u); persist(vitals, io, u) }}
                           className="text-red-400 hover:text-red-600">
-                          <Trash2 className="w-3.5 h-3.5"/>
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                       <p className="text-sm text-gray-700 whitespace-pre-line">{n.note}</p>
@@ -702,7 +742,7 @@ export default function IPDNursingPage() {
               {/* Info banner */}
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5">
                 <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2 mb-1">
-                  <Stethoscope className="w-4 h-4"/> Doctor Note Upload & AI Autofill
+                  <Stethoscope className="w-4 h-4" /> Doctor Note Upload & AI Autofill
                 </h3>
                 <p className="text-xs text-blue-700 mb-3">
                   Doctor can click a photo of their handwritten note. The AI will read the note and automatically
@@ -714,9 +754,9 @@ export default function IPDNursingPage() {
                 <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
                   ${ocrLoading ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
                   {ocrLoading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin"/> Reading note…</>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Reading note…</>
                   ) : (
-                    <><Camera className="w-4 h-4"/> Click Photo of Doctor Note</>
+                    <><Camera className="w-4 h-4" /> Click Photo of Doctor Note</>
                   )}
                   <input
                     type="file"
@@ -736,7 +776,7 @@ export default function IPDNursingPage() {
               {patient?.id && (
                 <div className="mb-5">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-500"/>
+                    <FileText className="w-4 h-4 text-blue-500" />
                     Stored Doctor Notes & Files
                     <span className="text-xs text-gray-400 font-normal ml-1">
                       — click 📖 on any photo to re-read with AI

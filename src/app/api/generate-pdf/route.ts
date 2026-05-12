@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { requireAuth } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
+
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const { searchParams } = new URL(req.url)
   const hospitalName = searchParams.get('h') || 'NexMedicon Hospital'
   const hospitalAddr = searchParams.get('a') || ''
 
   const pdfDoc = await PDFDocument.create()
-  const page   = pdfDoc.addPage([595, 842])
-  const form   = pdfDoc.getForm()
-  const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const fontR  = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const page = pdfDoc.addPage([595, 842])
+  const form = pdfDoc.getForm()
+  const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const { width, height } = page.getSize()
   const blue = rgb(0.12, 0.31, 0.85)
   const gray = rgb(0.4, 0.4, 0.4)
@@ -20,19 +27,19 @@ export async function GET(req: NextRequest) {
 
   // ── Header ─────────────────────────────────────────────────
   page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: blue })
-  page.drawText(hospitalName, { x: 30, y: height - 32, size: 16, font: fontB, color: rgb(1,1,1) })
+  page.drawText(hospitalName, { x: 30, y: height - 32, size: 16, font: fontB, color: rgb(1, 1, 1) })
   if (hospitalAddr) {
-    page.drawText(hospitalAddr, { x: 30, y: height - 50, size: 9, font: fontR, color: rgb(0.85,0.92,1) })
+    page.drawText(hospitalAddr, { x: 30, y: height - 50, size: 9, font: fontR, color: rgb(0.85, 0.92, 1) })
   }
   page.drawText('PATIENT REGISTRATION FORM — FILL ALL FIELDS DIGITALLY', {
-    x: 30, y: height - 65, size: 7.5, font: fontB, color: rgb(0.85,0.92,1),
+    x: 30, y: height - 65, size: 7.5, font: fontB, color: rgb(0.85, 0.92, 1),
   })
 
   let y = height - 95
 
   // ── Section title helper ─────────────────────────────────
   function sectionTitle(title: string) {
-    page.drawRectangle({ x: 20, y: y - 2, width: width - 40, height: 16, color: rgb(0.93,0.96,1) })
+    page.drawRectangle({ x: 20, y: y - 2, width: width - 40, height: 16, color: rgb(0.93, 0.96, 1) })
     page.drawText(title, { x: 25, y, size: 9, font: fontB, color: blue })
     y -= 28
   }
@@ -51,7 +58,7 @@ export async function GET(req: NextRequest) {
     const group = form.createRadioGroup(name)
     let cx = x
     options.forEach(opt => {
-      group.addOptionToPage(opt, page, { x: cx, y: radioY, width: 11, height: 11, borderColor: rgb(0.5,0.5,0.5), borderWidth: 1 })
+      group.addOptionToPage(opt, page, { x: cx, y: radioY, width: 11, height: 11, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 1 })
       page.drawText(opt, { x: cx + 14, y: radioY + 2, size: 9, font: fontR, color: dark })
       cx += opt.length * 6.5 + 22
     })
@@ -70,7 +77,7 @@ export async function GET(req: NextRequest) {
   y -= 35
 
   page.drawText('Blood Group:', { x: 20, y: y + 12, size: 8, font: fontB, color: gray })
-  addRadioGroup('blood_group', '', ['A+','A-','B+','B-','O+','O-','AB+','AB-'], 95, y)
+  addRadioGroup('blood_group', '', ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'], 95, y)
   y -= 38
 
   // ── CONTACT DETAILS ──────────────────────────────────────
@@ -104,7 +111,7 @@ export async function GET(req: NextRequest) {
 
   // ── REFERRAL ────────────────────────────────────────────
   page.drawText('How did you find us:', { x: 20, y: y + 12, size: 8, font: fontB, color: gray })
-  addRadioGroup('reference_source', '', ['Doctor Ref','Patient Ref','Advertisement','Google','Walk-in','Other'], 130, y)
+  addRadioGroup('reference_source', '', ['Doctor Ref', 'Patient Ref', 'Advertisement', 'Google', 'Walk-in', 'Other'], 130, y)
   y -= 35
 
   // ── COMPLAINT ────────────────────────────────────────────
@@ -121,7 +128,7 @@ export async function GET(req: NextRequest) {
       { x: 32, y, size: 8, font: fontR, color: gray }
     )
     const cb = form.createCheckBox('consent')
-    cb.addToPage(page, { x: 18, y: y - 2, width: 11, height: 11, borderColor: rgb(0.5,0.5,0.5), borderWidth: 1 })
+    cb.addToPage(page, { x: 18, y: y - 2, width: 11, height: 11, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 1 })
     y -= 28
     if (y > 50) {
       addTextField('patient_signature', 'Signature / Name', 20, y - 20, 200, 20)
@@ -132,17 +139,17 @@ export async function GET(req: NextRequest) {
   // ── Footer ──────────────────────────────────────────────
   page.drawText(
     'NexMedicon HMS · FORM-REG · Fill digitally, save, and upload at reception or send via WhatsApp',
-    { x: 20, y: 18, size: 7, font: fontR, color: rgb(0.6,0.6,0.6) }
+    { x: 20, y: 18, size: 7, font: fontR, color: rgb(0.6, 0.6, 0.6) }
   )
 
-  const pdfBytes  = await pdfDoc.save()
+  const pdfBytes = await pdfDoc.save()
   const pdfBuffer = Buffer.from(pdfBytes)
 
   return new NextResponse(pdfBuffer, {
     headers: {
-      'Content-Type':        'application/pdf',
+      'Content-Type': 'application/pdf',
       'Content-Disposition': 'attachment; filename="NexMedicon_Registration.pdf"',
-      'Cache-Control':       'no-store',
+      'Cache-Control': 'no-store',
     },
   })
 }

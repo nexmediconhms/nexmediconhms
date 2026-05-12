@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -292,7 +292,7 @@ ${hs.phone || ''}
 // ══════════════════════════════════════════════════════════════
 // MAIN PAGE COMPONENT
 // ══════════════════════════════════════════════════════════════
-export default function BillingPage() {
+function BillingContent() {
   const [view, setView] = useState<'list' | 'new' | 'receipt'>('list')
   const [bills, setBills] = useState<Bill[]>([])
   const [loadingBills, setLoadingBills] = useState(true)
@@ -1230,8 +1230,8 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
   // Older bills (pre-fix) don't have these fields. Number(undefined || 0) = 0,
   // so the GST line just won't render — receipt looks identical to before.
   const billGstPercent = Number(bill.gst_percent || 0)
-  const billGstAmount  = Number(bill.gst_amount  || 0)
-  const showGst        = billGstPercent > 0 && billGstAmount > 0
+  const billGstAmount = Number(bill.gst_amount || 0)
+  const showGst = billGstPercent > 0 && billGstAmount > 0
   // ────────────────────────────────────────────────────────────────────────
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
@@ -1315,5 +1315,20 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
         Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
       </div>
     </div>
+  )
+}
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function BillingPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    }>
+      <BillingContent />
+    </Suspense>
   )
 }

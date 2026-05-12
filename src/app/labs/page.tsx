@@ -7,14 +7,14 @@
  *  - Audit log on create/update/delete
  *  - All other UI/logic identical to original
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-import { supabase }       from '@/lib/supabase'
-import { audit }          from '@/lib/audit'
+import { supabase } from '@/lib/supabase'
+import { audit } from '@/lib/audit'
 import { formatDate, formatDateTime } from '@/lib/utils'
-import FormScanner        from '@/components/shared/FormScanner'
+import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
 import {
   FlaskConical, Search, Plus, X, ChevronRight,
@@ -23,91 +23,202 @@ import {
 
 // ── Lab test presets (unchanged from original) ────────────────
 const LAB_GROUPS = [
-  { group: 'Blood — Routine', tests: [
-    { name: 'Haemoglobin (Hb)',    unit: 'g/dL',    low: 11.5,   high: 16.5   },
-    { name: 'WBC (Total Count)',   unit: 'cells/µL', low: 4000,   high: 11000  },
-    { name: 'Platelet Count',      unit: 'cells/µL', low: 150000, high: 400000 },
-    { name: 'PCV / Haematocrit',   unit: '%',        low: 36,     high: 48     },
-    { name: 'ESR',                 unit: 'mm/hr',    low: 0,      high: 20     },
-  ]},
-  { group: 'Blood — Sugar', tests: [
-    { name: 'Blood Sugar Fasting', unit: 'mg/dL', low: 70,  high: 100 },
-    { name: 'Blood Sugar PP',      unit: 'mg/dL', low: 0,   high: 140 },
-    { name: 'HbA1c',              unit: '%',      low: 0,   high: 5.7 },
-    { name: 'OGTT (1 hr)',         unit: 'mg/dL', low: 0,   high: 140 },
-    { name: 'OGTT (2 hr)',         unit: 'mg/dL', low: 0,   high: 120 },
-  ]},
-  { group: 'Thyroid', tests: [
-    { name: 'TSH',    unit: 'mIU/L', low: 0.4, high: 4.0  },
-    { name: 'T3',     unit: 'ng/dL', low: 80,  high: 200  },
-    { name: 'T4',     unit: 'µg/dL', low: 5.1, high: 14.1 },
-    { name: 'Free T4',unit: 'ng/dL', low: 0.9, high: 2.3  },
-  ]},
-  { group: 'Hormones', tests: [
-    { name: 'LH',          unit: 'mIU/mL', low: 1,   high: 12  },
-    { name: 'FSH',         unit: 'mIU/mL', low: 3,   high: 10  },
-    { name: 'Prolactin',   unit: 'ng/mL',  low: 2,   high: 29  },
-    { name: 'Oestradiol',  unit: 'pg/mL',  low: 20,  high: 350 },
-    { name: 'Progesterone',unit: 'ng/mL',  low: 0,   high: 25  },
-    { name: 'AMH',         unit: 'ng/mL',  low: 1.5, high: 4.5 },
-    { name: 'Beta-hCG',    unit: 'mIU/mL', low: 0,   high: 5   },
-    { name: 'CA-125',      unit: 'U/mL',   low: 0,   high: 35  },
-    { name: 'Testosterone',unit: 'ng/dL',  low: 15,  high: 70  },
-  ]},
-  { group: 'Infection / Immunity', tests: [
-    { name: 'HBsAg',               unit: '',    low: 0, high: 0  },
-    { name: 'HIV (ELISA)',          unit: '',    low: 0, high: 0  },
-    { name: 'VDRL (Syphilis)',      unit: '',    low: 0, high: 0  },
-    { name: 'Antiphospholipid IgG', unit: 'GPL', low: 0, high: 15 },
-    { name: 'Antiphospholipid IgM', unit: 'MPL', low: 0, high: 12 },
-  ]},
-  { group: 'Urine', tests: [
-    { name: 'Urine Protein', unit: '', low: 0, high: 0 },
-    { name: 'Urine Sugar',   unit: '', low: 0, high: 0 },
-    { name: 'Urine Culture', unit: '', low: 0, high: 0 },
-  ]},
-  { group: 'Iron Studies', tests: [
-    { name: 'Serum Iron',     unit: 'µg/dL', low: 50,  high: 170 },
-    { name: 'TIBC',           unit: 'µg/dL', low: 250, high: 370 },
-    { name: 'Serum Ferritin', unit: 'ng/mL', low: 12,  high: 150 },
-    { name: 'Vitamin B12',    unit: 'pg/mL', low: 200, high: 900 },
-    { name: 'Vitamin D3',     unit: 'ng/mL', low: 30,  high: 100 },
-  ]},
+  {
+    group: 'Blood — Routine', tests: [
+      { name: 'Haemoglobin (Hb)', unit: 'g/dL', low: 11.5, high: 16.5 },
+      { name: 'WBC (Total Count)', unit: 'cells/µL', low: 4000, high: 11000 },
+      { name: 'Platelet Count', unit: 'cells/µL', low: 150000, high: 400000 },
+      { name: 'PCV / Haematocrit', unit: '%', low: 36, high: 48 },
+      { name: 'ESR', unit: 'mm/hr', low: 0, high: 20 },
+    ]
+  },
+  {
+    group: 'Blood — Sugar', tests: [
+      { name: 'Blood Sugar Fasting', unit: 'mg/dL', low: 70, high: 100 },
+      { name: 'Blood Sugar PP', unit: 'mg/dL', low: 0, high: 140 },
+      { name: 'HbA1c', unit: '%', low: 0, high: 5.7 },
+      { name: 'OGTT (1 hr)', unit: 'mg/dL', low: 0, high: 140 },
+      { name: 'OGTT (2 hr)', unit: 'mg/dL', low: 0, high: 120 },
+    ]
+  },
+  {
+    group: 'Thyroid', tests: [
+      { name: 'TSH', unit: 'mIU/L', low: 0.4, high: 4.0 },
+      { name: 'T3', unit: 'ng/dL', low: 80, high: 200 },
+      { name: 'T4', unit: 'µg/dL', low: 5.1, high: 14.1 },
+      { name: 'Free T4', unit: 'ng/dL', low: 0.9, high: 2.3 },
+    ]
+  },
+  {
+    group: 'Hormones', tests: [
+      { name: 'LH', unit: 'mIU/mL', low: 1, high: 12 },
+      { name: 'FSH', unit: 'mIU/mL', low: 3, high: 10 },
+      { name: 'Prolactin', unit: 'ng/mL', low: 2, high: 29 },
+      { name: 'Oestradiol', unit: 'pg/mL', low: 20, high: 350 },
+      { name: 'Progesterone', unit: 'ng/mL', low: 0, high: 25 },
+      { name: 'AMH', unit: 'ng/mL', low: 1.5, high: 4.5 },
+      { name: 'Beta-hCG', unit: 'mIU/mL', low: 0, high: 5 },
+      { name: 'CA-125', unit: 'U/mL', low: 0, high: 35 },
+      { name: 'Testosterone', unit: 'ng/dL', low: 15, high: 70 },
+    ]
+  },
+  {
+    group: 'Infection / Immunity', tests: [
+      { name: 'HBsAg', unit: '', low: 0, high: 0 },
+      { name: 'HIV (ELISA)', unit: '', low: 0, high: 0 },
+      { name: 'VDRL (Syphilis)', unit: '', low: 0, high: 0 },
+      { name: 'Antiphospholipid IgG', unit: 'GPL', low: 0, high: 15 },
+      { name: 'Antiphospholipid IgM', unit: 'MPL', low: 0, high: 12 },
+    ]
+  },
+  {
+    group: 'Urine', tests: [
+      { name: 'Urine Protein', unit: '', low: 0, high: 0 },
+      { name: 'Urine Sugar', unit: '', low: 0, high: 0 },
+      { name: 'Urine Culture', unit: '', low: 0, high: 0 },
+    ]
+  },
+  {
+    group: 'Iron Studies', tests: [
+      { name: 'Serum Iron', unit: 'µg/dL', low: 50, high: 170 },
+      { name: 'TIBC', unit: 'µg/dL', low: 250, high: 370 },
+      { name: 'Serum Ferritin', unit: 'ng/mL', low: 12, high: 150 },
+      { name: 'Vitamin B12', unit: 'pg/mL', low: 200, high: 900 },
+      { name: 'Vitamin D3', unit: 'ng/mL', low: 30, high: 100 },
+    ]
+  },
 ]
 
 const ALL_TESTS = LAB_GROUPS.flatMap(g => g.tests.map(t => ({ ...t, group: g.group })))
 
+// ── OCR alias map ─────────────────────────────────────────────
+// Maps every common abbreviation / alternate spelling to the canonical
+// test name used in ALL_TESTS. Keys are lower-case; values must match t.name exactly.
+const OCR_ALIASES: Record<string, string> = {
+  // Haemoglobin
+  'hb': 'Haemoglobin (Hb)', 'hgb': 'Haemoglobin (Hb)',
+  'hemoglobin': 'Haemoglobin (Hb)', 'haemoglobin': 'Haemoglobin (Hb)',
+  // WBC
+  'wbc': 'WBC (Total Count)', 'tlc': 'WBC (Total Count)',
+  'total count': 'WBC (Total Count)', 'total wbc': 'WBC (Total Count)',
+  'leucocyte': 'WBC (Total Count)', 'leukocyte': 'WBC (Total Count)',
+  'tc': 'WBC (Total Count)',
+  // Platelet
+  'plt': 'Platelet Count', 'platelets': 'Platelet Count',
+  'platelet': 'Platelet Count', 'thrombocyte': 'Platelet Count',
+  // PCV / Haematocrit
+  'pcv': 'PCV / Haematocrit', 'hematocrit': 'PCV / Haematocrit',
+  'haematocrit': 'PCV / Haematocrit', 'hct': 'PCV / Haematocrit',
+  // ESR
+  'esr': 'ESR', 'erythrocyte sedimentation': 'ESR',
+  // Blood Sugar
+  'bsf': 'Blood Sugar Fasting', 'fbs': 'Blood Sugar Fasting',
+  'fasting sugar': 'Blood Sugar Fasting', 'fasting glucose': 'Blood Sugar Fasting',
+  'blood glucose fasting': 'Blood Sugar Fasting',
+  'bspp': 'Blood Sugar PP', 'ppbs': 'Blood Sugar PP',
+  'post prandial': 'Blood Sugar PP', 'pp sugar': 'Blood Sugar PP',
+  'hba1c': 'HbA1c', 'a1c': 'HbA1c',
+  'glycated hemoglobin': 'HbA1c', 'glycosylated hemoglobin': 'HbA1c',
+  'ogtt 1hr': 'OGTT (1 hr)', 'ogtt 1h': 'OGTT (1 hr)', 'gtt 1 hour': 'OGTT (1 hr)',
+  'ogtt 2hr': 'OGTT (2 hr)', 'ogtt 2h': 'OGTT (2 hr)', 'gtt 2 hour': 'OGTT (2 hr)',
+  // Thyroid
+  'tsh': 'TSH', 'thyroid stimulating': 'TSH',
+  't3': 'T3', 'triiodothyronine': 'T3',
+  't4': 'T4', 'thyroxine': 'T4',
+  'free t4': 'Free T4', 'ft4': 'Free T4', 'free thyroxine': 'Free T4',
+  // Hormones
+  'lh': 'LH', 'luteinizing': 'LH',
+  'fsh': 'FSH', 'follicle stimulating': 'FSH',
+  'prl': 'Prolactin', 'prolactin': 'Prolactin',
+  'e2': 'Oestradiol', 'estradiol': 'Oestradiol', 'oestradiol': 'Oestradiol',
+  'prog': 'Progesterone', 'progesterone': 'Progesterone',
+  'amh': 'AMH', 'anti mullerian': 'AMH',
+  'beta hcg': 'Beta-hCG', 'bhcg': 'Beta-hCG', 'hcg': 'Beta-hCG',
+  'ca125': 'CA-125', 'ca-125': 'CA-125', 'cancer antigen 125': 'CA-125',
+  'testosterone': 'Testosterone',
+  // Infection
+  'hbsag': 'HBsAg', 'hepatitis b': 'HBsAg',
+  'hiv': 'HIV (ELISA)', 'anti hiv': 'HIV (ELISA)',
+  'vdrl': 'VDRL (Syphilis)', 'syphilis': 'VDRL (Syphilis)',
+  'apla igg': 'Antiphospholipid IgG', 'apla igm': 'Antiphospholipid IgM',
+  // Urine
+  'urine protein': 'Urine Protein', 'urine albumin': 'Urine Protein',
+  'urine sugar': 'Urine Sugar', 'urine glucose': 'Urine Sugar',
+  'urine culture': 'Urine Culture', 'urine cs': 'Urine Culture',
+  // Iron studies
+  'serum iron': 'Serum Iron', 's iron': 'Serum Iron',
+  'tibc': 'TIBC', 'total iron binding': 'TIBC',
+  'ferritin': 'Serum Ferritin', 'serum ferritin': 'Serum Ferritin',
+  's ferritin': 'Serum Ferritin',
+  'b12': 'Vitamin B12', 'vit b12': 'Vitamin B12',
+  'vitamin b12': 'Vitamin B12', 'cobalamin': 'Vitamin B12',
+  'vit d': 'Vitamin D3', 'vit d3': 'Vitamin D3',
+  'vitamin d': 'Vitamin D3', 'vitamin d3': 'Vitamin D3',
+  '25 oh d': 'Vitamin D3', '25-oh-d3': 'Vitamin D3',
+}
+
+/**
+ * Given a raw OCR text, find ALL tests that are mentioned.
+ * Strategy: alias lookup (longest-first) + fallback substring match.
+ */
+function matchTestsFromOCR(raw: string): typeof ALL_TESTS {
+  const text = raw.toLowerCase()
+  const matched = new Map<string, typeof ALL_TESTS[0]>()
+
+  // Step 1 — alias lookup (longest key first to prefer specific matches)
+  const sortedAliases = Object.keys(OCR_ALIASES).sort((a, b) => b.length - a.length)
+  for (const alias of sortedAliases) {
+    if (text.includes(alias)) {
+      const canonicalName = OCR_ALIASES[alias]
+      if (!matched.has(canonicalName)) {
+        const test = ALL_TESTS.find(t => t.name === canonicalName)
+        if (test) matched.set(canonicalName, test)
+      }
+    }
+  }
+
+  // Step 2 — direct name substring match (catches anything not in alias map)
+  for (const test of ALL_TESTS) {
+    if (!matched.has(test.name) && text.includes(test.name.toLowerCase())) {
+      matched.set(test.name, test)
+    }
+  }
+
+  return Array.from(matched.values())
+}
+
+
 interface LabEntry {
-  testName:       string
-  value:          string
-  unit:           string
+  testName: string
+  value: string
+  unit: string
   referenceRange: string
-  status:         'normal' | 'low' | 'high' | 'pending'
-  remarks:        string
+  status: 'normal' | 'low' | 'high' | 'pending'
+  remarks: string
 }
 
 interface LabReport {
-  id:           string
-  patient_id:   string
+  id: string
+  patient_id: string
   patient_name: string
-  mrn:          string
-  report_date:  string
-  lab_name:     string
-  entries:      LabEntry[]
-  notes:        string
-  created_at:   string
+  mrn: string
+  report_date: string
+  lab_name: string
+  entries: LabEntry[]
+  notes: string
+  created_at: string
   encounter_id?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────
 function normaliseEntry(e: Partial<LabEntry>): LabEntry {
   return {
-    testName:       e.testName       ?? '',
-    value:          e.value          ?? '',
-    unit:           e.unit           ?? '',
+    testName: e.testName ?? '',
+    value: e.value ?? '',
+    unit: e.unit ?? '',
     referenceRange: e.referenceRange ?? '',
-    status:         e.status         ?? 'pending',
-    remarks:        e.remarks        ?? '',
+    status: e.status ?? 'pending',
+    remarks: e.remarks ?? '',
   }
 }
 
@@ -121,27 +232,28 @@ function determineStatus(test: typeof ALL_TESTS[0], value: string): LabEntry['st
 }
 
 // ── Page ──────────────────────────────────────────────────────
-export default function LabsPage() {
+function LabsContent() {
   const searchParams = useSearchParams()
 
-  const [reports,       setReports]       = useState<LabReport[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [searchQuery,   setSearchQuery]   = useState('')
-  const [view,          setView]          = useState<'list' | 'form'>('list')
+
+  const [reports, setReports] = useState<LabReport[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [view, setView] = useState<'list' | 'form'>('list')
   const [editingReport, setEditingReport] = useState<LabReport | null>(null)
-  const [saving,        setSaving]        = useState(false)
-  const [error,         setError]         = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   // Form state
-  const [patientId,   setPatientId]   = useState(searchParams.get('patient') ?? '')
+  const [patientId, setPatientId] = useState(searchParams.get('patient') ?? '')
   const [encounterId, setEncounterId] = useState(searchParams.get('encounter') ?? '')
   const [patientName, setPatientName] = useState('')
-  const [mrn,         setMrn]         = useState('')
-  const [reportDate,  setReportDate]  = useState(new Date().toISOString().slice(0, 10))
-  const [labName,     setLabName]     = useState('')
-  const [notes,       setNotes]       = useState('')
-  const [entries,     setEntries]     = useState<LabEntry[]>([normaliseEntry({})])
-  const [testSearch,  setTestSearch]  = useState('')
+  const [mrn, setMrn] = useState('')
+  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10))
+  const [labName, setLabName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [entries, setEntries] = useState<LabEntry[]>([normaliseEntry({})])
+  const [testSearch, setTestSearch] = useState('')
   const [showPresets, setShowPresets] = useState(false)
 
   // ── Load from Supabase ────────────────────────────────────
@@ -163,15 +275,15 @@ export default function LabsPage() {
       if (err) throw err
 
       const mapped: LabReport[] = (data || []).map((r: any) => ({
-        id:           r.id,
-        patient_id:   r.patients.id,
+        id: r.id,
+        patient_id: r.patients.id,
         patient_name: r.patients.full_name,
-        mrn:          r.patients.mrn,
-        report_date:  r.report_date,
-        lab_name:     r.lab_name,
-        entries:      r.entries ?? [],
-        notes:        r.notes ?? '',
-        created_at:   r.created_at,
+        mrn: r.patients.mrn,
+        report_date: r.report_date,
+        lab_name: r.lab_name,
+        entries: r.entries ?? [],
+        notes: r.notes ?? '',
+        created_at: r.created_at,
         encounter_id: r.encounter_id,
       }))
 
@@ -195,14 +307,15 @@ export default function LabsPage() {
   }, [patientId])
 
   // ── OCR auto-fill ─────────────────────────────────────────
+  // FIX (Bug #10): replaces the old 4-char prefix match with matchTestsFromOCR()
+  // which uses a comprehensive alias map (Hb, HGB, FBS, PPBS, FT4 etc.)
   function handleOCR(result: OCRResult) {
     const raw = result.raw_text ?? ''
     if (!labName && raw.toLowerCase().includes('lab')) setLabName('Lab Report')
-    const labTests = ALL_TESTS.filter(t =>
-      raw.toLowerCase().includes(t.name.toLowerCase().slice(0, 4))
-    )
+
+    const labTests = matchTestsFromOCR(raw)
     if (labTests.length > 0) {
-      const newEntries: LabEntry[] = labTests.slice(0, 10).map(t => normaliseEntry({
+      const newEntries: LabEntry[] = labTests.slice(0, 15).map(t => normaliseEntry({
         testName: t.name, unit: t.unit,
         referenceRange: t.low === 0 && t.high === 0 ? 'Negative' : `${t.low}–${t.high}`,
         status: 'pending',
@@ -213,8 +326,8 @@ export default function LabsPage() {
 
   // ── Save ──────────────────────────────────────────────────
   async function handleSave() {
-    if (!patientId)    { setError('Select a patient first.'); return }
-    if (!reportDate)   { setError('Enter a report date.'); return }
+    if (!patientId) { setError('Select a patient first.'); return }
+    if (!reportDate) { setError('Enter a report date.'); return }
     if (entries.filter(e => e.testName.trim()).length === 0) {
       setError('Add at least one test result.'); return
     }
@@ -222,12 +335,12 @@ export default function LabsPage() {
     setSaving(true); setError('')
 
     const payload = {
-      patient_id:   patientId,
+      patient_id: patientId,
       encounter_id: encounterId || null,
-      report_date:  reportDate,
-      lab_name:     labName.trim(),
-      entries:      entries.filter(e => e.testName.trim()),
-      notes:        notes.trim(),
+      report_date: reportDate,
+      lab_name: labName.trim(),
+      entries: entries.filter(e => e.testName.trim()),
+      notes: notes.trim(),
     }
 
     try {
@@ -330,10 +443,10 @@ export default function LabsPage() {
     : ALL_TESTS
 
   const statusColour = (s: LabEntry['status']) =>
-    s === 'high'    ? 'text-red-600 bg-red-50 border-red-200' :
-    s === 'low'     ? 'text-blue-700 bg-blue-50 border-blue-200' :
-    s === 'normal'  ? 'text-green-700 bg-green-50 border-green-200' :
-    'text-gray-500 bg-gray-50 border-gray-200'
+    s === 'high' ? 'text-red-600 bg-red-50 border-red-200' :
+      s === 'low' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+        s === 'normal' ? 'text-green-700 bg-green-50 border-green-200' :
+          'text-gray-500 bg-gray-50 border-gray-200'
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -345,12 +458,12 @@ export default function LabsPage() {
           <div className="flex items-center gap-3">
             {view === 'form' && (
               <button onClick={() => { resetForm(); setView('list') }} className="p-2 hover:bg-gray-100 rounded-lg">
-                <ArrowLeft className="w-5 h-5 text-gray-600"/>
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
             )}
             <div>
               <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <FlaskConical className="w-5 h-5 text-indigo-600"/>
+                <FlaskConical className="w-5 h-5 text-indigo-600" />
                 Lab Results
               </h1>
               <p className="text-sm text-gray-500">
@@ -361,16 +474,16 @@ export default function LabsPage() {
           {view === 'list' && (
             <button onClick={() => { resetForm(); setView('form') }}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-              <Plus className="w-4 h-4"/> New Report
+              <Plus className="w-4 h-4" /> New Report
             </button>
           )}
         </div>
 
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{error}</span>
-            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4"/></button>
+            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4" /></button>
           </div>
         )}
 
@@ -378,17 +491,17 @@ export default function LabsPage() {
         {view === 'list' && (
           <>
             <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search by patient, MRN, or lab name…"
-                className="input pl-9"/>
+                className="input pl-9" />
             </div>
 
             {loading ? (
               <div className="text-center py-12 text-gray-400">Loading…</div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
-                <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">No lab reports yet</p>
                 <p className="text-sm mt-1">Click "New Report" to add the first one</p>
               </div>
@@ -405,7 +518,7 @@ export default function LabsPage() {
                             <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">MRN {r.mrn}</span>
                             {abnormal.length > 0 && (
                               <span className="text-xs text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3"/> {abnormal.length} abnormal
+                                <AlertTriangle className="w-3 h-3" /> {abnormal.length} abnormal
                               </span>
                             )}
                           </div>
@@ -423,10 +536,10 @@ export default function LabsPage() {
                         </div>
                         <div className="flex gap-1 flex-shrink-0">
                           <button onClick={() => editReport(r)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Edit">
-                            <ChevronRight className="w-4 h-4"/>
+                            <ChevronRight className="w-4 h-4" />
                           </button>
                           <button onClick={() => deleteReport(r.id, r.patient_name)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Delete">
-                            <Trash2 className="w-4 h-4"/>
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -457,19 +570,19 @@ export default function LabsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Patient Name</label>
-                  <input className="input" value={patientName} onChange={e => setPatientName(e.target.value)} placeholder="Patient name"/>
+                  <input className="input" value={patientName} onChange={e => setPatientName(e.target.value)} placeholder="Patient name" />
                 </div>
                 <div>
                   <label className="label">MRN</label>
-                  <input className="input" value={mrn} onChange={e => setMrn(e.target.value)} placeholder="MRN"/>
+                  <input className="input" value={mrn} onChange={e => setMrn(e.target.value)} placeholder="MRN" />
                 </div>
                 <div>
                   <label className="label">Report Date</label>
-                  <input type="date" className="input" value={reportDate} onChange={e => setReportDate(e.target.value)}/>
+                  <input type="date" className="input" value={reportDate} onChange={e => setReportDate(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">Laboratory Name</label>
-                  <input className="input" value={labName} onChange={e => setLabName(e.target.value)} placeholder="e.g. Metropolis, SRL, local lab"/>
+                  <input className="input" value={labName} onChange={e => setLabName(e.target.value)} placeholder="e.g. Metropolis, SRL, local lab" />
                 </div>
               </div>
             </div>
@@ -481,13 +594,13 @@ export default function LabsPage() {
                 <div className="relative">
                   <button onClick={() => setShowPresets(v => !v)}
                     className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium px-3 py-1.5 rounded-lg">
-                    <Plus className="w-4 h-4"/> Add Test
+                    <Plus className="w-4 h-4" /> Add Test
                   </button>
                   {showPresets && (
                     <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 w-72 max-h-80 overflow-hidden flex flex-col">
                       <div className="p-2 border-b border-gray-100">
                         <input autoFocus value={testSearch} onChange={e => setTestSearch(e.target.value)}
-                          placeholder="Search tests…" className="input text-sm"/>
+                          placeholder="Search tests…" className="input text-sm" />
                       </div>
                       <div className="overflow-y-auto flex-1">
                         {LAB_GROUPS
@@ -517,10 +630,10 @@ export default function LabsPage() {
                   <div key={i} className="border border-gray-100 rounded-xl p-3 bg-gray-50">
                     <div className="flex gap-2 mb-2">
                       <input className="input text-sm flex-1" placeholder="Test name"
-                        value={entry.testName} onChange={e => updateEntry(i, 'testName', e.target.value)}/>
+                        value={entry.testName} onChange={e => updateEntry(i, 'testName', e.target.value)} />
                       {entries.length > 1 && (
                         <button onClick={() => removeEntry(i)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                          <X className="w-4 h-4"/>
+                          <X className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -528,17 +641,17 @@ export default function LabsPage() {
                       <div>
                         <label className="text-xs text-gray-500 font-medium">Value</label>
                         <input className="input text-sm mt-1" placeholder="e.g. 12.5"
-                          value={entry.value} onChange={e => updateEntry(i, 'value', e.target.value)}/>
+                          value={entry.value} onChange={e => updateEntry(i, 'value', e.target.value)} />
                       </div>
                       <div>
                         <label className="text-xs text-gray-500 font-medium">Unit</label>
                         <input className="input text-sm mt-1" placeholder="g/dL"
-                          value={entry.unit} onChange={e => updateEntry(i, 'unit', e.target.value)}/>
+                          value={entry.unit} onChange={e => updateEntry(i, 'unit', e.target.value)} />
                       </div>
                       <div>
                         <label className="text-xs text-gray-500 font-medium">Ref. Range</label>
                         <input className="input text-sm mt-1" placeholder="11.5–16.5"
-                          value={entry.referenceRange} onChange={e => updateEntry(i, 'referenceRange', e.target.value)}/>
+                          value={entry.referenceRange} onChange={e => updateEntry(i, 'referenceRange', e.target.value)} />
                       </div>
                       <div>
                         <label className="text-xs text-gray-500 font-medium">Status</label>
@@ -553,13 +666,13 @@ export default function LabsPage() {
                     </div>
                     {(entry.status === 'high' || entry.status === 'low') && (
                       <input className="input text-sm mt-2" placeholder="Remarks (optional)"
-                        value={entry.remarks} onChange={e => updateEntry(i, 'remarks', e.target.value)}/>
+                        value={entry.remarks} onChange={e => updateEntry(i, 'remarks', e.target.value)} />
                     )}
                   </div>
                 ))}
                 <button onClick={() => setEntries(prev => [...prev, normaliseEntry({})])}
                   className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2">
-                  <Plus className="w-4 h-4"/> Add another test
+                  <Plus className="w-4 h-4" /> Add another test
                 </button>
               </div>
             </div>
@@ -568,14 +681,14 @@ export default function LabsPage() {
             <div className="card p-5">
               <label className="label">Notes / Remarks</label>
               <textarea className="input resize-none" rows={3} placeholder="Any additional notes…"
-                value={notes} onChange={e => setNotes(e.target.value)}/>
+                value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
 
             {/* Actions */}
             <div className="flex gap-3">
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-lg disabled:opacity-50">
-                {saving ? 'Saving…' : <><Save className="w-4 h-4"/> Save Report</>}
+                {saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Report</>}
               </button>
               <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
             </div>
@@ -583,5 +696,20 @@ export default function LabsPage() {
         )}
       </div>
     </AppShell>
+  )
+}
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function LabsPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <LabsContent />
+    </Suspense>
   )
 }

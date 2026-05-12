@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -26,8 +26,8 @@ const EMPTY_VITALS: Vitals = {
 }
 
 // ── Highlight tracking ────────────────────────────────────────
-type VitalsHL  = Partial<Record<keyof Vitals, boolean>>
-type OBHL      = Partial<Record<keyof OBData, boolean>>
+type VitalsHL = Partial<Record<keyof Vitals, boolean>>
+type OBHL = Partial<Record<keyof OBData, boolean>>
 interface ConsultHL { chiefComplaint?: boolean; diagnosis?: boolean; notes?: boolean; hpi?: boolean }
 
 // ── Ordinal suffix helper ─────────────────────────────────────
@@ -37,36 +37,36 @@ function ordinal(n: number): string {
   return String(n) + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export default function NewConsultationPage() {
-  const router       = useRouter()
+function NewConsultationContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const patientId    = searchParams.get('patient')
-  const prefillFlag  = searchParams.get('prefill')
+  const patientId = searchParams.get('patient')
+  const prefillFlag = searchParams.get('prefill')
 
-  const [patient,        setPatient]       = useState<Patient | null>(null)
-  const [tab,            setTab]           = useState<Tab>('vitals')
-  const [vitals,         setVitals]        = useState<Vitals>(EMPTY_VITALS)
-  const [ob,             setOB]            = useState<OBData>({})
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [tab, setTab] = useState<Tab>('vitals')
+  const [vitals, setVitals] = useState<Vitals>(EMPTY_VITALS)
+  const [ob, setOB] = useState<OBData>({})
   const [chiefComplaint, setChiefComplaint] = useState('')
-  const [hpi,            setHpi]           = useState('')
-  const [diagnosis,      setDiagnosis]     = useState('')
-  const [notes,          setNotes]         = useState('')
-  const [procedures,     setProcedures]    = useState<Procedure[]>([])
-  const [saving,         setSaving]        = useState(false)
-  const [error,          setError]         = useState('')
-  const [lastDiagnosis,  setLastDiagnosis]  = useState('')
+  const [hpi, setHpi] = useState('')
+  const [diagnosis, setDiagnosis] = useState('')
+  const [notes, setNotes] = useState('')
+  const [procedures, setProcedures] = useState<Procedure[]>([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [lastDiagnosis, setLastDiagnosis] = useState('')
 
   // OCR highlights
-  const [vHL,  setVHL]  = useState<VitalsHL>({})
+  const [vHL, setVHL] = useState<VitalsHL>({})
   const [obHL, setObHL] = useState<OBHL>({})
-  const [cHL,  setCHL]  = useState<ConsultHL>({})
+  const [cHL, setCHL] = useState<ConsultHL>({})
 
   // ── Doctor note camera state ──────────────────────────────────
-  const [noteOcrLoading,  setNoteOcrLoading]  = useState(false)
-  const [noteOcrPreview,  setNoteOcrPreview]  = useState<any>(null)
-  const [noteOcrError,    setNoteOcrError]    = useState('')
-  const [noteApplied,     setNoteApplied]     = useState(false)
-  const [noteMedsQueue,   setNoteMedsQueue]   = useState('')
+  const [noteOcrLoading, setNoteOcrLoading] = useState(false)
+  const [noteOcrPreview, setNoteOcrPreview] = useState<any>(null)
+  const [noteOcrError, setNoteOcrError] = useState('')
+  const [noteApplied, setNoteApplied] = useState(false)
+  const [noteMedsQueue, setNoteMedsQueue] = useState('')
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -75,8 +75,8 @@ export default function NewConsultationPage() {
 
   // Derived
   const bmi = calculateBMI(parseFloat(vitals.weight), parseFloat(vitals.height))
-  const edd  = ob.lmp ? calculateEDD(ob.lmp) : ''
-  const ga   = ob.lmp ? calculateGA(ob.lmp)  : ''
+  const edd = ob.lmp ? calculateEDD(ob.lmp) : ''
+  const ga = ob.lmp ? calculateGA(ob.lmp) : ''
 
   useEffect(() => {
     if (!patientId) { router.push('/opd'); return }
@@ -86,12 +86,12 @@ export default function NewConsultationPage() {
     try {
       const draft = JSON.parse(sessionStorage.getItem(key) || 'null')
       if (draft) {
-        if (draft.vitals)         setVitals(draft.vitals)
-        if (draft.ob)             setOB(draft.ob)
+        if (draft.vitals) setVitals(draft.vitals)
+        if (draft.ob) setOB(draft.ob)
         if (draft.chiefComplaint) setChiefComplaint(draft.chiefComplaint)
-        if (draft.hpi)            setHpi(draft.hpi)
-        if (draft.diagnosis)      setDiagnosis(draft.diagnosis)
-        if (draft.notes)          setNotes(draft.notes)
+        if (draft.hpi) setHpi(draft.hpi)
+        if (draft.diagnosis) setDiagnosis(draft.diagnosis)
+        if (draft.notes) setNotes(draft.notes)
       }
     } catch { /* ignore */ }
 
@@ -103,18 +103,18 @@ export default function NewConsultationPage() {
         if (ocr.vitals) {
           setVitals(prev => ({
             ...prev,
-            ...(ocr.vitals.pulse         && { pulse:        String(ocr.vitals.pulse)         }),
-            ...(ocr.vitals.bp_systolic   && { bp_systolic:  String(ocr.vitals.bp_systolic)   }),
-            ...(ocr.vitals.bp_diastolic  && { bp_diastolic: String(ocr.vitals.bp_diastolic)  }),
-            ...(ocr.vitals.temperature   && { temperature:  String(ocr.vitals.temperature)   }),
-            ...(ocr.vitals.spo2          && { spo2:         String(ocr.vitals.spo2)          }),
-            ...(ocr.vitals.weight        && { weight:       String(ocr.vitals.weight)        }),
-            ...(ocr.vitals.height        && { height:       String(ocr.vitals.height)        }),
+            ...(ocr.vitals.pulse && { pulse: String(ocr.vitals.pulse) }),
+            ...(ocr.vitals.bp_systolic && { bp_systolic: String(ocr.vitals.bp_systolic) }),
+            ...(ocr.vitals.bp_diastolic && { bp_diastolic: String(ocr.vitals.bp_diastolic) }),
+            ...(ocr.vitals.temperature && { temperature: String(ocr.vitals.temperature) }),
+            ...(ocr.vitals.spo2 && { spo2: String(ocr.vitals.spo2) }),
+            ...(ocr.vitals.weight && { weight: String(ocr.vitals.weight) }),
+            ...(ocr.vitals.height && { height: String(ocr.vitals.height) }),
           }))
         }
         if (ocr.vitals?.chief_complaint) setChiefComplaint(ocr.vitals.chief_complaint)
-        if (ocr.vitals?.notes)           setHpi(ocr.vitals.notes)
-        if (ocr.vitals?.diagnosis)       setDiagnosis(ocr.vitals.diagnosis)
+        if (ocr.vitals?.notes) setHpi(ocr.vitals.notes)
+        if (ocr.vitals?.diagnosis) setDiagnosis(ocr.vitals.diagnosis)
         if (ocr.ob_data) {
           setOB(prev => ({ ...prev, ...ocr.ob_data }))
         }
@@ -155,7 +155,7 @@ export default function NewConsultationPage() {
 
   // ── Field setters ─────────────────────────────────────────────
   function setV(k: keyof Vitals, v: string) { setVitals(p => ({ ...p, [k]: v })) }
-  function setO(k: keyof OBData, v: any)   { setOB(p => ({ ...p, [k]: v })) }
+  function setO(k: keyof OBData, v: any) { setOB(p => ({ ...p, [k]: v })) }
 
   // ── Highlight helper: apply then clear after 2 s ──────────────
   function flashHL<T>(setter: React.Dispatch<React.SetStateAction<T>>, hl: T) {
@@ -165,24 +165,24 @@ export default function NewConsultationPage() {
 
   // ── OCR callback ──────────────────────────────────────────────
   const handleOCRResult = useCallback((result: OCRResult) => {
-    const vitalsHL: VitalsHL   = {}
-    const obHL_:    OBHL       = {}
-    const cHL_:     ConsultHL  = {}
+    const vitalsHL: VitalsHL = {}
+    const obHL_: OBHL = {}
+    const cHL_: ConsultHL = {}
 
     // ── Vitals section ─────────────────────────────────────────
     if (result.vitals) {
       const v = result.vitals
-      if (v.pulse)        { setV('pulse',        v.pulse);        vitalsHL.pulse        = true }
-      if (v.bp_systolic)  { setV('bp_systolic',  v.bp_systolic);  vitalsHL.bp_systolic  = true }
+      if (v.pulse) { setV('pulse', v.pulse); vitalsHL.pulse = true }
+      if (v.bp_systolic) { setV('bp_systolic', v.bp_systolic); vitalsHL.bp_systolic = true }
       if (v.bp_diastolic) { setV('bp_diastolic', v.bp_diastolic); vitalsHL.bp_diastolic = true }
-      if (v.temperature)  { setV('temperature',  v.temperature);  vitalsHL.temperature  = true }
-      if (v.spo2)         { setV('spo2',         v.spo2);         vitalsHL.spo2         = true }
-      if (v.weight)       { setV('weight',       v.weight);       vitalsHL.weight       = true }
-      if (v.height)       { setV('height',       v.height);       vitalsHL.height       = true }
+      if (v.temperature) { setV('temperature', v.temperature); vitalsHL.temperature = true }
+      if (v.spo2) { setV('spo2', v.spo2); vitalsHL.spo2 = true }
+      if (v.weight) { setV('weight', v.weight); vitalsHL.weight = true }
+      if (v.height) { setV('height', v.height); vitalsHL.height = true }
 
       if (v.chief_complaint) { setChiefComplaint(v.chief_complaint); cHL_.chiefComplaint = true }
-      if (v.diagnosis)       { setDiagnosis(v.diagnosis);            cHL_.diagnosis      = true }
-      if (v.notes)           { setNotes(v.notes);                    cHL_.notes          = true }
+      if (v.diagnosis) { setDiagnosis(v.diagnosis); cHL_.diagnosis = true }
+      if (v.notes) { setNotes(v.notes); cHL_.notes = true }
     }
 
     // ── OB/GYN section ─────────────────────────────────────────
@@ -192,62 +192,62 @@ export default function NewConsultationPage() {
       const applyOB = (k: keyof OBData, val: any) => {
         if (val !== undefined && val !== null && val !== '') {
           setO(k, typeof val === 'string' ? val : val)
-          ;(obHL_ as any)[k] = true
+            ; (obHL_ as any)[k] = true
         }
       }
-      applyOB('lmp',              o.lmp)
-      applyOB('gravida',          o.gravida)
-      applyOB('para',             o.para)
-      applyOB('abortion',         o.abortion)
-      applyOB('living',           o.living)
-      applyOB('fhs',              o.fhs)
-      applyOB('liquor',           o.liquor)
-      applyOB('fundal_height',    o.fundal_height)
-      applyOB('presentation',     o.presentation)
-      applyOB('engagement',       o.engagement)
-      applyOB('uterus_size',      o.uterus_size)
-      applyOB('scar_tenderness',  o.scar_tenderness)
-      applyOB('fetal_movement',   o.fetal_movement)
-      applyOB('per_abdomen',      o.per_abdomen)
-      applyOB('cervix_speculum',  o.cervix_speculum)
+      applyOB('lmp', o.lmp)
+      applyOB('gravida', o.gravida)
+      applyOB('para', o.para)
+      applyOB('abortion', o.abortion)
+      applyOB('living', o.living)
+      applyOB('fhs', o.fhs)
+      applyOB('liquor', o.liquor)
+      applyOB('fundal_height', o.fundal_height)
+      applyOB('presentation', o.presentation)
+      applyOB('engagement', o.engagement)
+      applyOB('uterus_size', o.uterus_size)
+      applyOB('scar_tenderness', o.scar_tenderness)
+      applyOB('fetal_movement', o.fetal_movement)
+      applyOB('per_abdomen', o.per_abdomen)
+      applyOB('cervix_speculum', o.cervix_speculum)
       applyOB('discharge_speculum', o.discharge_speculum)
-      applyOB('bleeding_speculum',  o.bleeding_speculum)
-      applyOB('per_speculum',     o.per_speculum)
-      applyOB('cervix_pv',        o.cervix_pv)
-      applyOB('os_pv',            o.os_pv)
-      applyOB('uterus_position',  o.uterus_position)
-      applyOB('per_vaginum',      o.per_vaginum)
-      applyOB('right_ovary',      o.right_ovary)
-      applyOB('left_ovary',       o.left_ovary)
+      applyOB('bleeding_speculum', o.bleeding_speculum)
+      applyOB('per_speculum', o.per_speculum)
+      applyOB('cervix_pv', o.cervix_pv)
+      applyOB('os_pv', o.os_pv)
+      applyOB('uterus_position', o.uterus_position)
+      applyOB('per_vaginum', o.per_vaginum)
+      applyOB('right_ovary', o.right_ovary)
+      applyOB('left_ovary', o.left_ovary)
       // ── New fields ──────────────────────────────────────────
-      applyOB('menstrual_regularity',   o.menstrual_regularity)
-      applyOB('menstrual_flow',         o.menstrual_flow)
-      applyOB('post_menstrual_days',    o.post_menstrual_days)
-      applyOB('post_menstrual_pain',    o.post_menstrual_pain)
+      applyOB('menstrual_regularity', o.menstrual_regularity)
+      applyOB('menstrual_flow', o.menstrual_flow)
+      applyOB('post_menstrual_days', o.post_menstrual_days)
+      applyOB('post_menstrual_pain', o.post_menstrual_pain)
       applyOB('urine_pregnancy_result', o.urine_pregnancy_result)
-      applyOB('obstetric_history',      o.obstetric_history)
-      applyOB('abortion_entries',       o.abortion_entries)
-      applyOB('past_diabetes',          o.past_diabetes)
-      applyOB('past_hypertension',      o.past_hypertension)
-      applyOB('past_thyroid',           o.past_thyroid)
-      applyOB('past_surgery',           o.past_surgery)
-      applyOB('past_surgery_detail',    o.past_surgery_detail)
-      applyOB('income',                 o.income)
-      applyOB('expenditure',            o.expenditure)
+      applyOB('obstetric_history', o.obstetric_history)
+      applyOB('abortion_entries', o.abortion_entries)
+      applyOB('past_diabetes', o.past_diabetes)
+      applyOB('past_hypertension', o.past_hypertension)
+      applyOB('past_thyroid', o.past_thyroid)
+      applyOB('past_surgery', o.past_surgery)
+      applyOB('past_surgery_detail', o.past_surgery_detail)
+      applyOB('income', o.income)
+      applyOB('expenditure', o.expenditure)
     }
 
-    flashHL(setVHL,  vitalsHL)
+    flashHL(setVHL, vitalsHL)
     flashHL(setObHL, obHL_)
-    flashHL(setCHL,  cHL_)
+    flashHL(setCHL, cHL_)
 
     // Auto-jump to the tab where most data landed
     const vitalsCount = Object.keys(vitalsHL).length
-    const obCount     = Object.keys(obHL_).length
-    const cCount      = Object.keys(cHL_).length
+    const obCount = Object.keys(obHL_).length
+    const cCount = Object.keys(cHL_).length
 
     if (obCount > vitalsCount && obCount > cCount) setTab('obgyn')
-    else if (cCount >= vitalsCount)                setTab('consultation')
-    else                                           setTab('vitals')
+    else if (cCount >= vitalsCount) setTab('consultation')
+    else setTab('vitals')
   }, [])
 
   // startVoice removed — SmartMic handles STT + AI correction
@@ -289,18 +289,18 @@ export default function NewConsultationPage() {
   // ── Doctor Note Camera: apply extracted fields to form ─────────
   const handleDoctorNote = useCallback((data: any) => {
     const f = data?.fields || {}
-    const vitalsHL: VitalsHL  = {}
-    const cHL_:     ConsultHL = {}
-    const obHL_:    OBHL      = {}
+    const vitalsHL: VitalsHL = {}
+    const cHL_: ConsultHL = {}
+    const obHL_: OBHL = {}
 
     // Vitals
-    if (f.pulse)        { setV('pulse',        String(f.pulse));        vitalsHL.pulse        = true }
-    if (f.bp_systolic)  { setV('bp_systolic',  String(f.bp_systolic));  vitalsHL.bp_systolic  = true }
+    if (f.pulse) { setV('pulse', String(f.pulse)); vitalsHL.pulse = true }
+    if (f.bp_systolic) { setV('bp_systolic', String(f.bp_systolic)); vitalsHL.bp_systolic = true }
     if (f.bp_diastolic) { setV('bp_diastolic', String(f.bp_diastolic)); vitalsHL.bp_diastolic = true }
-    if (f.temperature)  { setV('temperature',  String(f.temperature));  vitalsHL.temperature  = true }
-    if (f.spo2)         { setV('spo2',         String(f.spo2));         vitalsHL.spo2         = true }
-    if (f.weight)       { setV('weight',       String(f.weight));       vitalsHL.weight       = true }
-    if (f.height)       { setV('height',       String(f.height));       vitalsHL.height       = true }
+    if (f.temperature) { setV('temperature', String(f.temperature)); vitalsHL.temperature = true }
+    if (f.spo2) { setV('spo2', String(f.spo2)); vitalsHL.spo2 = true }
+    if (f.weight) { setV('weight', String(f.weight)); vitalsHL.weight = true }
+    if (f.height) { setV('height', String(f.height)); vitalsHL.height = true }
 
     // Chief complaint — only fill if currently empty
     if (f.chief_complaint) {
@@ -315,7 +315,7 @@ export default function NewConsultationPage() {
 
     // HPI — build from history + duration
     const hpiLines: string[] = []
-    if (f.history)  hpiLines.push(f.history)
+    if (f.history) hpiLines.push(f.history)
     if (f.duration) hpiLines.push(`Duration: ${f.duration}`)
     if (hpiLines.length > 0) {
       setHpi(prev => prev.trim() ? prev : hpiLines.join('\n'))
@@ -324,11 +324,11 @@ export default function NewConsultationPage() {
 
     // Clinical notes — build from findings, plan, investigations, advice, follow-up
     const noteLines: string[] = []
-    if (f.examination_findings)   noteLines.push(`O/E: ${f.examination_findings}`)
-    if (f.treatment_plan)         noteLines.push(`Plan: ${f.treatment_plan}`)
+    if (f.examination_findings) noteLines.push(`O/E: ${f.examination_findings}`)
+    if (f.treatment_plan) noteLines.push(`Plan: ${f.treatment_plan}`)
     if (f.investigations_ordered) noteLines.push(`Ix: ${f.investigations_ordered}`)
-    if (f.advice)                 noteLines.push(`Advice: ${f.advice}`)
-    if (f.follow_up_date)         noteLines.push(`Follow-up: ${f.follow_up_date}`)
+    if (f.advice) noteLines.push(`Advice: ${f.advice}`)
+    if (f.follow_up_date) noteLines.push(`Follow-up: ${f.follow_up_date}`)
     if (noteLines.length > 0) {
       setNotes(prev => prev.trim() ? prev + '\n\n' + noteLines.join('\n') : noteLines.join('\n'))
       cHL_.notes = true
@@ -343,13 +343,13 @@ export default function NewConsultationPage() {
     }
 
     // OB/GYN fields (if ANC note)
-    if (f.lmp)               { setO('lmp', f.lmp);                           (obHL_ as any).lmp            = true }
-    if (f.edd)               { setO('edd', f.edd);                           (obHL_ as any).edd            = true }
-    if (f.gravida != null)   { setO('gravida', f.gravida);                   (obHL_ as any).gravida        = true }
-    if (f.para    != null)   { setO('para',    f.para);                      (obHL_ as any).para           = true }
+    if (f.lmp) { setO('lmp', f.lmp); (obHL_ as any).lmp = true }
+    if (f.edd) { setO('edd', f.edd); (obHL_ as any).edd = true }
+    if (f.gravida != null) { setO('gravida', f.gravida); (obHL_ as any).gravida = true }
+    if (f.para != null) { setO('para', f.para); (obHL_ as any).para = true }
     if (f.gestational_age_weeks) { setO('gestational_age', `${f.gestational_age_weeks} weeks`); (obHL_ as any).gestational_age = true }
-    if (f.fundal_height)     { setO('fundal_height', f.fundal_height);       (obHL_ as any).fundal_height  = true }
-    if (f.fhs)               { setO('fhs', f.fhs);                           (obHL_ as any).fhs            = true }
+    if (f.fundal_height) { setO('fundal_height', f.fundal_height); (obHL_ as any).fundal_height = true }
+    if (f.fhs) { setO('fhs', f.fhs); (obHL_ as any).fhs = true }
 
     // Flash highlights and auto-jump to most-filled tab
     flashHL(setVHL, vitalsHL)
@@ -405,22 +405,22 @@ export default function NewConsultationPage() {
     const { data: enc, error: encErr } = await supabase
       .from('encounters')
       .insert({
-        patient_id:      patientId,
-        encounter_type:  'OPD',
-        encounter_date:  new Date().toISOString().split('T')[0],
+        patient_id: patientId,
+        encounter_type: 'OPD',
+        encounter_date: new Date().toISOString().split('T')[0],
         chief_complaint: chiefComplaint.trim() || null,
-        pulse:           vitals.pulse       ? parseInt(vitals.pulse)       : null,
-        bp_systolic:     vitals.bp_systolic  ? parseInt(vitals.bp_systolic) : null,
-        bp_diastolic:    vitals.bp_diastolic ? parseInt(vitals.bp_diastolic): null,
-        temperature:     vitals.temperature  ? parseFloat(vitals.temperature): null,
-        spo2:            vitals.spo2         ? parseInt(vitals.spo2)        : null,
-        weight:          vitals.weight       ? parseFloat(vitals.weight)    : null,
-        height:          vitals.height       ? parseFloat(vitals.height)    : null,
-        diagnosis:       diagnosis.trim()    || null,
-        notes:           (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
-        ob_data:         obPayload,
-        procedures:      procedures.length > 0 ? procedures : null,
-        doctor_name:     getHospitalSettings().doctorName,
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : null,
+        bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : null,
+        bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : null,
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : null,
+        spo2: vitals.spo2 ? parseInt(vitals.spo2) : null,
+        weight: vitals.weight ? parseFloat(vitals.weight) : null,
+        height: vitals.height ? parseFloat(vitals.height) : null,
+        diagnosis: diagnosis.trim() || null,
+        notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
+        ob_data: obPayload,
+        procedures: procedures.length > 0 ? procedures : null,
+        doctor_name: getHospitalSettings().doctorName,
       })
       .select('id')
       .single()
@@ -441,14 +441,14 @@ export default function NewConsultationPage() {
     } catch { /* tables may not exist yet — ignore */ }
 
     // Clear draft after successful save
-    if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch {} }
+    if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch { } }
     router.push(`/opd/${enc.id}/prescription`)
   }
 
   // ── Input class helper ────────────────────────────────────────
-  function vc(k: keyof Vitals)   { return vHL[k]  ? 'input ocr-filled' : 'input' }
-  function oc(k: keyof OBData)   { return (obHL as any)[k] ? 'input ocr-filled' : 'input' }
-  function cc(k: keyof ConsultHL){ return (cHL as any)[k]  ? 'input ocr-filled' : 'input' }
+  function vc(k: keyof Vitals) { return vHL[k] ? 'input ocr-filled' : 'input' }
+  function oc(k: keyof OBData) { return (obHL as any)[k] ? 'input ocr-filled' : 'input' }
+  function cc(k: keyof ConsultHL) { return (cHL as any)[k] ? 'input ocr-filled' : 'input' }
 
   // MicBtn removed — use SmartMic from @/components/shared/SmartMic instead
 
@@ -527,8 +527,8 @@ export default function NewConsultationPage() {
             <label className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
               ${noteOcrLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}>
               {noteOcrLoading
-                ? <><Loader2 className="w-4 h-4 animate-spin"/> Reading…</>
-                : <><Camera className="w-4 h-4"/> Click Note Photo</>}
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Reading…</>
+                : <><Camera className="w-4 h-4" /> Click Note Photo</>}
               <input
                 type="file"
                 accept="image/jpeg,image/jpg,image/png,image/webp"
@@ -542,16 +542,16 @@ export default function NewConsultationPage() {
           {/* Error */}
           {noteOcrError && (
             <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2 text-xs text-red-700">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span className="flex-1">{noteOcrError}</span>
-              <button onClick={() => setNoteOcrError('')}><X className="w-3.5 h-3.5"/></button>
+              <button onClick={() => setNoteOcrError('')}><X className="w-3.5 h-3.5" /></button>
             </div>
           )}
 
           {/* Applied success */}
           {noteApplied && (
             <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+              <Sparkles className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
               Doctor note applied! Fields highlighted in yellow were auto-filled — please review before saving.
             </div>
           )}
@@ -561,14 +561,14 @@ export default function NewConsultationPage() {
             <div className="mt-3 bg-white border border-blue-200 rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-bold text-blue-800 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5"/>
+                  <Sparkles className="w-3.5 h-3.5" />
                   AI Extracted — review before applying
                   <span className="font-normal text-blue-500 ml-1">
                     ({Math.round((noteOcrPreview.confidence || 0) * 100)}% confidence)
                   </span>
                 </p>
                 <button onClick={() => setNoteOcrPreview(null)} className="text-blue-300 hover:text-blue-600">
-                  <X className="w-4 h-4"/>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs mb-3">
@@ -576,7 +576,7 @@ export default function NewConsultationPage() {
                   if (!v || typeof v === 'object') return null
                   return (
                     <div key={k} className="flex gap-1.5">
-                      <span className="text-blue-400 capitalize min-w-[110px] font-medium">{k.replace(/_/g,' ')}:</span>
+                      <span className="text-blue-400 capitalize min-w-[110px] font-medium">{k.replace(/_/g, ' ')}:</span>
                       <span className="text-blue-900 font-semibold">{String(v)}</span>
                     </div>
                   )
@@ -586,7 +586,7 @@ export default function NewConsultationPage() {
                     <span className="text-blue-400 font-medium">Medications:</span>
                     <ul className="mt-0.5 space-y-0.5 pl-2">
                       {noteOcrPreview.fields.medicines.map((m: any, i: number) => (
-                        <li key={i} className="text-blue-900">• {m.name} {m.dose||''} {m.frequency||''} {m.days ? `× ${m.days}` : ''}</li>
+                        <li key={i} className="text-blue-900">• {m.name} {m.dose || ''} {m.frequency || ''} {m.days ? `× ${m.days}` : ''}</li>
                       ))}
                     </ul>
                   </div>
@@ -596,7 +596,7 @@ export default function NewConsultationPage() {
                 <button
                   onClick={() => { handleDoctorNote(noteOcrPreview); setNoteOcrPreview(null) }}
                   className="btn-primary text-xs flex items-center gap-1.5 py-1.5">
-                  <Sparkles className="w-3.5 h-3.5"/> Apply to Form
+                  <Sparkles className="w-3.5 h-3.5" /> Apply to Form
                 </button>
                 <button onClick={() => setNoteOcrPreview(null)} className="btn-secondary text-xs py-1.5">
                   Discard
@@ -615,7 +615,7 @@ export default function NewConsultationPage() {
               <pre className="text-xs text-amber-800 font-mono whitespace-pre-wrap">{noteMedsQueue}</pre>
             </div>
             <button onClick={() => setNoteMedsQueue('')} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
-              <X className="w-4 h-4"/>
+              <X className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -623,9 +623,9 @@ export default function NewConsultationPage() {
         {/* Tab Bar */}
         <div className="flex border-b border-gray-200 mb-5 bg-white rounded-t-xl overflow-hidden shadow-sm">
           {([
-            { id: 'vitals' as Tab,       label: 'Vitals & Complaints' },
+            { id: 'vitals' as Tab, label: 'Vitals & Complaints' },
             { id: 'consultation' as Tab, label: 'Consultation & Diagnosis' },
-            { id: 'obgyn' as Tab,        label: 'Gynecology / OB Exam' },
+            { id: 'obgyn' as Tab, label: 'Gynecology / OB Exam' },
           ]).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2
@@ -657,12 +657,12 @@ export default function NewConsultationPage() {
                     <input className={`input text-center ${vHL.bp_systolic ? 'ocr-filled' : ''}`}
                       placeholder="120" maxLength={3}
                       value={vitals.bp_systolic}
-                      onChange={e => setV('bp_systolic', e.target.value.replace(/\D/g,''))} />
+                      onChange={e => setV('bp_systolic', e.target.value.replace(/\D/g, ''))} />
                     <span className="text-gray-400 font-bold">/</span>
                     <input className={`input text-center ${vHL.bp_diastolic ? 'ocr-filled' : ''}`}
                       placeholder="80" maxLength={3}
                       value={vitals.bp_diastolic}
-                      onChange={e => setV('bp_diastolic', e.target.value.replace(/\D/g,''))} />
+                      onChange={e => setV('bp_diastolic', e.target.value.replace(/\D/g, ''))} />
                   </div>
                   <p className="text-xs text-gray-400 mt-1">mmHg (systolic / diastolic)</p>
                 </div>
@@ -690,16 +690,16 @@ export default function NewConsultationPage() {
                   <span className="text-xs text-gray-500 font-semibold">BMI:</span>
                   <span className={`font-bold text-sm
                     ${parseFloat(bmi) < 18.5 ? 'text-blue-600'
-                      : parseFloat(bmi) < 25  ? 'text-green-600'
-                      : parseFloat(bmi) < 30  ? 'text-yellow-600'
-                      : 'text-red-600'}`}>
+                      : parseFloat(bmi) < 25 ? 'text-green-600'
+                        : parseFloat(bmi) < 30 ? 'text-yellow-600'
+                          : 'text-red-600'}`}>
                     {bmi} kg/m²
                   </span>
                   <span className="text-xs text-gray-400">
                     {parseFloat(bmi) < 18.5 ? '(Underweight)'
                       : parseFloat(bmi) < 25 ? '(Normal)'
-                      : parseFloat(bmi) < 30 ? '(Overweight)'
-                      : '(Obese)'}
+                        : parseFloat(bmi) < 30 ? '(Overweight)'
+                          : '(Obese)'}
                   </span>
                 </div>
               )}
@@ -848,7 +848,7 @@ export default function NewConsultationPage() {
                             value={proc.anaesthesia || ''}
                             onChange={e => setProcedures(prev => prev.map((p, i) => i === idx ? { ...p, anaesthesia: e.target.value } : p))}>
                             <option value="">Select</option>
-                            {['None','Local','Spinal','Epidural','General','IV Sedation'].map(a => <option key={a}>{a}</option>)}
+                            {['None', 'Local', 'Spinal', 'Epidural', 'General', 'IV Sedation'].map(a => <option key={a}>{a}</option>)}
                           </select>
                         </div>
                         <div>
@@ -972,7 +972,7 @@ export default function NewConsultationPage() {
                   <input className="input bg-blue-50 font-semibold text-blue-700" readOnly
                     value={ga || 'Enter LMP to calculate'} />
                 </div>
-                {(['gravida','para','abortion','living'] as (keyof OBData)[]).map(k => (
+                {(['gravida', 'para', 'abortion', 'living'] as (keyof OBData)[]).map(k => (
                   <div key={k}>
                     <label className="label capitalize">{k}</label>
                     <input className={oc(k)} type="number" min="0" placeholder="0"
@@ -1231,32 +1231,32 @@ export default function NewConsultationPage() {
                 <div>
                   <label className="label">FHS (bpm)</label>
                   <input className={oc('fhs')} type="number" min="50" max="200" placeholder="140"
-                    value={ob.fhs ?? ''} onChange={e => setO('fhs', parseInt(e.target.value)||undefined)} />
+                    value={ob.fhs ?? ''} onChange={e => setO('fhs', parseInt(e.target.value) || undefined)} />
                 </div>
                 <div>
                   <label className="label">Liquor</label>
-                  <select className={oc('liquor')} value={ob.liquor||''} onChange={e => setO('liquor',e.target.value)}>
+                  <select className={oc('liquor')} value={ob.liquor || ''} onChange={e => setO('liquor', e.target.value)}>
                     <option value="">Select</option>
-                    {['Normal','Reduced','Increased','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
+                    {['Normal', 'Reduced', 'Increased', 'Absent', 'Not assessed'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Fundal Height (cm)</label>
                   <input className={oc('fundal_height')} type="number" placeholder="30"
-                    value={ob.fundal_height ?? ''} onChange={e => setO('fundal_height',parseFloat(e.target.value)||undefined)} />
+                    value={ob.fundal_height ?? ''} onChange={e => setO('fundal_height', parseFloat(e.target.value) || undefined)} />
                 </div>
                 <div>
                   <label className="label">Presentation</label>
-                  <select className={oc('presentation')} value={ob.presentation||''} onChange={e=>setO('presentation',e.target.value)}>
+                  <select className={oc('presentation')} value={ob.presentation || ''} onChange={e => setO('presentation', e.target.value)}>
                     <option value="">Select</option>
-                    {['Cephalic','Breech','Transverse','Oblique','Not assessed'].map(o=><option key={o}>{o}</option>)}
+                    {['Cephalic', 'Breech', 'Transverse', 'Oblique', 'Not assessed'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Engagement</label>
-                  <select className={oc('engagement')} value={ob.engagement||''} onChange={e=>setO('engagement',e.target.value)}>
+                  <select className={oc('engagement')} value={ob.engagement || ''} onChange={e => setO('engagement', e.target.value)}>
                     <option value="">Select</option>
-                    {['Engaged','Not engaged','2/5','3/5','4/5','5/5'].map(o=><option key={o}>{o}</option>)}
+                    {['Engaged', 'Not engaged', '2/5', '3/5', '4/5', '5/5'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
               </div>
@@ -1268,44 +1268,44 @@ export default function NewConsultationPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="label">Uterus Size</label>
-                  <select className={oc('uterus_size')} value={ob.uterus_size||''} onChange={e=>setO('uterus_size',e.target.value)}>
+                  <select className={oc('uterus_size')} value={ob.uterus_size || ''} onChange={e => setO('uterus_size', e.target.value)}>
                     <option value="">Select</option>
-                    {['Not gravid','6 wks','8 wks','10 wks','12 wks','16 wks','20 wks','24 wks','28 wks','32 wks','36 wks','40 wks'].map(o=><option key={o}>{o}</option>)}
+                    {['Not gravid', '6 wks', '8 wks', '10 wks', '12 wks', '16 wks', '20 wks', '24 wks', '28 wks', '32 wks', '36 wks', '40 wks'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Scar Tenderness</label>
-                  <select className={oc('scar_tenderness')} value={ob.scar_tenderness||''} onChange={e=>setO('scar_tenderness',e.target.value)}>
+                  <select className={oc('scar_tenderness')} value={ob.scar_tenderness || ''} onChange={e => setO('scar_tenderness', e.target.value)}>
                     <option value="">Select</option>
-                    {['Present','Absent','Not applicable'].map(o=><option key={o}>{o}</option>)}
+                    {['Present', 'Absent', 'Not applicable'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Fetal Movement</label>
-                  <select className={oc('fetal_movement')} value={ob.fetal_movement||''} onChange={e=>setO('fetal_movement',e.target.value)}>
+                  <select className={oc('fetal_movement')} value={ob.fetal_movement || ''} onChange={e => setO('fetal_movement', e.target.value)}>
                     <option value="">Select</option>
-                    {['Present','Reduced','Absent','Not assessed'].map(o=><option key={o}>{o}</option>)}
+                    {['Present', 'Reduced', 'Absent', 'Not assessed'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
 
                 {/* ── Clinical Risk Fields ── */}
                 <div>
                   <label className="label">Previous CS</label>
-                  <select className={oc('previous_cs')} value={ob.previous_cs ?? ''} onChange={e=>setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
+                  <select className={oc('previous_cs')} value={ob.previous_cs ?? ''} onChange={e => setO('previous_cs', e.target.value ? Number(e.target.value) : undefined)}>
                     <option value="">None</option>
-                    {[1,2,3,4].map(n=><option key={n} value={n}>{n} previous CS</option>)}
+                    {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} previous CS</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Multiple Pregnancy</label>
-                  <select className={oc('multiple_pregnancy')} value={ob.multiple_pregnancy ? 'yes' : ''} onChange={e=>setO('multiple_pregnancy', e.target.value === 'yes')}>
+                  <select className={oc('multiple_pregnancy')} value={ob.multiple_pregnancy ? 'yes' : ''} onChange={e => setO('multiple_pregnancy', e.target.value === 'yes')}>
                     <option value="">Singleton</option>
                     <option value="yes">Twins / Multiple</option>
                   </select>
                 </div>
                 <div>
                   <label className="label">Gestational Diabetes</label>
-                  <select className={oc('gestational_diabetes')} value={ob.gestational_diabetes ? 'yes' : ''} onChange={e=>setO('gestational_diabetes', e.target.value === 'yes')}>
+                  <select className={oc('gestational_diabetes')} value={ob.gestational_diabetes ? 'yes' : ''} onChange={e => setO('gestational_diabetes', e.target.value === 'yes')}>
                     <option value="">No</option>
                     <option value="yes">Yes — GDM</option>
                   </select>
@@ -1314,28 +1314,28 @@ export default function NewConsultationPage() {
                   <label className="label">Haemoglobin (g/dL)</label>
                   <input type="number" step="0.1" min="3" max="20" className={oc('haemoglobin')}
                     placeholder="e.g. 10.5"
-                    value={ob.haemoglobin ?? ''} onChange={e=>setO('haemoglobin', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.haemoglobin ?? ''} onChange={e => setO('haemoglobin', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">Fasting Blood Sugar (mg/dL)</label>
                   <input type="number" min="30" max="500" className={oc('blood_sugar_fasting')}
                     placeholder="e.g. 92"
-                    value={ob.blood_sugar_fasting ?? ''} onChange={e=>setO('blood_sugar_fasting', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.blood_sugar_fasting ?? ''} onChange={e => setO('blood_sugar_fasting', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">PP Blood Sugar (mg/dL)</label>
                   <input type="number" min="30" max="500" className={oc('blood_sugar_pp')}
                     placeholder="e.g. 130"
-                    value={ob.blood_sugar_pp ?? ''} onChange={e=>setO('blood_sugar_pp', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.blood_sugar_pp ?? ''} onChange={e => setO('blood_sugar_pp', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
 
                 <div className="col-span-3">
                   <div className="flex items-center justify-between mb-1">
                     <label className="label">Per Abdomen Findings</label>
-                    <SmartMic field="per_abdomen" value={ob.per_abdomen||''} onChange={v=>setO('per_abdomen',v)} context="Per Abdomen findings" />
+                    <SmartMic field="per_abdomen" value={ob.per_abdomen || ''} onChange={v => setO('per_abdomen', v)} context="Per Abdomen findings" />
                   </div>
                   <textarea className={`${oc('per_abdomen')} resize-none`} rows={2}
-                    placeholder="Free text..." value={ob.per_abdomen||''} onChange={e=>setO('per_abdomen',e.target.value)} />
+                    placeholder="Free text..." value={ob.per_abdomen || ''} onChange={e => setO('per_abdomen', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -1346,30 +1346,30 @@ export default function NewConsultationPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="label">Cervix</label>
-                  <select className={oc('cervix_speculum')} value={ob.cervix_speculum||''} onChange={e=>setO('cervix_speculum',e.target.value)}>
+                  <select className={oc('cervix_speculum')} value={ob.cervix_speculum || ''} onChange={e => setO('cervix_speculum', e.target.value)}>
                     <option value="">Select</option>
-                    {['Healthy','Congested','Erosion','Growth','Not examined'].map(o=><option key={o}>{o}</option>)}
+                    {['Healthy', 'Congested', 'Erosion', 'Growth', 'Not examined'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Discharge</label>
                   <input className={oc('discharge_speculum')} placeholder="e.g. white, scanty"
-                    value={ob.discharge_speculum||''} onChange={e=>setO('discharge_speculum',e.target.value)} />
+                    value={ob.discharge_speculum || ''} onChange={e => setO('discharge_speculum', e.target.value)} />
                 </div>
                 <div>
                   <label className="label">Bleeding</label>
-                  <select className={oc('bleeding_speculum')} value={ob.bleeding_speculum||''} onChange={e=>setO('bleeding_speculum',e.target.value)}>
+                  <select className={oc('bleeding_speculum')} value={ob.bleeding_speculum || ''} onChange={e => setO('bleeding_speculum', e.target.value)}>
                     <option value="">Select</option>
-                    {['Present','Absent','Not examined'].map(o=><option key={o}>{o}</option>)}
+                    {['Present', 'Absent', 'Not examined'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div className="col-span-3">
                   <div className="flex items-center justify-between mb-1">
                     <label className="label">Per Speculum Findings</label>
-                    <SmartMic field="per_speculum" value={ob.per_speculum||''} onChange={v=>setO('per_speculum',v)} context="Per Speculum findings" />
+                    <SmartMic field="per_speculum" value={ob.per_speculum || ''} onChange={v => setO('per_speculum', v)} context="Per Speculum findings" />
                   </div>
                   <textarea className={`${oc('per_speculum')} resize-none`} rows={2}
-                    placeholder="Additional findings..." value={ob.per_speculum||''} onChange={e=>setO('per_speculum',e.target.value)} />
+                    placeholder="Additional findings..." value={ob.per_speculum || ''} onChange={e => setO('per_speculum', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -1380,32 +1380,32 @@ export default function NewConsultationPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="label">Cervix Feel</label>
-                  <select className={oc('cervix_pv')} value={ob.cervix_pv||''} onChange={e=>setO('cervix_pv',e.target.value)}>
+                  <select className={oc('cervix_pv')} value={ob.cervix_pv || ''} onChange={e => setO('cervix_pv', e.target.value)}>
                     <option value="">Select</option>
-                    {['Firm','Soft','Not examined'].map(o=><option key={o}>{o}</option>)}
+                    {['Firm', 'Soft', 'Not examined'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Os</label>
-                  <select className={oc('os_pv')} value={ob.os_pv||''} onChange={e=>setO('os_pv',e.target.value)}>
+                  <select className={oc('os_pv')} value={ob.os_pv || ''} onChange={e => setO('os_pv', e.target.value)}>
                     <option value="">Select</option>
-                    {['Closed','Fingertip','1 cm','2 cm','3 cm','4 cm','Fully dilated','Not examined'].map(o=><option key={o}>{o}</option>)}
+                    {['Closed', 'Fingertip', '1 cm', '2 cm', '3 cm', '4 cm', 'Fully dilated', 'Not examined'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Uterus Position</label>
-                  <select className={oc('uterus_position')} value={ob.uterus_position||''} onChange={e=>setO('uterus_position',e.target.value)}>
+                  <select className={oc('uterus_position')} value={ob.uterus_position || ''} onChange={e => setO('uterus_position', e.target.value)}>
                     <option value="">Select</option>
-                    {['Anteverted','Retroverted','Mid-position','Not examined'].map(o=><option key={o}>{o}</option>)}
+                    {['Anteverted', 'Retroverted', 'Mid-position', 'Not examined'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div className="col-span-3">
                   <div className="flex items-center justify-between mb-1">
                     <label className="label">PV Findings / Adnexa</label>
-                    <SmartMic field="per_vaginum" value={ob.per_vaginum||''} onChange={v=>setO('per_vaginum',v)} context="Per Vaginum PV findings" />
+                    <SmartMic field="per_vaginum" value={ob.per_vaginum || ''} onChange={v => setO('per_vaginum', v)} context="Per Vaginum PV findings" />
                   </div>
                   <textarea className={`${oc('per_vaginum')} resize-none`} rows={2}
-                    placeholder="Adnexa, fornices, masses..." value={ob.per_vaginum||''} onChange={e=>setO('per_vaginum',e.target.value)} />
+                    placeholder="Adnexa, fornices, masses..." value={ob.per_vaginum || ''} onChange={e => setO('per_vaginum', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -1417,12 +1417,12 @@ export default function NewConsultationPage() {
                 <div>
                   <label className="label">Right Ovary</label>
                   <textarea className={`${oc('right_ovary')} resize-none`} rows={2}
-                    placeholder="Size, texture, cysts..." value={ob.right_ovary||''} onChange={e=>setO('right_ovary',e.target.value)} />
+                    placeholder="Size, texture, cysts..." value={ob.right_ovary || ''} onChange={e => setO('right_ovary', e.target.value)} />
                 </div>
                 <div>
                   <label className="label">Left Ovary</label>
                   <textarea className={`${oc('left_ovary')} resize-none`} rows={2}
-                    placeholder="Size, texture, cysts..." value={ob.left_ovary||''} onChange={e=>setO('left_ovary',e.target.value)} />
+                    placeholder="Size, texture, cysts..." value={ob.left_ovary || ''} onChange={e => setO('left_ovary', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -1435,75 +1435,75 @@ export default function NewConsultationPage() {
                 <div>
                   <label className="label">USG Date</label>
                   <input type="date" className={oc('usg_date')}
-                    value={ob.usg_date||''} onChange={e=>setO('usg_date',e.target.value)} />
+                    value={ob.usg_date || ''} onChange={e => setO('usg_date', e.target.value)} />
                 </div>
                 <div>
                   <label className="label">GA at USG</label>
                   <input className={oc('usg_ga')} placeholder="e.g. 28w3d"
-                    value={ob.usg_ga||''} onChange={e=>setO('usg_ga',e.target.value)} />
+                    value={ob.usg_ga || ''} onChange={e => setO('usg_ga', e.target.value)} />
                 </div>
                 <div>
                   <label className="label">EFW (grams)</label>
                   <input type="number" min="100" max="6000" className={oc('efw')}
                     placeholder="e.g. 1200"
-                    value={ob.efw??''} onChange={e=>setO('efw', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.efw ?? ''} onChange={e => setO('efw', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">BPD (mm)</label>
                   <input type="number" min="10" max="120" className={oc('bpd')}
                     placeholder="e.g. 72"
-                    value={ob.bpd??''} onChange={e=>setO('bpd', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.bpd ?? ''} onChange={e => setO('bpd', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">HC (mm)</label>
                   <input type="number" min="50" max="400" className={oc('hc')}
                     placeholder="e.g. 260"
-                    value={ob.hc??''} onChange={e=>setO('hc', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.hc ?? ''} onChange={e => setO('hc', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">AC (mm)</label>
                   <input type="number" min="50" max="400" className={oc('ac')}
                     placeholder="e.g. 240"
-                    value={ob.ac??''} onChange={e=>setO('ac', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.ac ?? ''} onChange={e => setO('ac', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">FL (mm)</label>
                   <input type="number" min="10" max="90" className={oc('fl')}
                     placeholder="e.g. 52"
-                    value={ob.fl??''} onChange={e=>setO('fl', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.fl ?? ''} onChange={e => setO('fl', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">AFI (cm)</label>
                   <input type="number" step="0.1" min="0" max="40" className={oc('afi')}
                     placeholder="e.g. 12.5"
-                    value={ob.afi??''} onChange={e=>setO('afi', e.target.value ? Number(e.target.value) : undefined)} />
+                    value={ob.afi ?? ''} onChange={e => setO('afi', e.target.value ? Number(e.target.value) : undefined)} />
                 </div>
                 <div>
                   <label className="label">Placenta Position</label>
-                  <select className={oc('placenta')} value={ob.placenta||''} onChange={e=>setO('placenta',e.target.value)}>
+                  <select className={oc('placenta')} value={ob.placenta || ''} onChange={e => setO('placenta', e.target.value)}>
                     <option value="">Select</option>
-                    {['Anterior','Posterior','Fundal','Lateral','Low-lying','Previa'].map(o=><option key={o}>{o}</option>)}
+                    {['Anterior', 'Posterior', 'Fundal', 'Lateral', 'Low-lying', 'Previa'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Placenta Grade</label>
-                  <select className={oc('placenta_grade')} value={ob.placenta_grade||''} onChange={e=>setO('placenta_grade',e.target.value)}>
+                  <select className={oc('placenta_grade')} value={ob.placenta_grade || ''} onChange={e => setO('placenta_grade', e.target.value)}>
                     <option value="">Select</option>
-                    {['Grade 0','Grade I','Grade II','Grade III'].map(o=><option key={o}>{o}</option>)}
+                    {['Grade 0', 'Grade I', 'Grade II', 'Grade III'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label">Cord Loops</label>
-                  <select className={oc('cord_loops')} value={ob.cord_loops||''} onChange={e=>setO('cord_loops',e.target.value)}>
+                  <select className={oc('cord_loops')} value={ob.cord_loops || ''} onChange={e => setO('cord_loops', e.target.value)}>
                     <option value="">None</option>
-                    {['1 loop around neck','2 loops around neck','Body loop','Multiple loops'].map(o=><option key={o}>{o}</option>)}
+                    {['1 loop around neck', '2 loops around neck', 'Body loop', 'Multiple loops'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div className="col-span-3">
                   <label className="label">USG Remarks / Additional Findings</label>
                   <textarea className={`${oc('usg_remarks')} resize-none`} rows={2}
                     placeholder="e.g. Single live intrauterine fetus, cephalic, adequate liquor..."
-                    value={ob.usg_remarks||''} onChange={e=>setO('usg_remarks',e.target.value)} />
+                    value={ob.usg_remarks || ''} onChange={e => setO('usg_remarks', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -1517,9 +1517,9 @@ export default function NewConsultationPage() {
                   <div className="flex flex-col gap-3 mt-1">
                     {(
                       [
-                        { key: 'past_diabetes',     label: 'Diabetic'          },
+                        { key: 'past_diabetes', label: 'Diabetic' },
                         { key: 'past_hypertension', label: 'Hypertension / BP' },
-                        { key: 'past_thyroid',      label: 'Thyroid Disorder'  },
+                        { key: 'past_thyroid', label: 'Thyroid Disorder' },
                       ] as Array<{ key: keyof OBData; label: string }>
                     ).map(({ key, label }) => (
                       <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -1623,6 +1623,22 @@ export default function NewConsultationPage() {
   )
 }
 
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function NewConsultationPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    }>
+      <NewConsultationContent />
+    </Suspense>
+  )
+}
+
+
 // ── Reusable Vital input card ─────────────────────────────────
 function VitalCard({
   label, unit, placeholder, color, value, highlighted, onChange,
@@ -1632,10 +1648,10 @@ function VitalCard({
   onChange: (v: string) => void
 }) {
   const ring: Record<string, string> = {
-    red:    'focus:ring-red-400',
+    red: 'focus:ring-red-400',
     orange: 'focus:ring-orange-400',
-    blue:   'focus:ring-blue-400',
-    green:  'focus:ring-green-400',
+    blue: 'focus:ring-blue-400',
+    green: 'focus:ring-green-400',
     purple: 'focus:ring-purple-400',
   }
   return (
