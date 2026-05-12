@@ -6,6 +6,13 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
 import { loadSettings, type HospitalSettings } from '@/lib/settings'
+// ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
+// Wire the previously-orphan GST module into the billing page. These imports
+// connect billing-gst.ts (computation) and BillingExtras.tsx (UI) to the live
+// bill flow. Before this fix, GST was a separate library with no integration.
+import { calculateTotals } from '@/lib/billing-gst'
+import { GSTSelector } from '@/components/billing/BillingExtras'
+// ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
@@ -51,6 +58,13 @@ interface Bill {
   items: BillItem[]
   subtotal: number
   discount: number
+  // ─── BUG #3 FIX ───────────────────────────────────────────────────────────
+  // GST fields persisted alongside the bill so receipts and CA reports can
+  // distinguish taxable vs non-taxable revenue. Optional + defaulted in the
+  // DB to 0 so existing rows (with no GST) read back cleanly as 0/0.
+  gst_percent?: number
+  gst_amount?: number
+  // ──────────────────────────────────────────────────────────────────────────
   net_amount: number
   payment_mode: PayMode | null
   status: BillStatus
@@ -142,6 +156,8 @@ function getPeriodDates(period: Period, customFrom: string, customTo: string): {
 }
 
 // ── Compute CA report from bills ──────────────────────────────
+// NOTE: net_amount already includes GST after the fix, so totalNet correctly
+// represents what was collected. No further changes needed here.
 function computeCAReport(bills: Bill[], from: string, to: string, label: string): CAReportData {
   const fromDate = new Date(from + 'T00:00:00')
   const toDate = new Date(to + 'T23:59:59')
@@ -287,6 +303,13 @@ export default function BillingPage() {
   const [selPatient, setSelPatient] = useState<any>(null)
   const [billItems, setBillItems] = useState<BillItem[]>([])
   const [discount, setDiscount] = useState(0)
+  // ─── BUG #3 FIX ───────────────────────────────────────────────────────────
+  // GST state. Defaults to 0% (most medical services in India are GST-exempt).
+  // gstAmount is derived from gstPercent in the GSTSelector callback so the two
+  // stay in sync. Both are persisted with the bill.
+  const [gstPercent, setGstPercent] = useState(0)
+  const [gstAmount, setGstAmount] = useState(0)
+  // ──────────────────────────────────────────────────────────────────────────
   const [payMode, setPayMode] = useState<PayMode>('cash')
   const [notes, setNotes] = useState('')
   const [customLabel, setCustomLabel] = useState('')
@@ -383,11 +406,50 @@ export default function BillingPage() {
   function removeItem(i: number) { setBillItems(prev => prev.filter((_, j) => j !== i)) }
 
   const subtotal = billItems.reduce((s, i) => s + i.amount, 0)
-  const netAmount = Math.max(0, subtotal - discount)
+  // ─── BUG #3 FIX ───────────────────────────────────────────────────────────
+  // Replaced the old `const netAmount = Math.max(0, subtotal - discount)` with
+  // calculateTotals(), which produces three values:
+  //   afterDiscount = max(0, subtotal - discount)   (taxable base)
+  //   gstAmount     = round(afterDiscount * gstPercent / 100)
+  //   netAmount     = afterDiscount + gstAmount     (what the patient pays)
+  //
+  // When gstPercent is 0 (default for medical services), gstAmount is 0 and
+  // netAmount === afterDiscount, so behaviour for existing flows is unchanged.
+  const totals = calculateTotals(subtotal, discount, gstPercent)
+  const afterDiscount = totals.afterDiscount
+  // We trust the value from calculateTotals over the local gstAmount state to
+  // avoid any drift if gstPercent and gstAmount briefly desync during renders.
+  const computedGstAmount = totals.gstAmount
+  const netAmount = totals.netAmount
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── Save bill ────────────────────────────────────────────────
   async function saveBill(razorpayId: string | null, mode: PayMode): Promise<Bill | null> {
     const hs2 = getHospitalSettings()
+
+    // ─── BUG #1 FIX — Idempotency check ────────────────────────────────────
+    // If Razorpay fires the handler callback twice (a known retry edge case),
+    // we must not insert a duplicate bill. Before inserting, if we have a
+    // razorpayId, look up any existing bill with that ID and return it.
+    //
+    // This pairs with the UNIQUE constraint on bills.razorpay_payment_id added
+    // in supabase_v12_bug_fixes.sql. The constraint is the source of truth
+    // (defence in depth); this check just avoids the round-trip and gives the
+    // user a clean experience when the second callback fires.
+    if (razorpayId) {
+      const { data: existing, error: lookupErr } = await supabase
+        .from('bills')
+        .select('*')
+        .eq('razorpay_payment_id', razorpayId)
+        .maybeSingle()
+
+      if (!lookupErr && existing) {
+        console.warn('[Bills] Duplicate Razorpay callback detected, returning existing bill', razorpayId)
+        return existing as Bill
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const payload = {
       patient_id: selPatient.id,
       patient_name: selPatient.full_name,
@@ -395,6 +457,12 @@ export default function BillingPage() {
       items: billItems,
       subtotal,
       discount,
+      // ─── BUG #3 FIX — Persist GST fields ──────────────────────────────────
+      // Sent on every insert. The DB defaults these to 0, so even if a future
+      // code path forgets to set them, existing reports won't break.
+      gst_percent: gstPercent,
+      gst_amount: computedGstAmount,
+      // ──────────────────────────────────────────────────────────────────────
       net_amount: netAmount,
       payment_mode: mode,
       status: 'paid' as BillStatus,
@@ -404,7 +472,29 @@ export default function BillingPage() {
       paid_at: new Date().toISOString(),
     }
     const { data, error } = await supabase.from('bills').insert(payload).select().single()
-    if (error) { console.error('Bill save error:', error); return null }
+
+    if (error) {
+      // ─── BUG #1 FIX — Handle UNIQUE violation gracefully ────────────────
+      // If the DB UNIQUE constraint rejects the insert (e.g. because a parallel
+      // request inserted the same razorpay_payment_id between our SELECT and
+      // INSERT — a classic race condition), fall back to fetching the existing
+      // row instead of bubbling up an error to the user.
+      //
+      // Postgres unique-violation error code is 23505.
+      if (razorpayId && (error.code === '23505' || /duplicate key/i.test(error.message))) {
+        console.warn('[Bills] UNIQUE constraint caught duplicate Razorpay payment, fetching existing bill', razorpayId)
+        const { data: existing } = await supabase
+          .from('bills')
+          .select('*')
+          .eq('razorpay_payment_id', razorpayId)
+          .maybeSingle()
+        return (existing as Bill) || null
+      }
+      // ────────────────────────────────────────────────────────────────────
+
+      console.error('Bill save error:', error)
+      return null
+    }
     return data as Bill
   }
 
@@ -432,6 +522,15 @@ export default function BillingPage() {
       return
     }
 
+    // ─── BUG #1 FIX — Guard against duplicate handler invocations in-memory ─
+    // Razorpay's handler can fire twice in slow-network situations. We track
+    // whether saveBill has already been invoked for this checkout session and
+    // short-circuit any second invocation. This is the FIRST line of defence;
+    // the SELECT lookup in saveBill is the second; the DB UNIQUE constraint is
+    // the third. All three together make duplicate bills effectively impossible.
+    let handlerInvoked = false
+    // ────────────────────────────────────────────────────────────────────────
+
     const options = {
       key: rzpKey,
       amount: netAmount * 100,
@@ -441,6 +540,13 @@ export default function BillingPage() {
       prefill: { name: selPatient.full_name, contact: selPatient.mobile },
       theme: { color: '#2563eb' },
       handler: async (response: any) => {
+        // BUG #1 FIX: Skip if this handler has already run for this session.
+        if (handlerInvoked) {
+          console.warn('[Bills] Razorpay handler fired again — ignoring duplicate', response?.razorpay_payment_id)
+          return
+        }
+        handlerInvoked = true
+
         const bill = await saveBill(response.razorpay_payment_id, payMode)
         setPaying(false)
         if (!bill) { setPayError('Payment received but bill save failed.'); return }
@@ -459,7 +565,11 @@ export default function BillingPage() {
 
   function resetForm() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
-    setBillItems([]); setDiscount(0); setPayMode('cash'); setNotes(''); setPayError('')
+    setBillItems([]); setDiscount(0)
+    // ─── BUG #3 FIX — Reset GST state when the form resets ────────────────
+    setGstPercent(0); setGstAmount(0)
+    // ──────────────────────────────────────────────────────────────────────
+    setPayMode('cash'); setNotes(''); setPayError('')
   }
 
   // ── CA Report generation ─────────────────────────────────────
@@ -660,6 +770,28 @@ export default function BillingPage() {
                       <input className="input w-28 font-mono text-sm py-1 text-right" type="number" min="0" max={subtotal}
                         value={discount} onChange={e => setDiscount(Math.min(Number(e.target.value), subtotal))} />
                     </div>
+
+                    {/* ─── BUG #3 FIX — GST selector + line ─────────────────────
+                        Plugs the GSTSelector component into the bill form. It
+                        only adds tax to the bill when a non-zero GST rate is
+                        chosen; default is Exempt (0%), so existing workflows
+                        for medical-only billing are unaffected. The GST line
+                        below shows the computed tax amount when applicable. */}
+                    <div className="pt-2 border-t border-gray-100">
+                      <GSTSelector
+                        gstPercent={gstPercent}
+                        subtotalAfterDiscount={afterDiscount}
+                        onChange={(pct, amt) => { setGstPercent(pct); setGstAmount(amt) }}
+                      />
+                    </div>
+                    {gstPercent > 0 && (
+                      <div className="flex justify-between text-sm text-amber-700">
+                        <span>GST @ {gstPercent}%</span>
+                        <span className="font-mono">+ {inr(computedGstAmount)}</span>
+                      </div>
+                    )}
+                    {/* ─────────────────────────────────────────────────────────── */}
+
                     <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-2">
                       <span>Net Amount</span>
                       <span className="font-mono text-blue-700 text-lg">{inr(netAmount)}</span>
@@ -1094,6 +1226,13 @@ export default function BillingPage() {
 // ── Receipt document component ────────────────────────────────
 function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
   const items = Array.isArray(bill.items) ? bill.items : []
+  // ─── BUG #3 FIX — Read GST safely from bill ─────────────────────────────
+  // Older bills (pre-fix) don't have these fields. Number(undefined || 0) = 0,
+  // so the GST line just won't render — receipt looks identical to before.
+  const billGstPercent = Number(bill.gst_percent || 0)
+  const billGstAmount  = Number(bill.gst_amount  || 0)
+  const showGst        = billGstPercent > 0 && billGstAmount > 0
+  // ────────────────────────────────────────────────────────────────────────
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
       <div className="text-center pb-4 mb-5 border-b-2 border-gray-800">
@@ -1145,6 +1284,14 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
               <td className="py-1 text-right font-mono text-green-700">− {inr(Number(bill.discount))}</td>
             </tr>
           )}
+          {/* ─── BUG #3 FIX — Render GST line on the printed receipt ───────── */}
+          {showGst && (
+            <tr>
+              <td colSpan={2} className="py-1 text-right text-gray-500 pr-4">GST @ {billGstPercent}%</td>
+              <td className="py-1 text-right font-mono text-amber-700">+ {inr(billGstAmount)}</td>
+            </tr>
+          )}
+          {/* ─────────────────────────────────────────────────────────────── */}
           <tr className="border-t-2 border-gray-800">
             <td colSpan={2} className="py-2 text-right font-bold text-base pr-4">Net Amount Paid</td>
             <td className="py-2 text-right font-bold font-mono text-base">{inr(Number(bill.net_amount))}</td>

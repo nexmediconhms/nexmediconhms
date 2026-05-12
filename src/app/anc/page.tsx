@@ -8,6 +8,39 @@ import { assessObstetricRisk } from '@/lib/clinical-risk'
 import { Baby, AlertTriangle, Search, Calendar, Heart, Droplets, RefreshCw, Printer, MessageCircle } from 'lucide-react'
 import { getTemplate, whatsAppUrl } from '@/lib/whatsapp-templates'
 
+// ─── BUG #2 FIX ──────────────────────────────────────────────────────────────
+// How many months of encounter history to load for the ANC registry.
+//
+// A full-term pregnancy is ~40 weeks (~9.2 months). We use an 18-month window
+// so we capture:
+//   - all active antenatal patients (any GA up to 40w)
+//   - recent post-delivery patients (in case the encounter was post-partum)
+//   - patients with LMP recorded but no recent visit (carry-over)
+//
+// Without this filter, the query previously fetched EVERY encounter ever
+// recorded with ob_data set, which after 2-3 years of operation would mean
+// thousands of rows being deserialised into the browser on every page load
+// (5-15 s load times, browser memory bloat on low-end Android tablets).
+//
+// 18 months is a deliberate over-estimate; you can tighten this to 12 if
+// older records are causing noise.
+const ANC_LOOKBACK_MONTHS = 18
+
+// Maximum rows to fetch — a hard cap as a safety net even within the date
+// window. A clinic doing 50 ANC visits per day for 18 months tops out around
+// ~27,000 rows; capping at 2000 keeps the page snappy. Older encounters
+// beyond this cap will simply not appear (admin can extend if needed).
+const ANC_MAX_ROWS = 2000
+
+function isoDateMonthsAgo(months: number): string {
+  const d = new Date()
+  d.setMonth(d.getMonth() - months)
+  // Format as YYYY-MM-DD (Supabase accepts ISO date for timestamp comparison)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface ANCRecord {
   encounterId:    string
   patientId:      string
@@ -66,12 +99,24 @@ export default function ANCPage() {
   async function load() {
     setLoading(true)
 
-    // Get all encounters that have ob_data with lmp set (include vitals for risk assessment)
+    // ─── BUG #2 FIX ─────────────────────────────────────────────────────────
+    // Added .gte('encounter_date', ...) and .limit(...) to bound the query.
+    // The deduplication logic below (latest encounter per patient that has
+    // LMP) remains identical — we only changed the input set.
+    const lookbackDate = isoDateMonthsAgo(ANC_LOOKBACK_MONTHS)
+
+    // Get encounters from the last 18 months that have ob_data with lmp set.
+    // The .order() + .limit() combo means we get the most recent rows first,
+    // so deduplication (which keeps the first occurrence per patient) still
+    // produces the latest encounter for each patient.
     const { data: encs } = await supabase
       .from('encounters')
       .select('id, patient_id, encounter_date, ob_data, bp_systolic, bp_diastolic, patients(full_name, mrn, age, mobile)')
       .not('ob_data', 'is', null)
+      .gte('encounter_date', lookbackDate)
       .order('encounter_date', { ascending: false })
+      .limit(ANC_MAX_ROWS)
+    // ────────────────────────────────────────────────────────────────────────
 
     if (!encs) { setLoading(false); return }
 
@@ -330,6 +375,8 @@ export default function ANCPage() {
             <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
               {filtered.length} patient{filtered.length!==1?'s':''} shown
               {filter!=='all' && ` (filtered from ${records.length} total)`}
+              {/* BUG #2 FIX: Show the lookback window so admins know the scope of results. */}
+              {' · '}showing last {ANC_LOOKBACK_MONTHS} months of encounters
             </div>
           </div>
         )}
