@@ -1,7 +1,23 @@
+/**
+ * src/app/api/generate-pdf/route.ts
+ *
+ * Bug #8 fix: added requireAuth() guard.
+ * This endpoint generates a blank patient-registration PDF that staff
+ * download and print at the desk — it should only be accessible to
+ * authenticated clinic users.
+ *
+ * All PDF generation logic is preserved exactly.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { requireAuth } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const { searchParams } = new URL(req.url)
   const hospitalName = searchParams.get('h') || 'NexMedicon Hospital'
   const hospitalAddr = searchParams.get('a') || ''

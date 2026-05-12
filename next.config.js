@@ -31,8 +31,9 @@ const nextConfig = {
     // NOTE: pdfjs-dist is intentionally excluded — it runs in the BROWSER
     // via dynamic import in pdf-to-image.ts.  Adding it here breaks client rendering.
     serverComponentsExternalPackages: ['pdf-parse', 'pdf-lib', 'tesseract.js', 'canvas'],
-    // Allow useSearchParams() in client pages without requiring a Suspense boundary
-    missingSuspenseWithCSRBailout: false,
+    // Bug #9 FIX: removed missingSuspenseWithCSRBailout:false — that flag was
+    // silencing a real Next.js warning instead of fixing it.  All pages that call
+    // useSearchParams() are now wrapped in <Suspense> directly (see each page file).
   },
 }
 

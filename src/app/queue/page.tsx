@@ -12,7 +12,7 @@
  * SETUP: In Supabase Dashboard → Database → Replication
  *        Toggle opd_queue table ON for Realtime.
  */
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams }              from 'next/navigation'
 import Link                             from 'next/link'
 import AppShell                         from '@/components/layout/AppShell'
@@ -65,7 +65,7 @@ const STATUS_STYLES: Record<QueueStatus, string> = {
   cancelled:   'bg-gray-50 border-gray-200 text-gray-500',
 }
 
-export default function QueuePage() {
+function QueueContent() {
   const searchParams = useSearchParams()
   const [queue,        setQueue]        = useState<QueueEntry[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -505,5 +505,21 @@ export default function QueuePage() {
         </div>
       )}
     </AppShell>
+  )
+}
+
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function QueuePage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <QueueContent />
+    </Suspense>
   )
 }

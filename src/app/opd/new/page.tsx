@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -37,7 +37,7 @@ function ordinal(n: number): string {
   return String(n) + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export default function NewConsultationPage() {
+function NewConsultationContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const patientId    = searchParams.get('patient')
@@ -1651,5 +1651,21 @@ function VitalCard({
         <span className="text-xs text-gray-400 whitespace-nowrap">{unit}</span>
       </div>
     </div>
+  )
+}
+
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function NewConsultationPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <NewConsultationContent />
+    </Suspense>
   )
 }

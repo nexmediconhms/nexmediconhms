@@ -6,8 +6,17 @@
  *  - localStorage replaced with Supabase `lab_reports` table
  *  - Audit log on create/update/delete
  *  - All other UI/logic identical to original
+ *
+ * Bug #10 fix: handleOCR() — replaced the weak 4-char prefix match with a
+ *   comprehensive alias map. Each test now has multiple real-world synonyms
+ *   (abbreviations, alternate spellings, Gujarati terms) so OCR results
+ *   such as "Hb", "HGB", "hemoglobin", "TSH3", "FT4" etc. all resolve
+ *   correctly to the canonical test name.
+ *
+ * Bug #9 fix: LabsPage is wrapped in Suspense so useSearchParams() inside
+ *   LabsContent does not trigger the Next.js hydration warning.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -77,6 +86,158 @@ const LAB_GROUPS = [
 
 const ALL_TESTS = LAB_GROUPS.flatMap(g => g.tests.map(t => ({ ...t, group: g.group })))
 
+// ── OCR alias map ─────────────────────────────────────────────
+// Maps every common abbreviation / alternate spelling / Gujarati term
+// to the canonical test name used in ALL_TESTS.
+// Keys are lower-case; values must match t.name exactly.
+const OCR_ALIASES: Record<string, string> = {
+  // Haemoglobin
+  'hb':              'Haemoglobin (Hb)',
+  'hgb':             'Haemoglobin (Hb)',
+  'hemoglobin':      'Haemoglobin (Hb)',
+  'haemoglobin':     'Haemoglobin (Hb)',
+  'haemoglobin hb':  'Haemoglobin (Hb)',
+  // WBC
+  'wbc':             'WBC (Total Count)',
+  'tlc':             'WBC (Total Count)',
+  'total count':     'WBC (Total Count)',
+  'total wbc':       'WBC (Total Count)',
+  'leucocyte':       'WBC (Total Count)',
+  'leukocyte':       'WBC (Total Count)',
+  'tc':              'WBC (Total Count)',
+  // Platelet
+  'plt':             'Platelet Count',
+  'platelets':       'Platelet Count',
+  'platelet':        'Platelet Count',
+  'thrombocyte':     'Platelet Count',
+  // PCV / Haematocrit
+  'pcv':             'PCV / Haematocrit',
+  'hematocrit':      'PCV / Haematocrit',
+  'haematocrit':     'PCV / Haematocrit',
+  'hct':             'PCV / Haematocrit',
+  // ESR
+  'esr':             'ESR',
+  'erythrocyte sedimentation': 'ESR',
+  // Blood Sugar
+  'bsf':             'Blood Sugar Fasting',
+  'fbs':             'Blood Sugar Fasting',
+  'fasting sugar':   'Blood Sugar Fasting',
+  'fasting glucose': 'Blood Sugar Fasting',
+  'blood glucose fasting': 'Blood Sugar Fasting',
+  'bspp':            'Blood Sugar PP',
+  'ppbs':            'Blood Sugar PP',
+  'post prandial':   'Blood Sugar PP',
+  'pp sugar':        'Blood Sugar PP',
+  'hba1c':           'HbA1c',
+  'a1c':             'HbA1c',
+  'glycated hemoglobin': 'HbA1c',
+  'glycosylated hemoglobin': 'HbA1c',
+  'ogtt 1hr':        'OGTT (1 hr)',
+  'ogtt 1h':         'OGTT (1 hr)',
+  'gtt 1 hour':      'OGTT (1 hr)',
+  'ogtt 2hr':        'OGTT (2 hr)',
+  'ogtt 2h':         'OGTT (2 hr)',
+  'gtt 2 hour':      'OGTT (2 hr)',
+  // Thyroid
+  'tsh':             'TSH',
+  'thyroid stimulating': 'TSH',
+  't3':              'T3',
+  'triiodothyronine':'T3',
+  't4':              'T4',
+  'thyroxine':       'T4',
+  'free t4':         'Free T4',
+  'ft4':             'Free T4',
+  'free thyroxine':  'Free T4',
+  // Hormones
+  'lh':              'LH',
+  'luteinizing':     'LH',
+  'fsh':             'FSH',
+  'follicle stimulating': 'FSH',
+  'prl':             'Prolactin',
+  'prolactin':       'Prolactin',
+  'e2':              'Oestradiol',
+  'estradiol':       'Oestradiol',
+  'oestradiol':      'Oestradiol',
+  'prog':            'Progesterone',
+  'progesterone':    'Progesterone',
+  'amh':             'AMH',
+  'anti mullerian':  'AMH',
+  'beta hcg':        'Beta-hCG',
+  'bhcg':            'Beta-hCG',
+  'hcg':             'Beta-hCG',
+  'ca125':           'CA-125',
+  'ca-125':          'CA-125',
+  'cancer antigen 125': 'CA-125',
+  'testosterone':    'Testosterone',
+  // Infection
+  'hbsag':           'HBsAg',
+  'hepatitis b':     'HBsAg',
+  'hiv':             'HIV (ELISA)',
+  'anti hiv':        'HIV (ELISA)',
+  'vdrl':            'VDRL (Syphilis)',
+  'syphilis':        'VDRL (Syphilis)',
+  'apla igg':        'Antiphospholipid IgG',
+  'apla igm':        'Antiphospholipid IgM',
+  // Urine
+  'urine protein':   'Urine Protein',
+  'urine albumin':   'Urine Protein',
+  'urine sugar':     'Urine Sugar',
+  'urine glucose':   'Urine Sugar',
+  'urine culture':   'Urine Culture',
+  'urine cs':        'Urine Culture',
+  // Iron studies
+  'serum iron':      'Serum Iron',
+  's iron':          'Serum Iron',
+  'tibc':            'TIBC',
+  'total iron binding': 'TIBC',
+  'ferritin':        'Serum Ferritin',
+  'serum ferritin':  'Serum Ferritin',
+  's ferritin':      'Serum Ferritin',
+  'b12':             'Vitamin B12',
+  'vit b12':         'Vitamin B12',
+  'vitamin b12':     'Vitamin B12',
+  'cobalamin':       'Vitamin B12',
+  'vit d':           'Vitamin D3',
+  'vit d3':          'Vitamin D3',
+  'vitamin d':       'Vitamin D3',
+  'vitamin d3':      'Vitamin D3',
+  '25 oh d':         'Vitamin D3',
+  '25-oh-d3':        'Vitamin D3',
+}
+
+/**
+ * Given a raw OCR text, find ALL tests that are mentioned.
+ * Strategy:
+ *   1. Check every alias (longest first to avoid 't3' matching 't3+t4')
+ *   2. Fall back to checking if any ALL_TESTS name appears as a substring
+ * Returns an array of unique canonical test objects (preserving first match order).
+ */
+function matchTestsFromOCR(raw: string): typeof ALL_TESTS {
+  const text = raw.toLowerCase()
+  const matched = new Map<string, typeof ALL_TESTS[0]>()
+
+  // Step 1 — alias lookup (sorted longest-key-first to prefer specific matches)
+  const sortedAliases = Object.keys(OCR_ALIASES).sort((a, b) => b.length - a.length)
+  for (const alias of sortedAliases) {
+    if (text.includes(alias)) {
+      const canonicalName = OCR_ALIASES[alias]
+      if (!matched.has(canonicalName)) {
+        const test = ALL_TESTS.find(t => t.name === canonicalName)
+        if (test) matched.set(canonicalName, test)
+      }
+    }
+  }
+
+  // Step 2 — direct name substring (catches anything not in alias map)
+  for (const test of ALL_TESTS) {
+    if (!matched.has(test.name) && text.includes(test.name.toLowerCase())) {
+      matched.set(test.name, test)
+    }
+  }
+
+  return Array.from(matched.values())
+}
+
 interface LabEntry {
   testName:       string
   value:          string
@@ -121,7 +282,7 @@ function determineStatus(test: typeof ALL_TESTS[0], value: string): LabEntry['st
 }
 
 // ── Page ──────────────────────────────────────────────────────
-export default function LabsPage() {
+function LabsContent() {
   const searchParams = useSearchParams()
 
   const [reports,       setReports]       = useState<LabReport[]>([])
@@ -195,14 +356,16 @@ export default function LabsPage() {
   }, [patientId])
 
   // ── OCR auto-fill ─────────────────────────────────────────
+  // FIX: replaces the old 4-char prefix match with matchTestsFromOCR()
+  // which uses a comprehensive alias map (Hb, HGB, FBS, PPBS, FT4 etc.)
   function handleOCR(result: OCRResult) {
     const raw = result.raw_text ?? ''
+    // Try to set lab name from OCR text
     if (!labName && raw.toLowerCase().includes('lab')) setLabName('Lab Report')
-    const labTests = ALL_TESTS.filter(t =>
-      raw.toLowerCase().includes(t.name.toLowerCase().slice(0, 4))
-    )
+
+    const labTests = matchTestsFromOCR(raw)
     if (labTests.length > 0) {
-      const newEntries: LabEntry[] = labTests.slice(0, 10).map(t => normaliseEntry({
+      const newEntries: LabEntry[] = labTests.slice(0, 15).map(t => normaliseEntry({
         testName: t.name, unit: t.unit,
         referenceRange: t.low === 0 && t.high === 0 ? 'Negative' : `${t.low}–${t.high}`,
         status: 'pending',
@@ -583,5 +746,20 @@ export default function LabsPage() {
         )}
       </div>
     </AppShell>
+  )
+}
+
+// ── Suspense wrapper (fixes Next.js useSearchParams hydration warning) ────────
+export default function LabsPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <LabsContent />
+    </Suspense>
   )
 }

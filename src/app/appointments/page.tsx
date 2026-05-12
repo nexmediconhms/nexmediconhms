@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -61,7 +61,7 @@ const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
   [':00', ':15', ':30', ':45'].map(m => `${String(h).padStart(2, '0')}${m}`)
 ).flat().filter(t => t >= '08:00' && t <= '19:45')
 
-export default function AppointmentsPage() {
+export default function AppointmentsContent() {
   const [appts,        setAppts]        = useState<Appointment[]>([])
   const [loading,      setLoading]      = useState(true)
   const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
@@ -891,5 +891,21 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
         )}
       </div>
     </AppShell>
+  )
+}
+
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function AppointmentsPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <AppointmentsContent />
+    </Suspense>
   )
 }

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -274,9 +274,9 @@ ${hs.phone || ''}
 
 
 // ══════════════════════════════════════════════════════════════
-// MAIN PAGE COMPONENT
+// MAIN PAGE COMPONENT (inner — wrapped in Suspense below)
 // ══════════════════════════════════════════════════════════════
-export default function BillingPage() {
+function BillingContent() {
   const [view, setView] = useState<'list' | 'new' | 'receipt'>('list')
   const [bills, setBills] = useState<Bill[]>([])
   const [loadingBills, setLoadingBills] = useState(true)
@@ -1168,5 +1168,21 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
         Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
       </div>
     </div>
+  )
+}
+
+
+// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+export default function BillingPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+        </div>
+      </AppShell>
+    }>
+      <BillingContent />
+    </Suspense>
   )
 }

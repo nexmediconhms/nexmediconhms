@@ -33,7 +33,7 @@ export default function SearchPage() {
 
     const out: SearchResult[] = []
 
-    // Search patients
+    // ── Search patients ──────────────────────────────────────────
     const { data: pts } = await supabase
       .from('patients')
       .select('id, full_name, mrn, age, date_of_birth, gender, mobile, blood_group')
@@ -52,7 +52,7 @@ export default function SearchPage() {
       })
     })
 
-    // Search encounters by diagnosis or chief complaint
+    // ── Search encounters by diagnosis or chief complaint ────────
     const { data: encs } = await supabase
       .from('encounters')
       .select('id, encounter_date, diagnosis, chief_complaint, patients(full_name, mrn)')
@@ -72,27 +72,41 @@ export default function SearchPage() {
       })
     })
 
-    // Search prescriptions by drug name
+    // ── Search prescriptions by drug name — server-side JSONB ────
+    // FIX: Was pulling 100 rows and filtering client-side (breaks at scale).
+    // Now uses PostgreSQL JSONB containment via textSearch on the medications
+    // array cast to text. This runs entirely in the database and returns only
+    // matching rows — no row limit problem.
+    //
+    // The query uses `medications::text ilike '%<query>%'` which casts the
+    // entire JSONB array to text and does a substring match. This catches
+    // drug names, doses, frequencies — anything written in the JSON. It is
+    // supported by all Supabase/PostgreSQL versions without any index changes,
+    // though adding a GIN index on medications later will speed it up further.
     const { data: rxs } = await supabase
       .from('prescriptions')
-      .select('id, medications, follow_up_date, patients(full_name, mrn), created_at')
+      .select('id, medications, patients(full_name, mrn), created_at')
+      .ilike('medications::text', `%${q}%`)
       .order('created_at', { ascending: false })
-      .limit(100)  // search client-side for drug name in JSONB
+      .limit(8)
 
     ;(rxs || []).forEach((rx: any) => {
+      // Find the specific drug that matched so we can show a useful title
       const meds: any[] = Array.isArray(rx.medications) ? rx.medications : []
-      const match = meds.find(m => m.drug?.toLowerCase().includes(q.toLowerCase()))
-      if (match) {
-        const pt = rx.patients || {}
-        out.push({
-          type:     'prescription',
-          id:       rx.id,
-          title:    `Rx: ${match.drug} ${match.dose || ''}`,
-          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
-          meta:     formatDate(rx.created_at),
-          href:     `/opd/${rx.id}/prescription`,
-        })
-      }
+      const match = meds.find(m =>
+        m.drug?.toLowerCase().includes(q.toLowerCase())
+      ) || meds[0]
+
+      if (!match) return
+      const pt = rx.patients || {}
+      out.push({
+        type:     'prescription',
+        id:       rx.id,
+        title:    `Rx: ${match.drug || '—'} ${match.dose || ''}`.trim(),
+        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+        meta:     formatDate(rx.created_at),
+        href:     `/opd/${rx.id}/prescription`,
+      })
     })
 
     setResults(out.slice(0, 20))

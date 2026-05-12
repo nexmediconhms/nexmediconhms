@@ -3,6 +3,10 @@
  *
  * Dedicated PDF parser for fillable patient registration PDFs.
  *
+ * Bug #8 fix: added requireAuth() guard.
+ * This endpoint parses uploaded PDFs containing patient data — it must
+ * only be callable by authenticated clinic staff.
+ *
  * Strategy (in order):
  *   1. pdf-lib  — reads AcroForm field values directly (100% accurate, no AI key)
  *   2. pdf-parse + AI — extracts text layer then sends to AI for structuring
@@ -15,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument } from 'pdf-lib'
 import { analyzePDF, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth } from '@/lib/api-auth'
 
 const SYSTEM_PROMPT = `You are a medical form parser for Indian hospitals.
 Extract all patient information from the following PDF text into a JSON object.
@@ -46,6 +51,11 @@ Return ONLY valid JSON with this structure (omit empty fields):
 Return ONLY valid JSON. No markdown. No explanation.`
 
 export async function POST(req: NextRequest) {
+  // ── Auth gate ────────────────────────────────────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   try {
     const fd       = await req.formData()
     const file     = fd.get('file') as File | null
