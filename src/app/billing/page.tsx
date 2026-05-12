@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
 import { loadSettings, type HospitalSettings } from '@/lib/settings'
+
 // ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
 // Wire the previously-orphan GST module into the billing page. These imports
 // connect billing-gst.ts (computation) and BillingExtras.tsx (UI) to the live
@@ -311,11 +312,19 @@ function BillingContent() {
   const [gstAmount, setGstAmount] = useState(0)
   // ──────────────────────────────────────────────────────────────────────────
   const [payMode, setPayMode] = useState<PayMode>('cash')
+
+  // Keep ref in sync with state
+  useEffect(() => { payModeRef.current = payMode }, [payMode])
+
   const [notes, setNotes] = useState('')
   const [customLabel, setCustomLabel] = useState('')
   const [customAmt, setCustomAmt] = useState('')
   const [paying, setPaying] = useState(false)
   const [payError, setPayError] = useState('')
+
+  // Bug fix: ref to capture latest payMode so Razorpay handler doesn't use stale closure
+  const payModeRef = useRef<PayMode>('cash')
+
 
   // Receipt
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)

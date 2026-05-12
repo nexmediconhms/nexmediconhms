@@ -119,8 +119,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const fd       = await req.formData()
-    const file     = fd.get('image') as File | null
+    const fd = await req.formData()
+    const file = fd.get('image') as File | null
     const hintType = (fd.get('form_type') as string | null) ?? ''
 
     if (!file) {
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'File too large (max 20 MB).' })
     }
 
-    const bytes  = await file.arrayBuffer()
+    const bytes = await file.arrayBuffer()
     const base64 = Buffer.from(bytes).toString('base64')
 
     const userPrompt = hintType
@@ -147,30 +147,30 @@ export async function POST(req: NextRequest) {
       : 'Extract all fields from this medical form. Detect the form type. Return JSON only.'
 
     let rawResponse: string
-    let provider:    string
+    let provider: string
 
     if (file.type === 'application/pdf') {
       // PDF path — uses Anthropic native PDF or text-extraction fallback
       const result = await analyzePDF({
         base64,
-        prompt:    userPrompt,
-        system:    SYSTEM_PROMPT,
+        prompt: userPrompt,
+        system: SYSTEM_PROMPT,
         maxTokens: 2048,
       })
       rawResponse = result.text
-      provider    = result.provider
+      provider = result.provider
     } else {
       // Image path — uses vision models
       const mediaType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) as 'image/jpeg' | 'image/png' | 'image/webp'
       const result = await analyzeImage({
         base64,
         mediaType,
-        prompt:    userPrompt,
-        system:    SYSTEM_PROMPT,
+        prompt: userPrompt,
+        system: SYSTEM_PROMPT,
         maxTokens: 2048,
       })
       rawResponse = result.text
-      provider    = result.provider
+      provider = result.provider
     }
 
     // Strip markdown fences
@@ -185,19 +185,26 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(jsonString) as OCRResult
     } catch {
       return NextResponse.json({
-        form_type:           (hintType || 'patient_registration') as OCRResult['form_type'],
-        confidence:          'low' as const,
-        language_detected:   'Unknown',
-        raw_text:            rawResponse,
+        form_type: (hintType || 'patient_registration') as OCRResult['form_type'],
+        confidence: 'low' as const,
+        language_detected: 'Unknown',
+        raw_text: rawResponse,
         unrecognised_fields: 'Could not parse AI response. For PDFs, ensure the file has readable text.',
-        _provider:           provider,
+        _provider: provider,
       })
     }
 
-    parsed.form_type         ??= (hintType as OCRResult['form_type']) || 'patient_registration'
-    parsed.confidence        ??= 'medium'
+    parsed.form_type ??= (hintType as OCRResult['form_type']) || 'patient_registration'
+    parsed.confidence ??= 'medium'
     parsed.language_detected ??= 'Unknown'
-    parsed.raw_text          ??= ''
+    parsed.raw_text ??= ''
+
+    // Sanitise raw_text to strip any script/iframe tags (defense-in-depth)
+    if (parsed.raw_text) {
+      parsed.raw_text = parsed.raw_text
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    }
 
     return NextResponse.json({ ...parsed, _provider: provider })
 

@@ -315,7 +315,14 @@ export default function IPDNursingPage() {
       recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
-    }).then(({ error }) => { if (error) warnSupabaseFail('vital', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setVitals(prev => prev.filter(v => v !== entry))
+        warnSupabaseFail('vital', error.message)
+      }
+    })
+
   }
 
   // ── Add I/O ────────────────────────────────────────────────────
@@ -331,7 +338,14 @@ export default function IPDNursingPage() {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
       recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
-    }).then(({ error }) => { if (error) warnSupabaseFail('I/O', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setIO(prev => prev.filter(e => e !== entry))
+        warnSupabaseFail('I/O', error.message)
+      }
+    })
+
   }
 
   // ── Add note ───────────────────────────────────────────────────
@@ -349,7 +363,14 @@ export default function IPDNursingPage() {
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
       nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
-    }).then(({ error }) => { if (error) warnSupabaseFail('note', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setNotes(prev => prev.filter(n => n !== entry))
+        warnSupabaseFail('note', error.message)
+      }
+    })
+
   }
 
   // ── Handle doctor note photo — direct upload + OCR ────────────

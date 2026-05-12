@@ -205,3 +205,19 @@ export const GUJARATI_YESNO_MAP: Record<string, string> = {
   'yes': 'Yes',
   'no': 'No',
 }
+
+/**
+ * Sanitise user-supplied text to prevent XSS if ever rendered as HTML.
+ * Strips <script>, <iframe>, on* attributes, and javascript: URLs.
+ * Safe for use in React JSX (which already escapes), but this adds
+ * defense-in-depth for any future dangerouslySetInnerHTML usage.
+ */
+export function sanitiseText(input: string | undefined | null): string {
+  if (!input) return ''
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/javascript\s*:/gi, '')
+}
+
