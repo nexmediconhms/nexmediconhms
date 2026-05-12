@@ -1,9 +1,24 @@
-import { NextResponse } from 'next/server'
+/**
+ * src/app/api/test-ai/route.ts
+ *
+ * Bug #8 fix: added requireAuth() guard (admin role).
+ * This is a diagnostic endpoint that reveals which AI keys are configured
+ * and makes live API calls — it must only be accessible to admin users.
+ *
+ * All test logic is preserved exactly.
+ */
+import { NextRequest, NextResponse } from 'next/server'
 import { getAnthropicKey, getOpenAIKey } from '@/lib/ai-client'
+import { requireRole } from '@/lib/api-auth'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // ── Auth gate: admin only ────────────────────────────────────
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+  // ────────────────────────────────────────────────────────────
+
   const anthropicKey = getAnthropicKey()
   const openaiKey    = getOpenAIKey()
 

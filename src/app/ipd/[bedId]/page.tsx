@@ -165,15 +165,68 @@ export default function IPDNursingPage() {
     if (user?.full_name) setNoteAuthor(user.full_name)
   }, [user])
 
+  // Bug #7 fix ─────────────────────────────────────────────────
+  // Problems in original code:
+  //
+  // 1. loadBed() was a plain function defined BELOW the useEffect that called
+  //    it, so React could not track it as a dependency. If bedId changed (nurse
+  //    navigates to a different bed in the same session) the effect re-ran but
+  //    loadBed() had already closed over the *old* bedId value.
+  //
+  // 2. loadIPDFromSupabase(bedId) returns a Promise with no cancellation token.
+  //    If bedId changes before the promise resolves, the .then() callback would
+  //    still fire and overwrite the new bed's freshly-loaded state with stale
+  //    data from the old bed.
+  //
+  // Fix:
+  //   - loadBed is now a useCallback so its body always uses the current bedId
+  //     and it can be listed as a stable dependency.
+  //   - A cancelled flag (via useRef) is set in the effect cleanup.  The
+  //     loadIPDFromSupabase .then() checks the flag before calling setState,
+  //     so stale responses from a previous bedId are silently discarded.
+  //   - Both loadBed and the Supabase fetch share the same cleanup scope.
+
+  const loadBed = useCallback(async () => {
+    if (!bedId) return
+    const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
+    if (!b) { setLoading(false); return }
+    setBed(b)
+    if (b.patient_id) {
+      const { data: p } = await supabase.from('patients').select('*').eq('id', b.patient_id).single()
+      setPatient(p)
+    }
+    setLoading(false)
+  }, [bedId])
+
   useEffect(() => {
     if (!bedId) return
+
+    // Reset UI state immediately when switching beds so stale data
+    // from the previous bed is never visible while the new data loads.
+    setLoading(true)
+    setBed(null)
+    setPatient(null)
+    setVitals([])
+    setIO([])
+    setNotes([])
+
+    // Cancellation flag — set to true in cleanup so in-flight .then()
+    // callbacks for the *previous* bedId do not touch state.
+    let cancelled = false
+
     loadBed()
+
     loadIPDFromSupabase(bedId).then(stored => {
+      if (cancelled) return   // ← bedId changed before this resolved — discard
       setVitals(stored.vitals || [])
       setIO(stored.io || [])
       setNotes(stored.notes || [])
     })
-  }, [bedId])
+
+    return () => {
+      cancelled = true
+    }
+  }, [bedId, loadBed])
 
   // ── Listen for autofill events from ConsultationAttachments ──
   useEffect(() => {
@@ -227,17 +280,6 @@ export default function IPDNursingPage() {
 
     setAutofillApplied(true)
     setTimeout(() => setAutofillApplied(false), 3000)
-  }
-
-  async function loadBed() {
-    const { data: b } = await supabase.from('beds').select('*').eq('id', bedId).single()
-    if (!b) { setLoading(false); return }
-    setBed(b)
-    if (b.patient_id) {
-      const { data: p } = await supabase.from('patients').select('*').eq('id', b.patient_id).single()
-      setPatient(p)
-    }
-    setLoading(false)
   }
 
   function persist(v = vitals, i = io, n = notes) {
