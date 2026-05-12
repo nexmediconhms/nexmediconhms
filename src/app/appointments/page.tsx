@@ -38,6 +38,7 @@ const APPT_TYPES = [
   'ANC Follow-up',
   'Follow-up',
   'OPD Consultation',
+  'Pre-Surgery Assessment',
   'Post-op Review',
   'Lab Report Discussion',
   'Infertility Counselling',

@@ -341,6 +341,7 @@ function BillingContent() {
   const [customTo, setCustomTo] = useState('')
   const [caReport, setCAReport] = useState<CAReportData | null>(null)
   const [caLoading, setCALoading] = useState(false)
+  const [caDetailed, setCADetailed] = useState(false)
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
@@ -1040,6 +1041,55 @@ function BillingContent() {
                 {caReport.billCount === 0 && (
                   <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-500 text-center">
                     No paid bills found for this period.
+                  </div>
+                )}
+
+                {/* Feature C: Detailed view toggle */}
+                <div className="flex items-center gap-3 mb-4">
+                  <button onClick={() => setCADetailed(false)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${!caDetailed ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Summary
+                  </button>
+                  <button onClick={() => setCADetailed(true)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${caDetailed ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Detailed (Bill-by-Bill)
+                  </button>
+                </div>
+
+                {/* Detailed view: every bill line-by-line */}
+                {caDetailed && caReport.billCount > 0 && (
+                  <div className="mb-5 max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          {['Date', 'Patient', 'Items', 'Gross', 'Disc.', 'Net', 'Mode'].map(h => (
+                            <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bills
+                          .filter(b => {
+                            const d = new Date(b.created_at)
+                            return d >= new Date(caReport.fromDate + 'T00:00:00') &&
+                              d <= new Date(caReport.toDate + 'T23:59:59') &&
+                              b.status === 'paid'
+                          })
+                          .map(b => (
+                            <tr key={b.id} className="border-t border-gray-50 hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatDate(b.created_at)}</td>
+                              <td className="px-3 py-2 font-medium text-gray-800">{b.patient_name}</td>
+                              <td className="px-3 py-2 text-gray-500 max-w-[150px] truncate">
+                                {Array.isArray(b.items) ? b.items.map((i: any) => i.label).join(', ') : '—'}
+                              </td>
+                              <td className="px-3 py-2 font-mono">{inr(Number(b.subtotal))}</td>
+                              <td className="px-3 py-2 font-mono text-orange-600">{Number(b.discount) > 0 ? `-${inr(Number(b.discount))}` : '—'}</td>
+                              <td className="px-3 py-2 font-mono font-semibold">{inr(Number(b.net_amount))}</td>
+                              <td className="px-3 py-2 capitalize">{b.payment_mode || '—'}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 

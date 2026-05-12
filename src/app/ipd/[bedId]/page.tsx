@@ -33,6 +33,7 @@ import { formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
+import { IndianRupee } from 'lucide-react'
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
@@ -459,6 +460,15 @@ export default function IPDNursingPage() {
               <CheckCircle className="w-4 h-4" /> Saved
             </span>
           )}
+          {/* IPD Bill button — navigates to billing with pre-filled IPD charges */}
+          {bed && patient && (
+            <Link
+              href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}&encounterType=IPD`}
+              className="ml-2 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              <IndianRupee className="w-3.5 h-3.5" /> IPD Bill
+            </Link>
+          )}
+
         </div>
 
         {/* Autofill success banner */}

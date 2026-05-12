@@ -7892,8 +7892,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const fd       = await req.formData()
-    const file     = fd.get('image') as File | null
+    const fd = await req.formData()
+    const file = fd.get('image') as File | null
     const hintType = (fd.get('form_type') as string | null) ?? ''
 
     if (!file) {
@@ -7912,7 +7912,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'File too large (max 20 MB).' })
     }
 
-    const bytes  = await file.arrayBuffer()
+    const bytes = await file.arrayBuffer()
     const base64 = Buffer.from(bytes).toString('base64')
 
     const userPrompt = hintType
@@ -7920,30 +7920,30 @@ export async function POST(req: NextRequest) {
       : 'Extract all fields from this medical form. Detect the form type. Return JSON only.'
 
     let rawResponse: string
-    let provider:    string
+    let provider: string
 
     if (file.type === 'application/pdf') {
       // PDF path — uses Anthropic native PDF or text-extraction fallback
       const result = await analyzePDF({
         base64,
-        prompt:    userPrompt,
-        system:    SYSTEM_PROMPT,
+        prompt: userPrompt,
+        system: SYSTEM_PROMPT,
         maxTokens: 2048,
       })
       rawResponse = result.text
-      provider    = result.provider
+      provider = result.provider
     } else {
       // Image path — uses vision models
       const mediaType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) as 'image/jpeg' | 'image/png' | 'image/webp'
       const result = await analyzeImage({
         base64,
         mediaType,
-        prompt:    userPrompt,
-        system:    SYSTEM_PROMPT,
+        prompt: userPrompt,
+        system: SYSTEM_PROMPT,
         maxTokens: 2048,
       })
       rawResponse = result.text
-      provider    = result.provider
+      provider = result.provider
     }
 
     // Strip markdown fences
@@ -7958,19 +7958,26 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(jsonString) as OCRResult
     } catch {
       return NextResponse.json({
-        form_type:           (hintType || 'patient_registration') as OCRResult['form_type'],
-        confidence:          'low' as const,
-        language_detected:   'Unknown',
-        raw_text:            rawResponse,
+        form_type: (hintType || 'patient_registration') as OCRResult['form_type'],
+        confidence: 'low' as const,
+        language_detected: 'Unknown',
+        raw_text: rawResponse,
         unrecognised_fields: 'Could not parse AI response. For PDFs, ensure the file has readable text.',
-        _provider:           provider,
+        _provider: provider,
       })
     }
 
-    parsed.form_type         ??= (hintType as OCRResult['form_type']) || 'patient_registration'
-    parsed.confidence        ??= 'medium'
+    parsed.form_type ??= (hintType as OCRResult['form_type']) || 'patient_registration'
+    parsed.confidence ??= 'medium'
     parsed.language_detected ??= 'Unknown'
-    parsed.raw_text          ??= ''
+    parsed.raw_text ??= ''
+
+    // Sanitise raw_text to strip any script/iframe tags (defense-in-depth)
+    if (parsed.raw_text) {
+      parsed.raw_text = parsed.raw_text
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    }
 
     return NextResponse.json({ ...parsed, _provider: provider })
 
@@ -11208,6 +11215,7 @@ const APPT_TYPES = [
   'ANC Follow-up',
   'Follow-up',
   'OPD Consultation',
+  'Pre-Surgery Assessment',
   'Post-op Review',
   'Lab Report Discussion',
   'Infertility Counselling',
@@ -12801,6 +12809,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
 import { loadSettings, type HospitalSettings } from '@/lib/settings'
+
 // ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
 // Wire the previously-orphan GST module into the billing page. These imports
 // connect billing-gst.ts (computation) and BillingExtras.tsx (UI) to the live
@@ -13106,11 +13115,19 @@ function BillingContent() {
   const [gstAmount, setGstAmount] = useState(0)
   // ──────────────────────────────────────────────────────────────────────────
   const [payMode, setPayMode] = useState<PayMode>('cash')
+
+  // Keep ref in sync with state
+  useEffect(() => { payModeRef.current = payMode }, [payMode])
+
   const [notes, setNotes] = useState('')
   const [customLabel, setCustomLabel] = useState('')
   const [customAmt, setCustomAmt] = useState('')
   const [paying, setPaying] = useState(false)
   const [payError, setPayError] = useState('')
+
+  // Bug fix: ref to capture latest payMode so Razorpay handler doesn't use stale closure
+  const payModeRef = useRef<PayMode>('cash')
+
 
   // Receipt
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
@@ -13127,6 +13144,7 @@ function BillingContent() {
   const [customTo, setCustomTo] = useState('')
   const [caReport, setCAReport] = useState<CAReportData | null>(null)
   const [caLoading, setCALoading] = useState(false)
+  const [caDetailed, setCADetailed] = useState(false)
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
@@ -13826,6 +13844,55 @@ function BillingContent() {
                 {caReport.billCount === 0 && (
                   <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-500 text-center">
                     No paid bills found for this period.
+                  </div>
+                )}
+
+                {/* Feature C: Detailed view toggle */}
+                <div className="flex items-center gap-3 mb-4">
+                  <button onClick={() => setCADetailed(false)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${!caDetailed ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Summary
+                  </button>
+                  <button onClick={() => setCADetailed(true)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${caDetailed ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Detailed (Bill-by-Bill)
+                  </button>
+                </div>
+
+                {/* Detailed view: every bill line-by-line */}
+                {caDetailed && caReport.billCount > 0 && (
+                  <div className="mb-5 max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          {['Date', 'Patient', 'Items', 'Gross', 'Disc.', 'Net', 'Mode'].map(h => (
+                            <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bills
+                          .filter(b => {
+                            const d = new Date(b.created_at)
+                            return d >= new Date(caReport.fromDate + 'T00:00:00') &&
+                              d <= new Date(caReport.toDate + 'T23:59:59') &&
+                              b.status === 'paid'
+                          })
+                          .map(b => (
+                            <tr key={b.id} className="border-t border-gray-50 hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatDate(b.created_at)}</td>
+                              <td className="px-3 py-2 font-medium text-gray-800">{b.patient_name}</td>
+                              <td className="px-3 py-2 text-gray-500 max-w-[150px] truncate">
+                                {Array.isArray(b.items) ? b.items.map((i: any) => i.label).join(', ') : '—'}
+                              </td>
+                              <td className="px-3 py-2 font-mono">{inr(Number(b.subtotal))}</td>
+                              <td className="px-3 py-2 font-mono text-orange-600">{Number(b.discount) > 0 ? `-${inr(Number(b.discount))}` : '—'}</td>
+                              <td className="px-3 py-2 font-mono font-semibold">{inr(Number(b.net_amount))}</td>
+                              <td className="px-3 py-2 capitalize">{b.payment_mode || '—'}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
@@ -15084,7 +15151,7 @@ import {
   IndianRupee, Plus, CheckCircle, XCircle, Clock,
   Printer, Coffee, ShoppingCart, Truck, Wrench, MoreHorizontal,
   TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle,
-  Loader2,
+  Loader2, Camera,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -15108,25 +15175,25 @@ interface FundTransaction {
 // ── Category config ────────────────────────────────────────────
 
 const CATEGORIES = [
-  { key: 'printing',    label: 'Printing / Stationery', icon: Printer,       color: 'text-blue-600   bg-blue-50'   },
-  { key: 'food',        label: 'Food / Refreshments',   icon: Coffee,        color: 'text-orange-600 bg-orange-50' },
-  { key: 'supplies',    label: 'Medical Supplies',       icon: ShoppingCart,  color: 'text-green-600  bg-green-50'  },
-  { key: 'transport',   label: 'Transport',              icon: Truck,         color: 'text-purple-600 bg-purple-50' },
-  { key: 'maintenance', label: 'Maintenance / Repairs',  icon: Wrench,        color: 'text-red-600    bg-red-50'    },
-  { key: 'other',       label: 'Other',                  icon: MoreHorizontal,color: 'text-gray-600   bg-gray-50'   },
+  { key: 'printing', label: 'Printing / Stationery', icon: Printer, color: 'text-blue-600   bg-blue-50' },
+  { key: 'food', label: 'Food / Refreshments', icon: Coffee, color: 'text-orange-600 bg-orange-50' },
+  { key: 'supplies', label: 'Medical Supplies', icon: ShoppingCart, color: 'text-green-600  bg-green-50' },
+  { key: 'transport', label: 'Transport', icon: Truck, color: 'text-purple-600 bg-purple-50' },
+  { key: 'maintenance', label: 'Maintenance / Repairs', icon: Wrench, color: 'text-red-600    bg-red-50' },
+  { key: 'other', label: 'Other', icon: MoreHorizontal, color: 'text-gray-600   bg-gray-50' },
 ]
 
 function CategoryIcon({ cat }: { cat: string }) {
   const found = CATEGORIES.find(c => c.key === cat)
-  if (!found) return <MoreHorizontal className="w-4 h-4"/>
+  if (!found) return <MoreHorizontal className="w-4 h-4" />
   const Icon = found.icon
-  return <Icon className="w-4 h-4"/>
+  return <Icon className="w-4 h-4" />
 }
 
 function statusBadge(s: ExpenseStatus) {
-  if (s === 'approved') return <span className="badge-green text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3"/>Approved</span>
-  if (s === 'rejected') return <span className="badge-red   text-xs flex items-center gap-1"><XCircle className="w-3 h-3"/>Rejected</span>
-  return <span className="badge-yellow text-xs flex items-center gap-1"><Clock className="w-3 h-3"/>Pending</span>
+  if (s === 'approved') return <span className="badge-green text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3" />Approved</span>
+  if (s === 'rejected') return <span className="badge-red   text-xs flex items-center gap-1"><XCircle className="w-3 h-3" />Rejected</span>
+  return <span className="badge-yellow text-xs flex items-center gap-1"><Clock className="w-3 h-3" />Pending</span>
 }
 
 // ── Component ──────────────────────────────────────────────────
@@ -15150,7 +15217,7 @@ export default function FundPage() {
   const [saving, setSaving] = useState(false)
   // FIXED: error state for topup/expense failures
   const [saveError, setSaveError] = useState('')
-
+  const [receiptUploading, setReceiptUploading] = useState(false)
   const [expenseForm, setExpenseForm] = useState({
     category: 'printing',
     amount: '',
@@ -15177,13 +15244,13 @@ export default function FundPage() {
   }
 
   // ── Computed balances ──
-  const totalTopups   = transactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0)
+  const totalTopups = transactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0)
   const totalApproved = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0)
-  const totalPending  = transactions.filter(t => t.type === 'expense' && t.status === 'pending').reduce((s, t) => s + t.amount, 0)
-  const balance       = totalTopups - totalApproved
+  const totalPending = transactions.filter(t => t.type === 'expense' && t.status === 'pending').reduce((s, t) => s + t.amount, 0)
+  const balance = totalTopups - totalApproved
 
   const filtered = transactions.filter(t => {
-    if (activeFilter === 'pending')  return t.status === 'pending' && t.type === 'expense'
+    if (activeFilter === 'pending') return t.status === 'pending' && t.type === 'expense'
     if (activeFilter === 'approved') return t.status === 'approved'
     return true
   })
@@ -15196,13 +15263,13 @@ export default function FundPage() {
     setSaving(true)
     setSaveError('')
     const { error } = await supabase.from('hospital_fund').insert({
-      type:          'expense',
-      category:      expenseForm.category,
-      amount:        Number(expenseForm.amount),
-      description:   expenseForm.description.trim(),
-      receipt_note:  expenseForm.receipt_note.trim() || null,
-      submitted_by:  user?.full_name || 'Unknown',
-      status:        'pending',
+      type: 'expense',
+      category: expenseForm.category,
+      amount: Number(expenseForm.amount),
+      description: expenseForm.description.trim(),
+      receipt_note: expenseForm.receipt_note.trim() || null,
+      submitted_by: user?.full_name || 'Unknown',
+      status: 'pending',
     })
     setSaving(false)
     if (error) {
@@ -15220,13 +15287,13 @@ export default function FundPage() {
     setSaving(true)
     setSaveError('')
     const { error } = await supabase.from('hospital_fund').insert({
-      type:         'topup',
-      category:     'topup',
-      amount:       Number(topupForm.amount),
-      description:  topupForm.note || `Fund top-up by ${user?.full_name}`,
+      type: 'topup',
+      category: 'topup',
+      amount: Number(topupForm.amount),
+      description: topupForm.note || `Fund top-up by ${user?.full_name}`,
       submitted_by: user?.full_name || 'Admin',
-      approved_by:  user?.full_name || 'Admin',
-      status:       'approved',
+      approved_by: user?.full_name || 'Admin',
+      status: 'approved',
     })
     setSaving(false)
     if (error) {
@@ -15258,14 +15325,14 @@ export default function FundPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <IndianRupee className="w-6 h-6 text-emerald-500"/> Hospital Fund
+              <IndianRupee className="w-6 h-6 text-emerald-500" /> Hospital Fund
             </h1>
             <p className="text-sm text-gray-500">Operational expenses — printing, food, supplies, transport</p>
           </div>
           <div className="flex gap-3">
             <button onClick={loadTransactions} disabled={loading}
               className="btn-secondary flex items-center gap-2 text-xs">
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
             {/* FIXED: Show loading spinner while role is being determined,
@@ -15273,18 +15340,18 @@ export default function FundPage() {
                 Previously this was hidden entirely during the loading phase. */}
             {roleLoading ? (
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin"/> Checking role…
+                <Loader2 className="w-4 h-4 animate-spin" /> Checking role…
               </div>
             ) : isAdmin ? (
               <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
-                <TrendingUp className="w-4 h-4"/> Add Funds
+                <TrendingUp className="w-4 h-4" /> Add Funds
               </button>
             ) : null}
 
             <button onClick={() => { setShowAddForm(!showAddForm); setSaveError('') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
-              <Plus className="w-4 h-4"/> Record Expense
+              <Plus className="w-4 h-4" /> Record Expense
             </button>
           </div>
         </div>
@@ -15292,7 +15359,7 @@ export default function FundPage() {
         {/* FIXED: global error banner for save failures */}
         {saveError && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-red-700">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div className="flex-1">{saveError}</div>
             <button onClick={() => setSaveError('')} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
           </div>
@@ -15301,14 +15368,14 @@ export default function FundPage() {
         {/* Balance tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Fund Balance',      value: inr(balance),       sub: 'available',           color: balance < 1000 ? 'text-red-700 bg-red-50' : 'text-emerald-700 bg-emerald-50', icon: IndianRupee },
-            { label: 'Total Funded',      value: inr(totalTopups),   sub: 'all time top-ups',    color: 'text-blue-700 bg-blue-50',    icon: TrendingUp   },
-            { label: 'Approved Expenses', value: inr(totalApproved), sub: 'paid out',            color: 'text-orange-700 bg-orange-50', icon: TrendingDown },
-            { label: 'Pending Approval',  value: inr(totalPending),  sub: `${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length} requests`, color: 'text-yellow-700 bg-yellow-50', icon: Clock },
+            { label: 'Fund Balance', value: inr(balance), sub: 'available', color: balance < 1000 ? 'text-red-700 bg-red-50' : 'text-emerald-700 bg-emerald-50', icon: IndianRupee },
+            { label: 'Total Funded', value: inr(totalTopups), sub: 'all time top-ups', color: 'text-blue-700 bg-blue-50', icon: TrendingUp },
+            { label: 'Approved Expenses', value: inr(totalApproved), sub: 'paid out', color: 'text-orange-700 bg-orange-50', icon: TrendingDown },
+            { label: 'Pending Approval', value: inr(totalPending), sub: `${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length} requests`, color: 'text-yellow-700 bg-yellow-50', icon: Clock },
           ].map(({ label, value, sub, color, icon: Icon }) => (
             <div key={label} className={`card p-4 ${color.split(' ')[1]}`}>
               <div className="flex items-center gap-2 mb-1">
-                <Icon className={`w-4 h-4 ${color.split(' ')[0]}`}/>
+                <Icon className={`w-4 h-4 ${color.split(' ')[0]}`} />
                 <span className="text-xs font-semibold text-gray-600">{label}</span>
               </div>
               <div className={`text-2xl font-bold ${color.split(' ')[0]}`}>{value}</div>
@@ -15319,14 +15386,14 @@ export default function FundPage() {
 
         {balance < 500 && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0"/>
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
             <span className="text-red-800">
               Fund balance is low ({inr(balance)}). {isAdmin ? 'Click "Add Funds" above to top up.' : 'Ask admin to top up the fund.'}
             </span>
             {isAdmin && (
               <button onClick={() => setShowTopupForm(true)}
                 className="ml-auto flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
-                <TrendingUp className="w-3.5 h-3.5"/> Add Funds Now
+                <TrendingUp className="w-3.5 h-3.5" /> Add Funds Now
               </button>
             )}
           </div>
@@ -15340,20 +15407,20 @@ export default function FundPage() {
               <div>
                 <label className="label">Amount (₹)</label>
                 <input className="input" type="number" placeholder="5000"
-                  value={topupForm.amount} onChange={e => setTopupForm(p => ({ ...p, amount: e.target.value }))}/>
+                  value={topupForm.amount} onChange={e => setTopupForm(p => ({ ...p, amount: e.target.value }))} />
               </div>
               <div>
                 <label className="label">Note</label>
                 <input className="input" placeholder="e.g. Monthly operational budget"
-                  value={topupForm.note} onChange={e => setTopupForm(p => ({ ...p, note: e.target.value }))}/>
+                  value={topupForm.note} onChange={e => setTopupForm(p => ({ ...p, note: e.target.value }))} />
               </div>
             </div>
             <div className="flex gap-3 mt-3">
               <button onClick={topUpFund} disabled={saving}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
                 {saving
-                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                  : <TrendingUp className="w-3.5 h-3.5"/>}
+                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <TrendingUp className="w-3.5 h-3.5" />}
                 {saving ? 'Adding…' : 'Add Funds'}
               </button>
               <button onClick={() => { setShowTopupForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
@@ -15365,7 +15432,7 @@ export default function FundPage() {
         {showAddForm && (
           <div className="card p-5 mb-5 border-l-4 border-blue-400">
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-blue-500"/> Record Expense
+              <Plus className="w-4 h-4 text-blue-500" /> Record Expense
             </h3>
 
             <div className="mb-4">
@@ -15377,12 +15444,11 @@ export default function FundPage() {
                   return (
                     <button key={cat.key} type="button"
                       onClick={() => setExpenseForm(p => ({ ...p, category: cat.key }))}
-                      className={`flex items-center gap-2 p-2.5 rounded-lg border-2 text-xs font-medium transition-colors text-left ${
-                        isSelected
+                      className={`flex items-center gap-2 p-2.5 rounded-lg border-2 text-xs font-medium transition-colors text-left ${isSelected
                           ? `${cat.color.split(' ')[1]} border-current ${cat.color.split(' ')[0]}`
                           : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}>
-                      <Icon className="w-3.5 h-3.5 flex-shrink-0"/>
+                        }`}>
+                      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
                       {cat.label}
                     </button>
                   )
@@ -15394,32 +15460,89 @@ export default function FundPage() {
               <div>
                 <label className="label">Amount (₹) *</label>
                 <input className="input" type="number" step="0.01" placeholder="250"
-                  value={expenseForm.amount} onChange={e => setExpenseForm(p => ({ ...p, amount: e.target.value }))}/>
+                  value={expenseForm.amount} onChange={e => setExpenseForm(p => ({ ...p, amount: e.target.value }))} />
               </div>
               <div>
                 <label className="label">Receipt / Bill No. (optional)</label>
                 <input className="input" placeholder="Bill # or reference"
-                  value={expenseForm.receipt_note} onChange={e => setExpenseForm(p => ({ ...p, receipt_note: e.target.value }))}/>
+                  value={expenseForm.receipt_note} onChange={e => setExpenseForm(p => ({ ...p, receipt_note: e.target.value }))} />
               </div>
+            </div>
+
+            {/* Feature B: Smart receipt upload with OCR auto-fill */}
+            <div className="mb-3">
+              <label className="label">Upload Receipt Photo (optional — AI reads amount & details)</label>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 font-medium cursor-pointer hover:bg-blue-100 transition-colors">
+                  <Camera className="w-4 h-4" />
+                  {receiptUploading ? 'Reading…' : 'Scan Receipt'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={receiptUploading}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      e.target.value = ''
+                      setReceiptUploading(true)
+                      try {
+                        const fd = new FormData()
+                        fd.append('image', file)
+                        fd.append('mode', 'autofill')
+                        fd.append('context', 'Hospital expense receipt — extract date, bill number, total amount, vendor name, description of items purchased')
+                        const { data: { session } } = await supabase.auth.getSession()
+                        const token = session?.access_token
+                        const res = await fetch('/api/doctor-note-ocr', {
+                          method: 'POST',
+                          headers: token ? { Authorization: `Bearer ${token}` } : {},
+                          body: fd,
+                        })
+                        if (res.ok) {
+                          const data = await res.json()
+                          const f = data.fields || {}
+                          // Auto-fill expense form from OCR
+                          if (f.amount || f.total_amount) {
+                            setExpenseForm(p => ({ ...p, amount: String(f.amount || f.total_amount || '') }))
+                          }
+                          if (f.description || f.vendor || f.items) {
+                            const desc = [f.vendor, f.description, f.items].filter(Boolean).join(' — ')
+                            if (desc) setExpenseForm(p => ({ ...p, description: desc }))
+                          }
+                          if (f.bill_number || f.invoice_number) {
+                            setExpenseForm(p => ({ ...p, receipt_note: f.bill_number || f.invoice_number || '' }))
+                          }
+                        }
+                      } catch (err) {
+                        console.warn('[Fund OCR]', err)
+                      } finally {
+                        setReceiptUploading(false)
+                      }
+                    }}
+                  />
+                </label>
+                {receiptUploading && <span className="text-xs text-blue-500 animate-pulse">AI reading receipt…</span>}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Take a photo of a printed receipt — AI extracts amount, vendor, and bill number automatically.</p>
             </div>
 
             <div className="mb-4">
               <label className="label">Description / Purpose *</label>
               <textarea className="input" rows={2}
                 placeholder="e.g. Printed 50 copies of patient discharge forms · Ordered tea for night duty nurses · Purchased gloves (1 box)"
-                value={expenseForm.description} onChange={e => setExpenseForm(p => ({ ...p, description: e.target.value }))}/>
+                value={expenseForm.description} onChange={e => setExpenseForm(p => ({ ...p, description: e.target.value }))} />
             </div>
 
             <div className="text-xs text-gray-500 mb-3 flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5"/>
+              <Clock className="w-3.5 h-3.5" />
               Submitted by <strong>{user?.full_name}</strong> · Will be sent for admin approval
             </div>
 
             <div className="flex gap-3">
               <button onClick={submitExpense} disabled={saving}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
-                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                  : <CheckCircle className="w-3.5 h-3.5"/>}
+                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <CheckCircle className="w-3.5 h-3.5" />}
                 {saving ? 'Submitting…' : 'Submit for Approval'}
               </button>
               <button onClick={() => { setShowAddForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
@@ -15430,8 +15553,8 @@ export default function FundPage() {
         {/* Filter tabs */}
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
           {[
-            { key: 'all',      label: 'All' },
-            { key: 'pending',  label: `Pending (${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length})` },
+            { key: 'all', label: 'All' },
+            { key: 'pending', label: `Pending (${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length})` },
             { key: 'approved', label: 'Approved' },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setActiveFilter(key as any)}
@@ -15444,11 +15567,11 @@ export default function FundPage() {
         {/* Transaction list */}
         {loading ? (
           <div className="flex items-center justify-center h-40">
-            <div className="w-7 h-7 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin"/>
+            <div className="w-7 h-7 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
-            <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+            <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20" />
             <p>No transactions found</p>
           </div>
         ) : (
@@ -15473,11 +15596,11 @@ export default function FundPage() {
                       <td className="px-4 py-3">
                         {tx.type === 'topup' ? (
                           <span className="flex items-center gap-1 text-emerald-700 text-xs font-medium">
-                            <TrendingUp className="w-3.5 h-3.5"/> Fund Top-up
+                            <TrendingUp className="w-3.5 h-3.5" /> Fund Top-up
                           </span>
                         ) : (
                           <span className={`flex items-center gap-1 text-xs font-medium ${cat?.color.split(' ')[0] || 'text-gray-600'}`}>
-                            <CategoryIcon cat={tx.category}/> {cat?.label || tx.category}
+                            <CategoryIcon cat={tx.category} /> {cat?.label || tx.category}
                           </span>
                         )}
                       </td>
@@ -15498,11 +15621,11 @@ export default function FundPage() {
                             <div className="flex gap-1">
                               <button onClick={() => updateStatus(tx.id, 'approved')}
                                 className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3"/> Approve
+                                <CheckCircle className="w-3 h-3" /> Approve
                               </button>
                               <button onClick={() => updateStatus(tx.id, 'rejected')}
                                 className="text-xs px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1">
-                                <XCircle className="w-3 h-3"/> Reject
+                                <XCircle className="w-3 h-3" /> Reject
                               </button>
                             </div>
                           )}
@@ -15671,6 +15794,362 @@ button, a, [role="button"] {
   .mobile-content {
     padding-bottom: 80px;
   }
+}
+
+```
+
+# src\app\insurance\page.tsx
+
+```tsx
+'use client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import {
+  Shield, Plus, X, Search, ArrowLeft, Save, Loader2,
+  CheckCircle, Clock, AlertTriangle, IndianRupee,
+  RefreshCw, ChevronRight, FileText,
+} from 'lucide-react'
+
+interface Claim {
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  policy_number: string | null
+  tpa_name: string | null
+  insurance_company: string | null
+  claim_amount: number
+  approved_amount: number | null
+  status: string
+  admission_date: string | null
+  discharge_date: string | null
+  surgery_name: string | null
+  diagnosis: string | null
+  pre_auth_number: string | null
+  claim_number: string | null
+  settlement_utr: string | null
+  settlement_date: string | null
+  documents_sent: boolean
+  notes: string | null
+  created_at: string
+}
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+  pre_auth_pending:   { label: 'Pre-Auth Pending', color: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: Clock },
+  pre_auth_approved:  { label: 'Pre-Auth Approved', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: CheckCircle },
+  pre_auth_rejected:  { label: 'Pre-Auth Rejected', color: 'bg-red-50 text-red-700 border-red-200', icon: X },
+  claim_submitted:    { label: 'Claim Submitted', color: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: FileText },
+  under_review:       { label: 'Under Review', color: 'bg-purple-50 text-purple-700 border-purple-200', icon: Clock },
+  query_raised:       { label: 'Query Raised', color: 'bg-orange-50 text-orange-700 border-orange-200', icon: AlertTriangle },
+  query_resolved:     { label: 'Query Resolved', color: 'bg-cyan-50 text-cyan-700 border-cyan-200', icon: CheckCircle },
+  approved:           { label: 'Approved', color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle },
+  partially_approved: { label: 'Partially Approved', color: 'bg-lime-50 text-lime-700 border-lime-200', icon: CheckCircle },
+  rejected:           { label: 'Rejected', color: 'bg-red-50 text-red-700 border-red-200', icon: X },
+  settled:            { label: 'Settled', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: IndianRupee },
+}
+
+const STATUS_FLOW: Record<string, string[]> = {
+  pre_auth_pending:   ['pre_auth_approved', 'pre_auth_rejected'],
+  pre_auth_approved:  ['claim_submitted'],
+  pre_auth_rejected:  ['pre_auth_pending'],
+  claim_submitted:    ['under_review'],
+  under_review:       ['query_raised', 'approved', 'partially_approved', 'rejected'],
+  query_raised:       ['query_resolved'],
+  query_resolved:     ['approved', 'partially_approved', 'rejected'],
+  approved:           ['settled'],
+  partially_approved: ['settled'],
+  rejected:           ['pre_auth_pending'],
+  settled:            [],
+}
+
+export default function InsurancePage() {
+  const { user } = useAuth()
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<'list' | 'new'>('list')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  const [patientQuery, setPatientQuery] = useState('')
+  const [patientResults, setPatientResults] = useState<any[]>([])
+  const [selPatient, setSelPatient] = useState<any>(null)
+  const [form, setForm] = useState({
+    policy_number: '', tpa_name: '', insurance_company: '',
+    claim_amount: '', diagnosis: '', surgery_name: '',
+    admission_date: '', discharge_date: '', notes: '',
+  })
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    let q = supabase.from('insurance_claims').select('*').order('updated_at', { ascending: false })
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter)
+    const { data } = await q
+    setClaims((data || []) as Claim[])
+    setLoading(false)
+  }, [statusFilter])
+
+  useEffect(() => { load() }, [load])
+
+  const filtered = claims.filter(c =>
+    !search ||
+    c.patient_name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.mrn || '').includes(search) ||
+    (c.tpa_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (c.claim_number || '').toLowerCase().includes(search.toLowerCase())
+  )
+
+  // Stats
+  const pending = claims.filter(c => ['pre_auth_pending', 'claim_submitted', 'under_review', 'query_raised'].includes(c.status))
+  const pendingAmount = pending.reduce((s, c) => s + c.claim_amount, 0)
+  const settled = claims.filter(c => c.status === 'settled')
+  const settledAmount = settled.reduce((s, c) => s + (c.approved_amount || 0), 0)
+
+  function searchPatients(q: string) {
+    setPatientQuery(q); setSelPatient(null)
+    if (q.trim().length < 2) { setPatientResults([]); return }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(async () => {
+      const { data } = await supabase.from('patients').select('id,full_name,mrn,mobile,policy_tpa_name,policy_number').or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%`).limit(6)
+      setPatientResults(data || [])
+    }, 300)
+  }
+
+  function selectPatient(p: any) {
+    setSelPatient(p)
+    setPatientResults([])
+    if (p.policy_tpa_name) setForm(f => ({ ...f, tpa_name: p.policy_tpa_name }))
+    if (p.policy_number) setForm(f => ({ ...f, policy_number: p.policy_number }))
+  }
+
+  async function handleCreate() {
+    if (!selPatient) { setError('Select a patient'); return }
+    if (!form.claim_amount || Number(form.claim_amount) <= 0) { setError('Enter claim amount'); return }
+    setSaving(true); setError('')
+    const { error: e } = await supabase.from('insurance_claims').insert({
+      patient_id: selPatient.id, patient_name: selPatient.full_name, mrn: selPatient.mrn || '',
+      policy_number: form.policy_number || null, tpa_name: form.tpa_name || null,
+      insurance_company: form.insurance_company || null, claim_amount: Number(form.claim_amount),
+      diagnosis: form.diagnosis || null, surgery_name: form.surgery_name || null,
+      admission_date: form.admission_date || null, discharge_date: form.discharge_date || null,
+      notes: form.notes || null, status: 'pre_auth_pending', created_by: user?.full_name || null,
+    })
+    setSaving(false)
+    if (e) { setError(e.message); return }
+    resetForm(); setView('list'); load()
+  }
+
+  async function updateClaimStatus(claim: Claim, newStatus: string) {
+    let extra: any = { status: newStatus, updated_at: new Date().toISOString() }
+    if (newStatus === 'settled') {
+      const utr = prompt('Settlement UTR / Reference Number:')
+      if (utr === null) return
+      const amt = prompt(`Approved Amount (claimed: ₹${claim.claim_amount}):`, String(claim.claim_amount))
+      if (amt === null) return
+      extra.settlement_utr = utr || null
+      extra.settlement_date = new Date().toISOString().split('T')[0]
+      extra.approved_amount = Number(amt) || claim.claim_amount
+    }
+    if (newStatus === 'query_raised') {
+      const q = prompt('What query did TPA raise?')
+      if (q === null) return
+      extra.notes = (claim.notes ? claim.notes + '' : '') + `Query: ${q}`
+    }
+    if (newStatus === 'pre_auth_approved') {
+      const num = prompt('Pre-Auth Number:')
+      if (num) extra.pre_auth_number = num
+    }
+    if (newStatus === 'partially_approved') {
+      const amt = prompt(`Approved Amount (claimed: ₹${claim.claim_amount}):`)
+      if (amt === null) return
+      extra.approved_amount = Number(amt) || 0
+      const reason = prompt('Deduction reason:')
+      if (reason) extra.deduction_reason = reason
+    }
+
+    await supabase.from('insurance_claims').update(extra).eq('id', claim.id)
+    await supabase.from('insurance_claim_history').insert({
+      claim_id: claim.id, old_status: claim.status, new_status: newStatus,
+      notes: extra.notes || null, done_by: user?.full_name || null,
+    })
+    load()
+  }
+
+  function resetForm() {
+    setSelPatient(null); setPatientQuery(''); setPatientResults([])
+    setForm({ policy_number: '', tpa_name: '', insurance_company: '', claim_amount: '', diagnosis: '', surgery_name: '', admission_date: '', discharge_date: '', notes: '' })
+  }
+
+  function inr(n: number) { return `₹${n.toLocaleString('en-IN')}` }
+
+  // ═══ NEW CLAIM ═══
+  if (view === 'new') {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-3xl mx-auto">
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
+            <h1 className="text-xl font-bold text-gray-900">New Insurance Claim</h1>
+          </div>
+          {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{error}</div>}
+          <div className="card p-5 mb-4">
+            <h2 className="section-title">Patient</h2>
+            {selPatient ? (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                <div><div className="font-semibold">{selPatient.full_name}</div><div className="text-xs text-gray-500">{selPatient.mrn}{selPatient.policy_tpa_name && ` · ${selPatient.policy_tpa_name}`}</div></div>
+                <button onClick={() => { setSelPatient(null); setPatientQuery('') }}><X className="w-4 h-4 text-gray-400 hover:text-red-500" /></button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input className="input pl-9" placeholder="Search patient…" value={patientQuery} onChange={e => searchPatients(e.target.value)} autoFocus />
+                {patientResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-20 bg-white border rounded-lg shadow-lg mt-1">
+                    {patientResults.map(p => (
+                      <button key={p.id} onClick={() => selectPatient(p)} className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b last:border-0">
+                        <span className="font-semibold">{p.full_name}</span><span className="text-gray-400 ml-2 text-xs">{p.mrn}</span>
+                        {p.policy_tpa_name && <span className="text-xs text-blue-600 ml-2">{p.policy_tpa_name}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="card p-5 mb-4">
+            <h2 className="section-title">Insurance Details</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">TPA Name</label><input className="input" placeholder="e.g. Medi Assist, Raksha" value={form.tpa_name} onChange={e => setForm(p => ({ ...p, tpa_name: e.target.value }))} /></div>
+              <div><label className="label">Insurance Company</label><input className="input" placeholder="e.g. Star Health, HDFC Ergo" value={form.insurance_company} onChange={e => setForm(p => ({ ...p, insurance_company: e.target.value }))} /></div>
+              <div><label className="label">Policy Number</label><input className="input" placeholder="Policy / Card number" value={form.policy_number} onChange={e => setForm(p => ({ ...p, policy_number: e.target.value }))} /></div>
+              <div><label className="label">Claim Amount (₹) *</label><input className="input" type="number" placeholder="50000" value={form.claim_amount} onChange={e => setForm(p => ({ ...p, claim_amount: e.target.value }))} /></div>
+            </div>
+          </div>
+          <div className="card p-5 mb-4">
+            <h2 className="section-title">Treatment Details</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">Diagnosis</label><input className="input" placeholder="e.g. Fibroid Uterus" value={form.diagnosis} onChange={e => setForm(p => ({ ...p, diagnosis: e.target.value }))} /></div>
+              <div><label className="label">Surgery / Procedure</label><input className="input" placeholder="e.g. Hysterectomy" value={form.surgery_name} onChange={e => setForm(p => ({ ...p, surgery_name: e.target.value }))} /></div>
+              <div><label className="label">Admission Date</label><input className="input" type="date" value={form.admission_date} onChange={e => setForm(p => ({ ...p, admission_date: e.target.value }))} /></div>
+              <div><label className="label">Discharge Date</label><input className="input" type="date" value={form.discharge_date} onChange={e => setForm(p => ({ ...p, discharge_date: e.target.value }))} /></div>
+              <div className="col-span-2"><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
+            </div>
+          </div>
+          <div className="flex justify-between">
+            <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
+            <button onClick={handleCreate} disabled={saving || !selPatient} className="btn-primary flex items-center gap-2 disabled:opacity-60">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{saving ? 'Creating…' : 'Create Claim'}</button>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ═══ LIST VIEW ═══
+  return (
+    <AppShell>
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Shield className="w-6 h-6 text-blue-600" /> Insurance Claims</h1>
+            <p className="text-sm text-gray-500">{claims.length} claims · {pending.length} pending · {settled.length} settled</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={load} className="btn-secondary flex items-center gap-1 text-xs"><RefreshCw className="w-3.5 h-3.5" /></button>
+            <button onClick={() => { resetForm(); setView('new') }} className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4" /> New Claim</button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="card p-4 bg-orange-50">
+            <div className="text-2xl font-bold text-orange-700">{inr(pendingAmount)}</div>
+            <div className="text-xs font-semibold text-gray-600">{pending.length} Pending Claims</div>
+          </div>
+          <div className="card p-4 bg-green-50">
+            <div className="text-2xl font-bold text-green-700">{inr(settledAmount)}</div>
+            <div className="text-xs font-semibold text-gray-600">{settled.length} Settled</div>
+          </div>
+          <div className="card p-4 bg-blue-50">
+            <div className="text-2xl font-bold text-blue-700">{claims.length}</div>
+            <div className="text-xs font-semibold text-gray-600">Total Claims</div>
+          </div>
+        </div>
+
+        {/* Search + filter */}
+        <div className="flex gap-3 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input className="input pl-9" placeholder="Search patient, MRN, TPA, claim #…" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <select className="input w-48" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="all">All Status</option>
+            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+              <option key={key} value={key}>{cfg.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Claims list */}
+        {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : filtered.length === 0 ? (
+          <div className="card p-12 text-center text-gray-400">
+            <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">{claims.length === 0 ? 'No claims yet' : 'No claims match filter'}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(c => {
+              const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.pre_auth_pending
+              const Icon = cfg.icon
+              const nextStatuses = STATUS_FLOW[c.status] || []
+              return (
+                <div key={c.id} className={`card p-4 border ${cfg.color}`}>
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="font-semibold text-gray-900">{c.patient_name}</span>
+                        <span className="text-xs text-gray-400">{c.mrn}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}><Icon className="w-3 h-3 inline mr-1" />{cfg.label}</span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {c.tpa_name && <span>{c.tpa_name}</span>}
+                        {c.insurance_company && <span className="ml-2 text-gray-400">({c.insurance_company})</span>}
+                        {c.policy_number && <span className="ml-2 text-xs text-gray-400">Policy: {c.policy_number}</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {c.diagnosis && <span>Dx: {c.diagnosis}</span>}
+                        {c.surgery_name && <span className="ml-2">Surgery: {c.surgery_name}</span>}
+                      </div>
+                      <div className="flex items-center gap-4 mt-2">
+                        <span className="text-sm font-mono font-bold text-gray-800">Claimed: {inr(c.claim_amount)}</span>
+                        {c.approved_amount != null && <span className="text-sm font-mono font-bold text-green-700">Approved: {inr(c.approved_amount)}</span>}
+                        {c.settlement_utr && <span className="text-xs text-gray-400">UTR: {c.settlement_utr}</span>}
+                      </div>
+                      {c.notes && <div className="text-xs text-gray-500 mt-1 italic">{c.notes}</div>}
+                    </div>
+                    <div className="flex flex-col gap-1 flex-shrink-0 min-w-[100px]">
+                      {nextStatuses.map(ns => (
+                        <button key={ns} onClick={() => updateClaimStatus(c, ns)}
+                          className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded font-medium text-gray-700 text-left">
+                          → {STATUS_CONFIG[ns]?.label || ns}
+                        </button>
+                      ))}
+                      <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
 }
 
 ```
@@ -16215,6 +16694,7 @@ import { formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
+import { IndianRupee } from 'lucide-react'
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
@@ -16497,7 +16977,14 @@ export default function IPDNursingPage() {
       recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
-    }).then(({ error }) => { if (error) warnSupabaseFail('vital', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setVitals(prev => prev.filter(v => v !== entry))
+        warnSupabaseFail('vital', error.message)
+      }
+    })
+
   }
 
   // ── Add I/O ────────────────────────────────────────────────────
@@ -16513,7 +17000,14 @@ export default function IPDNursingPage() {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
       recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
-    }).then(({ error }) => { if (error) warnSupabaseFail('I/O', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setIO(prev => prev.filter(e => e !== entry))
+        warnSupabaseFail('I/O', error.message)
+      }
+    })
+
   }
 
   // ── Add note ───────────────────────────────────────────────────
@@ -16531,7 +17025,14 @@ export default function IPDNursingPage() {
     await supabase.from('ipd_nursing').insert({
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
       nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
-    }).then(({ error }) => { if (error) warnSupabaseFail('note', error.message) })
+    }).then(({ error }) => {
+      if (error) {
+        // Rollback: remove the optimistically-added entry
+        setNotes(prev => prev.filter(n => n !== entry))
+        warnSupabaseFail('note', error.message)
+      }
+    })
+
   }
 
   // ── Handle doctor note photo — direct upload + OCR ────────────
@@ -16620,6 +17121,15 @@ export default function IPDNursingPage() {
               <CheckCircle className="w-4 h-4" /> Saved
             </span>
           )}
+          {/* IPD Bill button — navigates to billing with pre-filled IPD charges */}
+          {bed && patient && (
+            <Link
+              href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}&encounterType=IPD`}
+              className="ml-2 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              <IndianRupee className="w-3.5 h-3.5" /> IPD Bill
+            </Link>
+          )}
+
         </div>
 
         {/* Autofill success banner */}
@@ -22827,6 +23337,571 @@ export default function OPDIndexPage() {
 
 ```
 
+# src\app\ot-schedule\page.tsx
+
+```tsx
+'use client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import {
+    Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
+    ChevronLeft, ChevronRight, Search, Calendar, ArrowLeft,
+    Save, Loader2, Trash2, RefreshCw, MessageCircle,
+} from 'lucide-react'
+
+interface OTSchedule {
+    id: string
+    patient_id: string
+    patient_name: string
+    mrn: string
+    surgery_name: string
+    surgery_date: string
+    start_time: string
+    end_time: string
+    surgeon: string
+    anesthetist: string | null
+    ot_room: string
+    status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'postponed'
+    priority: 'elective' | 'urgent' | 'emergency'
+    pre_op_notes: string | null
+    post_op_notes: string | null
+    anesthesia_type: string | null
+    estimated_duration_min: number | null
+    consent_taken: boolean
+    blood_arranged: boolean
+    fasting_confirmed: boolean
+    created_at: string
+}
+
+const STATUS_STYLES: Record<string, string> = {
+    scheduled: 'bg-blue-50 border-blue-200 text-blue-800',
+    in_progress: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+    completed: 'bg-green-50 border-green-200 text-green-700',
+    cancelled: 'bg-gray-50 border-gray-200 text-gray-500',
+    postponed: 'bg-orange-50 border-orange-200 text-orange-700',
+}
+const PRIORITY_STYLES: Record<string, string> = {
+    elective: 'bg-gray-100 text-gray-600',
+    urgent: 'bg-orange-100 text-orange-700',
+    emergency: 'bg-red-100 text-red-700',
+}
+const SURGERIES = [
+    'LSCS (Caesarean Section)', 'Normal Vaginal Delivery', 'D&C (Dilatation & Curettage)',
+    'Hysterectomy (Abdominal)', 'Hysterectomy (Vaginal)', 'Laparoscopic Hysterectomy',
+    'Ovarian Cystectomy', 'Laparoscopy (Diagnostic)', 'Laparoscopy (Operative)',
+    'Tubal Ligation', 'Colposcopy + Biopsy', 'LEEP / LLETZ', 'Bartholin Cyst I&D',
+    'Cervical Cerclage', 'MVA (Manual Vacuum Aspiration)', 'Episiotomy Repair',
+    'Perineal Tear Repair', 'Hysteroscopy', 'Endometrial Biopsy', 'Other',
+]
+const TIME_SLOTS = Array.from({ length: 24 }, (_, h) => [':00', ':30'].map(m => `${String(h).padStart(2, '0')}${m}`)).flat().filter(t => t >= '07:00' && t <= '21:00')
+
+export default function OTSchedulePage() {
+    const { user } = useAuth()
+    const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+    const [schedules, setSchedules] = useState<OTSchedule[]>([])
+    const [loading, setLoading] = useState(true)
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+    const [view, setView] = useState<'list' | 'new'>('list')
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState('')
+    const [surgeonFilter, setSurgeonFilter] = useState('')
+    const [patientQuery, setPatientQuery] = useState('')
+    const [patientResults, setPatientResults] = useState<any[]>([])
+    const [selPatient, setSelPatient] = useState<any>(null)
+    const [form, setForm] = useState({
+        surgery_name: SURGERIES[0], surgery_date: new Date().toISOString().split('T')[0],
+        start_time: '09:00', end_time: '10:00', surgeon: '', anesthetist: '',
+        ot_room: 'OT-1', priority: 'elective' as 'elective' | 'urgent' | 'emergency',
+        anesthesia_type: '', estimated_duration_min: '60', pre_op_notes: '',
+        consent_taken: false, blood_arranged: false, fasting_confirmed: false,
+    })
+    const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const today = new Date().toISOString().split('T')[0]
+
+    const loadSchedules = useCallback(async () => {
+        setLoading(true)
+        let q = supabase.from('ot_schedules').select('*').eq('surgery_date', date).order('start_time')
+        if (surgeonFilter) q = q.ilike('surgeon', `%${surgeonFilter}%`)
+        const { data } = await q
+        setSchedules((data || []) as OTSchedule[])
+        setLoading(false)
+    }, [date, surgeonFilter])
+
+    useEffect(() => { loadSchedules() }, [loadSchedules])
+    useEffect(() => { if (hs.doctorName && !form.surgeon) setForm(p => ({ ...p, surgeon: hs.doctorName })) }, [hs.doctorName])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        const pid = params.get('patientId')
+        const pname = params.get('patientName')
+        const pmrn = params.get('mrn')
+        if (pid && pname) {
+            setSelPatient({ id: pid, full_name: decodeURIComponent(pname), mrn: pmrn || '', age: '', mobile: '' })
+            if (params.get('view') === 'new') setView('new')
+        }
+    }, [])
+
+    function searchPatients(q: string) {
+        setPatientQuery(q); setSelPatient(null)
+        if (q.trim().length < 2) { setPatientResults([]); return }
+        if (searchTimer.current) clearTimeout(searchTimer.current)
+        searchTimer.current = setTimeout(async () => {
+            const { data } = await supabase.from('patients').select('id,full_name,mrn,age,mobile').or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%`).limit(6)
+            setPatientResults(data || [])
+        }, 300)
+    }
+
+    async function handleBook() {
+        if (!selPatient) { setError('Select a patient'); return }
+        setSaving(true); setError('')
+        const { data: conflicts } = await supabase.from('ot_schedules').select('id,patient_name,surgery_name,start_time,end_time')
+            .eq('surgery_date', form.surgery_date).eq('ot_room', form.ot_room).neq('status', 'cancelled')
+            .lt('start_time', form.end_time).gt('end_time', form.start_time)
+
+        if (conflicts && conflicts.length > 0) {
+            const c = conflicts[0]
+            if (!confirm(`⚠️ Conflict: "${c.surgery_name}" for ${c.patient_name} (${c.start_time}-${c.end_time}). Book anyway?`)) { setSaving(false); return }
+        }
+        // Validate end time is after start time
+        if (form.end_time <= form.start_time) {
+            setError('End time must be after start time')
+            setSaving(false)
+            return
+        }
+
+        const { error: e } = await supabase.from('ot_schedules').insert({
+            patient_id: selPatient.id, patient_name: selPatient.full_name, mrn: selPatient.mrn || '',
+            surgery_name: form.surgery_name, surgery_date: form.surgery_date,
+            start_time: form.start_time, end_time: form.end_time, surgeon: form.surgeon,
+            anesthetist: form.anesthetist || null, ot_room: form.ot_room, priority: form.priority,
+            anesthesia_type: form.anesthesia_type || null,
+            estimated_duration_min: Number(form.estimated_duration_min) || null,
+            pre_op_notes: form.pre_op_notes || null,
+            consent_taken: form.consent_taken, blood_arranged: form.blood_arranged,
+            fasting_confirmed: form.fasting_confirmed, status: 'scheduled', created_by: user?.full_name || null,
+        })
+        setSaving(false)
+        if (e) { setError(e.message); return }
+        resetForm(); setView('list'); setDate(form.surgery_date); loadSchedules()
+    }
+
+    async function completeWithNotes(s: OTSchedule) {
+        const notes = prompt('Post-Op Notes (findings, complications, outcome):')
+        if (notes === null) return
+        await supabase.from('ot_schedules').update({ status: 'completed', post_op_notes: notes || null, updated_at: new Date().toISOString() }).eq('id', s.id)
+        await supabase.from('encounters').insert({
+            patient_id: s.patient_id, encounter_type: 'Surgery', encounter_date: s.surgery_date,
+            diagnosis: s.surgery_name, chief_complaint: `Surgery: ${s.surgery_name}`,
+            notes: `Surgeon: ${s.surgeon}${s.anesthetist ? ` | Anesthetist: ${s.anesthetist}` : ''}${notes ? `
+Post-Op: ${notes}` : ''}`,
+            doctor_name: s.surgeon,
+        })
+        loadSchedules()
+    }
+
+    async function updateStatus(id: string, status: string) {
+        await supabase.from('ot_schedules').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+        loadSchedules()
+    }
+
+    function resetForm() {
+        setSelPatient(null); setPatientQuery(''); setPatientResults([])
+        setForm({ surgery_name: SURGERIES[0], surgery_date: today, start_time: '09:00', end_time: '10:00', surgeon: hs.doctorName || '', anesthetist: '', ot_room: 'OT-1', priority: 'elective', anesthesia_type: '', estimated_duration_min: '60', pre_op_notes: '', consent_taken: false, blood_arranged: false, fasting_confirmed: false })
+    }
+
+    function changeDate(n: number) { const d = new Date(date); d.setDate(d.getDate() + n); setDate(d.toISOString().split('T')[0]) }
+    const activeCount = schedules.filter(s => s.status === 'scheduled' || s.status === 'in_progress').length
+
+    // ═══ NEW BOOKING ═══
+    if (view === 'new') {
+        return (
+            <AppShell>
+                <div className="p-6 max-w-3xl mx-auto">
+                    <div className="flex items-center gap-3 mb-5">
+                        <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
+                        <h1 className="text-xl font-bold text-gray-900">Schedule Surgery</h1>
+                    </div>
+                    {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{error}</div>}
+                    <div className="card p-5 mb-4">
+                        <h2 className="section-title">Patient</h2>
+                        {selPatient ? (
+                            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                                <div><div className="font-semibold">{selPatient.full_name}</div><div className="text-xs text-gray-500">{selPatient.mrn}</div></div>
+                                <button onClick={() => { setSelPatient(null); setPatientQuery('') }}><X className="w-4 h-4 text-gray-400 hover:text-red-500" /></button>
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input className="input pl-9" placeholder="Search patient…" value={patientQuery} onChange={e => searchPatients(e.target.value)} autoFocus />
+                                {patientResults.length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 z-20 bg-white border rounded-lg shadow-lg mt-1">
+                                        {patientResults.map(p => (
+                                            <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }} className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b last:border-0">
+                                                <span className="font-semibold">{p.full_name}</span><span className="text-gray-400 ml-2 text-xs">{p.mrn}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <div className="card p-5 mb-4">
+                        <h2 className="section-title">Surgery Details</h2>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="col-span-2"><label className="label">Surgery *</label><select className="input" value={form.surgery_name} onChange={e => setForm(p => ({ ...p, surgery_name: e.target.value }))}>{SURGERIES.map(s => <option key={s}>{s}</option>)}</select></div>
+                            <div><label className="label">Date *</label><input className="input" type="date" min={today} value={form.surgery_date} onChange={e => setForm(p => ({ ...p, surgery_date: e.target.value }))} /></div>
+                            <div><label className="label">Priority</label><select className="input" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as any }))}><option value="elective">Elective</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select></div>
+                            <div><label className="label">Start *</label><select className="input" value={form.start_time} onChange={e => setForm(p => ({ ...p, start_time: e.target.value }))}>{TIME_SLOTS.map(t => <option key={t}>{t}</option>)}</select></div>
+                            <div><label className="label">End *</label><select className="input" value={form.end_time} onChange={e => setForm(p => ({ ...p, end_time: e.target.value }))}>{TIME_SLOTS.map(t => <option key={t}>{t}</option>)}</select></div>
+                            <div><label className="label">Surgeon *</label><input className="input" value={form.surgeon} onChange={e => setForm(p => ({ ...p, surgeon: e.target.value }))} /></div>
+                            <div><label className="label">Anesthetist</label><input className="input" value={form.anesthetist} onChange={e => setForm(p => ({ ...p, anesthetist: e.target.value }))} /></div>
+                            <div><label className="label">OT Room</label><select className="input" value={form.ot_room} onChange={e => setForm(p => ({ ...p, ot_room: e.target.value }))}><option>OT-1</option><option>OT-2</option><option>Minor OT</option></select></div>
+                            <div><label className="label">Anesthesia</label><select className="input" value={form.anesthesia_type} onChange={e => setForm(p => ({ ...p, anesthesia_type: e.target.value }))}><option value="">Select</option><option>General</option><option>Spinal</option><option>Epidural</option><option>Local</option><option>IV Sedation</option></select></div>
+                        </div>
+                    </div>
+                    <div className="card p-5 mb-4">
+                        <h2 className="section-title">Pre-Op Checklist</h2>
+                        <div className="space-y-3">
+                            {[{ key: 'consent_taken', label: 'Consent obtained' }, { key: 'fasting_confirmed', label: 'Patient fasting (NPO)' }, { key: 'blood_arranged', label: 'Blood arranged' }].map(({ key, label }) => (
+                                <label key={key} className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded accent-blue-600" checked={(form as any)[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.checked }))} /><span className="text-sm">{label}</span></label>
+                            ))}
+                        </div>
+                        <div className="mt-4"><label className="label">Pre-Op Notes</label><textarea className="input resize-none" rows={2} value={form.pre_op_notes} onChange={e => setForm(p => ({ ...p, pre_op_notes: e.target.value }))} /></div>
+                    </div>
+                    <div className="flex justify-between">
+                        <button onClick={() => { resetForm(); setView('list') }} className="btn-secondary">Cancel</button>
+                        <button onClick={handleBook} disabled={saving || !selPatient} className="btn-primary flex items-center gap-2 disabled:opacity-60">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}{saving ? 'Scheduling…' : 'Schedule Surgery'}</button>
+                    </div>
+                </div>
+            </AppShell>
+        )
+    }
+
+    // ═══ LIST VIEW ═══
+    return (
+        <AppShell>
+            <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Scissors className="w-6 h-6 text-purple-600" /> OT Schedule</h1>
+                        <p className="text-sm text-gray-500">{activeCount} scheduled for {formatDate(date)}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Link href="/ot-schedule/week" className="btn-secondary text-xs flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Week</Link>
+                        <button onClick={() => { resetForm(); setView('new') }} className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4" /> Schedule</button>
+                    </div>
+                </div>
+                <div className="card p-3 mb-4 flex items-center gap-3">
+                    <button onClick={() => changeDate(-1)} className="p-2 border rounded-lg hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
+                    <input type="date" className="input w-48 text-center font-semibold" value={date} onChange={e => setDate(e.target.value)} />
+                    <button onClick={() => changeDate(1)} className="p-2 border rounded-lg hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
+                    {date !== today && <button onClick={() => setDate(today)} className="text-xs text-blue-600 font-medium">Today</button>}
+                    <button onClick={loadSchedules} className="p-2 border rounded-lg hover:bg-gray-50"><RefreshCw className="w-4 h-4" /></button>
+                </div>
+                <div className="flex items-center gap-3 mb-4">
+                    <label className="text-xs font-semibold text-gray-500">Surgeon:</label>
+                    <input className="input w-48 text-sm py-1.5" placeholder="All" value={surgeonFilter} onChange={e => setSurgeonFilter(e.target.value)} />
+                    {surgeonFilter && <button onClick={() => setSurgeonFilter('')}><X className="w-3.5 h-3.5 text-gray-400" /></button>}
+                </div>
+                {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : schedules.length === 0 ? (
+                    <div className="card p-12 text-center text-gray-400">
+                        <Scissors className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                        <p className="font-medium">No surgeries for {formatDate(date)}</p>
+                        <button onClick={() => { resetForm(); setView('new') }} className="btn-primary inline-flex items-center gap-2 text-xs mt-3"><Plus className="w-3.5 h-3.5" /> Schedule</button>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {schedules.map(s => (
+                            <div key={s.id} className={`card p-4 border ${STATUS_STYLES[s.status]}`}>
+                                <div className="flex items-start gap-4">
+                                    <div className="text-center min-w-[60px]">
+                                        <div className="text-lg font-bold text-gray-800">{s.start_time}</div>
+                                        <div className="text-xs text-gray-400">to {s.end_time}</div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                                            <span className="font-semibold text-gray-900">{s.surgery_name}</span>
+                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PRIORITY_STYLES[s.priority]}`}>{s.priority}</span>
+                                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{s.ot_room}</span>
+                                        </div>
+                                        <div className="text-sm text-gray-600"><span className="font-medium">{s.patient_name}</span><span className="text-gray-400 ml-2">{s.mrn}</span></div>
+                                        <div className="text-xs text-gray-500 mt-1">Surgeon: {s.surgeon}{s.anesthetist && ` · ${s.anesthetist}`}{s.anesthesia_type && ` · ${s.anesthesia_type}`}</div>
+                                        {s.status === 'completed' && s.post_op_notes && (
+                                            <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800"><span className="font-semibold">Post-Op: </span>{s.post_op_notes}</div>
+                                        )}
+                                        <div className="flex gap-3 mt-2">
+                                            <span className={`text-xs flex items-center gap-1 ${s.consent_taken ? 'text-green-600' : 'text-red-500'}`}>{s.consent_taken ? <CheckCircle className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />} Consent</span>
+                                            <span className={`text-xs flex items-center gap-1 ${s.fasting_confirmed ? 'text-green-600' : 'text-red-500'}`}>{s.fasting_confirmed ? <CheckCircle className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />} Fasting</span>
+                                            <span className={`text-xs flex items-center gap-1 ${s.blood_arranged ? 'text-green-600' : 'text-gray-400'}`}>{s.blood_arranged ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />} Blood</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                        {s.status === 'scheduled' && (
+                                            <>
+                                                <button onClick={() => updateStatus(s.id, 'in_progress')} className="text-xs bg-yellow-50 text-yellow-700 hover:bg-yellow-100 px-2 py-1 rounded font-medium">Start</button>
+                                                <button onClick={() => updateStatus(s.id, 'postponed')} className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">Postpone</button>
+                                                <a href={`https://wa.me/?text=${encodeURIComponent(`*Pre-Surgery*
+${s.patient_name}
+Surgery: ${s.surgery_name}
+Date: ${formatDate(s.surgery_date)} at ${s.start_time}
+
+✓ No food/drink after 10 PM
+✓ Bring reports + ID
+✓ Arrive 1hr early
+
+${hs.hospitalName || 'Hospital'}`)}`} target="_blank" rel="noopener noreferrer" className="text-xs text-green-600 hover:underline px-2 py-1 flex items-center gap-1"><MessageCircle className="w-3 h-3" />Pre-Op</a>
+                                            </>
+                                        )}
+                                        {s.status === 'in_progress' && <button onClick={() => completeWithNotes(s)} className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">Complete</button>}
+                                        {(s.status === 'scheduled' || s.status === 'postponed') && <button onClick={() => updateStatus(s.id, 'cancelled')} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Cancel</button>}
+                                        <Link href={`/patients/${s.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </AppShell>
+    )
+}
+
+```
+
+# src\app\ot-schedule\week\page.tsx
+
+```tsx
+'use client'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { formatDate } from '@/lib/utils'
+import {
+  Scissors, Plus, ChevronLeft, ChevronRight, Calendar,
+  CheckCircle, AlertTriangle, Clock,
+} from 'lucide-react'
+
+interface OTSchedule {
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  surgery_name: string
+  surgery_date: string
+  start_time: string
+  end_time: string
+  surgeon: string
+  ot_room: string
+  status: string
+  priority: string
+  consent_taken: boolean
+  fasting_confirmed: boolean
+  blood_arranged: boolean
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  scheduled: 'bg-blue-50 border-blue-200 text-blue-800',
+  in_progress: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+  completed: 'bg-green-50 border-green-200 text-green-700',
+  cancelled: 'bg-gray-50 border-gray-200 text-gray-500',
+  postponed: 'bg-orange-50 border-orange-200 text-orange-700',
+}
+
+const PRIORITY_DOTS: Record<string, string> = {
+  elective: 'bg-gray-400',
+  urgent: 'bg-orange-500',
+  emergency: 'bg-red-500',
+}
+
+export default function OTWeekPage() {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [weekData, setWeekData] = useState<Record<string, OTSchedule[]>>({})
+  const [loading, setLoading] = useState(true)
+
+  const today = new Date().toISOString().split('T')[0]
+
+  // Calculate Monday-Sunday for the week containing `date`
+  function getWeekDays(baseDate: string): string[] {
+    const days: string[] = []
+    const d = new Date(baseDate)
+    const dow = d.getDay()
+    d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)) // Monday
+    for (let i = 0; i < 7; i++) {
+      days.push(d.toISOString().split('T')[0])
+      d.setDate(d.getDate() + 1)
+    }
+    return days
+  }
+
+  const weekDays = getWeekDays(date)
+
+  useEffect(() => {
+    async function loadWeek() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('ot_schedules')
+        .select('*')
+        .gte('surgery_date', weekDays[0])
+        .lte('surgery_date', weekDays[6])
+        .neq('status', 'cancelled')
+        .order('start_time')
+
+      const grouped: Record<string, OTSchedule[]> = {}
+      weekDays.forEach(d => { grouped[d] = [] })
+      ;(data || []).forEach((s: any) => {
+        if (grouped[s.surgery_date]) grouped[s.surgery_date].push(s)
+      })
+      setWeekData(grouped)
+      setLoading(false)
+    }
+    loadWeek()
+  }, [date])
+
+  function prevWeek() {
+    const d = new Date(date)
+    d.setDate(d.getDate() - 7)
+    setDate(d.toISOString().split('T')[0])
+  }
+
+  function nextWeek() {
+    const d = new Date(date)
+    d.setDate(d.getDate() + 7)
+    setDate(d.toISOString().split('T')[0])
+  }
+
+  const totalThisWeek = Object.values(weekData).reduce((sum, arr) => sum + arr.length, 0)
+
+  return (
+    <AppShell>
+      <div className="p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Scissors className="w-6 h-6 text-purple-600" /> OT — Week View
+            </h1>
+            <p className="text-sm text-gray-500">
+              {formatDate(weekDays[0])} — {formatDate(weekDays[6])} · {totalThisWeek} surgeries
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/ot-schedule" className="btn-secondary text-xs flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" /> Day View
+            </Link>
+            <Link href="/ot-schedule?view=new" className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Schedule
+            </Link>
+          </div>
+        </div>
+
+        {/* Week Navigation */}
+        <div className="flex items-center gap-3 mb-5">
+          <button onClick={prevWeek} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          </button>
+          <button onClick={() => setDate(today)} className="text-xs text-blue-600 font-medium hover:underline">
+            This Week
+          </button>
+          <button onClick={nextWeek} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          </button>
+          <span className="text-xs text-gray-400 ml-2">
+            Week of {new Date(weekDays[0]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+          </span>
+        </div>
+
+        {/* Week Grid */}
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading week…</div>
+        ) : (
+          <div className="grid grid-cols-7 gap-2">
+            {weekDays.map(day => {
+              const daySchedules = weekData[day] || []
+              const isToday = day === today
+              const dayName = new Date(day).toLocaleDateString('en-IN', { weekday: 'short' })
+              const dayNum = new Date(day).getDate()
+              const monthStr = new Date(day).toLocaleDateString('en-IN', { month: 'short' })
+
+              return (
+                <div key={day} className={`border rounded-xl p-2 min-h-[180px] transition-colors ${isToday ? 'border-purple-300 bg-purple-50/30' : 'border-gray-200 hover:border-gray-300'}`}>
+                  {/* Day header */}
+                  <div className={`text-center mb-2 pb-2 border-b ${isToday ? 'border-purple-200' : 'border-gray-100'}`}>
+                    <div className="text-xs text-gray-500 uppercase">{dayName}</div>
+                    <div className={`text-xl font-bold ${isToday ? 'text-purple-700' : 'text-gray-700'}`}>{dayNum}</div>
+                    <div className="text-[10px] text-gray-400">{monthStr}</div>
+                  </div>
+
+                  {/* Surgeries */}
+                  {daySchedules.length === 0 ? (
+                    <div className="text-xs text-gray-300 text-center py-4">No OT</div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {daySchedules.map(s => (
+                        <Link key={s.id} href={`/ot-schedule`}
+                          className={`block text-xs p-2 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity ${STATUS_STYLES[s.status] || 'bg-gray-50 border-gray-200'}`}>
+                          {/* Time + Priority dot */}
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOTS[s.priority] || 'bg-gray-400'}`}></span>
+                            <span className="font-bold text-[11px]">{s.start_time}</span>
+                          </div>
+                          {/* Surgery name (truncated) */}
+                          <div className="font-semibold truncate leading-tight">
+                            {s.surgery_name.split('(')[0].trim().slice(0, 15)}
+                          </div>
+                          {/* Patient */}
+                          <div className="text-[10px] truncate opacity-70 mt-0.5">
+                            {s.patient_name}
+                          </div>
+                          {/* Surgeon */}
+                          <div className="text-[10px] truncate opacity-60">
+                            {s.surgeon.split(' ').slice(0, 2).join(' ')}
+                          </div>
+                          {/* Checklist indicators */}
+                          <div className="flex gap-1 mt-1">
+                            {s.consent_taken ? (
+                              <CheckCircle className="w-2.5 h-2.5 text-green-500" />
+                            ) : (
+                              <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
+                            )}
+                            {s.fasting_confirmed ? (
+                              <CheckCircle className="w-2.5 h-2.5 text-green-500" />
+                            ) : (
+                              <Clock className="w-2.5 h-2.5 text-gray-300" />
+                            )}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Legend */}
+        <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+          <span className="font-semibold">Legend:</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400"></span> Elective</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500"></span> Urgent</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> Emergency</span>
+          <span className="mx-2">|</span>
+          <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-green-500" /> Consent+Fasting OK</span>
+          <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-red-400" /> Missing consent</span>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
+```
+
 # src\app\page.tsx
 
 ```tsx
@@ -23775,7 +24850,7 @@ import { TEMPLATES, whatsAppUrl } from '@/lib/whatsapp-templates'
 import type { TemplateParams } from '@/lib/whatsapp-templates'
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
-  Droplets, User, Edit, Plus, FileText, ClipboardList,
+  Droplets, User, Edit, Plus, FileText, ClipboardList, Scissors,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
   Shield, Download, ExternalLink, MessageCircle, Users,
 } from 'lucide-react'
@@ -23797,11 +24872,11 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
 
   const lines: { key: LineKey; label: string; color: string; unit: string }[] = [
     { key: 'bp_systolic', label: 'BP Systolic', color: '#ef4444', unit: 'mmHg' },
-    { key: 'pulse',       label: 'Pulse',       color: '#3b82f6', unit: 'bpm'  },
-    { key: 'weight',      label: 'Weight',      color: '#22c55e', unit: 'kg'   },
+    { key: 'pulse', label: 'Pulse', color: '#3b82f6', unit: 'bpm' },
+    { key: 'weight', label: 'Weight', color: '#22c55e', unit: 'kg' },
   ]
 
-  const W = 480; const H = 120; const PAD = { t:10, r:10, b:28, l:42 }
+  const W = 480; const H = 120; const PAD = { t: 10, r: 10, b: 28, l: 42 }
   const chartW = W - PAD.l - PAD.r
   const chartH = H - PAD.t - PAD.b
 
@@ -23832,16 +24907,16 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
         {[0, 0.25, 0.5, 0.75, 1].map(f => (
           <line key={f}
-            x1={PAD.l} y1={PAD.t + chartH * (1-f)}
-            x2={PAD.l + chartW} y2={PAD.t + chartH * (1-f)}
-            stroke="#f1f5f9" strokeWidth="1"/>
+            x1={PAD.l} y1={PAD.t + chartH * (1 - f)}
+            x2={PAD.l + chartW} y2={PAD.t + chartH * (1 - f)}
+            stroke="#f1f5f9" strokeWidth="1" />
         ))}
         {pts.map((e, i) => (
           <text key={i}
-            x={PAD.l + (i/(pts.length-1))*chartW}
+            x={PAD.l + (i / (pts.length - 1)) * chartW}
             y={H - 4}
             textAnchor="middle" fontSize="8" fill="#94a3b8">
-            {new Date(e.encounter_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
+            {new Date(e.encounter_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
           </text>
         ))}
         {lines.map(({ key, color }) => {
@@ -23849,15 +24924,15 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           if (!d) return null
           return (
             <g key={key}>
-              <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"/>
+              <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
               {pts.map((e, i) => {
                 const v = Number(e[key]) || null
                 if (v === null) return null
                 const vals = pts.map(p => Number(p[key]) || null).filter(Boolean) as number[]
-                const minV = Math.min(...vals)*0.95; const maxV = Math.max(...vals)*1.05; const range=maxV-minV||1
-                const x = PAD.l + (i/(pts.length-1))*chartW
-                const y = PAD.t + chartH - ((v-minV)/range)*chartH
-                return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5" fill={color} stroke="white" strokeWidth="1"/>
+                const minV = Math.min(...vals) * 0.95; const maxV = Math.max(...vals) * 1.05; const range = maxV - minV || 1
+                const x = PAD.l + (i / (pts.length - 1)) * chartW
+                const y = PAD.t + chartH - ((v - minV) / range) * chartH
+                return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5" fill={color} stroke="white" strokeWidth="1" />
               })}
             </g>
           )
@@ -23868,7 +24943,7 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           const last = [...pts].reverse().find(e => Number(e[key]))
           return last ? (
             <div key={key} className="flex items-center gap-1 text-xs text-gray-500">
-              <span className="w-3 h-0.5 rounded inline-block" style={{ background: color }}/>
+              <span className="w-3 h-0.5 rounded inline-block" style={{ background: color }} />
               {label}: <strong style={{ color }}>{Number(last[key])}{unit}</strong>
             </div>
           ) : null
@@ -23879,8 +24954,8 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
 }
 
 const BLOOD_COLOR: Record<string, string> = {
-  'A+':'badge-red','A-':'badge-red','B+':'badge-blue','B-':'badge-blue',
-  'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
+  'A+': 'badge-red', 'A-': 'badge-red', 'B+': 'badge-blue', 'B-': 'badge-blue',
+  'O+': 'badge-green', 'O-': 'badge-green', 'AB+': 'badge-yellow', 'AB-': 'badge-yellow'
 }
 
 // ── Tab type — insurance added ────────────────────────────────
@@ -23888,36 +24963,36 @@ type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | '
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router  = useRouter()
+  const router = useRouter()
 
-  const [patient,       setPatient]       = useState<Patient | null>(null)
-  const [encounters,    setEncounters]    = useState<Encounter[]>([])
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [encounters, setEncounters] = useState<Encounter[]>([])
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
-  const [discharges,    setDischarges]    = useState<DischargeSummary[]>([])
-  const [bills,         setBills]         = useState<any[]>([])
-  const [labReports,    setLabReports]    = useState<any[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [activeTab,     setActiveTab]     = useState<Tab>('overview')
+  const [discharges, setDischarges] = useState<DischargeSummary[]>([])
+  const [bills, setBills] = useState<any[]>([])
+  const [labReports, setLabReports] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [fhirExporting, setFhirExporting] = useState(false)
 
   // AI summary state
-  const [summary,      setSummary]      = useState('')
-  const [summaryState, setSummaryState] = useState<'idle'|'loading'|'done'|'error'>('idle')
+  const [summary, setSummary] = useState('')
+  const [summaryState, setSummaryState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [summaryError, setSummaryError] = useState('')
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => {
     if (!id) return
-    ;(async () => {
-      try {
-        const { data } = await supabase
-          .from('lab_reports')
-          .select('*')
-          .eq('patient_id', id)
-          .order('created_at', { ascending: false })
-        if (data) setLabReports(data)
-      } catch { /* non-fatal */ }
-    })()
+      ; (async () => {
+        try {
+          const { data } = await supabase
+            .from('lab_reports')
+            .select('*')
+            .eq('patient_id', id)
+            .order('created_at', { ascending: false })
+          if (data) setLabReports(data)
+        } catch { /* non-fatal */ }
+      })()
   }, [id])
 
   async function loadAll() {
@@ -23940,7 +25015,7 @@ export default function PatientDetailPage() {
   function displayAge(p: Patient): string {
     const live = ageFromDOB(p.date_of_birth)
     if (live !== null) return `${live} years`
-    if (p.age)         return `${p.age} years`
+    if (p.age) return `${p.age} years`
     return '—'
   }
 
@@ -23979,22 +25054,22 @@ export default function PatientDetailPage() {
 
   // ── Derived insurance data ────────────────────────────────────
   const pat = patient as any
-  const paidBills     = bills.filter(b => b.status === 'paid')
-  const totalBilled   = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
-  const hasFinalDS    = discharges.some(d => d.is_final)
-  const hasDS         = discharges.length > 0
-  const hasRx         = prescriptions.length > 0
-  const hasBills      = paidBills.length > 0
-  const hasVisits     = encounters.length > 0
+  const paidBills = bills.filter(b => b.status === 'paid')
+  const totalBilled = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+  const hasFinalDS = discharges.some(d => d.is_final)
+  const hasDS = discharges.length > 0
+  const hasRx = prescriptions.length > 0
+  const hasBills = paidBills.length > 0
+  const hasVisits = encounters.length > 0
 
   // Insurance bundle URL
   const bundleUrl = `/api/insurance-bundle/${patient.id}`
 
   // WhatsApp message for insurance docs ready
   const insuranceWAMsg = TEMPLATES.find(t => t.id === 'insurance_docs_ready')?.generate({
-    patientName:   patient.full_name,
-    mobile:        patient.mobile,
-    mrn:           patient.mrn,
+    patientName: patient.full_name,
+    mobile: patient.mobile,
+    mrn: patient.mrn,
     policyTpaName: pat.policy_tpa_name || '',
   }) || ''
 
@@ -24041,9 +25116,13 @@ export default function PatientDetailPage() {
                     className="btn-primary flex items-center gap-2 text-xs">
                     <Stethoscope className="w-3.5 h-3.5" /> New Consultation
                   </Link>
+                  <Link href={`/ot-schedule?view=new&patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                    className="flex items-center gap-1.5 text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-lg transition-colors">
+                    <Scissors className="w-3.5 h-3.5" /> Schedule Surgery
+                  </Link>
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors">
-                    <Calendar className="w-4 h-4"/> Book Appointment
+                    <Calendar className="w-4 h-4" /> Book Appointment
                   </Link>
                   {/* FIX #5: Add to OPD Queue directly from patient profile */}
                   <Link
@@ -24056,14 +25135,14 @@ export default function PatientDetailPage() {
                       window.location.href = `/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`
                     }}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 hover:border-yellow-400 transition-colors font-medium">
-                    <Users className="w-4 h-4"/> Add to OPD Queue
+                    <Users className="w-4 h-4" /> Add to OPD Queue
                   </Link>
                   {bills.length === 0 && (
                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 font-medium w-full">
                       <span>⚠️</span>
                       <span>No payment recorded yet</span>
                       <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
-                        className="ml-auto text-amber-700 underline hover:text-amber-900" onClick={e=>e.stopPropagation()}>
+                        className="ml-auto text-amber-700 underline hover:text-amber-900" onClick={e => e.stopPropagation()}>
                         Collect Payment
                       </Link>
                     </div>
@@ -24085,7 +25164,7 @@ export default function PatientDetailPage() {
                         a.download = `${patient.mrn}_FHIR_Bundle.json`
                         a.click()
                         URL.revokeObjectURL(url)
-                      } catch {} finally { setFhirExporting(false) }
+                      } catch { } finally { setFhirExporting(false) }
                     }}
                     disabled={fhirExporting}
                     className="btn-secondary flex items-center gap-2 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50"
@@ -24145,7 +25224,7 @@ export default function PatientDetailPage() {
                   <span className="font-medium text-green-700">
                     Mediclaim ✓{pat.cashless ? ' · Cashless' : ''}
                     {pat.policy_tpa_name ? ` · ${pat.policy_tpa_name}` : ''}
-                    {pat.policy_number   ? ` · #${pat.policy_number}`  : ''}
+                    {pat.policy_number ? ` · #${pat.policy_number}` : ''}
                   </span>
                 </div>
               )}
@@ -24206,12 +25285,12 @@ export default function PatientDetailPage() {
           if (uniqueFlags.length === 0) return null
 
           const hasCritical = uniqueFlags.some(f => f.level === 'critical')
-          const hasHigh     = uniqueFlags.some(f => f.level === 'high')
+          const hasHigh = uniqueFlags.some(f => f.level === 'high')
           const overallStyle = hasCritical
             ? riskLevelStyle('critical')
             : hasHigh
-            ? riskLevelStyle('high')
-            : riskLevelStyle('watch')
+              ? riskLevelStyle('high')
+              : riskLevelStyle('watch')
 
           return (
             <div className={`mb-5 rounded-xl border-2 ${overallStyle.border} ${overallStyle.bg} p-4`}>
@@ -24251,17 +25330,19 @@ export default function PatientDetailPage() {
         {/* Stats row */}
         <div className="grid grid-cols-4 gap-4 mb-5">
           {[
-            { icon: Stethoscope, color: 'blue',   val: encounters.length,    label: 'Total Visits' },
-            { icon: Pill,        color: 'green',  val: prescriptions.length, label: 'Prescriptions' },
-            { icon: FileText,    color: 'purple', val: discharges.length,    label: 'Discharge Summaries' },
-            { icon: Calendar,    color: 'orange', val: null,                 label: 'Next Follow-up',
-              extra: prescriptions[0]?.follow_up_date ? formatDate(prescriptions[0].follow_up_date) : '—' },
+            { icon: Stethoscope, color: 'blue', val: encounters.length, label: 'Total Visits' },
+            { icon: Pill, color: 'green', val: prescriptions.length, label: 'Prescriptions' },
+            { icon: FileText, color: 'purple', val: discharges.length, label: 'Discharge Summaries' },
+            {
+              icon: Calendar, color: 'orange', val: null, label: 'Next Follow-up',
+              extra: prescriptions[0]?.follow_up_date ? formatDate(prescriptions[0].follow_up_date) : '—'
+            },
           ].map(({ icon: Icon, color, val, label, extra }) => (
             <div key={label} className="card p-4 flex items-center gap-4">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center
-                ${color==='blue'?'bg-blue-50':color==='green'?'bg-green-50':color==='purple'?'bg-purple-50':'bg-orange-50'}`}>
+                ${color === 'blue' ? 'bg-blue-50' : color === 'green' ? 'bg-green-50' : color === 'purple' ? 'bg-purple-50' : 'bg-orange-50'}`}>
                 <Icon className={`w-5 h-5
-                  ${color==='blue'?'text-blue-600':color==='green'?'text-green-600':color==='purple'?'text-purple-600':'text-orange-600'}`} />
+                  ${color === 'blue' ? 'text-blue-600' : color === 'green' ? 'text-green-600' : color === 'purple' ? 'text-purple-600' : 'text-orange-600'}`} />
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-900">{val !== null ? val : extra}</div>
@@ -24275,15 +25356,15 @@ export default function PatientDetailPage() {
         <div className="card overflow-hidden">
           <div className="flex border-b border-gray-100 overflow-x-auto">
             {([
-              { id:'overview',      label:'Overview' },
-              { id:'visits',        label:`Visits (${encounters.length})` },
-              { id:'prescriptions', label:`Prescriptions (${prescriptions.length})` },
-              { id:'discharge',     label:`Discharge (${discharges.length})` },
-              { id:'billing',       label:`Bills (${bills.length})` },
-              { id:'labs',          label:`Labs (${labReports.length})` },
-              { id:'files',         label:'Files & Photos' },
-              { id:'insurance',     label:'🛡️ Insurance Docs' },   // NEW
-            ] as {id:Tab;label:string}[]).map(t => (
+              { id: 'overview', label: 'Overview' },
+              { id: 'visits', label: `Visits (${encounters.length})` },
+              { id: 'prescriptions', label: `Prescriptions (${prescriptions.length})` },
+              { id: 'discharge', label: `Discharge (${discharges.length})` },
+              { id: 'billing', label: `Bills (${bills.length})` },
+              { id: 'labs', label: `Labs (${labReports.length})` },
+              { id: 'files', label: 'Files & Photos' },
+              { id: 'insurance', label: '🛡️ Insurance Docs' },   // NEW
+            ] as { id: Tab; label: string }[]).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 className={`px-5 py-3 text-sm font-medium capitalize transition-colors whitespace-nowrap
                   ${activeTab === t.id
@@ -24316,8 +25397,8 @@ export default function PatientDetailPage() {
                       {summaryState === 'loading'
                         ? <><Loader2 className="w-3 h-3 animate-spin" />Generating...</>
                         : summaryState === 'done'
-                        ? <><Sparkles className="w-3 h-3" />Regenerate</>
-                        : <><Sparkles className="w-3 h-3" />Generate Summary</>}
+                          ? <><Sparkles className="w-3 h-3" />Regenerate</>
+                          : <><Sparkles className="w-3 h-3" />Generate Summary</>}
                     </button>
                   </div>
                   {summaryState === 'idle' && (
@@ -24377,11 +25458,11 @@ export default function PatientDetailPage() {
                         </div>
                       )}
                       <div className="flex gap-3 flex-wrap mt-3 pt-3 border-t border-blue-200">
-                        {encounters[0].pulse       && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">❤️ {encounters[0].pulse} bpm</span>}
+                        {encounters[0].pulse && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">❤️ {encounters[0].pulse} bpm</span>}
                         {encounters[0].bp_systolic && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">🩸 {encounters[0].bp_systolic}/{encounters[0].bp_diastolic} mmHg</span>}
                         {encounters[0].temperature && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">🌡️ {encounters[0].temperature}°C</span>}
-                        {encounters[0].spo2        && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">💨 SpO₂ {encounters[0].spo2}%</span>}
-                        {encounters[0].weight      && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">⚖️ {encounters[0].weight} kg</span>}
+                        {encounters[0].spo2 && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">💨 SpO₂ {encounters[0].spo2}%</span>}
+                        {encounters[0].weight && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">⚖️ {encounters[0].weight} kg</span>}
                       </div>
                       <Link href={`/opd/${encounters[0].id}`}
                         className="mt-3 inline-flex items-center text-xs text-blue-600 hover:underline gap-1">
@@ -24395,9 +25476,9 @@ export default function PatientDetailPage() {
                 {encounters.filter(e => e.bp_systolic || e.pulse || e.weight).length >= 2 && (
                   <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-blue-600"/> Vitals Trend
+                      <TrendingUp className="w-4 h-4 text-blue-600" /> Vitals Trend
                     </h3>
-                    <VitalsChart encounters={encounters}/>
+                    <VitalsChart encounters={encounters} />
                   </div>
                 )}
 
@@ -24438,13 +25519,13 @@ export default function PatientDetailPage() {
                           </thead>
                           <tbody>
                             {([
-                              { key: 'afi',      label: 'AFI (cm)',  unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
-                              { key: 'efw',      label: 'EFW (g)',   unit: 'g',  warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
-                              { key: 'bpd',      label: 'BPD (mm)',  unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'hc',       label: 'HC (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'ac',       label: 'AC (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'fl',       label: 'FL (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'placenta', label: 'Placenta',  unit: '',   warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
+                              { key: 'afi', label: 'AFI (cm)', unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
+                              { key: 'efw', label: 'EFW (g)', unit: 'g', warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
+                              { key: 'bpd', label: 'BPD (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'hc', label: 'HC (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'ac', label: 'AC (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'fl', label: 'FL (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'placenta', label: 'Placenta', unit: '', warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
                             ] as Array<{ key: string; label: string; unit: string; warn: (v: any) => string }>).map(param => {
                               const hasAny = usgEncs.some(e => (e.ob_data as any)?.[param.key])
                               if (!hasAny) return null
@@ -24478,10 +25559,10 @@ export default function PatientDetailPage() {
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const afiNum     = Number(d.afi)
-                                const maxAfi     = Math.max(...afiData.map(x => Number(x.afi)))
-                                const height     = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
-                                const isLow      = afiNum < 8
+                                const afiNum = Number(d.afi)
+                                const maxAfi = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const isLow = afiNum < 8
                                 const isCritical = afiNum < 5
                                 return (
                                   <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${afiNum} cm`}>
@@ -24622,13 +25703,13 @@ export default function PatientDetailPage() {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            {Array.isArray(rx.medications) && rx.medications.slice(0,3).map((med:any,i:number)=>(
+                            {Array.isArray(rx.medications) && rx.medications.slice(0, 3).map((med: any, i: number) => (
                               <div key={i} className="text-xs text-gray-600">
                                 <span className="font-medium">{med.drug}</span> — {med.dose} · {med.frequency} · {med.duration}
                               </div>
                             ))}
                             {Array.isArray(rx.medications) && rx.medications.length > 3 && (
-                              <div className="text-xs text-gray-400">+{rx.medications.length-3} more</div>
+                              <div className="text-xs text-gray-400">+{rx.medications.length - 3} more</div>
                             )}
                           </div>
                         </Link>
@@ -24644,15 +25725,15 @@ export default function PatientDetailPage() {
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-semibold text-gray-700">Payment History</h3>
                   <Link href="/billing" className="btn-primary text-xs flex items-center gap-1">
-                    <Plus className="w-3.5 h-3.5"/> New Bill
+                    <Plus className="w-3.5 h-3.5" /> New Bill
                   </Link>
                 </div>
                 {bills.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
-                    <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+                    <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="font-medium mb-1">No bills yet</p>
                     <Link href="/billing" className="btn-primary inline-flex items-center gap-2 text-xs mt-2">
-                      <Plus className="w-3.5 h-3.5"/> Create Bill
+                      <Plus className="w-3.5 h-3.5" /> Create Bill
                     </Link>
                   </div>
                 ) : (
@@ -24664,9 +25745,8 @@ export default function PatientDetailPage() {
                             <div className="font-semibold text-gray-900">₹{Number(bill.net_amount).toLocaleString('en-IN')}</div>
                             <div className="text-xs text-gray-400">{formatDate(bill.created_at)} · {bill.payment_mode}</div>
                           </div>
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                          }`}>{bill.status}</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                            }`}>{bill.status}</span>
                         </div>
                         {Array.isArray(bill.items) && (
                           <div className="text-xs text-gray-500 mt-1 truncate">
@@ -24739,7 +25819,7 @@ export default function PatientDetailPage() {
                 <h3 className="text-sm font-semibold text-gray-700 mb-4">Lab Reports</h3>
                 {labReports.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p className="font-medium mb-1">No lab reports yet</p>
                     <p className="text-xs">Lab reports added during consultations will appear here.</p>
                   </div>
@@ -24765,7 +25845,7 @@ export default function PatientDetailPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-blue-600"/>
+                      <Shield className="w-5 h-5 text-blue-600" />
                       Medical Insurance Document Bundle
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
@@ -24774,14 +25854,14 @@ export default function PatientDetailPage() {
                   </div>
                   <Link href={`/patients/${patient.id}/edit`}
                     className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                    <Edit className="w-3 h-3"/> Update policy details
+                    <Edit className="w-3 h-3" /> Update policy details
                   </Link>
                 </div>
 
                 {/* Policy details card */}
                 <div className={`rounded-xl border p-4 ${pat.mediclaim ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`}/>
+                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`} />
                     <span className="font-semibold text-sm text-gray-900">Insurance / Policy Details</span>
                     {pat.mediclaim
                       ? <span className="badge-green text-xs">Mediclaim Active</span>
@@ -24809,7 +25889,7 @@ export default function PatientDetailPage() {
                   </div>
                   {(!pat.policy_tpa_name || !pat.policy_number) && (
                     <div className="mt-3 pt-3 border-t border-green-200 text-xs text-amber-700 flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>
                         Policy company and number not filled.{' '}
                         <Link href={`/patients/${patient.id}/edit`} className="underline font-semibold">
@@ -24840,7 +25920,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/patients/${patient.id}/discharge`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <FileText className="w-3 h-3"/>
+                        <FileText className="w-3 h-3" />
                         {hasDS ? 'View' : 'Create'}
                       </Link>
                     </div>
@@ -24858,7 +25938,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/opd/new?patient=${patient.id}`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Pill className="w-3 h-3"/>
+                        <Pill className="w-3 h-3" />
                         {hasRx ? 'View Visits' : 'Add'}
                       </Link>
                     </div>
@@ -24878,7 +25958,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <IndianRupee className="w-3 h-3"/>
+                        <IndianRupee className="w-3 h-3" />
                         {hasBills ? 'View' : 'Add'}
                       </Link>
                     </div>
@@ -24896,7 +25976,7 @@ export default function PatientDetailPage() {
                       </div>
                       <button onClick={() => setActiveTab('visits')}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Stethoscope className="w-3 h-3"/> View
+                        <Stethoscope className="w-3 h-3" /> View
                       </button>
                     </div>
 
@@ -24914,7 +25994,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/patients/${patient.id}/edit`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Edit className="w-3 h-3"/> Edit
+                        <Edit className="w-3 h-3" /> Edit
                       </Link>
                     </div>
 
@@ -24929,7 +26009,7 @@ export default function PatientDetailPage() {
                       </div>
                       <button onClick={() => setActiveTab('files')}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Download className="w-3 h-3"/> View
+                        <Download className="w-3 h-3" /> View
                       </button>
                     </div>
                   </div>
@@ -24939,7 +26019,7 @@ export default function PatientDetailPage() {
                 <div className="bg-blue-600 rounded-xl p-5 text-white">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Shield className="w-5 h-5"/>
+                      <Shield className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="font-bold text-base">Open Insurance Bundle</div>
@@ -24952,14 +26032,14 @@ export default function PatientDetailPage() {
                     <button
                       onClick={() => window.open(bundleUrl, '_blank')}
                       className="flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors">
-                      <ExternalLink className="w-4 h-4"/>
+                      <ExternalLink className="w-4 h-4" />
                       Open &amp; Print Bundle
                     </button>
                     {patient.mobile && insuranceWAMsg && (
                       <a href={whatsAppUrl(patient.mobile, insuranceWAMsg)}
                         target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors">
-                        <MessageCircle className="w-4 h-4"/>
+                        <MessageCircle className="w-4 h-4" />
                         Notify Patient via WhatsApp
                       </a>
                     )}
@@ -26393,6 +27473,686 @@ export default function PatientsPage() {
           </p>
         )}
 
+      </div>
+    </AppShell>
+  )
+}
+```
+
+# src\app\pharmacy\import\page.tsx
+
+```tsx
+'use client'
+import { useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { Upload, CheckCircle, AlertTriangle, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+
+interface CSVRow {
+    [key: string]: string
+}
+
+export default function PharmacyImportPage() {
+    const [rows, setRows] = useState<CSVRow[]>([])
+    const [headers, setHeaders] = useState<string[]>([])
+    const [mapping, setMapping] = useState<Record<string, string>>({})
+    const [importing, setImporting] = useState(false)
+    const [result, setResult] = useState<{ success: number; failed: number } | null>(null)
+    const [error, setError] = useState('')
+
+    const TARGET_FIELDS = [
+        { key: 'name', label: 'Medicine Name *', required: true },
+        { key: 'generic_name', label: 'Generic Name', required: false },
+        { key: 'brand_name', label: 'Brand Name', required: false },
+        { key: 'manufacturer', label: 'Manufacturer / Company', required: false },
+        { key: 'strength', label: 'Strength (e.g. 500mg)', required: false },
+        { key: 'mrp', label: 'MRP (₹)', required: false },
+        { key: 'purchase_price', label: 'Purchase Price (₹)', required: false },
+        { key: 'current_stock', label: 'Current Stock', required: false },
+        { key: 'batch_number', label: 'Batch Number', required: false },
+        { key: 'expiry_date', label: 'Expiry Date', required: false },
+    ]
+
+    function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setError('')
+        setResult(null)
+
+        const reader = new FileReader()
+        reader.onload = (ev) => {
+            const text = ev.target?.result as string
+            if (!text) return
+            const lines = text.split('').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { setError('CSV must have at least a header row and one data row.'); return }
+
+            const hdrs = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''))
+            setHeaders(hdrs)
+
+            const parsed: CSVRow[] = []
+            for (let i = 1; i < lines.length; i++) {
+                const vals = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''))
+                const row: CSVRow = {}
+                hdrs.forEach((h, idx) => { row[h] = vals[idx] || '' })
+                parsed.push(row)
+            }
+            setRows(parsed)
+
+            // Auto-guess mapping
+            const autoMap: Record<string, string> = {}
+            hdrs.forEach(h => {
+                const lower = h.toLowerCase()
+                if (lower.includes('name') && !lower.includes('company') && !lower.includes('generic')) autoMap['name'] = h
+                if (lower.includes('generic')) autoMap['generic_name'] = h
+                if (lower.includes('brand')) autoMap['brand_name'] = h
+                if (lower.includes('company') || lower.includes('mfg') || lower.includes('manufacturer')) autoMap['manufacturer'] = h
+                if (lower.includes('mrp') || lower.includes('m.r.p')) autoMap['mrp'] = h
+                if (lower.includes('purchase') || lower.includes('cost') || lower.includes('rate')) autoMap['purchase_price'] = h
+                if (lower.includes('stock') || lower.includes('qty') || lower.includes('quantity')) autoMap['current_stock'] = h
+                if (lower.includes('batch')) autoMap['batch_number'] = h
+                if (lower.includes('expiry') || lower.includes('exp')) autoMap['expiry_date'] = h
+                if (lower.includes('strength') || lower.includes('pack')) autoMap['strength'] = h
+            })
+            setMapping(autoMap)
+        }
+        reader.readAsText(file)
+    }
+
+    async function handleImport() {
+        if (!mapping.name) { setError('Please map the "Medicine Name" column.'); return }
+        setImporting(true); setError('')
+
+        let success = 0
+        let failed = 0
+
+        for (const row of rows) {
+            const name = row[mapping.name]
+            if (!name || !name.trim()) { failed++; continue }
+
+            // Detect form from name
+            const nameLower = name.toLowerCase()
+            let form = 'tablet'
+            if (nameLower.includes('cap')) form = 'capsule'
+            else if (nameLower.includes('syr') || nameLower.includes('susp')) form = 'syrup'
+            else if (nameLower.includes('inj')) form = 'injection'
+            else if (nameLower.includes('cream')) form = 'cream'
+            else if (nameLower.includes('drop')) form = 'drops'
+            else if (nameLower.includes('gel')) form = 'gel'
+            else if (nameLower.includes('oint')) form = 'ointment'
+
+            const payload: any = {
+                name: name.trim(),
+                form,
+                is_active: true,
+                current_stock: 0,
+                min_stock: 10,
+                unit: 'strip',
+            }
+
+            if (mapping.generic_name && row[mapping.generic_name]) payload.generic_name = row[mapping.generic_name].trim()
+            if (mapping.brand_name && row[mapping.brand_name]) payload.brand_name = row[mapping.brand_name].trim()
+            if (mapping.manufacturer && row[mapping.manufacturer]) payload.manufacturer = row[mapping.manufacturer].trim()
+            if (mapping.strength && row[mapping.strength]) payload.strength = row[mapping.strength].trim()
+            if (mapping.mrp && row[mapping.mrp]) payload.mrp = parseFloat(row[mapping.mrp]) || null
+            if (mapping.purchase_price && row[mapping.purchase_price]) payload.purchase_price = parseFloat(row[mapping.purchase_price]) || null
+            if (mapping.current_stock && row[mapping.current_stock]) payload.current_stock = parseInt(row[mapping.current_stock]) || 0
+
+            const { error: insertErr } = await supabase.from('pharmacy_medicines').insert(payload)
+            if (insertErr) { failed++ } else { success++ }
+        }
+
+        setResult({ success, failed })
+        setImporting(false)
+    }
+
+    return (
+        <AppShell>
+            <div className="p-6 max-w-4xl mx-auto">
+                <div className="flex items-center gap-3 mb-5">
+                    <Link href="/pharmacy" className="text-gray-400 hover:text-gray-700">
+                        <ArrowLeft className="w-5 h-5" />
+                    </Link>
+                    <div>
+                        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <Upload className="w-5 h-5 text-blue-600" /> Import Medicines from CSV
+                        </h1>
+                        <p className="text-sm text-gray-500">Upload your pharmacy stock list to bulk-import medicines</p>
+                    </div>
+                </div>
+
+                {/* Step 1: Upload */}
+                {rows.length === 0 && (
+                    <div className="card p-8 text-center">
+                        <Upload className="w-12 h-12 mx-auto mb-4 text-blue-300" />
+                        <h2 className="font-semibold text-gray-800 mb-2">Upload CSV File</h2>
+                        <p className="text-sm text-gray-500 mb-4">
+                            Export your medicine stock from your pharmacy software (Marg, Busy, RetailGraph, etc.) as CSV and upload here.
+                        </p>
+                        <label className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg cursor-pointer transition-colors">
+                            <Upload className="w-4 h-4" /> Choose CSV File
+                            <input type="file" accept=".csv,.txt" className="hidden" onChange={handleFile} />
+                        </label>
+                        <p className="text-xs text-gray-400 mt-3">Supports: .csv files with comma separation</p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" /> {error}
+                    </div>
+                )}
+
+                {/* Step 2: Column Mapping */}
+                {rows.length > 0 && !result && (
+                    <>
+                        <div className="card p-5 mb-5">
+                            <h2 className="font-semibold text-gray-800 mb-1">Step 2: Map Columns</h2>
+                            <p className="text-sm text-gray-500 mb-4">
+                                Found {rows.length} rows with {headers.length} columns. Map your CSV columns to our fields:
+                            </p>
+                            <div className="grid grid-cols-2 gap-3">
+                                {TARGET_FIELDS.map(field => (
+                                    <div key={field.key}>
+                                        <label className="label">{field.label}</label>
+                                        <select className="input" value={mapping[field.key] || ''}
+                                            onChange={e => setMapping(p => ({ ...p, [field.key]: e.target.value }))}>
+                                            <option value="">— Skip this field —</option>
+                                            {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Preview */}
+                        <div className="card p-5 mb-5">
+                            <h3 className="font-semibold text-gray-800 mb-3">Preview (first 5 rows)</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            {headers.slice(0, 8).map(h => (
+                                                <th key={h} className="px-2 py-1.5 text-left font-semibold text-gray-500">{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rows.slice(0, 5).map((row, i) => (
+                                            <tr key={i} className="border-t border-gray-50">
+                                                {headers.slice(0, 8).map(h => (
+                                                    <td key={h} className="px-2 py-1.5 text-gray-700 max-w-[150px] truncate">{row[h] || '—'}</td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button onClick={handleImport} disabled={importing || !mapping.name}
+                                className="btn-primary flex items-center gap-2 disabled:opacity-60">
+                                {importing ? 'Importing…' : `Import ${rows.length} Medicines`}
+                            </button>
+                            <button onClick={() => { setRows([]); setHeaders([]); setMapping({}) }} className="btn-secondary">
+                                Cancel
+                            </button>
+                        </div>
+                    </>
+                )}
+
+                {/* Step 3: Result */}
+                {result && (
+                    <div className="card p-8 text-center">
+                        <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
+                        <h2 className="font-semibold text-gray-800 mb-2">Import Complete</h2>
+                        <div className="text-sm text-gray-600 mb-4">
+                            <span className="text-green-700 font-bold">{result.success} imported</span>
+                            {result.failed > 0 && <span className="text-red-600 font-bold ml-3">{result.failed} failed</span>}
+                        </div>
+                        <div className="flex gap-3 justify-center">
+                            <Link href="/pharmacy" className="btn-primary">View Inventory</Link>
+                            <button onClick={() => { setRows([]); setHeaders([]); setMapping({}); setResult(null) }}
+                                className="btn-secondary">Import More</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </AppShell>
+    )
+}
+
+```
+
+# src\app\pharmacy\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/pharmacy/page.tsx
+ * Pharmacy Inventory Management
+ */
+import { useCallback, useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import {
+  Pill, Search, Plus, X, Package,
+  TrendingDown, ArrowLeft, Save, Trash2, RefreshCw,
+} from 'lucide-react'
+
+interface Medicine {
+  id: string
+  name: string
+  generic_name: string | null
+  brand_name: string | null
+  form: string
+  strength: string | null
+  category: string | null
+  manufacturer: string | null
+  mrp: number | null
+  selling_price: number | null
+  current_stock: number
+  min_stock: number
+  unit: string
+  is_active: boolean
+}
+
+const FORMS = ['tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment', 'drops', 'inhaler', 'sachet', 'suppository', 'gel', 'powder']
+const CATEGORIES = ['Antibiotics', 'Analgesics', 'NSAIDs', 'Hormones', 'Supplements', 'Antidiabetics', 'Antihypertensives', 'GI', 'Antiemetics', 'Antifungals', 'Antispasmodics', 'Fertility', 'Oral Contraceptives', 'Tocolytics', 'Uterotonics', 'Haemostatics', 'Anticonvulsants', 'Other']
+
+export default function PharmacyPage() {
+  const [medicines, setMedicines] = useState<Medicine[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [view, setView] = useState<'list' | 'add' | 'stock'>('list')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all')
+
+  const [form, setForm] = useState({
+    name: '', generic_name: '', brand_name: '', form: 'tablet',
+    strength: '', category: 'Other', manufacturer: '',
+    mrp: '', selling_price: '', min_stock: '10', unit: 'strip',
+  })
+
+  const [stockMedicine, setStockMedicine] = useState<Medicine | null>(null)
+  const [stockForm, setStockForm] = useState({
+    quantity: '', batch_number: '', expiry_date: '', purchase_price: '', supplier: '',
+  })
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('pharmacy_medicines')
+      .select('*')
+      .eq('is_active', true)
+      .order('name')
+    setMedicines((data || []) as Medicine[])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const filtered = medicines.filter(m => {
+    const matchesSearch = !search ||
+      m.name.toLowerCase().includes(search.toLowerCase()) ||
+      (m.generic_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (m.brand_name || '').toLowerCase().includes(search.toLowerCase())
+    const matchesFilter =
+      filter === 'all' ? true :
+      filter === 'low' ? m.current_stock <= m.min_stock && m.current_stock > 0 :
+      m.current_stock === 0
+    return matchesSearch && matchesFilter
+  })
+
+  const lowStockCount = medicines.filter(m => m.current_stock > 0 && m.current_stock <= m.min_stock).length
+  const outOfStockCount = medicines.filter(m => m.current_stock === 0).length
+
+  async function handleAddMedicine() {
+    if (!form.name.trim()) { setError('Medicine name is required'); return }
+    setSaving(true); setError('')
+    const { error: e } = await supabase.from('pharmacy_medicines').insert({
+      name: form.name.trim(),
+      generic_name: form.generic_name.trim() || null,
+      brand_name: form.brand_name.trim() || null,
+      form: form.form,
+      strength: form.strength.trim() || null,
+      category: form.category,
+      manufacturer: form.manufacturer.trim() || null,
+      mrp: form.mrp ? Number(form.mrp) : null,
+      selling_price: form.selling_price ? Number(form.selling_price) : null,
+      min_stock: Number(form.min_stock) || 10,
+      unit: form.unit,
+      current_stock: 0,
+    })
+    setSaving(false)
+    if (e) { setError(e.message); return }
+    setForm({ name: '', generic_name: '', brand_name: '', form: 'tablet', strength: '', category: 'Other', manufacturer: '', mrp: '', selling_price: '', min_stock: '10', unit: 'strip' })
+    setView('list')
+    load()
+  }
+
+  async function handleAddStock() {
+    if (!stockMedicine || !stockForm.quantity) return
+    setSaving(true); setError('')
+    const qty = Number(stockForm.quantity)
+    if (qty <= 0) { setError('Quantity must be positive'); setSaving(false); return }
+
+    const { error: e } = await supabase
+      .from('pharmacy_medicines')
+      .update({ current_stock: stockMedicine.current_stock + qty, updated_at: new Date().toISOString() })
+      .eq('id', stockMedicine.id)
+    if (e) { setError(e.message); setSaving(false); return }
+
+    if (stockForm.batch_number && stockForm.expiry_date) {
+      await supabase.from('pharmacy_batches').insert({
+        medicine_id: stockMedicine.id,
+        batch_number: stockForm.batch_number,
+        expiry_date: stockForm.expiry_date,
+        quantity: qty,
+        purchase_price: stockForm.purchase_price ? Number(stockForm.purchase_price) : null,
+        supplier: stockForm.supplier || null,
+      })
+    }
+
+    await supabase.from('pharmacy_stock_log').insert({
+      medicine_id: stockMedicine.id,
+      type: 'purchase',
+      quantity: qty,
+      notes: stockForm.supplier ? `From ${stockForm.supplier}` : 'Stock added',
+    })
+
+    setSaving(false)
+    setStockForm({ quantity: '', batch_number: '', expiry_date: '', purchase_price: '', supplier: '' })
+    setStockMedicine(null)
+    setView('list')
+    load()
+  }
+
+  async function deleteMedicine(id: string, name: string) {
+    if (!confirm(`Remove "${name}" from inventory?`)) return
+    await supabase.from('pharmacy_medicines').update({ is_active: false }).eq('id', id)
+    load()
+  }
+
+  // ═══ ADD STOCK VIEW ═══
+  if (view === 'stock' && stockMedicine) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={() => { setView('list'); setStockMedicine(null) }} className="text-gray-400 hover:text-gray-700">
+              <ArrowLeft className="w-5 h-5"/>
+            </button>
+            <h1 className="text-xl font-bold text-gray-900">Add Stock</h1>
+          </div>
+          <div className="card p-5 mb-5 bg-blue-50 border-blue-200">
+            <div className="font-semibold text-gray-900">{stockMedicine.name}</div>
+            <div className="text-sm text-gray-500">
+              {stockMedicine.strength} {stockMedicine.form} · Current: {stockMedicine.current_stock} {stockMedicine.unit}s
+            </div>
+          </div>
+          {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
+          <div className="card p-5">
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="label">Quantity *</label>
+                <input className="input" type="number" min="1" placeholder="e.g. 100"
+                  value={stockForm.quantity} onChange={e => setStockForm(p => ({ ...p, quantity: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Batch Number</label>
+                <input className="input" placeholder="e.g. BAT-2025-001"
+                  value={stockForm.batch_number} onChange={e => setStockForm(p => ({ ...p, batch_number: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Expiry Date</label>
+                <input className="input" type="date"
+                  value={stockForm.expiry_date} onChange={e => setStockForm(p => ({ ...p, expiry_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Purchase Price (per unit)</label>
+                <input className="input" type="number" step="0.01" placeholder="₹"
+                  value={stockForm.purchase_price} onChange={e => setStockForm(p => ({ ...p, purchase_price: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Supplier</label>
+                <input className="input" placeholder="e.g. ABC Pharma Distributors"
+                  value={stockForm.supplier} onChange={e => setStockForm(p => ({ ...p, supplier: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handleAddStock} disabled={saving || !stockForm.quantity}
+                className="btn-primary flex items-center gap-2 disabled:opacity-60">
+                <Save className="w-4 h-4"/> {saving ? 'Saving…' : 'Add Stock'}
+              </button>
+              <button onClick={() => { setView('list'); setStockMedicine(null) }} className="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ═══ ADD MEDICINE VIEW ═══
+  if (view === 'add') {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
+              <ArrowLeft className="w-5 h-5"/>
+            </button>
+            <h1 className="text-xl font-bold text-gray-900">Add Medicine to Inventory</h1>
+          </div>
+          {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
+          <div className="card p-5">
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="col-span-2">
+                <label className="label">Medicine Name *</label>
+                <input className="input" placeholder="e.g. Amoxicillin 500mg Capsule"
+                  value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Generic Name</label>
+                <input className="input" placeholder="e.g. Amoxicillin"
+                  value={form.generic_name} onChange={e => setForm(p => ({ ...p, generic_name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Brand Name</label>
+                <input className="input" placeholder="e.g. Mox, Novamox"
+                  value={form.brand_name} onChange={e => setForm(p => ({ ...p, brand_name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Form</label>
+                <select className="input" value={form.form} onChange={e => setForm(p => ({ ...p, form: e.target.value }))}>
+                  {FORMS.map(f => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Strength</label>
+                <input className="input" placeholder="e.g. 500mg"
+                  value={form.strength} onChange={e => setForm(p => ({ ...p, strength: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Category</label>
+                <select className="input" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Manufacturer</label>
+                <input className="input" placeholder="e.g. Cipla"
+                  value={form.manufacturer} onChange={e => setForm(p => ({ ...p, manufacturer: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">MRP (₹)</label>
+                <input className="input" type="number" step="0.01" placeholder="120.00"
+                  value={form.mrp} onChange={e => setForm(p => ({ ...p, mrp: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Selling Price (₹)</label>
+                <input className="input" type="number" step="0.01" placeholder="100.00"
+                  value={form.selling_price} onChange={e => setForm(p => ({ ...p, selling_price: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Min Stock Alert</label>
+                <input className="input" type="number" min="0" placeholder="10"
+                  value={form.min_stock} onChange={e => setForm(p => ({ ...p, min_stock: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Unit</label>
+                <select className="input" value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))}>
+                  {['strip', 'bottle', 'vial', 'tube', 'packet', 'piece', 'box'].map(u => (
+                    <option key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handleAddMedicine} disabled={saving || !form.name.trim()}
+                className="btn-primary flex items-center gap-2 disabled:opacity-60">
+                <Save className="w-4 h-4"/> {saving ? 'Saving…' : 'Add Medicine'}
+              </button>
+              <button onClick={() => setView('list')} className="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ═══ LIST VIEW ═══
+  return (
+    <AppShell>
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Pill className="w-6 h-6 text-green-600"/> Pharmacy Inventory
+            </h1>
+            <p className="text-sm text-gray-500">
+              {medicines.length} medicines · {lowStockCount} low stock · {outOfStockCount} out of stock
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={load} className="btn-secondary flex items-center gap-1.5 text-xs">
+              <RefreshCw className="w-3.5 h-3.5"/>
+            </button>
+            <button onClick={() => setView('add')} className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4"/> Add Medicine
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="card p-4 bg-green-50 cursor-pointer" onClick={() => setFilter('all')}>
+            <div className="text-2xl font-bold text-green-700">{medicines.length}</div>
+            <div className="text-xs font-semibold text-gray-600">Total Medicines</div>
+          </div>
+          <div className="card p-4 bg-orange-50 cursor-pointer" onClick={() => setFilter('low')}>
+            <div className="text-2xl font-bold text-orange-700">{lowStockCount}</div>
+            <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+              <TrendingDown className="w-3 h-3"/> Low Stock
+            </div>
+          </div>
+          <div className="card p-4 bg-red-50 cursor-pointer" onClick={() => setFilter('out')}>
+            <div className="text-2xl font-bold text-red-700">{outOfStockCount}</div>
+            <div className="text-xs font-semibold text-gray-600">Out of Stock</div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+          <input className="input pl-9" placeholder="Search medicine name, generic, or brand…"
+            value={search} onChange={e => setSearch(e.target.value)} />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4"/>
+            </button>
+          )}
+        </div>
+
+        {/* Filter tabs */}
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
+          {([['all', 'All'], ['low', 'Low Stock'], ['out', 'Out of Stock']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setFilter(key)}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${filter === key ? 'bg-white shadow text-green-700' : 'text-gray-500'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Table */}
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="card p-12 text-center text-gray-400">
+            <Package className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <p className="font-medium">{medicines.length === 0 ? 'No medicines in inventory' : 'No matches'}</p>
+            {medicines.length === 0 && (
+              <button onClick={() => setView('add')} className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
+                <Plus className="w-3.5 h-3.5"/> Add First Medicine
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  {['Medicine', 'Form', 'Strength', 'Stock', 'Min', 'MRP', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(m => {
+                  const isLow = m.current_stock > 0 && m.current_stock <= m.min_stock
+                  const isOut = m.current_stock === 0
+                  return (
+                    <tr key={m.id} className={`border-b border-gray-50 hover:bg-gray-50 ${isOut ? 'bg-red-50/30' : isLow ? 'bg-orange-50/30' : ''}`}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{m.name}</div>
+                        <div className="text-xs text-gray-400">
+                          {m.generic_name && <span>{m.generic_name}</span>}
+                          {m.brand_name && <span className="ml-1">({m.brand_name})</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 capitalize">{m.form}</td>
+                      <td className="px-4 py-3 text-gray-600">{m.strength || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`font-mono font-semibold ${isOut ? 'text-red-600' : isLow ? 'text-orange-600' : 'text-green-700'}`}>
+                          {m.current_stock}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-1">{m.unit}s</span>
+                        {isOut && <span className="ml-2 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-semibold">OUT</span>}
+                        {isLow && !isOut && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold">LOW</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 font-mono">{m.min_stock}</td>
+                      <td className="px-4 py-3 text-gray-700 font-mono">{m.mrp ? `₹${m.mrp}` : '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <button onClick={() => { setStockMedicine(m); setView('stock') }}
+                            className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">
+                            + Stock
+                          </button>
+                          <button onClick={() => deleteMedicine(m.id, m.name)}
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded">
+                            <Trash2 className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   )
@@ -31298,6 +33058,50 @@ export default function SearchPage() {
       })
     })
 
+    // ── Search clinical notes (OPD encounters) ──────────────────
+    const { data: opdNotes } = await supabase
+      .from('encounters')
+      .select('id, encounter_date, notes, patients(full_name, mrn)')
+      .ilike('notes', `%${q}%`)
+      .order('encounter_date', { ascending: false })
+      .limit(5)
+
+    ;(opdNotes || []).forEach((e: any) => {
+      // Skip if already matched by diagnosis/complaint above
+      if (out.some(r => r.id === e.id)) return
+      const pt = e.patients || {}
+      out.push({
+        type:     'encounter',
+        id:       e.id,
+        title:    `Note: "${(e.notes || '').slice(0, 60)}…"`,
+        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+        meta:     formatDate(e.encounter_date),
+        href:     `/opd/${e.id}`,
+      })
+    })
+
+    // ── Search IPD nursing notes ────────────────────────────────
+    try {
+      const { data: ipdNotes } = await supabase
+        .from('ipd_nursing')
+        .select('id, note_text, bed_id, patient_id, patients(full_name, mrn)')
+        .eq('entry_type', 'note')
+        .ilike('note_text', `%${q}%`)
+        .limit(5)
+
+      ;(ipdNotes || []).forEach((n: any) => {
+        const pt = n.patients || {}
+        out.push({
+          type:     'encounter',
+          id:       n.id,
+          title:    `IPD Note: "${(n.note_text || '').slice(0, 60)}…"`,
+          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+          meta:     'IPD',
+          href:     `/ipd/${n.bed_id}`,
+        })
+      })
+    } catch { /* ipd_nursing table may not exist yet */ }
+
     // ── Search prescriptions by drug name — server-side JSONB ────
     // FIX (Bug #1): Was pulling 100 rows and filtering client-side (breaks at scale).
     // Now uses PostgreSQL substring search on medications cast to text. Runs entirely
@@ -31786,6 +33590,193 @@ export default function DoctorsPage() {
     </AppShell>
   )
 }
+```
+
+# src\app\settings\lab-partners\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/settings/lab-partners/page.tsx
+ * Feature D: Lab Partners management page
+ */
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { Plus, Trash2, Save, FlaskConical, Percent } from 'lucide-react'
+
+interface LabPartner {
+  id: string
+  name: string
+  contact: string
+  hospital_pct: number
+  lab_pct: number
+  is_active: boolean
+}
+
+export default function LabPartnersPage() {
+  const [partners, setPartners] = useState<LabPartner[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', contact: '', hospital_pct: '60', lab_pct: '40' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('lab_partners').select('*').order('name')
+    setPartners((data || []) as LabPartner[])
+    setLoading(false)
+  }
+
+  async function addPartner() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    const hospitalPct = Number(form.hospital_pct) || 60
+    const labPct = Number(form.lab_pct) || 40
+    await supabase.from('lab_partners').insert({
+      name: form.name.trim(),
+      contact: form.contact.trim() || null,
+      hospital_pct: hospitalPct,
+      lab_pct: labPct,
+    })
+    setForm({ name: '', contact: '', hospital_pct: '60', lab_pct: '40' })
+    setShowForm(false)
+    setSaving(false)
+    load()
+  }
+
+  async function toggleActive(id: string, current: boolean) {
+    await supabase.from('lab_partners').update({ is_active: !current }).eq('id', id)
+    load()
+  }
+
+  async function deletePartner(id: string, name: string) {
+    if (!confirm(`Delete partner "${name}"? This cannot be undone.`)) return
+    await supabase.from('lab_partners').delete().eq('id', id)
+    load()
+  }
+
+  function updateSplit(field: 'hospital_pct' | 'lab_pct', value: string) {
+    const num = Math.min(100, Math.max(0, Number(value) || 0))
+    if (field === 'hospital_pct') {
+      setForm(p => ({ ...p, hospital_pct: String(num), lab_pct: String(100 - num) }))
+    } else {
+      setForm(p => ({ ...p, lab_pct: String(num), hospital_pct: String(100 - num) }))
+    }
+  }
+
+  return (
+    <AppShell>
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <FlaskConical className="w-5 h-5 text-indigo-600"/> Lab Partners
+            </h1>
+            <p className="text-sm text-gray-500">Configure revenue sharing with partner laboratories</p>
+          </div>
+          <button onClick={() => setShowForm(!showForm)}
+            className="btn-primary flex items-center gap-2 text-sm">
+            <Plus className="w-4 h-4"/> Add Partner
+          </button>
+        </div>
+
+        {showForm && (
+          <div className="card p-5 mb-5 border-l-4 border-indigo-400">
+            <h3 className="font-semibold text-gray-800 mb-3">New Lab Partner</h3>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="label">Lab Name *</label>
+                <input className="input" placeholder="e.g. Metropolis, SRL Diagnostics"
+                  value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Contact (optional)</label>
+                <input className="input" placeholder="Phone or email"
+                  value={form.contact} onChange={e => setForm(p => ({ ...p, contact: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Hospital Share (%)</label>
+                <input className="input" type="number" min="0" max="100"
+                  value={form.hospital_pct} onChange={e => updateSplit('hospital_pct', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Lab Share (%)</label>
+                <input className="input" type="number" min="0" max="100"
+                  value={form.lab_pct} onChange={e => updateSplit('lab_pct', e.target.value)} />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={addPartner} disabled={saving || !form.name.trim()}
+                className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
+                <Save className="w-3.5 h-3.5"/> {saving ? 'Saving…' : 'Save Partner'}
+              </button>
+              <button onClick={() => setShowForm(false)} className="btn-secondary text-xs">Cancel</button>
+              <span className="ml-auto text-xs text-gray-400 flex items-center gap-1">
+                <Percent className="w-3 h-3"/> Total: {Number(form.hospital_pct) + Number(form.lab_pct)}%
+                {Number(form.hospital_pct) + Number(form.lab_pct) !== 100 && (
+                  <span className="text-red-500 font-semibold ml-1">Must equal 100%</span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading…</div>
+        ) : partners.length === 0 ? (
+          <div className="card p-12 text-center text-gray-400">
+            <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <p className="font-medium">No lab partners configured</p>
+            <p className="text-sm mt-1">Click &quot;Add Partner" to set up revenue sharing with an external lab</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {partners.map(p => (
+              <div key={p.id} className={`card p-4 flex items-center gap-4 ${!p.is_active ? 'opacity-50' : ''}`}>
+                <div className="flex-1">
+                  <div className="font-semibold text-gray-900">{p.name}</div>
+                  <div className="text-xs text-gray-500">{p.contact || 'No contact info'}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-bold text-green-700">{p.hospital_pct}%</div>
+                  <div className="text-xs text-gray-400">Hospital</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-bold text-blue-700">{p.lab_pct}%</div>
+                  <div className="text-xs text-gray-400">Lab</div>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => toggleActive(p.id, p.is_active)}
+                    className={`text-xs px-2 py-1 rounded ${p.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {p.is_active ? 'Active' : 'Inactive'}
+                  </button>
+                  <button onClick={() => deletePartner(p.id, p.name)}
+                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded">
+                    <Trash2 className="w-3.5 h-3.5"/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-blue-800 mb-2">How Revenue Sharing Works</h3>
+          <ul className="space-y-1 text-xs text-blue-700">
+            <li>1. Add a lab partner above with their default split (e.g. 60% Hospital / 40% Lab).</li>
+            <li>2. When creating a lab report, assign the partner lab from the dropdown.</li>
+            <li>3. Reports will show &quot;Net to Hospital" vs "Net to Lab&quot; for each test.</li>
+            <li>4. The CA Report includes a &quot;Lab Payable" section for reconciliation.</li>
+          </ul>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
 ```
 
 # src\app\settings\page.tsx
@@ -35276,14 +37267,10 @@ import {
   Baby, Settings, Clock, IndianRupee, FlaskConical,
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
-  BellRing,
-  // ── v11 additions ──────────────────────────────────────
-  BedSingle,        // IPD admissions
-  Video,            // Video consultations
-  PiggyBank,        // Hospital fund
-  UserCog,          // Doctor management
-  ExternalLink,     // Patient portal (external)
+  BellRing, Pill, Scissors,
+  BedSingle, Video, PiggyBank, UserCog, ExternalLink,
 } from 'lucide-react'
+
 
 interface NavItemDef {
   href:        string
@@ -35347,6 +37334,8 @@ export default function Sidebar() {
         { href: '/reminders',    icon: BellRing,        label: 'Reminders',         badge: reminderBadge             },
         { href: '/anc',          icon: Baby,            label: 'ANC Registry',      permission: 'anc.view'           },
         { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',       permission: 'labs.view'          },
+        { href: '/pharmacy',     icon: Pill,            label: 'Pharmacy',          permission: 'patients.view'      },
+        { href: '/ot-schedule',  icon: Scissors,        label: 'OT Schedule',       permission: 'encounters.create'  },
         { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',    permission: 'forms.view'         },
       ],
     },
@@ -35371,6 +37360,7 @@ export default function Sidebar() {
         { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          }, // ← NEW v11
         { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
         { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
+        { href: '/insurance',        icon: Shield,      label: 'Insurance Claims', permission: 'billing.view'       },
         { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
       ],
     },
@@ -43028,6 +45018,112 @@ export function searchTemplates(query: string): ConsultationTemplate[] {
 
 ```
 
+# src\lib\ipd-billing.ts
+
+```ts
+/**
+ * src/lib/ipd-billing.ts
+ * Feature A: IPD Billing utilities
+ *
+ * Calculates stay duration and generates pre-filled billing line items
+ * for IPD patients based on bed rates, nursing, doctor visits, etc.
+ */
+
+export interface IPDBillItem {
+  label: string
+  amount: number
+  quantity?: number
+  rate?: number
+}
+
+/**
+ * Calculate the number of days between admission and discharge.
+ * Minimum 1 day (same-day admission counts as 1).
+ */
+export function calculateStayDuration(
+  admissionDate: string | Date | null,
+  dischargeDate?: string | Date | null
+): number {
+  if (!admissionDate) return 0
+  const start = new Date(admissionDate)
+  const end = dischargeDate ? new Date(dischargeDate) : new Date()
+  const diffMs = end.getTime() - start.getTime()
+  const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+  return Math.max(1, days) // Minimum 1 day
+}
+
+/**
+ * Generate IPD billing line items from bed data and visit counts.
+ */
+export function generateIPDBillItems(params: {
+  stayDays: number
+  bedRate: number         // per day
+  nursingRate: number     // per day
+  doctorVisits?: number
+  doctorVisitFee?: number
+  surgeryCharges?: number
+  otCharges?: number
+  procedureCharges?: number
+  medicineCharges?: number
+}): IPDBillItem[] {
+  const items: IPDBillItem[] = []
+
+  if (params.stayDays > 0 && params.bedRate > 0) {
+    items.push({
+      label: `Bed Charges (${params.stayDays} days × ₹${params.bedRate}/day)`,
+      amount: params.stayDays * params.bedRate,
+      quantity: params.stayDays,
+      rate: params.bedRate,
+    })
+  }
+
+  if (params.stayDays > 0 && params.nursingRate > 0) {
+    items.push({
+      label: `Nursing Charges (${params.stayDays} days × ₹${params.nursingRate}/day)`,
+      amount: params.stayDays * params.nursingRate,
+      quantity: params.stayDays,
+      rate: params.nursingRate,
+    })
+  }
+
+  if (params.doctorVisits && params.doctorVisitFee) {
+    items.push({
+      label: `Doctor Visits (${params.doctorVisits} × ₹${params.doctorVisitFee})`,
+      amount: params.doctorVisits * params.doctorVisitFee,
+      quantity: params.doctorVisits,
+      rate: params.doctorVisitFee,
+    })
+  }
+
+  if (params.surgeryCharges && params.surgeryCharges > 0) {
+    items.push({ label: 'Surgery / OT Charges', amount: params.surgeryCharges })
+  }
+
+  if (params.otCharges && params.otCharges > 0) {
+    items.push({ label: 'OT Facility Charges', amount: params.otCharges })
+  }
+
+  if (params.procedureCharges && params.procedureCharges > 0) {
+    items.push({ label: 'Procedure Charges', amount: params.procedureCharges })
+  }
+
+  if (params.medicineCharges && params.medicineCharges > 0) {
+    items.push({ label: 'Medicines / Pharmacy', amount: params.medicineCharges })
+  }
+
+  return items
+}
+
+/**
+ * Calculate per-day cost from total and days.
+ */
+export function perDayCost(total: number, days: number): number {
+  if (days <= 0) return 0
+  return Math.round((total / days) * 100) / 100
+}
+
+```
+
 # src\lib\mfa.ts
 
 ```ts
@@ -44237,6 +46333,191 @@ export async function pdfToPngFile(pdfFile: File): Promise<File | null> {
 
 ```
 
+# src\lib\pharmacy.ts
+
+```ts
+/**
+ * src/lib/pharmacy.ts
+ * Pharmacy inventory helpers — search, stock check, dispensing
+ */
+import { supabase } from './supabase'
+
+export interface PharmacyMedicine {
+  id: string
+  name: string
+  generic_name: string | null
+  brand_name: string | null
+  form: string
+  strength: string | null
+  category: string | null
+  mrp: number | null
+  selling_price: number | null
+  current_stock: number
+  min_stock: number
+  unit: string
+  is_active: boolean
+}
+
+/**
+ * Search medicines by name/generic/brand — for prescription autocomplete.
+ * Returns top 10 matches sorted by relevance.
+ */
+export async function searchMedicines(query: string): Promise<PharmacyMedicine[]> {
+  if (!query || query.trim().length < 2) return []
+  const q = query.trim()
+  const { data } = await supabase
+    .from('pharmacy_medicines')
+    .select('id, name, generic_name, brand_name, form, strength, category, mrp, selling_price, current_stock, min_stock, unit, is_active')
+    .eq('is_active', true)
+    .or(`name.ilike.%${q}%,generic_name.ilike.%${q}%,brand_name.ilike.%${q}%`)
+    .order('name')
+    .limit(10)
+  return (data || []) as PharmacyMedicine[]
+}
+
+/**
+ * Check if medicine has sufficient stock.
+ */
+export function hasStock(medicine: PharmacyMedicine, requiredQty: number = 1): boolean {
+  return medicine.current_stock >= requiredQty
+}
+
+/**
+ * Check if medicine is below minimum stock level.
+ */
+export function isLowStock(medicine: PharmacyMedicine): boolean {
+  return medicine.current_stock <= medicine.min_stock
+}
+
+/**
+ * Dispense medicine — reduces stock and logs the transaction.
+ * Call this when a prescription is dispensed at the pharmacy counter.
+ */
+export async function dispenseMedicine(params: {
+  medicineId: string
+  quantity: number
+  patientName?: string
+  prescriptionId?: string
+  doneBy?: string
+}): Promise<{ success: boolean; error?: string }> {
+  const { data: med } = await supabase
+    .from('pharmacy_medicines')
+    .select('current_stock, name')
+    .eq('id', params.medicineId)
+    .single()
+
+  if (!med) return { success: false, error: 'Medicine not found' }
+  if (med.current_stock < params.quantity) {
+    return { success: false, error: `Insufficient stock for ${med.name}. Available: ${med.current_stock}` }
+  }
+
+  const { error: updateErr } = await supabase
+    .from('pharmacy_medicines')
+    .update({
+      current_stock: med.current_stock - params.quantity,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.medicineId)
+
+  if (updateErr) return { success: false, error: updateErr.message }
+
+  await supabase.from('pharmacy_stock_log').insert({
+    medicine_id: params.medicineId,
+    type: 'dispense',
+    quantity: -params.quantity,
+    reference_id: params.prescriptionId || null,
+    notes: params.patientName ? `Dispensed to ${params.patientName}` : 'Dispensed',
+    done_by: params.doneBy || null,
+  })
+
+  return { success: true }
+}
+
+/**
+ * Add stock (purchase) — increases stock and logs.
+ */
+export async function addStock(params: {
+  medicineId: string
+  quantity: number
+  batchNumber?: string
+  expiryDate?: string
+  purchasePrice?: number
+  supplier?: string
+  doneBy?: string
+}): Promise<{ success: boolean; error?: string }> {
+  const { data: med } = await supabase
+    .from('pharmacy_medicines')
+    .select('current_stock')
+    .eq('id', params.medicineId)
+    .single()
+
+  if (!med) return { success: false, error: 'Medicine not found' }
+
+  const { error: updateErr } = await supabase
+    .from('pharmacy_medicines')
+    .update({
+      current_stock: med.current_stock + params.quantity,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.medicineId)
+
+  if (updateErr) return { success: false, error: updateErr.message }
+
+  let batchId: string | null = null
+  if (params.batchNumber && params.expiryDate) {
+    const { data: batch } = await supabase.from('pharmacy_batches').insert({
+      medicine_id: params.medicineId,
+      batch_number: params.batchNumber,
+      expiry_date: params.expiryDate,
+      quantity: params.quantity,
+      purchase_price: params.purchasePrice || null,
+      supplier: params.supplier || null,
+    }).select('id').single()
+    batchId = batch?.id || null
+  }
+
+  await supabase.from('pharmacy_stock_log').insert({
+    medicine_id: params.medicineId,
+    batch_id: batchId,
+    type: 'purchase',
+    quantity: params.quantity,
+    notes: params.supplier ? `Purchased from ${params.supplier}` : 'Stock added',
+    done_by: params.doneBy || null,
+  })
+
+  return { success: true }
+}
+
+/**
+ * Get medicines expiring within N days.
+ */
+export async function getExpiringMedicines(withinDays: number = 30): Promise<any[]> {
+  const futureDate = new Date()
+  futureDate.setDate(futureDate.getDate() + withinDays)
+  const { data } = await supabase
+    .from('pharmacy_batches')
+    .select('*, pharmacy_medicines(name, brand_name, strength)')
+    .lte('expiry_date', futureDate.toISOString().split('T')[0])
+    .gt('quantity', 0)
+    .order('expiry_date')
+  return data || []
+}
+
+/**
+ * Get all medicines below their minimum stock threshold.
+ */
+export async function getLowStockMedicines(): Promise<PharmacyMedicine[]> {
+  const { data } = await supabase
+    .from('pharmacy_medicines')
+    .select('*')
+    .eq('is_active', true)
+    .order('current_stock')
+  if (!data) return []
+  return (data as PharmacyMedicine[]).filter(m => m.current_stock <= m.min_stock)
+}
+
+```
+
 # src\lib\phi-crypto.ts
 
 ```ts
@@ -45220,6 +47501,22 @@ export const GUJARATI_YESNO_MAP: Record<string, string> = {
   'yes': 'Yes',
   'no': 'No',
 }
+
+/**
+ * Sanitise user-supplied text to prevent XSS if ever rendered as HTML.
+ * Strips <script>, <iframe>, on* attributes, and javascript: URLs.
+ * Safe for use in React JSX (which already escapes), but this adds
+ * defense-in-depth for any future dangerouslySetInnerHTML usage.
+ */
+export function sanitiseText(input: string | undefined | null): string {
+  if (!input) return ''
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/javascript\s*:/gi, '')
+}
+
 
 ```
 

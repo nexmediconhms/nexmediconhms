@@ -14,7 +14,7 @@ import { TEMPLATES, whatsAppUrl } from '@/lib/whatsapp-templates'
 import type { TemplateParams } from '@/lib/whatsapp-templates'
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
-  Droplets, User, Edit, Plus, FileText, ClipboardList,
+  Droplets, User, Edit, Plus, FileText, ClipboardList, Scissors,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
   Shield, Download, ExternalLink, MessageCircle, Users,
 } from 'lucide-react'
@@ -36,11 +36,11 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
 
   const lines: { key: LineKey; label: string; color: string; unit: string }[] = [
     { key: 'bp_systolic', label: 'BP Systolic', color: '#ef4444', unit: 'mmHg' },
-    { key: 'pulse',       label: 'Pulse',       color: '#3b82f6', unit: 'bpm'  },
-    { key: 'weight',      label: 'Weight',      color: '#22c55e', unit: 'kg'   },
+    { key: 'pulse', label: 'Pulse', color: '#3b82f6', unit: 'bpm' },
+    { key: 'weight', label: 'Weight', color: '#22c55e', unit: 'kg' },
   ]
 
-  const W = 480; const H = 120; const PAD = { t:10, r:10, b:28, l:42 }
+  const W = 480; const H = 120; const PAD = { t: 10, r: 10, b: 28, l: 42 }
   const chartW = W - PAD.l - PAD.r
   const chartH = H - PAD.t - PAD.b
 
@@ -71,16 +71,16 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
         {[0, 0.25, 0.5, 0.75, 1].map(f => (
           <line key={f}
-            x1={PAD.l} y1={PAD.t + chartH * (1-f)}
-            x2={PAD.l + chartW} y2={PAD.t + chartH * (1-f)}
-            stroke="#f1f5f9" strokeWidth="1"/>
+            x1={PAD.l} y1={PAD.t + chartH * (1 - f)}
+            x2={PAD.l + chartW} y2={PAD.t + chartH * (1 - f)}
+            stroke="#f1f5f9" strokeWidth="1" />
         ))}
         {pts.map((e, i) => (
           <text key={i}
-            x={PAD.l + (i/(pts.length-1))*chartW}
+            x={PAD.l + (i / (pts.length - 1)) * chartW}
             y={H - 4}
             textAnchor="middle" fontSize="8" fill="#94a3b8">
-            {new Date(e.encounter_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
+            {new Date(e.encounter_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
           </text>
         ))}
         {lines.map(({ key, color }) => {
@@ -88,15 +88,15 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           if (!d) return null
           return (
             <g key={key}>
-              <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"/>
+              <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
               {pts.map((e, i) => {
                 const v = Number(e[key]) || null
                 if (v === null) return null
                 const vals = pts.map(p => Number(p[key]) || null).filter(Boolean) as number[]
-                const minV = Math.min(...vals)*0.95; const maxV = Math.max(...vals)*1.05; const range=maxV-minV||1
-                const x = PAD.l + (i/(pts.length-1))*chartW
-                const y = PAD.t + chartH - ((v-minV)/range)*chartH
-                return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5" fill={color} stroke="white" strokeWidth="1"/>
+                const minV = Math.min(...vals) * 0.95; const maxV = Math.max(...vals) * 1.05; const range = maxV - minV || 1
+                const x = PAD.l + (i / (pts.length - 1)) * chartW
+                const y = PAD.t + chartH - ((v - minV) / range) * chartH
+                return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5" fill={color} stroke="white" strokeWidth="1" />
               })}
             </g>
           )
@@ -107,7 +107,7 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
           const last = [...pts].reverse().find(e => Number(e[key]))
           return last ? (
             <div key={key} className="flex items-center gap-1 text-xs text-gray-500">
-              <span className="w-3 h-0.5 rounded inline-block" style={{ background: color }}/>
+              <span className="w-3 h-0.5 rounded inline-block" style={{ background: color }} />
               {label}: <strong style={{ color }}>{Number(last[key])}{unit}</strong>
             </div>
           ) : null
@@ -118,8 +118,8 @@ function VitalsChart({ encounters }: { encounters: Encounter[] }) {
 }
 
 const BLOOD_COLOR: Record<string, string> = {
-  'A+':'badge-red','A-':'badge-red','B+':'badge-blue','B-':'badge-blue',
-  'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
+  'A+': 'badge-red', 'A-': 'badge-red', 'B+': 'badge-blue', 'B-': 'badge-blue',
+  'O+': 'badge-green', 'O-': 'badge-green', 'AB+': 'badge-yellow', 'AB-': 'badge-yellow'
 }
 
 // ── Tab type — insurance added ────────────────────────────────
@@ -127,36 +127,36 @@ type Tab = 'overview' | 'visits' | 'prescriptions' | 'discharge' | 'billing' | '
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router  = useRouter()
+  const router = useRouter()
 
-  const [patient,       setPatient]       = useState<Patient | null>(null)
-  const [encounters,    setEncounters]    = useState<Encounter[]>([])
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [encounters, setEncounters] = useState<Encounter[]>([])
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
-  const [discharges,    setDischarges]    = useState<DischargeSummary[]>([])
-  const [bills,         setBills]         = useState<any[]>([])
-  const [labReports,    setLabReports]    = useState<any[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [activeTab,     setActiveTab]     = useState<Tab>('overview')
+  const [discharges, setDischarges] = useState<DischargeSummary[]>([])
+  const [bills, setBills] = useState<any[]>([])
+  const [labReports, setLabReports] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [fhirExporting, setFhirExporting] = useState(false)
 
   // AI summary state
-  const [summary,      setSummary]      = useState('')
-  const [summaryState, setSummaryState] = useState<'idle'|'loading'|'done'|'error'>('idle')
+  const [summary, setSummary] = useState('')
+  const [summaryState, setSummaryState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [summaryError, setSummaryError] = useState('')
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => {
     if (!id) return
-    ;(async () => {
-      try {
-        const { data } = await supabase
-          .from('lab_reports')
-          .select('*')
-          .eq('patient_id', id)
-          .order('created_at', { ascending: false })
-        if (data) setLabReports(data)
-      } catch { /* non-fatal */ }
-    })()
+      ; (async () => {
+        try {
+          const { data } = await supabase
+            .from('lab_reports')
+            .select('*')
+            .eq('patient_id', id)
+            .order('created_at', { ascending: false })
+          if (data) setLabReports(data)
+        } catch { /* non-fatal */ }
+      })()
   }, [id])
 
   async function loadAll() {
@@ -179,7 +179,7 @@ export default function PatientDetailPage() {
   function displayAge(p: Patient): string {
     const live = ageFromDOB(p.date_of_birth)
     if (live !== null) return `${live} years`
-    if (p.age)         return `${p.age} years`
+    if (p.age) return `${p.age} years`
     return '—'
   }
 
@@ -218,22 +218,22 @@ export default function PatientDetailPage() {
 
   // ── Derived insurance data ────────────────────────────────────
   const pat = patient as any
-  const paidBills     = bills.filter(b => b.status === 'paid')
-  const totalBilled   = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
-  const hasFinalDS    = discharges.some(d => d.is_final)
-  const hasDS         = discharges.length > 0
-  const hasRx         = prescriptions.length > 0
-  const hasBills      = paidBills.length > 0
-  const hasVisits     = encounters.length > 0
+  const paidBills = bills.filter(b => b.status === 'paid')
+  const totalBilled = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+  const hasFinalDS = discharges.some(d => d.is_final)
+  const hasDS = discharges.length > 0
+  const hasRx = prescriptions.length > 0
+  const hasBills = paidBills.length > 0
+  const hasVisits = encounters.length > 0
 
   // Insurance bundle URL
   const bundleUrl = `/api/insurance-bundle/${patient.id}`
 
   // WhatsApp message for insurance docs ready
   const insuranceWAMsg = TEMPLATES.find(t => t.id === 'insurance_docs_ready')?.generate({
-    patientName:   patient.full_name,
-    mobile:        patient.mobile,
-    mrn:           patient.mrn,
+    patientName: patient.full_name,
+    mobile: patient.mobile,
+    mrn: patient.mrn,
     policyTpaName: pat.policy_tpa_name || '',
   }) || ''
 
@@ -280,9 +280,13 @@ export default function PatientDetailPage() {
                     className="btn-primary flex items-center gap-2 text-xs">
                     <Stethoscope className="w-3.5 h-3.5" /> New Consultation
                   </Link>
+                  <Link href={`/ot-schedule?view=new&patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                    className="flex items-center gap-1.5 text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-lg transition-colors">
+                    <Scissors className="w-3.5 h-3.5" /> Schedule Surgery
+                  </Link>
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors">
-                    <Calendar className="w-4 h-4"/> Book Appointment
+                    <Calendar className="w-4 h-4" /> Book Appointment
                   </Link>
                   {/* FIX #5: Add to OPD Queue directly from patient profile */}
                   <Link
@@ -295,14 +299,14 @@ export default function PatientDetailPage() {
                       window.location.href = `/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`
                     }}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 hover:border-yellow-400 transition-colors font-medium">
-                    <Users className="w-4 h-4"/> Add to OPD Queue
+                    <Users className="w-4 h-4" /> Add to OPD Queue
                   </Link>
                   {bills.length === 0 && (
                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 font-medium w-full">
                       <span>⚠️</span>
                       <span>No payment recorded yet</span>
                       <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
-                        className="ml-auto text-amber-700 underline hover:text-amber-900" onClick={e=>e.stopPropagation()}>
+                        className="ml-auto text-amber-700 underline hover:text-amber-900" onClick={e => e.stopPropagation()}>
                         Collect Payment
                       </Link>
                     </div>
@@ -324,7 +328,7 @@ export default function PatientDetailPage() {
                         a.download = `${patient.mrn}_FHIR_Bundle.json`
                         a.click()
                         URL.revokeObjectURL(url)
-                      } catch {} finally { setFhirExporting(false) }
+                      } catch { } finally { setFhirExporting(false) }
                     }}
                     disabled={fhirExporting}
                     className="btn-secondary flex items-center gap-2 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50"
@@ -384,7 +388,7 @@ export default function PatientDetailPage() {
                   <span className="font-medium text-green-700">
                     Mediclaim ✓{pat.cashless ? ' · Cashless' : ''}
                     {pat.policy_tpa_name ? ` · ${pat.policy_tpa_name}` : ''}
-                    {pat.policy_number   ? ` · #${pat.policy_number}`  : ''}
+                    {pat.policy_number ? ` · #${pat.policy_number}` : ''}
                   </span>
                 </div>
               )}
@@ -445,12 +449,12 @@ export default function PatientDetailPage() {
           if (uniqueFlags.length === 0) return null
 
           const hasCritical = uniqueFlags.some(f => f.level === 'critical')
-          const hasHigh     = uniqueFlags.some(f => f.level === 'high')
+          const hasHigh = uniqueFlags.some(f => f.level === 'high')
           const overallStyle = hasCritical
             ? riskLevelStyle('critical')
             : hasHigh
-            ? riskLevelStyle('high')
-            : riskLevelStyle('watch')
+              ? riskLevelStyle('high')
+              : riskLevelStyle('watch')
 
           return (
             <div className={`mb-5 rounded-xl border-2 ${overallStyle.border} ${overallStyle.bg} p-4`}>
@@ -490,17 +494,19 @@ export default function PatientDetailPage() {
         {/* Stats row */}
         <div className="grid grid-cols-4 gap-4 mb-5">
           {[
-            { icon: Stethoscope, color: 'blue',   val: encounters.length,    label: 'Total Visits' },
-            { icon: Pill,        color: 'green',  val: prescriptions.length, label: 'Prescriptions' },
-            { icon: FileText,    color: 'purple', val: discharges.length,    label: 'Discharge Summaries' },
-            { icon: Calendar,    color: 'orange', val: null,                 label: 'Next Follow-up',
-              extra: prescriptions[0]?.follow_up_date ? formatDate(prescriptions[0].follow_up_date) : '—' },
+            { icon: Stethoscope, color: 'blue', val: encounters.length, label: 'Total Visits' },
+            { icon: Pill, color: 'green', val: prescriptions.length, label: 'Prescriptions' },
+            { icon: FileText, color: 'purple', val: discharges.length, label: 'Discharge Summaries' },
+            {
+              icon: Calendar, color: 'orange', val: null, label: 'Next Follow-up',
+              extra: prescriptions[0]?.follow_up_date ? formatDate(prescriptions[0].follow_up_date) : '—'
+            },
           ].map(({ icon: Icon, color, val, label, extra }) => (
             <div key={label} className="card p-4 flex items-center gap-4">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center
-                ${color==='blue'?'bg-blue-50':color==='green'?'bg-green-50':color==='purple'?'bg-purple-50':'bg-orange-50'}`}>
+                ${color === 'blue' ? 'bg-blue-50' : color === 'green' ? 'bg-green-50' : color === 'purple' ? 'bg-purple-50' : 'bg-orange-50'}`}>
                 <Icon className={`w-5 h-5
-                  ${color==='blue'?'text-blue-600':color==='green'?'text-green-600':color==='purple'?'text-purple-600':'text-orange-600'}`} />
+                  ${color === 'blue' ? 'text-blue-600' : color === 'green' ? 'text-green-600' : color === 'purple' ? 'text-purple-600' : 'text-orange-600'}`} />
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-900">{val !== null ? val : extra}</div>
@@ -514,15 +520,15 @@ export default function PatientDetailPage() {
         <div className="card overflow-hidden">
           <div className="flex border-b border-gray-100 overflow-x-auto">
             {([
-              { id:'overview',      label:'Overview' },
-              { id:'visits',        label:`Visits (${encounters.length})` },
-              { id:'prescriptions', label:`Prescriptions (${prescriptions.length})` },
-              { id:'discharge',     label:`Discharge (${discharges.length})` },
-              { id:'billing',       label:`Bills (${bills.length})` },
-              { id:'labs',          label:`Labs (${labReports.length})` },
-              { id:'files',         label:'Files & Photos' },
-              { id:'insurance',     label:'🛡️ Insurance Docs' },   // NEW
-            ] as {id:Tab;label:string}[]).map(t => (
+              { id: 'overview', label: 'Overview' },
+              { id: 'visits', label: `Visits (${encounters.length})` },
+              { id: 'prescriptions', label: `Prescriptions (${prescriptions.length})` },
+              { id: 'discharge', label: `Discharge (${discharges.length})` },
+              { id: 'billing', label: `Bills (${bills.length})` },
+              { id: 'labs', label: `Labs (${labReports.length})` },
+              { id: 'files', label: 'Files & Photos' },
+              { id: 'insurance', label: '🛡️ Insurance Docs' },   // NEW
+            ] as { id: Tab; label: string }[]).map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 className={`px-5 py-3 text-sm font-medium capitalize transition-colors whitespace-nowrap
                   ${activeTab === t.id
@@ -555,8 +561,8 @@ export default function PatientDetailPage() {
                       {summaryState === 'loading'
                         ? <><Loader2 className="w-3 h-3 animate-spin" />Generating...</>
                         : summaryState === 'done'
-                        ? <><Sparkles className="w-3 h-3" />Regenerate</>
-                        : <><Sparkles className="w-3 h-3" />Generate Summary</>}
+                          ? <><Sparkles className="w-3 h-3" />Regenerate</>
+                          : <><Sparkles className="w-3 h-3" />Generate Summary</>}
                     </button>
                   </div>
                   {summaryState === 'idle' && (
@@ -616,11 +622,11 @@ export default function PatientDetailPage() {
                         </div>
                       )}
                       <div className="flex gap-3 flex-wrap mt-3 pt-3 border-t border-blue-200">
-                        {encounters[0].pulse       && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">❤️ {encounters[0].pulse} bpm</span>}
+                        {encounters[0].pulse && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">❤️ {encounters[0].pulse} bpm</span>}
                         {encounters[0].bp_systolic && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">🩸 {encounters[0].bp_systolic}/{encounters[0].bp_diastolic} mmHg</span>}
                         {encounters[0].temperature && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">🌡️ {encounters[0].temperature}°C</span>}
-                        {encounters[0].spo2        && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">💨 SpO₂ {encounters[0].spo2}%</span>}
-                        {encounters[0].weight      && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">⚖️ {encounters[0].weight} kg</span>}
+                        {encounters[0].spo2 && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">💨 SpO₂ {encounters[0].spo2}%</span>}
+                        {encounters[0].weight && <span className="text-xs bg-white px-2 py-1 rounded border border-blue-100">⚖️ {encounters[0].weight} kg</span>}
                       </div>
                       <Link href={`/opd/${encounters[0].id}`}
                         className="mt-3 inline-flex items-center text-xs text-blue-600 hover:underline gap-1">
@@ -634,9 +640,9 @@ export default function PatientDetailPage() {
                 {encounters.filter(e => e.bp_systolic || e.pulse || e.weight).length >= 2 && (
                   <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-blue-600"/> Vitals Trend
+                      <TrendingUp className="w-4 h-4 text-blue-600" /> Vitals Trend
                     </h3>
-                    <VitalsChart encounters={encounters}/>
+                    <VitalsChart encounters={encounters} />
                   </div>
                 )}
 
@@ -677,13 +683,13 @@ export default function PatientDetailPage() {
                           </thead>
                           <tbody>
                             {([
-                              { key: 'afi',      label: 'AFI (cm)',  unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
-                              { key: 'efw',      label: 'EFW (g)',   unit: 'g',  warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
-                              { key: 'bpd',      label: 'BPD (mm)',  unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'hc',       label: 'HC (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'ac',       label: 'AC (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'fl',       label: 'FL (mm)',   unit: 'mm', warn: (_v: any) => '' },
-                              { key: 'placenta', label: 'Placenta',  unit: '',   warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
+                              { key: 'afi', label: 'AFI (cm)', unit: 'cm', warn: (v: any) => Number(v) < 5 ? '🚨' : Number(v) < 8 ? '⚠️' : Number(v) > 25 ? '⚠️' : '' },
+                              { key: 'efw', label: 'EFW (g)', unit: 'g', warn: (v: any) => Number(v) > 4000 ? '⚠️' : '' },
+                              { key: 'bpd', label: 'BPD (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'hc', label: 'HC (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'ac', label: 'AC (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'fl', label: 'FL (mm)', unit: 'mm', warn: (_v: any) => '' },
+                              { key: 'placenta', label: 'Placenta', unit: '', warn: (v: any) => v === 'Previa' ? '🚨' : v === 'Low-lying' ? '⚠️' : '' },
                             ] as Array<{ key: string; label: string; unit: string; warn: (v: any) => string }>).map(param => {
                               const hasAny = usgEncs.some(e => (e.ob_data as any)?.[param.key])
                               if (!hasAny) return null
@@ -717,10 +723,10 @@ export default function PatientDetailPage() {
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">📉 AFI Trend</h4>
                             <div className="flex items-end gap-1 h-20">
                               {afiData.map((d, i) => {
-                                const afiNum     = Number(d.afi)
-                                const maxAfi     = Math.max(...afiData.map(x => Number(x.afi)))
-                                const height     = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
-                                const isLow      = afiNum < 8
+                                const afiNum = Number(d.afi)
+                                const maxAfi = Math.max(...afiData.map(x => Number(x.afi)))
+                                const height = Math.max(8, (afiNum / Math.max(maxAfi, 25)) * 100)
+                                const isLow = afiNum < 8
                                 const isCritical = afiNum < 5
                                 return (
                                   <div key={i} className="flex flex-col items-center flex-1" title={`${d.ga || formatDate(d.date)}: AFI ${afiNum} cm`}>
@@ -861,13 +867,13 @@ export default function PatientDetailPage() {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            {Array.isArray(rx.medications) && rx.medications.slice(0,3).map((med:any,i:number)=>(
+                            {Array.isArray(rx.medications) && rx.medications.slice(0, 3).map((med: any, i: number) => (
                               <div key={i} className="text-xs text-gray-600">
                                 <span className="font-medium">{med.drug}</span> — {med.dose} · {med.frequency} · {med.duration}
                               </div>
                             ))}
                             {Array.isArray(rx.medications) && rx.medications.length > 3 && (
-                              <div className="text-xs text-gray-400">+{rx.medications.length-3} more</div>
+                              <div className="text-xs text-gray-400">+{rx.medications.length - 3} more</div>
                             )}
                           </div>
                         </Link>
@@ -883,15 +889,15 @@ export default function PatientDetailPage() {
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-semibold text-gray-700">Payment History</h3>
                   <Link href="/billing" className="btn-primary text-xs flex items-center gap-1">
-                    <Plus className="w-3.5 h-3.5"/> New Bill
+                    <Plus className="w-3.5 h-3.5" /> New Bill
                   </Link>
                 </div>
                 {bills.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
-                    <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+                    <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="font-medium mb-1">No bills yet</p>
                     <Link href="/billing" className="btn-primary inline-flex items-center gap-2 text-xs mt-2">
-                      <Plus className="w-3.5 h-3.5"/> Create Bill
+                      <Plus className="w-3.5 h-3.5" /> Create Bill
                     </Link>
                   </div>
                 ) : (
@@ -903,9 +909,8 @@ export default function PatientDetailPage() {
                             <div className="font-semibold text-gray-900">₹{Number(bill.net_amount).toLocaleString('en-IN')}</div>
                             <div className="text-xs text-gray-400">{formatDate(bill.created_at)} · {bill.payment_mode}</div>
                           </div>
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                          }`}>{bill.status}</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                            }`}>{bill.status}</span>
                         </div>
                         {Array.isArray(bill.items) && (
                           <div className="text-xs text-gray-500 mt-1 truncate">
@@ -978,7 +983,7 @@ export default function PatientDetailPage() {
                 <h3 className="text-sm font-semibold text-gray-700 mb-4">Lab Reports</h3>
                 {labReports.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                    <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p className="font-medium mb-1">No lab reports yet</p>
                     <p className="text-xs">Lab reports added during consultations will appear here.</p>
                   </div>
@@ -1004,7 +1009,7 @@ export default function PatientDetailPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-blue-600"/>
+                      <Shield className="w-5 h-5 text-blue-600" />
                       Medical Insurance Document Bundle
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
@@ -1013,14 +1018,14 @@ export default function PatientDetailPage() {
                   </div>
                   <Link href={`/patients/${patient.id}/edit`}
                     className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                    <Edit className="w-3 h-3"/> Update policy details
+                    <Edit className="w-3 h-3" /> Update policy details
                   </Link>
                 </div>
 
                 {/* Policy details card */}
                 <div className={`rounded-xl border p-4 ${pat.mediclaim ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`}/>
+                    <Shield className={`w-4 h-4 ${pat.mediclaim ? 'text-green-600' : 'text-gray-400'}`} />
                     <span className="font-semibold text-sm text-gray-900">Insurance / Policy Details</span>
                     {pat.mediclaim
                       ? <span className="badge-green text-xs">Mediclaim Active</span>
@@ -1048,7 +1053,7 @@ export default function PatientDetailPage() {
                   </div>
                   {(!pat.policy_tpa_name || !pat.policy_number) && (
                     <div className="mt-3 pt-3 border-t border-green-200 text-xs text-amber-700 flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0"/>
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>
                         Policy company and number not filled.{' '}
                         <Link href={`/patients/${patient.id}/edit`} className="underline font-semibold">
@@ -1079,7 +1084,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/patients/${patient.id}/discharge`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <FileText className="w-3 h-3"/>
+                        <FileText className="w-3 h-3" />
                         {hasDS ? 'View' : 'Create'}
                       </Link>
                     </div>
@@ -1097,7 +1102,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/opd/new?patient=${patient.id}`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Pill className="w-3 h-3"/>
+                        <Pill className="w-3 h-3" />
                         {hasRx ? 'View Visits' : 'Add'}
                       </Link>
                     </div>
@@ -1117,7 +1122,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <IndianRupee className="w-3 h-3"/>
+                        <IndianRupee className="w-3 h-3" />
                         {hasBills ? 'View' : 'Add'}
                       </Link>
                     </div>
@@ -1135,7 +1140,7 @@ export default function PatientDetailPage() {
                       </div>
                       <button onClick={() => setActiveTab('visits')}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Stethoscope className="w-3 h-3"/> View
+                        <Stethoscope className="w-3 h-3" /> View
                       </button>
                     </div>
 
@@ -1153,7 +1158,7 @@ export default function PatientDetailPage() {
                       </div>
                       <Link href={`/patients/${patient.id}/edit`}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Edit className="w-3 h-3"/> Edit
+                        <Edit className="w-3 h-3" /> Edit
                       </Link>
                     </div>
 
@@ -1168,7 +1173,7 @@ export default function PatientDetailPage() {
                       </div>
                       <button onClick={() => setActiveTab('files')}
                         className="text-xs btn-secondary py-1 px-3 flex items-center gap-1">
-                        <Download className="w-3 h-3"/> View
+                        <Download className="w-3 h-3" /> View
                       </button>
                     </div>
                   </div>
@@ -1178,7 +1183,7 @@ export default function PatientDetailPage() {
                 <div className="bg-blue-600 rounded-xl p-5 text-white">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Shield className="w-5 h-5"/>
+                      <Shield className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="font-bold text-base">Open Insurance Bundle</div>
@@ -1191,14 +1196,14 @@ export default function PatientDetailPage() {
                     <button
                       onClick={() => window.open(bundleUrl, '_blank')}
                       className="flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors">
-                      <ExternalLink className="w-4 h-4"/>
+                      <ExternalLink className="w-4 h-4" />
                       Open &amp; Print Bundle
                     </button>
                     {patient.mobile && insuranceWAMsg && (
                       <a href={whatsAppUrl(patient.mobile, insuranceWAMsg)}
                         target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors">
-                        <MessageCircle className="w-4 h-4"/>
+                        <MessageCircle className="w-4 h-4" />
                         Notify Patient via WhatsApp
                       </a>
                     )}

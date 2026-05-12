@@ -72,6 +72,50 @@ export default function SearchPage() {
       })
     })
 
+    // ── Search clinical notes (OPD encounters) ──────────────────
+    const { data: opdNotes } = await supabase
+      .from('encounters')
+      .select('id, encounter_date, notes, patients(full_name, mrn)')
+      .ilike('notes', `%${q}%`)
+      .order('encounter_date', { ascending: false })
+      .limit(5)
+
+    ;(opdNotes || []).forEach((e: any) => {
+      // Skip if already matched by diagnosis/complaint above
+      if (out.some(r => r.id === e.id)) return
+      const pt = e.patients || {}
+      out.push({
+        type:     'encounter',
+        id:       e.id,
+        title:    `Note: "${(e.notes || '').slice(0, 60)}…"`,
+        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+        meta:     formatDate(e.encounter_date),
+        href:     `/opd/${e.id}`,
+      })
+    })
+
+    // ── Search IPD nursing notes ────────────────────────────────
+    try {
+      const { data: ipdNotes } = await supabase
+        .from('ipd_nursing')
+        .select('id, note_text, bed_id, patient_id, patients(full_name, mrn)')
+        .eq('entry_type', 'note')
+        .ilike('note_text', `%${q}%`)
+        .limit(5)
+
+      ;(ipdNotes || []).forEach((n: any) => {
+        const pt = n.patients || {}
+        out.push({
+          type:     'encounter',
+          id:       n.id,
+          title:    `IPD Note: "${(n.note_text || '').slice(0, 60)}…"`,
+          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+          meta:     'IPD',
+          href:     `/ipd/${n.bed_id}`,
+        })
+      })
+    } catch { /* ipd_nursing table may not exist yet */ }
+
     // ── Search prescriptions by drug name — server-side JSONB ────
     // FIX (Bug #1): Was pulling 100 rows and filtering client-side (breaks at scale).
     // Now uses PostgreSQL substring search on medications cast to text. Runs entirely

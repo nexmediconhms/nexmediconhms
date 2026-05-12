@@ -24,14 +24,10 @@ import {
   Baby, Settings, Clock, IndianRupee, FlaskConical,
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
-  BellRing,
-  // ── v11 additions ──────────────────────────────────────
-  BedSingle,        // IPD admissions
-  Video,            // Video consultations
-  PiggyBank,        // Hospital fund
-  UserCog,          // Doctor management
-  ExternalLink,     // Patient portal (external)
+  BellRing, Pill, Scissors,
+  BedSingle, Video, PiggyBank, UserCog, ExternalLink,
 } from 'lucide-react'
+
 
 interface NavItemDef {
   href:        string
@@ -95,6 +91,8 @@ export default function Sidebar() {
         { href: '/reminders',    icon: BellRing,        label: 'Reminders',         badge: reminderBadge             },
         { href: '/anc',          icon: Baby,            label: 'ANC Registry',      permission: 'anc.view'           },
         { href: '/labs',         icon: FlaskConical,    label: 'Lab Results',       permission: 'labs.view'          },
+        { href: '/pharmacy',     icon: Pill,            label: 'Pharmacy',          permission: 'patients.view'      },
+        { href: '/ot-schedule',  icon: Scissors,        label: 'OT Schedule',       permission: 'encounters.create'  },
         { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',    permission: 'forms.view'         },
       ],
     },
@@ -119,6 +117,7 @@ export default function Sidebar() {
         { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          }, // ← NEW v11
         { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
         { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
+        { href: '/insurance',        icon: Shield,      label: 'Insurance Claims', permission: 'billing.view'       },
         { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
       ],
     },
