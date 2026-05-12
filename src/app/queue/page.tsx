@@ -13,82 +13,82 @@
  *        Toggle opd_queue table ON for Realtime.
  */
 import { Suspense, useEffect, useRef, useState } from 'react'
-import { useSearchParams }              from 'next/navigation'
-import Link                             from 'next/link'
-import AppShell                         from '@/components/layout/AppShell'
-import { supabase }                     from '@/lib/supabase'
-import { audit }                        from '@/lib/audit'
-import { formatDateTime }               from '@/lib/utils'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { audit } from '@/lib/audit'
+import { formatDateTime } from '@/lib/utils'
 import {
   Users, Plus, X, Clock, CheckCircle, Play,
   AlertTriangle, Loader2, RefreshCw, Zap,
 } from 'lucide-react'
 
 type QueueStatus = 'waiting' | 'in_progress' | 'done' | 'cancelled'
-type Priority    = 'normal' | 'urgent' | 'emergency'
+type Priority = 'normal' | 'urgent' | 'emergency'
 
 interface QueueEntry {
-  id:           string
-  patient_id:   string
+  id: string
+  patient_id: string
   encounter_id: string | null
-  queue_date:   string
+  queue_date: string
   token_number: number
-  status:       QueueStatus
-  priority:     Priority
-  notes:        string
-  called_at:    string | null
-  done_at:      string | null
-  created_at:   string
-  updated_at:   string
+  status: QueueStatus
+  priority: Priority
+  notes: string
+  called_at: string | null
+  done_at: string | null
+  created_at: string
+  updated_at: string
   // joined:
   patient_name: string
-  mrn:          string
+  mrn: string
 }
 
 const STATUS_LABELS: Record<QueueStatus, string> = {
-  waiting:     'Waiting',
+  waiting: 'Waiting',
   in_progress: 'In Progress',
-  done:        'Done',
-  cancelled:   'Cancelled',
+  done: 'Done',
+  cancelled: 'Cancelled',
 }
 
 const PRIORITY_STYLES: Record<Priority, string> = {
-  normal:    'bg-gray-100 text-gray-600',
-  urgent:    'bg-orange-100 text-orange-700',
+  normal: 'bg-gray-100 text-gray-600',
+  urgent: 'bg-orange-100 text-orange-700',
   emergency: 'bg-red-100 text-red-700',
 }
 
 const STATUS_STYLES: Record<QueueStatus, string> = {
-  waiting:     'bg-yellow-50 border-yellow-200 text-yellow-800',
+  waiting: 'bg-yellow-50 border-yellow-200 text-yellow-800',
   in_progress: 'bg-blue-50 border-blue-200 text-blue-800',
-  done:        'bg-green-50 border-green-200 text-green-700',
-  cancelled:   'bg-gray-50 border-gray-200 text-gray-500',
+  done: 'bg-green-50 border-green-200 text-green-700',
+  cancelled: 'bg-gray-50 border-gray-200 text-gray-500',
 }
 
 function QueueContent() {
   const searchParams = useSearchParams()
-  const [queue,        setQueue]        = useState<QueueEntry[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [realtimeOk,   setRealtimeOk]   = useState(false)
-  const [lastUpdate,   setLastUpdate]   = useState<Date | null>(null)
-  const [error,        setError]        = useState('')
+  const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [realtimeOk, setRealtimeOk] = useState(false)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [error, setError] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
 
   // Add to queue form state
-  const [addPatientId,  setAddPatientId]  = useState(searchParams.get('patient') ?? '')
-  const [addName,       setAddName]       = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
-  const [addMrn,        setAddMrn]        = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
-  const [addPriority,   setAddPriority]   = useState<Priority>('normal')
-  const [addNotes,      setAddNotes]      = useState('')
-  const [addEncounter,  setAddEncounter]  = useState(searchParams.get('encounter') ?? '')
-  const [addingEntry,   setAddingEntry]   = useState(false)
+  const [addPatientId, setAddPatientId] = useState(searchParams.get('patient') ?? '')
+  const [addName, setAddName] = useState(searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : '')
+  const [addMrn, setAddMrn] = useState(searchParams.get('mrn') ? decodeURIComponent(searchParams.get('mrn')!) : '')
+  const [addPriority, setAddPriority] = useState<Priority>('normal')
+  const [addNotes, setAddNotes] = useState('')
+  const [addEncounter, setAddEncounter] = useState(searchParams.get('encounter') ?? '')
+  const [addingEntry, setAddingEntry] = useState(false)
 
   // ── Patient live search — uses 'mobile' (correct column name in patients table) ──
-  const [patientSearch,  setPatientSearch]  = useState(
+  const [patientSearch, setPatientSearch] = useState(
     searchParams.get('patientName') ? decodeURIComponent(searchParams.get('patientName')!) : ''
   )
   const [patientResults, setPatientResults] = useState<{ id: string; full_name: string; mrn: string; mobile: string }[]>([])
-  const [searchLoading,  setSearchLoading]  = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
 
   // Auto-open modal when arriving from patient profile page (?patient=ID&patientName=NAME)
   const [autoOpened, setAutoOpened] = useState(false)
@@ -151,20 +151,20 @@ function QueueContent() {
       if (e) throw e
 
       const mapped: QueueEntry[] = (data || []).map((r: any) => ({
-        id:           r.id,
-        patient_id:   r.patient_id,
+        id: r.id,
+        patient_id: r.patient_id,
         encounter_id: r.encounter_id,
-        queue_date:   r.queue_date,
+        queue_date: r.queue_date,
         token_number: r.token_number,
-        status:       r.status,
-        priority:     r.priority,
-        notes:        r.notes ?? '',
-        called_at:    r.called_at,
-        done_at:      r.done_at,
-        created_at:   r.created_at,
-        updated_at:   r.updated_at,
+        status: r.status,
+        priority: r.priority,
+        notes: r.notes ?? '',
+        called_at: r.called_at,
+        done_at: r.done_at,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
         patient_name: r.patients.full_name,
-        mrn:          r.patients.mrn,
+        mrn: r.patients.mrn,
       }))
 
       setQueue(mapped)
@@ -207,7 +207,7 @@ function QueueContent() {
   async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
     const patch: any = { status: newStatus, updated_at: new Date().toISOString() }
     if (newStatus === 'in_progress') patch.called_at = new Date().toISOString()
-    if (newStatus === 'done')        patch.done_at    = new Date().toISOString()
+    if (newStatus === 'done') patch.done_at = new Date().toISOString()
 
     const { error: e } = await supabase
       .from('opd_queue').update(patch).eq('id', entry.id)
@@ -239,13 +239,13 @@ function QueueContent() {
       const { data, error: e } = await supabase
         .from('opd_queue')
         .insert({
-          patient_id:   addPatientId,
+          patient_id: addPatientId,
           encounter_id: addEncounter || null,
-          queue_date:   today,
+          queue_date: today,
           token_number: token,
-          status:       'waiting',
-          priority:     addPriority,
-          notes:        addNotes.trim(),
+          status: 'waiting',
+          priority: addPriority,
+          notes: addNotes.trim(),
         })
         .select().single()
 
@@ -263,9 +263,9 @@ function QueueContent() {
   }
 
   // ── Stats ──────────────────────────────────────────────────
-  const waiting    = queue.filter(q => q.status === 'waiting').length
+  const waiting = queue.filter(q => q.status === 'waiting').length
   const inProgress = queue.filter(q => q.status === 'in_progress').length
-  const done       = queue.filter(q => q.status === 'done').length
+  const done = queue.filter(q => q.status === 'done').length
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -276,31 +276,31 @@ function QueueContent() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-600"/> OPD Queue
+              <Users className="w-5 h-5 text-blue-600" /> OPD Queue
               <span className="ml-2 flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full
                 border {realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">
                 {realtimeOk
-                  ? <><Zap className="w-3 h-3"/> Live</>
-                  : <><RefreshCw className="w-3 h-3"/> Connecting…</>}
+                  ? <><Zap className="w-3 h-3" /> Live</>
+                  : <><RefreshCw className="w-3 h-3" /> Connecting…</>}
               </span>
             </h1>
             <p className="text-sm text-gray-500">
-              Today — {new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long' })}
-              {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}</span>}
+              Today — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
+              {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
             </p>
           </div>
           <button onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-            <Plus className="w-4 h-4"/> Add to Queue
+            <Plus className="w-4 h-4" /> Add to Queue
           </button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           {[
-            { label: 'Waiting', count: waiting,    color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+            { label: 'Waiting', count: waiting, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
             { label: 'In Progress', count: inProgress, color: 'text-blue-700 bg-blue-50 border-blue-200' },
-            { label: 'Done', count: done,       color: 'text-green-700 bg-green-50 border-green-200' },
+            { label: 'Done', count: done, color: 'text-green-700 bg-green-50 border-green-200' },
           ].map(s => (
             <div key={s.label} className={`border rounded-xl p-3 text-center ${s.color}`}>
               <div className="text-2xl font-bold">{s.count}</div>
@@ -311,20 +311,20 @@ function QueueContent() {
 
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             {error}
-            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4"/></button>
+            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4" /></button>
           </div>
         )}
 
         {/* Queue list */}
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2"/> Loading queue…
+            <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading queue…
           </div>
         ) : queue.length === 0 ? (
           <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
-            <Users className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">Queue is empty</p>
             <p className="text-sm mt-1">Add patients to start the day</p>
           </div>
@@ -353,7 +353,7 @@ function QueueContent() {
                         )}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
-                        <Clock className="w-3 h-3"/>
+                        <Clock className="w-3 h-3" />
                         Added {formatDateTime(entry.created_at)}
                         {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
                         {entry.notes && <span className="ml-1">· {entry.notes}</span>}
@@ -366,18 +366,18 @@ function QueueContent() {
                         <>
                           <button onClick={() => updateStatus(entry, 'in_progress')}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                            <Play className="w-3 h-3"/> Call
+                            <Play className="w-3 h-3" /> Call
                           </button>
                           <button onClick={() => updateStatus(entry, 'cancelled')}
                             className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
-                            <X className="w-4 h-4"/>
+                            <X className="w-4 h-4" />
                           </button>
                         </>
                       )}
                       {entry.status === 'in_progress' && (
                         <button onClick={() => updateStatus(entry, 'done')}
                           className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                          <CheckCircle className="w-3 h-3"/> Done
+                          <CheckCircle className="w-3 h-3" /> Done
                         </button>
                       )}
                       {entry.patient_id && (
@@ -402,7 +402,7 @@ function QueueContent() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Add to Queue</h3>
               <button onClick={() => { setShowAddModal(false); resetModal() }} className="text-gray-400 hover:text-gray-700">
-                <X className="w-5 h-5"/>
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -425,7 +425,7 @@ function QueueContent() {
                     autoFocus
                   />
                   {searchLoading && (
-                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin"/>
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
                   )}
                 </div>
 
@@ -445,7 +445,7 @@ function QueueContent() {
                             MRN: {p.mrn}{p.mobile ? ` · ${p.mobile}` : ''}
                           </div>
                         </div>
-                        <CheckCircle className="w-4 h-4 text-blue-300 flex-shrink-0"/>
+                        <CheckCircle className="w-4 h-4 text-blue-300 flex-shrink-0" />
                       </button>
                     ))}
                   </div>
@@ -468,12 +468,12 @@ function QueueContent() {
                 {/* Selected patient confirmation */}
                 {addPatientId && addName && (
                   <div className="mt-1.5 flex items-center gap-2 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0"/>
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
                     <span className="flex-1 truncate"><strong>{addName}</strong>{addMrn ? ` · MRN: ${addMrn}` : ''}</span>
                     <button type="button"
                       className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
                       onClick={() => { setAddPatientId(''); setAddName(''); setAddMrn(''); setPatientSearch('') }}>
-                      <X className="w-3.5 h-3.5"/>
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -490,7 +490,7 @@ function QueueContent() {
               <div>
                 <label className="label">Notes (optional)</label>
                 <input className="input" value={addNotes} onChange={e => setAddNotes(e.target.value)}
-                  placeholder="e.g. Follow-up, fasting, wheelchair"/>
+                  placeholder="e.g. Follow-up, fasting, wheelchair" />
               </div>
             </div>
 
@@ -514,7 +514,7 @@ export default function QueuePage() {
     <Suspense fallback={
       <AppShell>
         <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       </AppShell>
     }>
