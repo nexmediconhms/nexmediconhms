@@ -159,6 +159,13 @@ export default function LoginPage() {
   // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
   // and redirect if already logged in — combined to avoid race conditions
   useEffect(() => {
+    // BUG FIX: Clear any role simulation override when arriving at login page.
+    // This prevents the "stuck in doctor view after sign-out" bug where
+    // sessionStorage retains the override from a previous session.
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('nexmedicon_role_override')
+    }
+
     let isRecovery = false
     let redirected = false
 
