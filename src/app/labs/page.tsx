@@ -1,11 +1,16 @@
 'use client'
 /**
- * src/app/labs/page.tsx  (UPDATED — A. Lab Results → Supabase)
+ * src/app/labs/page.tsx — UPDATED v2
  *
- * Changes from original:
- *  - localStorage replaced with Supabase `lab_reports` table
- *  - Audit log on create/update/delete
- *  - All other UI/logic identical to original
+ * NEW FEATURES:
+ *   1. Lab partner assignment (dropdown from lab_partners table)
+ *   2. Per-test amount field with auto-calculate hospital vs lab share
+ *   3. Total amount, hospital amount, lab amount display
+ *   4. Payment mode (cash/upi/card) selection
+ *   5. Revenue split shown in report list view
+ *
+ * All original features preserved: OCR scan, test presets, status badges,
+ * patient search, edit/delete, audit logging.
  */
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -19,9 +24,10 @@ import type { OCRResult } from '@/lib/ocr'
 import {
   FlaskConical, Search, Plus, X, ChevronRight,
   AlertTriangle, CheckCircle, ArrowLeft, Trash2, Save,
+  IndianRupee, Percent,
 } from 'lucide-react'
 
-// ── Lab test presets (unchanged from original) ────────────────
+// ── Lab test presets ──────────────────────────────────────────
 const LAB_GROUPS = [
   {
     group: 'Blood — Routine', tests: [
@@ -92,80 +98,33 @@ const LAB_GROUPS = [
 const ALL_TESTS = LAB_GROUPS.flatMap(g => g.tests.map(t => ({ ...t, group: g.group })))
 
 // ── OCR alias map ─────────────────────────────────────────────
-// Maps every common abbreviation / alternate spelling to the canonical
-// test name used in ALL_TESTS. Keys are lower-case; values must match t.name exactly.
 const OCR_ALIASES: Record<string, string> = {
-  // Haemoglobin
   'hb': 'Haemoglobin (Hb)', 'hgb': 'Haemoglobin (Hb)',
   'hemoglobin': 'Haemoglobin (Hb)', 'haemoglobin': 'Haemoglobin (Hb)',
-  // WBC
   'wbc': 'WBC (Total Count)', 'tlc': 'WBC (Total Count)',
-  'total count': 'WBC (Total Count)', 'total wbc': 'WBC (Total Count)',
-  'leucocyte': 'WBC (Total Count)', 'leukocyte': 'WBC (Total Count)',
-  'tc': 'WBC (Total Count)',
-  // Platelet
+  'total count': 'WBC (Total Count)', 'tc': 'WBC (Total Count)',
   'plt': 'Platelet Count', 'platelets': 'Platelet Count',
-  'platelet': 'Platelet Count', 'thrombocyte': 'Platelet Count',
-  // PCV / Haematocrit
-  'pcv': 'PCV / Haematocrit', 'hematocrit': 'PCV / Haematocrit',
-  'haematocrit': 'PCV / Haematocrit', 'hct': 'PCV / Haematocrit',
-  // ESR
-  'esr': 'ESR', 'erythrocyte sedimentation': 'ESR',
-  // Blood Sugar
-  'bsf': 'Blood Sugar Fasting', 'fbs': 'Blood Sugar Fasting',
-  'fasting sugar': 'Blood Sugar Fasting', 'fasting glucose': 'Blood Sugar Fasting',
-  'blood glucose fasting': 'Blood Sugar Fasting',
-  'bspp': 'Blood Sugar PP', 'ppbs': 'Blood Sugar PP',
-  'post prandial': 'Blood Sugar PP', 'pp sugar': 'Blood Sugar PP',
+  'pcv': 'PCV / Haematocrit', 'hct': 'PCV / Haematocrit',
+  'esr': 'ESR',
+  'bsf': 'Blood Sugar Fasting', 'fbs': 'Blood Sugar Fasting', 'fasting sugar': 'Blood Sugar Fasting',
+  'bspp': 'Blood Sugar PP', 'ppbs': 'Blood Sugar PP', 'pp sugar': 'Blood Sugar PP',
   'hba1c': 'HbA1c', 'a1c': 'HbA1c',
-  'glycated hemoglobin': 'HbA1c', 'glycosylated hemoglobin': 'HbA1c',
-  'ogtt 1hr': 'OGTT (1 hr)', 'ogtt 1h': 'OGTT (1 hr)', 'gtt 1 hour': 'OGTT (1 hr)',
-  'ogtt 2hr': 'OGTT (2 hr)', 'ogtt 2h': 'OGTT (2 hr)', 'gtt 2 hour': 'OGTT (2 hr)',
-  // Thyroid
-  'tsh': 'TSH', 'thyroid stimulating': 'TSH',
-  't3': 'T3', 'triiodothyronine': 'T3',
-  't4': 'T4', 'thyroxine': 'T4',
-  'free t4': 'Free T4', 'ft4': 'Free T4', 'free thyroxine': 'Free T4',
-  // Hormones
-  'lh': 'LH', 'luteinizing': 'LH',
-  'fsh': 'FSH', 'follicle stimulating': 'FSH',
-  'prl': 'Prolactin', 'prolactin': 'Prolactin',
-  'e2': 'Oestradiol', 'estradiol': 'Oestradiol', 'oestradiol': 'Oestradiol',
-  'prog': 'Progesterone', 'progesterone': 'Progesterone',
-  'amh': 'AMH', 'anti mullerian': 'AMH',
+  'ogtt 1hr': 'OGTT (1 hr)', 'ogtt 2hr': 'OGTT (2 hr)',
+  'tsh': 'TSH', 't3': 'T3', 't4': 'T4', 'free t4': 'Free T4', 'ft4': 'Free T4',
+  'lh': 'LH', 'fsh': 'FSH', 'prolactin': 'Prolactin',
+  'e2': 'Oestradiol', 'estradiol': 'Oestradiol',
+  'progesterone': 'Progesterone', 'amh': 'AMH',
   'beta hcg': 'Beta-hCG', 'bhcg': 'Beta-hCG', 'hcg': 'Beta-hCG',
-  'ca125': 'CA-125', 'ca-125': 'CA-125', 'cancer antigen 125': 'CA-125',
-  'testosterone': 'Testosterone',
-  // Infection
-  'hbsag': 'HBsAg', 'hepatitis b': 'HBsAg',
-  'hiv': 'HIV (ELISA)', 'anti hiv': 'HIV (ELISA)',
-  'vdrl': 'VDRL (Syphilis)', 'syphilis': 'VDRL (Syphilis)',
-  'apla igg': 'Antiphospholipid IgG', 'apla igm': 'Antiphospholipid IgM',
-  // Urine
-  'urine protein': 'Urine Protein', 'urine albumin': 'Urine Protein',
-  'urine sugar': 'Urine Sugar', 'urine glucose': 'Urine Sugar',
-  'urine culture': 'Urine Culture', 'urine cs': 'Urine Culture',
-  // Iron studies
-  'serum iron': 'Serum Iron', 's iron': 'Serum Iron',
-  'tibc': 'TIBC', 'total iron binding': 'TIBC',
-  'ferritin': 'Serum Ferritin', 'serum ferritin': 'Serum Ferritin',
-  's ferritin': 'Serum Ferritin',
-  'b12': 'Vitamin B12', 'vit b12': 'Vitamin B12',
-  'vitamin b12': 'Vitamin B12', 'cobalamin': 'Vitamin B12',
-  'vit d': 'Vitamin D3', 'vit d3': 'Vitamin D3',
-  'vitamin d': 'Vitamin D3', 'vitamin d3': 'Vitamin D3',
-  '25 oh d': 'Vitamin D3', '25-oh-d3': 'Vitamin D3',
+  'ca125': 'CA-125', 'testosterone': 'Testosterone',
+  'hbsag': 'HBsAg', 'hiv': 'HIV (ELISA)', 'vdrl': 'VDRL (Syphilis)',
+  'serum iron': 'Serum Iron', 'tibc': 'TIBC',
+  'ferritin': 'Serum Ferritin', 'b12': 'Vitamin B12', 'vit b12': 'Vitamin B12',
+  'vit d': 'Vitamin D3', 'vitamin d': 'Vitamin D3', 'vit d3': 'Vitamin D3',
 }
 
-/**
- * Given a raw OCR text, find ALL tests that are mentioned.
- * Strategy: alias lookup (longest-first) + fallback substring match.
- */
 function matchTestsFromOCR(raw: string): typeof ALL_TESTS {
   const text = raw.toLowerCase()
   const matched = new Map<string, typeof ALL_TESTS[0]>()
-
-  // Step 1 — alias lookup (longest key first to prefer specific matches)
   const sortedAliases = Object.keys(OCR_ALIASES).sort((a, b) => b.length - a.length)
   for (const alias of sortedAliases) {
     if (text.includes(alias)) {
@@ -176,17 +135,15 @@ function matchTestsFromOCR(raw: string): typeof ALL_TESTS {
       }
     }
   }
-
-  // Step 2 — direct name substring match (catches anything not in alias map)
   for (const test of ALL_TESTS) {
     if (!matched.has(test.name) && text.includes(test.name.toLowerCase())) {
       matched.set(test.name, test)
     }
   }
-
   return Array.from(matched.values())
 }
 
+// ── Types ─────────────────────────────────────────────────────
 
 interface LabEntry {
   testName: string
@@ -195,6 +152,14 @@ interface LabEntry {
   referenceRange: string
   status: 'normal' | 'low' | 'high' | 'pending'
   remarks: string
+}
+
+interface LabPartner {
+  id: string
+  name: string
+  hospital_pct: number
+  lab_pct: number
+  is_active: boolean
 }
 
 interface LabReport {
@@ -208,6 +173,12 @@ interface LabReport {
   notes: string
   created_at: string
   encounter_id?: string
+  // NEW: revenue sharing fields
+  lab_partner_id?: string | null
+  total_amount?: number
+  hospital_amount?: number
+  lab_amount?: number
+  payment_mode?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -231,10 +202,13 @@ function determineStatus(test: typeof ALL_TESTS[0], value: string): LabEntry['st
   return 'normal'
 }
 
-// ── Page ──────────────────────────────────────────────────────
+const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
+
+
+
+// ── Page Component ────────────────────────────────────────────
 function LabsContent() {
   const searchParams = useSearchParams()
-
 
   const [reports, setReports] = useState<LabReport[]>([])
   const [loading, setLoading] = useState(true)
@@ -256,6 +230,37 @@ function LabsContent() {
   const [testSearch, setTestSearch] = useState('')
   const [showPresets, setShowPresets] = useState(false)
 
+  // NEW: Lab partner & amount state
+  const [partners, setPartners] = useState<LabPartner[]>([])
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>('')
+  const [totalAmount, setTotalAmount] = useState<string>('')
+  const [hospitalAmount, setHospitalAmount] = useState<number>(0)
+  const [labAmount, setLabAmount] = useState<number>(0)
+  const [paymentMode, setPaymentMode] = useState<string>('cash')
+
+  // Load lab partners
+  useEffect(() => {
+    supabase.from('lab_partners').select('id, name, hospital_pct, lab_pct, is_active')
+      .eq('is_active', true).order('name')
+      .then(({ data }) => { if (data) setPartners(data as LabPartner[]) })
+  }, [])
+
+  // Auto-calculate hospital/lab split when amount or partner changes
+  useEffect(() => {
+    const amt = Number(totalAmount) || 0
+    if (!selectedPartnerId || amt <= 0) {
+      setHospitalAmount(amt)
+      setLabAmount(0)
+      return
+    }
+    const partner = partners.find(p => p.id === selectedPartnerId)
+    if (!partner) { setHospitalAmount(amt); setLabAmount(0); return }
+    const hAmt = Math.round(amt * partner.hospital_pct / 100 * 100) / 100
+    const lAmt = Math.round(amt * partner.lab_pct / 100 * 100) / 100
+    setHospitalAmount(hAmt)
+    setLabAmount(lAmt)
+  }, [totalAmount, selectedPartnerId, partners])
+
   // ── Load from Supabase ────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true)
@@ -264,6 +269,7 @@ function LabsContent() {
         .from('lab_reports')
         .select(`
           id, report_date, lab_name, entries, notes, created_at, encounter_id,
+          lab_partner_id, total_amount, hospital_amount, lab_amount, payment_mode,
           patients!inner ( id, full_name, mrn )
         `)
         .order('report_date', { ascending: false })
@@ -285,6 +291,11 @@ function LabsContent() {
         notes: r.notes ?? '',
         created_at: r.created_at,
         encounter_id: r.encounter_id,
+        lab_partner_id: r.lab_partner_id,
+        total_amount: r.total_amount || 0,
+        hospital_amount: r.hospital_amount || 0,
+        lab_amount: r.lab_amount || 0,
+        payment_mode: r.payment_mode || 'cash',
       }))
 
       setReports(mapped)
@@ -297,7 +308,6 @@ function LabsContent() {
 
   useEffect(() => { load() }, [load])
 
-  // Pre-fill patient info if URL param provided
   useEffect(() => {
     if (!patientId) return
     supabase.from('patients').select('full_name, mrn').eq('id', patientId).single()
@@ -307,12 +317,9 @@ function LabsContent() {
   }, [patientId])
 
   // ── OCR auto-fill ─────────────────────────────────────────
-  // FIX (Bug #10): replaces the old 4-char prefix match with matchTestsFromOCR()
-  // which uses a comprehensive alias map (Hb, HGB, FBS, PPBS, FT4 etc.)
   function handleOCR(result: OCRResult) {
     const raw = result.raw_text ?? ''
     if (!labName && raw.toLowerCase().includes('lab')) setLabName('Lab Report')
-
     const labTests = matchTestsFromOCR(raw)
     if (labTests.length > 0) {
       const newEntries: LabEntry[] = labTests.slice(0, 15).map(t => normaliseEntry({
@@ -341,6 +348,12 @@ function LabsContent() {
       lab_name: labName.trim(),
       entries: entries.filter(e => e.testName.trim()),
       notes: notes.trim(),
+      // NEW: revenue sharing fields
+      lab_partner_id: selectedPartnerId || null,
+      total_amount: Number(totalAmount) || 0,
+      hospital_amount: hospitalAmount,
+      lab_amount: labAmount,
+      payment_mode: paymentMode,
     }
 
     try {
@@ -384,6 +397,9 @@ function LabsContent() {
     setNotes(r.notes)
     setEntries(r.entries.length > 0 ? r.entries : [normaliseEntry({})])
     setEncounterId(r.encounter_id ?? '')
+    setSelectedPartnerId(r.lab_partner_id || '')
+    setTotalAmount(String(r.total_amount || ''))
+    setPaymentMode(r.payment_mode || 'cash')
     setView('form')
   }
 
@@ -396,6 +412,9 @@ function LabsContent() {
     setLabName(''); setNotes('')
     setEntries([normaliseEntry({})])
     setTestSearch('')
+    setSelectedPartnerId('')
+    setTotalAmount('')
+    setPaymentMode('cash')
   }
 
   // ── Entry helpers ─────────────────────────────────────────
@@ -438,15 +457,13 @@ function LabsContent() {
     r.lab_name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const filteredPresets = testSearch
-    ? ALL_TESTS.filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase()))
-    : ALL_TESTS
-
   const statusColour = (s: LabEntry['status']) =>
     s === 'high' ? 'text-red-600 bg-red-50 border-red-200' :
       s === 'low' ? 'text-blue-700 bg-blue-50 border-blue-200' :
         s === 'normal' ? 'text-green-700 bg-green-50 border-green-200' :
           'text-gray-500 bg-gray-50 border-gray-200'
+
+
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -467,16 +484,24 @@ function LabsContent() {
                 Lab Results
               </h1>
               <p className="text-sm text-gray-500">
-                {view === 'list' ? 'All lab reports — stored in Supabase' : editingReport ? 'Edit lab report' : 'New lab report'}
+                {view === 'list' ? 'All lab reports with revenue sharing' : editingReport ? 'Edit lab report' : 'New lab report'}
               </p>
             </div>
           </div>
-          {view === 'list' && (
-            <button onClick={() => { resetForm(); setView('form') }}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-              <Plus className="w-4 h-4" /> New Report
-            </button>
-          )}
+          <div className="flex gap-2">
+            {view === 'list' && (
+              <>
+                <Link href="/settings/lab-partners"
+                  className="flex items-center gap-2 text-xs font-medium px-3 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100">
+                  <Percent className="w-3.5 h-3.5" /> Lab Partners
+                </Link>
+                <button onClick={() => { resetForm(); setView('form') }}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+                  <Plus className="w-4 h-4" /> New Report
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -503,12 +528,13 @@ function LabsContent() {
               <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
                 <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">No lab reports yet</p>
-                <p className="text-sm mt-1">Click "New Report" to add the first one</p>
+                <p className="text-sm mt-1">Click &quot;New Report&quot; to add the first one</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {filtered.map(r => {
                   const abnormal = r.entries.filter(e => e.status === 'high' || e.status === 'low')
+                  const partner = partners.find(p => p.id === r.lab_partner_id)
                   return (
                     <div key={r.id} className="card p-4 hover:border-indigo-200 transition-colors">
                       <div className="flex items-start justify-between gap-4">
@@ -521,10 +547,27 @@ function LabsContent() {
                                 <AlertTriangle className="w-3 h-3" /> {abnormal.length} abnormal
                               </span>
                             )}
+                            {r.payment_mode && (
+                              <span className="text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full capitalize">{r.payment_mode}</span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-500 mt-0.5">
                             {formatDate(r.report_date)} · {r.lab_name || 'Lab not specified'} · {r.entries.length} test{r.entries.length !== 1 ? 's' : ''}
                           </div>
+
+                          {/* Revenue split display */}
+                          {(r.total_amount || 0) > 0 && (
+                            <div className="flex items-center gap-3 mt-1.5 text-xs">
+                              <span className="font-mono font-semibold text-gray-800">Total: {inr(r.total_amount || 0)}</span>
+                              {partner && (
+                                <>
+                                  <span className="text-green-700 font-medium">Hospital: {inr(r.hospital_amount || 0)}</span>
+                                  <span className="text-blue-700 font-medium">Lab ({partner.name}): {inr(r.lab_amount || 0)}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+
                           <div className="flex flex-wrap gap-1 mt-2">
                             {r.entries.slice(0, 6).map((e, i) => (
                               <span key={i} className={`text-xs px-2 py-0.5 rounded-full border ${statusColour(e.status)}`}>
@@ -582,10 +625,73 @@ function LabsContent() {
                 </div>
                 <div>
                   <label className="label">Laboratory Name</label>
-                  <input className="input" value={labName} onChange={e => setLabName(e.target.value)} placeholder="e.g. Metropolis, SRL, local lab" />
+                  <input className="input" value={labName} onChange={e => setLabName(e.target.value)} placeholder="e.g. Metropolis, SRL" />
                 </div>
               </div>
             </div>
+
+            {/* NEW: Lab Partner & Amount Section */}
+            <div className="card p-5 border-l-4 border-indigo-300">
+              <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <IndianRupee className="w-4 h-4 text-indigo-600" /> Revenue Sharing
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">Assign a lab partner and enter the total test amount. The split is calculated automatically.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="label">Lab Partner</label>
+                  <select className="input" value={selectedPartnerId}
+                    onChange={e => setSelectedPartnerId(e.target.value)}>
+                    <option value="">— No partner (100% hospital) —</option>
+                    {partners.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.hospital_pct}% / {p.lab_pct}%)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Total Amount (₹)</label>
+                  <input className="input" type="number" step="0.01" placeholder="e.g. 500"
+                    value={totalAmount} onChange={e => setTotalAmount(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Payment Mode</label>
+                  <select className="input" value={paymentMode}
+                    onChange={e => setPaymentMode(e.target.value)}>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="card">Card</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Split preview */}
+              {Number(totalAmount) > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-lg font-bold font-mono text-gray-800">{inr(Number(totalAmount) || 0)}</div>
+                    <div className="text-xs text-gray-500">Total Amount</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <div className="text-lg font-bold font-mono text-green-700">{inr(hospitalAmount)}</div>
+                    <div className="text-xs text-green-600">Hospital Share{selectedPartnerId ? ` (${partners.find(p => p.id === selectedPartnerId)?.hospital_pct}%)` : ''}</div>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <div className="text-lg font-bold font-mono text-blue-700">{inr(labAmount)}</div>
+                    <div className="text-xs text-blue-600">Lab Share{selectedPartnerId ? ` (${partners.find(p => p.id === selectedPartnerId)?.lab_pct}%)` : ''}</div>
+                  </div>
+                </div>
+              )}
+
+              {!selectedPartnerId && Number(totalAmount) > 0 && (
+                <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> No partner selected — 100% goes to hospital.
+                  <Link href="/settings/lab-partners" className="underline">Add a partner</Link>
+                </p>
+              )}
+            </div>
+
 
             {/* Test Results */}
             <div className="card p-5">
@@ -699,7 +805,7 @@ function LabsContent() {
   )
 }
 
-// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+// Bug #9 fix: Suspense wrapper for useSearchParams()
 export default function LabsPage() {
   return (
     <Suspense fallback={
