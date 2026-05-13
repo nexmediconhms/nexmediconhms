@@ -461,10 +461,10 @@ export default function IPDNursingPage() {
               <CheckCircle className="w-4 h-4" /> Saved
             </span>
           )}
-          {/* IPD Bill button — navigates to billing with pre-filled IPD charges */}
+          {/* IPD Bill button — navigates to structured IPD billing */}
           {bed && patient && (
             <Link
-              href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}&encounterType=IPD`}
+              href={`/ipd/${bedId}/billing`}
               className="ml-2 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
               <IndianRupee className="w-3.5 h-3.5" /> IPD Bill
             </Link>
