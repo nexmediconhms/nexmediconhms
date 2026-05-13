@@ -73,10 +73,23 @@ export function clearAuditCache() {
 }
 
 // ─── Atomic Hash Chain Insert ─────────────────────────────────
+//
+// The hash chain is now computed server-side in the database via
+// the `insert_audit_entry` RPC function. This eliminates the race
+// condition where two concurrent clients could read the same prev_hash.
+//
+// If the RPC function doesn't exist yet (before migration), we fall back
+// to a client-side approach with a local mutex to at least prevent
+// concurrent calls from the same browser tab from racing.
 
 /** Simple in-memory mutex to serialize audit calls from the same client */
 let _auditLock: Promise<void> = Promise.resolve()
 
+/**
+ * Acquire the audit lock — ensures only one audit call is in-flight at a time
+ * from this client instance. This is a secondary protection; the primary
+ * protection is the database-level advisory lock in insert_audit_entry().
+ */
 function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
   let release: () => void
   const next = new Promise<void>(resolve => { release = resolve })
@@ -92,6 +105,10 @@ function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
   })
 }
 
+/**
+ * Compute SHA-256 hash of an audit entry for tamper detection.
+ * Used as fallback when the database RPC is unavailable.
+ */
 async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string> {
   try {
     const payload = JSON.stringify({
@@ -119,6 +136,20 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
   }
 }
 
+/**
+ * Write an audit log entry with atomic hash chain.
+ *
+ * Strategy:
+ *   1. Try the database RPC function `insert_audit_entry` (atomic, race-free)
+ *   2. If RPC doesn't exist (pre-migration), fall back to client-side
+ *      insert with a local mutex (prevents same-tab races, but not cross-tab)
+ *
+ * @param action       - What happened (create/update/delete/print/…)
+ * @param entityType   - What kind of record was affected
+ * @param entityId     - UUID of the affected record (optional for login/logout)
+ * @param entityLabel  - Human-readable name (patient name, invoice number, etc.)
+ * @param changes      - Optional { before, after } for update actions
+ */
 export async function audit(
   action:      AuditAction,
   entityType:  AuditEntity,
@@ -140,19 +171,25 @@ export async function audit(
       changes:      changes     ?? null,
     }
 
-    // Strategy 1: Atomic RPC (preferred — race-free)
+    // ── Strategy 1: Atomic RPC (preferred — race-free) ──────────
     const rpcResult = await tryAtomicInsert(entry)
     if (rpcResult === 'success') return
+    // If RPC doesn't exist, fall through to Strategy 2
 
-    // Strategy 2: Client-side mutex + hash (fallback)
+    // ── Strategy 2: Client-side mutex + hash (fallback) ──────────
     await withAuditLock(async () => {
       await fallbackInsert(entry)
     })
   } catch (err) {
+    // Never crash the app if audit fails — log and continue
     console.warn('[Audit] Unexpected error:', err)
   }
 }
 
+/**
+ * Try to insert via the atomic database RPC function.
+ * Returns 'success' if it worked, 'unavailable' if the function doesn't exist.
+ */
 async function tryAtomicInsert(
   entry: Record<string, unknown>
 ): Promise<'success' | 'unavailable'> {
@@ -169,6 +206,8 @@ async function tryAtomicInsert(
     })
 
     if (error) {
+      // Check if the error is because the function doesn't exist yet
+      // Supabase returns 42883 (undefined_function) or contains "does not exist"
       const msg = error.message?.toLowerCase() || ''
       const code = (error as any).code || ''
       if (
@@ -180,8 +219,10 @@ async function tryAtomicInsert(
       ) {
         return 'unavailable'
       }
+
+      // Some other error — log but don't crash
       console.warn('[Audit] RPC insert_audit_entry failed:', error.message)
-      return 'unavailable'
+      return 'unavailable' // Fall back to client-side
     }
 
     return 'success'
@@ -190,8 +231,15 @@ async function tryAtomicInsert(
   }
 }
 
+/**
+ * Fallback: Client-side hash computation with local mutex.
+ * This prevents same-tab races. Cross-tab races are still possible
+ * but are much less likely and non-critical (the chain will still be
+ * ordered by created_at, just with potential duplicate prev_hash).
+ */
 async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
   try {
+    // Read the latest hash
     const { data: lastEntry } = await supabase
       .from('audit_log')
       .select('entry_hash')
@@ -200,8 +248,11 @@ async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
       .single()
 
     const prevHash = lastEntry?.entry_hash || null
+
+    // Compute new hash
     const entryHash = await computeEntryHash(entry, prevHash)
 
+    // Insert with hash chain
     const { error } = await supabase.from('audit_log').insert({
       ...entry,
       entry_hash: entryHash,

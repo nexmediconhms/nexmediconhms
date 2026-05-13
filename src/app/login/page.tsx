@@ -67,11 +67,17 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Client-side rate limiter for login attempts.
+// Defense-in-depth: since supabase.auth.signInWithPassword() calls go directly
+// from browser to Supabase (bypassing Next.js middleware), this client-side
+// limiter is the first line of defense against brute force from the same browser.
+// ─────────────────────────────────────────────────────────────────────────────
 const LOGIN_MAX_ATTEMPTS = 5
-const LOGIN_WINDOW_MS = 15 * 60 * 1000
-const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000
+const LOGIN_WINDOW_MS = 15 * 60 * 1000      // 15 minutes
+const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000 // 30-minute lockout
 const RESET_MAX_ATTEMPTS = 3
-const RESET_WINDOW_MS = 60 * 60 * 1000
+const RESET_WINDOW_MS = 60 * 60 * 1000      // 60 minutes
 
 function useClientRateLimiter(maxAttempts: number, windowMs: number, blockDurationMs: number) {
   const attemptsRef = useRef<number[]>([])
@@ -79,27 +85,48 @@ function useClientRateLimiter(maxAttempts: number, windowMs: number, blockDurati
 
   function check(): { allowed: boolean; retryAfter: number; message: string } {
     const now = Date.now()
+
+    // Check hard block
     if (blockedUntilRef.current > now) {
       const retryAfter = Math.ceil((blockedUntilRef.current - now) / 1000)
       const minutes = Math.ceil(retryAfter / 60)
-      return { allowed: false, retryAfter, message: `Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.` }
+      return {
+        allowed: false,
+        retryAfter,
+        message: `Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`,
+      }
     }
+
+    // Clean old attempts outside the window
     attemptsRef.current = attemptsRef.current.filter(t => t > now - windowMs)
+
+    // Check if over limit
     if (attemptsRef.current.length >= maxAttempts) {
+      // Apply hard block
       blockedUntilRef.current = now + blockDurationMs
       const retryAfter = Math.ceil(blockDurationMs / 1000)
       const minutes = Math.ceil(retryAfter / 60)
-      return { allowed: false, retryAfter, message: `Too many attempts. Account locked for ${minutes} minutes. Please try again later.` }
+      return {
+        allowed: false,
+        retryAfter,
+        message: `Too many attempts. Account locked for ${minutes} minutes. Please try again later.`,
+      }
     }
+
     return { allowed: true, retryAfter: 0, message: '' }
   }
 
-  function record(): void { attemptsRef.current.push(Date.now()) }
-  function reset(): void { attemptsRef.current = []; blockedUntilRef.current = 0 }
+  function record(): void {
+    attemptsRef.current.push(Date.now())
+  }
+
+  function reset(): void {
+    attemptsRef.current = []
+    blockedUntilRef.current = 0
+  }
 
   return { check, record, reset }
 }
-
 
 export default function LoginPage() {
   const router = useRouter()
@@ -224,12 +251,24 @@ export default function LoginPage() {
     if (!rateCheck.allowed) { setError(rateCheck.message); setLoading(false); return }
 
 
+    // ── Rate limit check (client-side defense-in-depth) ──────────
+    if (!rateCheck.allowed) {
+      setError(rateCheck.message)
+      setLoading(false)
+      return
+    }
+
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {
+      // Record failed attempt for rate limiting
+      loginLimiter.record()
       setError('Invalid email or password. Please try again.')
       setLoading(false)
       return
     }
+
+    // Successful login — reset the rate limiter
+    loginLimiter.reset()
 
     // First-time admin setup?
     try {
@@ -362,6 +401,15 @@ export default function LoginPage() {
     if (!email.trim()) { setError('Please enter your email address.'); return }
     setLoading(true)
     setError('')
+
+    // ── Rate limit check (client-side defense-in-depth) ──────────
+    const rateCheck = resetLimiter.check()
+    if (!rateCheck.allowed) {
+      setError(rateCheck.message)
+      setLoading(false)
+      return
+    }
+    resetLimiter.record()
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback?type=recovery`,

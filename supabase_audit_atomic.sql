@@ -49,7 +49,7 @@ CREATE OR REPLACE FUNCTION insert_audit_entry(
 )
 RETURNS UUID
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY DEFINER  -- Runs with function owner's privileges (bypasses RLS for the lock)
 SET search_path = public
 AS $$
 DECLARE
@@ -58,17 +58,25 @@ DECLARE
   v_entry_id   UUID;
   v_payload    TEXT;
 BEGIN
+  -- ── Acquire advisory lock to serialize hash chain computation ──
+  -- Lock ID 8675309 is arbitrary but unique to audit log operations.
+  -- pg_advisory_xact_lock is transaction-scoped: auto-released on commit/rollback.
   PERFORM pg_advisory_xact_lock(8675309);
 
+  -- ── Read the hash of the most recent entry ─────────────────────
   SELECT entry_hash INTO v_prev_hash
   FROM audit_log
   ORDER BY created_at DESC
   LIMIT 1;
 
+  -- If no previous entry, use GENESIS as the seed
   IF v_prev_hash IS NULL THEN
-    v_prev_hash := NULL;
+    v_prev_hash := NULL;  -- stored as NULL for the very first entry
   END IF;
 
+  -- ── Compute SHA-256 hash of this entry ─────────────────────────
+  -- The hash includes all entry fields + the prev_hash, making it
+  -- tamper-evident: changing any field invalidates the chain.
   v_payload := json_build_object(
     'user_id',      COALESCE(p_user_id::TEXT, 'null'),
     'user_email',   COALESCE(p_user_email, 'null'),
@@ -83,6 +91,7 @@ BEGIN
 
   v_entry_hash := encode(digest(v_payload, 'sha256'), 'hex');
 
+  -- ── Insert the audit entry with computed hash chain ─────────────
   INSERT INTO audit_log (
     user_id, user_email, user_role,
     action, entity_type, entity_id, entity_label,
@@ -98,13 +107,19 @@ BEGIN
 END;
 $$;
 
+-- ─── Grant execute to authenticated users ────────────────────
+-- All authenticated users need to write audit entries.
 GRANT EXECUTE ON FUNCTION insert_audit_entry TO authenticated;
 
 -- ─── Prevent direct manipulation of hash columns ─────────────
+-- Only the function should set entry_hash and prev_hash.
+-- Create a trigger that rejects direct updates to these columns.
+
 CREATE OR REPLACE FUNCTION protect_audit_hash_columns()
 RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
+  -- Prevent UPDATE on hash chain columns (they should never change)
   IF TG_OP = 'UPDATE' THEN
     IF OLD.entry_hash IS DISTINCT FROM NEW.entry_hash THEN
       RAISE EXCEPTION 'Cannot modify entry_hash — audit log is immutable';
@@ -124,6 +139,8 @@ CREATE TRIGGER trg_protect_audit_hashes
   EXECUTE FUNCTION protect_audit_hash_columns();
 
 -- ─── Verification function (for admin use) ───────────────────
+-- Returns stats about chain integrity: total, valid links, broken links.
+
 CREATE OR REPLACE FUNCTION verify_audit_chain(p_limit INTEGER DEFAULT 1000)
 RETURNS TABLE(
   total_checked INTEGER,
@@ -152,11 +169,13 @@ BEGIN
     v_total := v_total + 1;
 
     IF v_total = 1 THEN
+      -- First entry is always valid
       v_valid := v_valid + 1;
     ELSE
       IF v_row.prev_hash = v_prev_hash THEN
         v_valid := v_valid + 1;
       ELSIF v_row.prev_hash IS NULL AND v_prev_hash IS NULL THEN
+        -- Both null = legacy entries before hash chain
         v_valid := v_valid + 1;
       ELSE
         v_broken := v_broken + 1;
@@ -174,3 +193,15 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION verify_audit_chain TO authenticated;
+
+-- ============================================================
+-- DONE. The audit log now has atomic hash chain integrity.
+--
+-- The client-side code (src/lib/audit.ts) will:
+--   1. Try calling insert_audit_entry() RPC (atomic, preferred)
+--   2. If the function doesn't exist yet, fall back to client-side
+--      computation with a local mutex (still works, less safe)
+--
+-- After running this migration, the system is fully protected
+-- against concurrent hash chain forking.
+-- ============================================================

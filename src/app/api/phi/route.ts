@@ -48,6 +48,7 @@ async function authenticateRequest(req: NextRequest): Promise<{ id: string; emai
   }
 
   // Try cookie-based auth (for client-side calls without explicit Bearer token)
+  // The Supabase client on the frontend automatically includes cookies
   const cookieHeader = req.headers.get('cookie') || ''
   if (cookieHeader) {
     try {
