@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       token:       portalToken,
       expires_at:  expiresAt,
       is_used:     false,
-      created_by:  auth.user.id,
+      created_by: auth.userId,
     })
 
   // ── 2. Generate new OTP + magic link ─────────────────────────

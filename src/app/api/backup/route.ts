@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
       const authResult = await requireRole(req, 'admin')
       if (!(authResult instanceof Response)) {
         isAuthorized = true
-        initiatedBy = authResult.clinicUser.id
+        initiatedBy = authResult.clinicUserId
+
       }
     }
 

@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     // JSON format
     const exportBundle = {
       exportedAt: new Date().toISOString(),
-      exportedBy: auth.user.email,
+      exportedBy: auth.email,
       system: 'NexMedicon HMS',
       version: '2.0',
       tables: Object.keys(exportData),
