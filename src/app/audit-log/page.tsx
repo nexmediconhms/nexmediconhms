@@ -5,14 +5,18 @@
  *
  * Shows who did what, when. Searchable, filterable by action/entity.
  * Only visible to admin role (enforced in sidebar + this page).
+ *
+ * ADDED: Hash chain integrity verification panel — verifies that the
+ * audit log has not been tampered with by checking prev_hash links.
  */
 import { useEffect, useState } from 'react'
 import AppShell                from '@/components/layout/AppShell'
 import { supabase }            from '@/lib/supabase'
 import { formatDateTime }      from '@/lib/utils'
+import { verifyAuditChain }    from '@/lib/audit'
 import {
   Shield, Search, X, ChevronDown, ChevronUp,
-  AlertTriangle, Loader2, Filter,
+  AlertTriangle, Loader2, Filter, CheckCircle, Link2, ShieldCheck,
 } from 'lucide-react'
 
 interface AuditEntry {
@@ -55,6 +59,13 @@ export default function AuditLogPage() {
   const [page,        setPage]        = useState(0)
   const [hasMore,     setHasMore]     = useState(false)
   const [isAdmin,     setIsAdmin]     = useState<boolean | null>(null)
+
+  // Chain verification state
+  const [verifying, setVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<{
+    totalChecked: number; valid: number; broken: number; brokenEntries: string[]
+  } | null>(null)
+  const [verifyError, setVerifyError] = useState('')
 
   // Check admin role
   useEffect(() => {
@@ -115,6 +126,20 @@ export default function AuditLogPage() {
     )
   })
 
+  // ── Chain verification ──────────────────────────────────────
+  async function handleVerifyChain() {
+    setVerifying(true)
+    setVerifyError('')
+    setVerifyResult(null)
+    try {
+      const result = await verifyAuditChain(500)
+      setVerifyResult(result)
+    } catch (e: any) {
+      setVerifyError(e.message || 'Verification failed')
+    }
+    setVerifying(false)
+  }
+
   if (isAdmin === null) {
     return <AppShell><div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="w-6 h-6 animate-spin mr-2"/> Checking permissions…</div></AppShell>
   }
@@ -140,6 +165,72 @@ export default function AuditLogPage() {
             <Shield className="w-5 h-5 text-gray-600"/> Audit Log
           </h1>
           <p className="text-sm text-gray-500">Every create, edit, delete, print and login — who did what, when.</p>
+        </div>
+
+        {/* Chain Integrity Verification Panel */}
+        <div className="mb-5 border border-gray-200 rounded-xl p-4 bg-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <Link2 className="w-4.5 h-4.5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Hash Chain Integrity</h3>
+                <p className="text-xs text-gray-500">Verify that no audit entries have been tampered with or deleted</p>
+              </div>
+            </div>
+            <button
+              onClick={handleVerifyChain}
+              disabled={verifying}
+              className="px-4 py-2 text-sm font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 flex items-center gap-2 transition-colors"
+            >
+              {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+              {verifying ? 'Verifying...' : 'Verify Chain'}
+            </button>
+          </div>
+
+          {verifyError && (
+            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {verifyError}
+            </div>
+          )}
+
+          {verifyResult && (
+            <div className="mt-3">
+              {verifyResult.broken === 0 ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-green-800">Chain Intact — No Tampering Detected</p>
+                    <p className="text-xs text-green-600 mt-0.5">
+                      Verified {verifyResult.totalChecked} entries. All {verifyResult.valid} hash links are valid.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-800">
+                        Chain Broken — {verifyResult.broken} Tampered/Missing Entries Detected
+                      </p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        Checked {verifyResult.totalChecked} entries: {verifyResult.valid} valid, {verifyResult.broken} broken links.
+                      </p>
+                    </div>
+                  </div>
+                  {verifyResult.brokenEntries.length > 0 && (
+                    <div className="mt-2 text-xs text-red-700">
+                      <span className="font-semibold">Affected entry IDs: </span>
+                      {verifyResult.brokenEntries.slice(0, 5).join(', ')}
+                      {verifyResult.brokenEntries.length > 5 && ` + ${verifyResult.brokenEntries.length - 5} more`}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Filters */}

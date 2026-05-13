@@ -286,6 +286,22 @@ export default function SettingsPage() {
           </button>
         </div>
 
+        {/* Data Retention & Compliance */}
+        <div className="card p-6 mb-6">
+          <h2 className="section-title flex items-center gap-2">
+            <Shield className="w-4 h-4 text-purple-600" /> Data Retention & Compliance
+          </h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Manage how long patient records are kept. Indian Medical Council requires minimum 7-year retention for medical records.
+          </p>
+          <a
+            href="/settings/data-retention"
+            className="btn-secondary text-sm flex items-center gap-2 w-fit"
+          >
+            <Shield className="w-4 h-4" /> Manage Retention Policies
+          </a>
+        </div>
+
         {/* User Management section */}
         <div className="mt-8">
           <UserManagementSection />
