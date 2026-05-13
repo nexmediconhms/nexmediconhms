@@ -67,31 +67,67 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
   )
 }
 
+const LOGIN_MAX_ATTEMPTS = 5
+const LOGIN_WINDOW_MS = 15 * 60 * 1000
+const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000
+const RESET_MAX_ATTEMPTS = 3
+const RESET_WINDOW_MS = 60 * 60 * 1000
+
+function useClientRateLimiter(maxAttempts: number, windowMs: number, blockDurationMs: number) {
+  const attemptsRef = useRef<number[]>([])
+  const blockedUntilRef = useRef<number>(0)
+
+  function check(): { allowed: boolean; retryAfter: number; message: string } {
+    const now = Date.now()
+    if (blockedUntilRef.current > now) {
+      const retryAfter = Math.ceil((blockedUntilRef.current - now) / 1000)
+      const minutes = Math.ceil(retryAfter / 60)
+      return { allowed: false, retryAfter, message: `Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.` }
+    }
+    attemptsRef.current = attemptsRef.current.filter(t => t > now - windowMs)
+    if (attemptsRef.current.length >= maxAttempts) {
+      blockedUntilRef.current = now + blockDurationMs
+      const retryAfter = Math.ceil(blockDurationMs / 1000)
+      const minutes = Math.ceil(retryAfter / 60)
+      return { allowed: false, retryAfter, message: `Too many attempts. Account locked for ${minutes} minutes. Please try again later.` }
+    }
+    return { allowed: true, retryAfter: 0, message: '' }
+  }
+
+  function record(): void { attemptsRef.current.push(Date.now()) }
+  function reset(): void { attemptsRef.current = []; blockedUntilRef.current = 0 }
+
+  return { check, record, reset }
+}
+
+
 export default function LoginPage() {
   const router = useRouter()
   const otpRef = useRef<HTMLInputElement>(null)
+  const loginLimiter = useClientRateLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, LOGIN_BLOCK_DURATION_MS)
+  const resetLimiter = useClientRateLimiter(RESET_MAX_ATTEMPTS, RESET_WINDOW_MS, RESET_WINDOW_MS)
 
-  const [view,     setView]     = useState<View>('login')
-  const [email,    setEmail]    = useState('')
+  const [view, setView] = useState<View>('login')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPwd,  setShowPwd]  = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
-  const [success,  setSuccess]  = useState('')
+  const [showPwd, setShowPwd] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   // First-time setup
   const [setupName, setSetupName] = useState('')
   const [setupDone, setSetupDone] = useState(false)
 
   // MFA verify
-  const [mfaCode,    setMfaCode]    = useState('')
+  const [mfaCode, setMfaCode] = useState('')
   const [mfaLoading, setMfaLoading] = useState(false)
 
   // MFA enroll
-  const [enrollment,    setEnrollment]    = useState<MFAEnrollment | null>(null)
-  const [enrollCode,    setEnrollCode]    = useState('')
+  const [enrollment, setEnrollment] = useState<MFAEnrollment | null>(null)
+  const [enrollCode, setEnrollCode] = useState('')
   const [enrollLoading, setEnrollLoading] = useState(false)
-  const [enrollDone,    setEnrollDone]    = useState(false)
+  const [enrollDone, setEnrollDone] = useState(false)
 
   // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
   // and redirect if already logged in — combined to avoid race conditions
@@ -184,6 +220,9 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+        const rateCheck = loginLimiter.check()
+    if (!rateCheck.allowed) { setError(rateCheck.message); setLoading(false); return }
+
 
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {

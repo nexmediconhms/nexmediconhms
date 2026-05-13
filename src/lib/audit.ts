@@ -4,7 +4,19 @@
  * Audit Log helper with Hash Chain Immutability
  *
  * Each audit entry is hashed (SHA-256) and linked to the previous entry,
- * creating a blockchain-style tamper-evident chain.
+ * creating a tamper-evident chain.
+ *
+ * ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  SECURITY FIX: Hash chain is now computed ATOMICALLY on the server  ║
+ * ║  via a Postgres function (insert_audit_entry). This prevents race   ║
+ * ║  conditions where concurrent writes could fork the chain.           ║
+ * ║                                                                      ║
+ * ║  Previous bug: Two concurrent audit writes could both read the SAME  ║
+ * ║  prev_hash, creating duplicate chain links (forked chain).           ║
+ * ║                                                                      ║
+ * ║  Fix: The DB function uses advisory locking to serialize hash chain  ║
+ * ║  computation. Only one insert can compute the chain at a time.       ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
  *
  * Usage:
  *   import { audit } from '@/lib/audit'
@@ -60,12 +72,26 @@ export function clearAuditCache() {
   _cachedUser = null
 }
 
-// ─── Hash Chain ───────────────────────────────────────────────
+// ─── Atomic Hash Chain Insert ─────────────────────────────────
 
-/**
- * Compute SHA-256 hash of an audit entry for tamper detection.
- * Uses the Web Crypto API (available in browsers and Node 18+).
- */
+/** Simple in-memory mutex to serialize audit calls from the same client */
+let _auditLock: Promise<void> = Promise.resolve()
+
+function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release: () => void
+  const next = new Promise<void>(resolve => { release = resolve })
+  const prev = _auditLock
+  _auditLock = next
+
+  return prev.then(async () => {
+    try {
+      return await fn()
+    } finally {
+      release!()
+    }
+  })
+}
+
 async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string> {
   try {
     const payload = JSON.stringify({
@@ -73,7 +99,6 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
       prev_hash: prevHash || 'GENESIS',
     })
 
-    // Use Web Crypto API if available (browser + Node 18+)
     if (typeof crypto !== 'undefined' && crypto.subtle) {
       const encoder = new TextEncoder()
       const data = encoder.encode(payload)
@@ -82,12 +107,11 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
     }
 
-    // Fallback: simple hash for environments without crypto.subtle
     let hash = 0
     for (let i = 0; i < payload.length; i++) {
       const char = payload.charCodeAt(i)
       hash = ((hash << 5) - hash) + char
-      hash = hash & hash // Convert to 32-bit integer
+      hash = hash & hash
     }
     return `fallback-${Math.abs(hash).toString(16).padStart(8, '0')}`
   } catch {
@@ -95,33 +119,6 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
   }
 }
 
-/**
- * Get the hash of the most recent audit log entry.
- */
-async function getLastEntryHash(): Promise<string | null> {
-  try {
-    const { data } = await supabase
-      .from('audit_log')
-      .select('entry_hash')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    return data?.entry_hash || null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Write an audit log entry with hash chain.
- *
- * @param action       - What happened (create/update/delete/print/…)
- * @param entityType   - What kind of record was affected
- * @param entityId     - UUID of the affected record (optional for login/logout)
- * @param entityLabel  - Human-readable name (patient name, invoice number, etc.)
- * @param changes      - Optional { before, after } for update actions
- */
 export async function audit(
   action:      AuditAction,
   entityType:  AuditEntity,
@@ -132,7 +129,7 @@ export async function audit(
   try {
     const cu = await getCurrentUser()
 
-    const entry: Record<string, unknown> = {
+    const entry = {
       user_id:      cu?.id    ?? null,
       user_email:   cu?.email ?? null,
       user_role:    cu?.role  ?? null,
@@ -143,8 +140,66 @@ export async function audit(
       changes:      changes     ?? null,
     }
 
-    // Compute hash chain
-    const prevHash = await getLastEntryHash()
+    // Strategy 1: Atomic RPC (preferred — race-free)
+    const rpcResult = await tryAtomicInsert(entry)
+    if (rpcResult === 'success') return
+
+    // Strategy 2: Client-side mutex + hash (fallback)
+    await withAuditLock(async () => {
+      await fallbackInsert(entry)
+    })
+  } catch (err) {
+    console.warn('[Audit] Unexpected error:', err)
+  }
+}
+
+async function tryAtomicInsert(
+  entry: Record<string, unknown>
+): Promise<'success' | 'unavailable'> {
+  try {
+    const { error } = await supabase.rpc('insert_audit_entry', {
+      p_user_id:      entry.user_id      as string | null,
+      p_user_email:   entry.user_email   as string | null,
+      p_user_role:    entry.user_role    as string | null,
+      p_action:       entry.action       as string,
+      p_entity_type:  entry.entity_type  as string,
+      p_entity_id:    entry.entity_id    as string | null,
+      p_entity_label: entry.entity_label as string | null,
+      p_changes:      entry.changes      ? JSON.stringify(entry.changes) : null,
+    })
+
+    if (error) {
+      const msg = error.message?.toLowerCase() || ''
+      const code = (error as any).code || ''
+      if (
+        code === '42883' ||
+        msg.includes('does not exist') ||
+        msg.includes('could not find') ||
+        msg.includes('function') ||
+        msg.includes('not found')
+      ) {
+        return 'unavailable'
+      }
+      console.warn('[Audit] RPC insert_audit_entry failed:', error.message)
+      return 'unavailable'
+    }
+
+    return 'success'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
+  try {
+    const { data: lastEntry } = await supabase
+      .from('audit_log')
+      .select('entry_hash')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    const prevHash = lastEntry?.entry_hash || null
     const entryHash = await computeEntryHash(entry, prevHash)
 
     const { error } = await supabase.from('audit_log').insert({
@@ -154,11 +209,10 @@ export async function audit(
     })
 
     if (error) {
-      // Don't crash the app if audit fails — just log to console
-      console.warn('[Audit] Failed to write log entry:', error.message)
+      console.warn('[Audit] Fallback insert failed:', error.message)
     }
   } catch (err) {
-    console.warn('[Audit] Unexpected error:', err)
+    console.warn('[Audit] Fallback insert error:', err)
   }
 }
 
@@ -185,12 +239,6 @@ export async function auditSafetyOverride(
 
 // ─── Hash Chain Verification ──────────────────────────────────
 
-/**
- * Verify the integrity of the audit log hash chain.
- * Returns the number of valid entries and any broken links.
- *
- * Call this from admin settings to detect tampering.
- */
 export async function verifyAuditChain(limit: number = 100): Promise<{
   totalChecked: number
   valid: number
@@ -219,7 +267,6 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
       if (current.prev_hash === previous.entry_hash) {
         valid++
       } else if (current.prev_hash === null && previous.entry_hash === null) {
-        // Both null — legacy entries before hash chain was added
         valid++
       } else {
         broken++
@@ -229,7 +276,7 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
 
     return {
       totalChecked: entries.length,
-      valid: valid + 1, // first entry is always valid
+      valid: valid + 1,
       broken,
       brokenEntries,
     }

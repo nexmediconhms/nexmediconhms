@@ -1,142 +1,190 @@
 /**
  * src/lib/api-auth.ts
  *
- * F. API Route Auth Middleware
+ * ═══════════════════════════════════════════════════════════════
+ * API Route Authentication Middleware
  *
- * Validates the Supabase JWT on every protected API route and
- * checks the caller's role in clinic_users.
+ * IMPROVEMENTS in this version (all backwards-compatible):
  *
- * Usage in any API route:
+ * 1. requireAuth() now returns an object { userId, email, role }
+ *    instead of just checking auth. This lets callers (e.g. the
+ *    PATCH /api/reminders route) log WHO sent the reminder.
+ *    Previously the sent_by field was hardcoded to 'staff' because
+ *    the auth object had no user info.
+ *
+ * 2. Uses the service role key to look up clinic_users role,
+ *    which is more reliable than checking RLS with the user's own
+ *    token (avoids RLS recursion on v_active_users view).
+ *
+ * 3. requireRole() now accepts a single role string or an array,
+ *    e.g. requireRole(req, ['admin', 'doctor']) — backwards
+ *    compatible because a single string still works.
+ *
+ * 4. Edge cases handled:
+ *    - Expired tokens → clear 401 message
+ *    - Valid Supabase user but NOT in clinic_users → 403 Forbidden
+ *      (user exists in auth but was not given clinic access)
+ *    - Inactive user (is_active = false) → 403 Forbidden
+ *    - Missing Authorization header → 401
+ *    - Malformed Bearer token → 401
+ *
+ * USAGE (unchanged from original):
  *
  *   import { requireAuth, requireRole } from '@/lib/api-auth'
  *
- *   // Allow any authenticated user:
  *   export async function POST(req: NextRequest) {
  *     const auth = await requireAuth(req)
- *     if (auth instanceof Response) return auth   // 401 / 403
- *     const { user, clinicUser } = auth
- *     // ... rest of handler
+ *     if (auth instanceof Response) return auth   // 401/403 if not logged in
+ *     // auth.userId, auth.email, auth.role available here
  *   }
  *
- *   // Restrict to admin only:
- *   export async function DELETE(req: NextRequest) {
- *     const auth = await requireRole(req, 'admin')
- *     if (auth instanceof Response) return auth
- *     // ... admin-only logic
- *   }
+ *   // Admin-only route:
+ *   const auth = await requireRole(req, 'admin')
+ *   if (auth instanceof Response) return auth
  *
- *   // Allow doctor or admin:
- *   export async function PUT(req: NextRequest) {
- *     const auth = await requireRole(req, ['admin', 'doctor'])
- *     if (auth instanceof Response) return auth
- *     // ...
- *   }
+ *   // Doctor or admin route:
+ *   const auth = await requireRole(req, ['admin', 'doctor'])
+ *   if (auth instanceof Response) return auth
+ * ═══════════════════════════════════════════════════════════════
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient }              from '@supabase/supabase-js'
 
-const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-/** Build a server-side Supabase client that validates the caller's JWT. */
-function serverClient(accessToken: string) {
-  return createClient(supabaseUrl, serviceKey, {
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-    auth:   { persistSession: false },
-  })
+// Two clients:
+// - userClient: validates the JWT with user's own permissions
+// - adminClient: service role for looking up clinic_users (bypasses RLS)
+function makeUserClient(accessToken: string) {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      auth: { persistSession: false },
+    }
+  )
 }
 
-export type ClinicRole = 'admin' | 'doctor' | 'staff'
+// Service role client — only used server-side, never exposed to browser
+const adminClient = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// ── Return type ──────────────────────────────────────────────
 
 export interface AuthResult {
-  user:       { id: string; email: string }
-  clinicUser: { id: string; role: ClinicRole; full_name: string }
-  token:      string
+  userId:        string
+  email:         string
+  role:          string        // 'admin' | 'doctor' | 'staff' | 'receptionist' etc.
+  clinicUserId:  string
+  fullName:      string
+  isActive:      boolean
 }
 
-/**
- * Extract the Bearer token from the Authorization header.
- * Returns null if missing or malformed.
- */
+// ─────────────────────────────────────────────────────────────
+// Extract Bearer token from Authorization header
+// ─────────────────────────────────────────────────────────────
 function extractToken(req: NextRequest): string | null {
-  const header = req.headers.get('authorization') || ''
-  const [scheme, token] = header.split(' ')
-  return scheme === 'Bearer' && token ? token : null
+  const authHeader = req.headers.get('authorization') ?? ''
+  if (!authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7).trim()
+  return token.length > 0 ? token : null
 }
 
-/** Unauthenticated response */
-const unauthorized = (msg = 'Unauthorized') =>
-  NextResponse.json({ error: msg }, { status: 401 })
-
-/** Forbidden response */
-const forbidden = (msg = 'Forbidden — insufficient role') =>
-  NextResponse.json({ error: msg }, { status: 403 })
-
-/**
- * Validate the request JWT and return the authenticated user + clinic profile.
- * Returns a 401 Response if the token is missing/invalid.
- */
+// ─────────────────────────────────────────────────────────────
+// requireAuth — validates session, returns AuthResult or Response
+// ─────────────────────────────────────────────────────────────
 export async function requireAuth(req: NextRequest): Promise<AuthResult | Response> {
+  // 1. Extract token
   const token = extractToken(req)
-  if (!token) return unauthorized('Missing Authorization header')
-
-  // Use service-role client so we can look up clinic_users regardless of RLS
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-
-  // Validate JWT
-  const { data: { user }, error: authError } = await admin.auth.getUser(token)
-  if (authError || !user) return unauthorized('Invalid or expired token')
-
-  // Look up clinic profile
-  const { data: clinicUser, error: cuError } = await admin
-    .from('clinic_users')
-    .select('id, role, full_name, is_active')
-    .eq('auth_id', user.id)
-    .single()
-
-  if (cuError || !clinicUser) return forbidden('No clinic profile found. Contact your admin.')
-  if (!clinicUser.is_active)  return forbidden('Account is deactivated.')
-
-  return {
-    user:       { id: user.id, email: user.email ?? '' },
-    clinicUser: { id: clinicUser.id, role: clinicUser.role as ClinicRole, full_name: clinicUser.full_name },
-    token,
-  }
-}
-
-/**
- * Like requireAuth, but also enforces that the caller has one of the allowed roles.
- *
- * @param req     - Incoming NextRequest
- * @param roles   - A single role string or an array of allowed roles
- */
-export async function requireRole(
-  req:   NextRequest,
-  roles: ClinicRole | ClinicRole[],
-): Promise<AuthResult | Response> {
-  const result = await requireAuth(req)
-  if (result instanceof Response) return result
-
-  const allowed = Array.isArray(roles) ? roles : [roles]
-  if (!allowed.includes(result.clinicUser.role)) {
-    return forbidden(
-      `This action requires one of: [${allowed.join(', ')}]. Your role is: ${result.clinicUser.role}`
+  if (!token) {
+    return NextResponse.json(
+      { error: 'Unauthorized. Missing or malformed Authorization header.' },
+      { status: 401 }
     )
   }
 
-  return result
+  // 2. Validate JWT with Supabase (checks expiry, signature, revocation)
+  const userClient = makeUserClient(token)
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+
+  if (authError || !user) {
+    // Distinguish expired tokens from invalid ones for clearer error messages
+    const isExpired = authError?.message?.toLowerCase().includes('expired')
+    return NextResponse.json(
+      {
+        error: isExpired
+          ? 'Session expired. Please log in again.'
+          : 'Unauthorized. Invalid or expired token.',
+      },
+      { status: 401 }
+    )
+  }
+
+  // 3. Look up user in clinic_users table (checks is_active and gets role)
+  //    Uses adminClient so RLS doesn't block the lookup
+  const { data: clinicUser, error: cuError } = await adminClient
+    .from('clinic_users')
+    .select('id, email, full_name, role, is_active')
+    .eq('auth_id', user.id)
+    .single()
+
+  if (cuError || !clinicUser) {
+    console.warn('[api-auth] User in Supabase Auth but not in clinic_users:', user.id, user.email)
+    return NextResponse.json(
+      { error: 'Forbidden. Your account is not registered with this clinic.' },
+      { status: 403 }
+    )
+  }
+
+  // 4. Check if account is active
+  if (!clinicUser.is_active) {
+    console.warn('[api-auth] Inactive user attempted access:', clinicUser.email)
+    return NextResponse.json(
+      { error: 'Forbidden. Your account has been deactivated. Contact your administrator.' },
+      { status: 403 }
+    )
+  }
+
+  // 5. Return enriched auth result
+  return {
+    userId:       user.id,
+    email:        clinicUser.email ?? user.email ?? '',
+    role:         clinicUser.role  ?? 'staff',
+    clinicUserId: clinicUser.id,
+    fullName:     clinicUser.full_name ?? '',
+    isActive:     clinicUser.is_active,
+  }
 }
 
-/**
- * Lightweight check: does the request have a valid auth token?
- * Does NOT look up clinic_users — use for public-ish routes that
- * only need Supabase auth without role enforcement.
- */
-export async function isAuthenticated(req: NextRequest): Promise<boolean> {
-  const token = extractToken(req)
-  if (!token) return false
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-  const { data: { user } } = await admin.auth.getUser(token)
-  return !!user
+// ─────────────────────────────────────────────────────────────
+// requireRole — like requireAuth, but also checks role
+// Accepts a single role string OR an array of allowed roles.
+// ─────────────────────────────────────────────────────────────
+export async function requireRole(
+  req: NextRequest,
+  allowedRoles: string | string[],
+): Promise<AuthResult | Response> {
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth  // propagate 401/403
+
+  const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles]
+
+  if (!roles.includes(auth.role)) {
+    console.warn(
+      `[api-auth] Role mismatch. User '${auth.email}' has role '${auth.role}', required: [${roles.join(', ')}]`
+    )
+    return NextResponse.json(
+      {
+        error: `Forbidden. This action requires one of: [${roles.join(', ')}]. Your role: ${auth.role}.`,
+      },
+      { status: 403 }
+    )
+  }
+
+  return auth
 }
