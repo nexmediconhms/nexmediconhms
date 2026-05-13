@@ -72,6 +72,8 @@ export interface PDFPrescriptionData {
     doctorReg?:    string
     footerNote?:   string
     upiId?:        string
+    upiIdOPD?:     string
+    upiIdIPD?:     string
   }
 }
 

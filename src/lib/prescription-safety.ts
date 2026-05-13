@@ -134,10 +134,11 @@ export async function runPrescriptionSafetyChecks(
   // 4. Pregnancy Category Warnings
   if (input.isPregnant) {
     try {
-      const { DRUG_DATABASE } = await import('./drug-database')
+      const { getAllDrugsSync } = await import('./drug-database')
+      const allDrugs = getAllDrugsSync()
       for (const med of validMeds) {
         const drugName = med.drug.toLowerCase()
-        const dbEntry = DRUG_DATABASE.find(d =>
+        const dbEntry = allDrugs.find(d =>
           d.generic.toLowerCase().includes(drugName) ||
           d.brands.some(b => b.toLowerCase().includes(drugName))
         )

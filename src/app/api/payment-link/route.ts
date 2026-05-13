@@ -1,12 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 // Creates a Razorpay Payment Link that can be sent via WhatsApp/SMS/email.
 // The patient clicks the link and pays directly from their phone — no app needed.
 // Razorpay then sends a webhook or we poll the status.
 
+/**
+ * Resolve UPI ID from clinic_settings (Supabase) based on billing context.
+ * Fallback chain: context-specific → legacy upiId → env var.
+ */
+async function resolveUpiIdFromDB(context: 'opd' | 'ipd'): Promise<string> {
+  const envFallback = process.env.NEXT_PUBLIC_UPI_ID ?? ''
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false } }
+    )
+    const { data } = await supabase
+      .from('clinic_settings')
+      .select('value')
+      .eq('key', 'hospital_settings')
+      .maybeSingle()
+    if (data?.value) {
+      const settings = JSON.parse(data.value)
+      if (context === 'ipd') return settings.upiIdIPD || settings.upiId || envFallback
+      return settings.upiIdOPD || settings.upiId || envFallback
+    }
+  } catch { /* fall through to env */ }
+  return envFallback
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { patientName, mobile, email, amount, description, notes } = await req.json()
+    const { patientName, mobile, email, amount, description, notes, billingContext } = await req.json()
 
     const keyId     = process.env.RAZORPAY_KEY_ID     ?? ''
     const keySecret = process.env.RAZORPAY_KEY_SECRET  ?? ''
@@ -14,7 +41,8 @@ export async function POST(req: NextRequest) {
     if (!keyId || keyId.includes('YOUR') || !keySecret || keySecret.includes('YOUR')) {
       // Return a WhatsApp-friendly UPI deeplink as fallback (no secret key needed)
       // This is a standard UPI payment URL that opens any UPI app
-      const upiId  = process.env.NEXT_PUBLIC_UPI_ID ?? ''
+      const context = (billingContext === 'ipd') ? 'ipd' : 'opd' as const
+      const upiId = await resolveUpiIdFromDB(context)
       const amtFmt = (amount / 100).toFixed(2)
 
       if (upiId && !upiId.includes('YOUR')) {
@@ -25,7 +53,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         type: 'manual',
-        message: 'Configure RAZORPAY_KEY_SECRET and RAZORPAY_KEY_ID in .env.local for payment links, or NEXT_PUBLIC_UPI_ID for UPI deeplinks.',
+        message: 'Configure RAZORPAY_KEY_SECRET and RAZORPAY_KEY_ID in .env.local for payment links, or set UPI IDs in Settings.',
         whatsappText: `Hello ${patientName},\n\nYour registration at our hospital is complete.\n\nPlease visit the reception to complete payment of ₹${(amount/100).toFixed(2)} before your consultation.\n\nThank you!`
       })
     }

@@ -26,7 +26,9 @@ export interface HospitalSettings {
   doctorQual: string
   doctorReg: string
   footerNote: string
-  upiId: string
+  upiId: string          // Legacy single UPI — kept for backward compatibility
+  upiIdOPD: string       // Separate UPI for OPD billing
+  upiIdIPD: string       // Separate UPI for IPD billing
   feeOPD: string
   feeANC: string
   feeFollowUp: string
@@ -48,6 +50,8 @@ export const DEFAULTS: HospitalSettings = {
   doctorReg: 'Your Medical Council Reg. No.',
   footerNote: 'Thank you for visiting. Please follow the advice given above. Report any emergency immediately.',
   upiId: '',
+  upiIdOPD: '',
+  upiIdIPD: '',
   feeOPD: '500',
   feeANC: '400',
   feeFollowUp: '300',
@@ -56,6 +60,21 @@ export const DEFAULTS: HospitalSettings = {
   caName: '',
   caWhatsApp: '',
   caEmail: '',
+}
+
+/**
+ * Resolve UPI ID for a given billing context.
+ * Fallback chain: specific (OPD/IPD) → legacy upiId → env var → empty string.
+ */
+export function resolveUpiId(context: 'opd' | 'ipd', settings?: HospitalSettings): string {
+  const s = settings || loadSettings()
+  const envFallback = typeof process !== 'undefined' ? (process.env?.NEXT_PUBLIC_UPI_ID ?? '') : ''
+
+  if (context === 'ipd') {
+    return s.upiIdIPD || s.upiId || envFallback
+  }
+  // Default to OPD
+  return s.upiIdOPD || s.upiId || envFallback
 }
 
 // Keep the old export for any remaining direct references

@@ -25,7 +25,7 @@ import {
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
   BellRing, Pill, Scissors,
-  BedSingle, Video, PiggyBank, UserCog, ExternalLink,
+  BedSingle, PiggyBank, UserCog, ExternalLink,
 } from 'lucide-react'
 
 
@@ -104,7 +104,6 @@ export default function Sidebar() {
       items: [
         { href: '/beds',  icon: BedDouble,  label: 'Bed Management',   permission: 'beds.view'     },
         { href: '/ipd',   icon: BedSingle,  label: 'IPD Admissions',   permission: 'ipd.view'      },
-        { href: '/video', icon: Video,      label: 'Video Consult',    permission: 'video.view'    },
       ],
     },
 

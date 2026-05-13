@@ -67,7 +67,8 @@ RAZORPAY_KEY_ID=rzp_test_xxxx               # for payment links
 RAZORPAY_KEY_SECRET=your-secret-here        # for payment links
 
 # ── UPI DEEPLINK (optional - simpler than Razorpay) ──
-# Your hospital UPI ID - opens GPay/PhonePe on patient phone
+# Fallback UPI ID - used when OPD/IPD specific UPIs not set in Settings
+# You can also set separate OPD & IPD UPI IDs from the Settings page
 NEXT_PUBLIC_UPI_ID=yourhospital@upibank
 
 # ── HOSPITAL NAME (for WhatsApp messages) ────────────
