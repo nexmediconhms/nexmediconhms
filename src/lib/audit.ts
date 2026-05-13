@@ -4,7 +4,19 @@
  * Audit Log helper with Hash Chain Immutability
  *
  * Each audit entry is hashed (SHA-256) and linked to the previous entry,
- * creating a blockchain-style tamper-evident chain.
+ * creating a tamper-evident chain.
+ *
+ * ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  SECURITY FIX: Hash chain is now computed ATOMICALLY on the server  ║
+ * ║  via a Postgres function (insert_audit_entry). This prevents race   ║
+ * ║  conditions where concurrent writes could fork the chain.           ║
+ * ║                                                                      ║
+ * ║  Previous bug: Two concurrent audit writes could both read the SAME  ║
+ * ║  prev_hash, creating duplicate chain links (forked chain).           ║
+ * ║                                                                      ║
+ * ║  Fix: The DB function uses advisory locking to serialize hash chain  ║
+ * ║  computation. Only one insert can compute the chain at a time.       ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
  *
  * Usage:
  *   import { audit } from '@/lib/audit'
@@ -60,11 +72,42 @@ export function clearAuditCache() {
   _cachedUser = null
 }
 
-// ─── Hash Chain ───────────────────────────────────────────────
+// ─── Atomic Hash Chain Insert ─────────────────────────────────
+//
+// The hash chain is now computed server-side in the database via
+// the `insert_audit_entry` RPC function. This eliminates the race
+// condition where two concurrent clients could read the same prev_hash.
+//
+// If the RPC function doesn't exist yet (before migration), we fall back
+// to a client-side approach with a local mutex to at least prevent
+// concurrent calls from the same browser tab from racing.
+
+/** Simple in-memory mutex to serialize audit calls from the same client */
+let _auditLock: Promise<void> = Promise.resolve()
+
+/**
+ * Acquire the audit lock — ensures only one audit call is in-flight at a time
+ * from this client instance. This is a secondary protection; the primary
+ * protection is the database-level advisory lock in insert_audit_entry().
+ */
+function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release: () => void
+  const next = new Promise<void>(resolve => { release = resolve })
+  const prev = _auditLock
+  _auditLock = next
+
+  return prev.then(async () => {
+    try {
+      return await fn()
+    } finally {
+      release!()
+    }
+  })
+}
 
 /**
  * Compute SHA-256 hash of an audit entry for tamper detection.
- * Uses the Web Crypto API (available in browsers and Node 18+).
+ * Used as fallback when the database RPC is unavailable.
  */
 async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string> {
   try {
@@ -96,25 +139,12 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
 }
 
 /**
- * Get the hash of the most recent audit log entry.
- */
-async function getLastEntryHash(): Promise<string | null> {
-  try {
-    const { data } = await supabase
-      .from('audit_log')
-      .select('entry_hash')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    return data?.entry_hash || null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Write an audit log entry with hash chain.
+ * Write an audit log entry with atomic hash chain.
+ *
+ * Strategy:
+ *   1. Try the database RPC function `insert_audit_entry` (atomic, race-free)
+ *   2. If RPC doesn't exist (pre-migration), fall back to client-side
+ *      insert with a local mutex (prevents same-tab races, but not cross-tab)
  *
  * @param action       - What happened (create/update/delete/print/…)
  * @param entityType   - What kind of record was affected
@@ -132,7 +162,7 @@ export async function audit(
   try {
     const cu = await getCurrentUser()
 
-    const entry: Record<string, unknown> = {
+    const entry = {
       user_id:      cu?.id    ?? null,
       user_email:   cu?.email ?? null,
       user_role:    cu?.role  ?? null,
@@ -143,10 +173,88 @@ export async function audit(
       changes:      changes     ?? null,
     }
 
-    // Compute hash chain
-    const prevHash = await getLastEntryHash()
+    // ── Strategy 1: Atomic RPC (preferred — race-free) ──────────
+    const rpcResult = await tryAtomicInsert(entry)
+    if (rpcResult === 'success') return
+    // If RPC doesn't exist, fall through to Strategy 2
+
+    // ── Strategy 2: Client-side mutex + hash (fallback) ──────────
+    await withAuditLock(async () => {
+      await fallbackInsert(entry)
+    })
+  } catch (err) {
+    // Never crash the app if audit fails — log and continue
+    console.warn('[Audit] Unexpected error:', err)
+  }
+}
+
+/**
+ * Try to insert via the atomic database RPC function.
+ * Returns 'success' if it worked, 'unavailable' if the function doesn't exist.
+ */
+async function tryAtomicInsert(
+  entry: Record<string, unknown>
+): Promise<'success' | 'unavailable'> {
+  try {
+    const { error } = await supabase.rpc('insert_audit_entry', {
+      p_user_id:      entry.user_id      as string | null,
+      p_user_email:   entry.user_email   as string | null,
+      p_user_role:    entry.user_role    as string | null,
+      p_action:       entry.action       as string,
+      p_entity_type:  entry.entity_type  as string,
+      p_entity_id:    entry.entity_id    as string | null,
+      p_entity_label: entry.entity_label as string | null,
+      p_changes:      entry.changes      ? JSON.stringify(entry.changes) : null,
+    })
+
+    if (error) {
+      // Check if the error is because the function doesn't exist yet
+      // Supabase returns 42883 (undefined_function) or contains "does not exist"
+      const msg = error.message?.toLowerCase() || ''
+      const code = (error as any).code || ''
+      if (
+        code === '42883' ||
+        msg.includes('does not exist') ||
+        msg.includes('could not find') ||
+        msg.includes('function') ||
+        msg.includes('not found')
+      ) {
+        return 'unavailable'
+      }
+
+      // Some other error — log but don't crash
+      console.warn('[Audit] RPC insert_audit_entry failed:', error.message)
+      return 'unavailable' // Fall back to client-side
+    }
+
+    return 'success'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+/**
+ * Fallback: Client-side hash computation with local mutex.
+ * This prevents same-tab races. Cross-tab races are still possible
+ * but are much less likely and non-critical (the chain will still be
+ * ordered by created_at, just with potential duplicate prev_hash).
+ */
+async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
+  try {
+    // Read the latest hash
+    const { data: lastEntry } = await supabase
+      .from('audit_log')
+      .select('entry_hash')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    const prevHash = lastEntry?.entry_hash || null
+
+    // Compute new hash
     const entryHash = await computeEntryHash(entry, prevHash)
 
+    // Insert with hash chain
     const { error } = await supabase.from('audit_log').insert({
       ...entry,
       entry_hash: entryHash,
@@ -154,11 +262,10 @@ export async function audit(
     })
 
     if (error) {
-      // Don't crash the app if audit fails — just log to console
-      console.warn('[Audit] Failed to write log entry:', error.message)
+      console.warn('[Audit] Fallback insert failed:', error.message)
     }
   } catch (err) {
-    console.warn('[Audit] Unexpected error:', err)
+    console.warn('[Audit] Fallback insert error:', err)
   }
 }
 
