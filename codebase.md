@@ -16695,6 +16695,7 @@ import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import { IndianRupee } from 'lucide-react'
+
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
