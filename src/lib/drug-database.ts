@@ -112,14 +112,16 @@ export const DRUG_DATABASE: DrugEntry[] = [
 /**
  * Search drugs by name (generic or brand).
  * Returns top matches sorted by relevance.
+ * Searches both the static DRUG_DATABASE and any custom-imported medicines.
  */
 export function searchDrugs(query: string, limit: number = 10): DrugEntry[] {
   if (!query || query.length < 2) return []
 
   const q = query.toLowerCase().trim()
+  const allDrugs = getAllDrugsSync()
 
   // Score each drug by match quality
-  const scored = DRUG_DATABASE.map(drug => {
+  const scored = allDrugs.map(drug => {
     let score = 0
 
     // Exact generic match
@@ -150,27 +152,30 @@ export function searchDrugs(query: string, limit: number = 10): DrugEntry[] {
 }
 
 /**
- * Get all drugs in a category.
+ * Get all drugs in a category (includes custom medicines).
  */
 export function getDrugsByCategory(category: string): DrugEntry[] {
-  return DRUG_DATABASE.filter(d =>
+  return getAllDrugsSync().filter(d =>
     d.category.toLowerCase() === category.toLowerCase()
   )
 }
 
 /**
- * Get all unique categories.
+ * Get all unique categories (includes custom medicines).
  */
 export function getDrugCategories(): string[] {
-  return Array.from(new Set(DRUG_DATABASE.map(d => d.category))).sort()
+  return Array.from(new Set(getAllDrugsSync().map(d => d.category))).sort()
 }
 
 /**
  * Find a specific drug by generic name.
  */
+/**
+ * Find a specific drug by generic name (includes custom medicines).
+ */
 export function findDrugByGeneric(name: string): DrugEntry | undefined {
   const norm = name.toLowerCase().trim()
-  return DRUG_DATABASE.find(d =>
+  return getAllDrugsSync().find(d =>
     d.generic.toLowerCase().includes(norm) ||
     d.brands.some(b => b.toLowerCase().includes(norm))
   )
@@ -183,4 +188,87 @@ export function findDrugByGeneric(name: string): DrugEntry | undefined {
 export function formatDrugDisplay(drug: DrugEntry, strength?: string): string {
   const s = strength || drug.strengths[0] || ''
   return `${drug.generic} ${s}`.trim()
+}
+
+
+
+// ─── Custom Medicine Cache ────────────────────────────────────
+// Custom medicines imported by admin are stored in Supabase clinic_settings
+// under key 'custom_medicines'. This in-memory cache avoids repeated fetches.
+// Updated whenever initCustomMedicines() is called (e.g. on Settings page load).
+
+let _customMedicines: DrugEntry[] = []
+let _customInitialized = false
+
+/**
+ * Initialize custom medicines from localStorage cache.
+ * Call on app boot or after CSV import.
+ * On client: reads from localStorage (which is synced from Supabase in the Settings flow).
+ * On server: returns empty (server routes fetch directly from Supabase).
+ */
+export function initCustomMedicinesFromCache(): void {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = localStorage.getItem('nexmedicon_custom_medicines')
+    if (raw) {
+      _customMedicines = JSON.parse(raw)
+      _customInitialized = true
+    }
+  } catch { /* ignore */ }
+}
+
+/**
+ * Set custom medicines in the in-memory cache + localStorage.
+ * Called after successful CSV import or after fetching from API.
+ */
+export function setCustomMedicines(medicines: DrugEntry[]): void {
+  _customMedicines = medicines
+  _customInitialized = true
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('nexmedicon_custom_medicines', JSON.stringify(medicines))
+    } catch { /* quota — ignore */ }
+  }
+}
+
+/**
+ * Get all drugs: static DRUG_DATABASE + custom imported medicines.
+ * Synchronous — uses in-memory cache for custom medicines.
+ * Custom entries with same generic name override the static database.
+ */
+export function getAllDrugsSync(): DrugEntry[] {
+  if (!_customInitialized) {
+    initCustomMedicinesFromCache()
+  }
+
+  if (_customMedicines.length === 0) return DRUG_DATABASE
+
+  // Merge: custom overrides static by generic name
+  const customMap = new Map(_customMedicines.map(d => [d.generic.toLowerCase(), d]))
+  const merged: DrugEntry[] = []
+
+  for (const drug of DRUG_DATABASE) {
+    const override = customMap.get(drug.generic.toLowerCase())
+    if (override) {
+      merged.push(override)
+      customMap.delete(drug.generic.toLowerCase())
+    } else {
+      merged.push(drug)
+    }
+  }
+
+  // Remaining custom entries that don't exist in static DB
+  customMap.forEach((drug) => {
+    merged.push(drug)
+  })
+
+  return merged
+}
+
+/**
+ * Get custom medicines only (for admin display).
+ */
+export function getCustomMedicines(): DrugEntry[] {
+  if (!_customInitialized) initCustomMedicinesFromCache()
+  return _customMedicines
 }

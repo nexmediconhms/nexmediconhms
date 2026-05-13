@@ -5,7 +5,8 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import {
   Settings, Save, CheckCircle, Building2, User, Printer, Info, Shield,
-  UserPlus, Users, Trash2, AlertCircle, Loader2, Copy, Calculator
+  UserPlus, Users, Trash2, AlertCircle, Loader2, Copy, Calculator,
+  Pill, Download, Upload, FileText
 } from 'lucide-react'
 import { loadSettings, saveSettings, DEFAULTS, type HospitalSettings } from '@/lib/settings'
 import type { ClinicUser } from '@/lib/auth'
@@ -153,11 +154,19 @@ export default function SettingsPage() {
             Default consultation fees — auto-populated in Billing when creating a new bill.
           </p>
           <div className="grid grid-cols-2 gap-5">
+            <Field label="OPD UPI ID" value={form.upiIdOPD}
+              onChange={v => set('upiIdOPD', v)}
+              placeholder="yourhospital-opd@upibank"
+              hint="Used for OPD billing payment links (WhatsApp / patient portal)" />
+            <Field label="IPD UPI ID" value={form.upiIdIPD}
+              onChange={v => set('upiIdIPD', v)}
+              placeholder="yourhospital-ipd@upibank"
+              hint="Used for IPD admission billing payment links" />
             <div className="col-span-2">
-              <Field label="Hospital UPI ID" value={form.upiId}
+              <Field label="Fallback UPI ID (Legacy)" value={form.upiId}
                 onChange={v => set('upiId', v)}
                 placeholder="yourhospital@upibank"
-                hint="Used in payment links sent to patients via WhatsApp" />
+                hint="Used when OPD/IPD specific UPI is not set. Also used by env var NEXT_PUBLIC_UPI_ID as last resort." />
             </div>
             <Field label="OPD Consultation Fee (₹)" value={form.feeOPD}
               onChange={v => set('feeOPD', v)} placeholder="500" />
@@ -289,6 +298,16 @@ export default function SettingsPage() {
         {/* User Management section */}
         <div className="mt-8">
           <UserManagementSection />
+        </div>
+
+        {/* Medicine Database Import (Admin only) */}
+        <div className="mt-8">
+          <MedicineImportSection />
+        </div>
+
+        {/* Bulk Data Download (Admin only) */}
+        <div className="mt-8">
+          <BulkDataDownloadSection />
         </div>
 
       </div>
@@ -512,6 +531,232 @@ function UserManagementSection() {
               )}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+// ── Medicine Database CSV Import (admin only) ────────────────────
+function MedicineImportSection() {
+  const { user } = useAuth()
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [customCount, setCustomCount] = useState(0)
+
+  const isAdmin = user?.role === 'admin'
+
+  useEffect(() => {
+    if (!isAdmin) return
+    // Fetch current custom medicine count
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        const res = await fetch('/api/medicines/import', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          const json = await res.json()
+          setCustomCount(json.count || 0)
+        }
+      } catch {}
+    })()
+  }, [isAdmin])
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    setResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setResult({ ok: false, msg: 'Not authenticated' }); setImporting(false); return }
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/medicines/import', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      })
+      const json = await res.json()
+      if (json.success) {
+        setResult({ ok: true, msg: `Imported ${json.imported} medicines. Total custom: ${json.totalCustomMedicines}.${json.parseErrors ? ` Warnings: ${json.parseErrors.join('; ')}` : ''}` })
+        setCustomCount(json.totalCustomMedicines)
+        setFile(null)
+        // Update local cache
+        try {
+          const { setCustomMedicines } = await import('@/lib/drug-database')
+          const fetchRes = await fetch('/api/medicines/import', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          if (fetchRes.ok) {
+            const data = await fetchRes.json()
+            setCustomMedicines(data.medicines || [])
+          }
+        } catch {}
+      } else {
+        setResult({ ok: false, msg: json.error || 'Import failed' })
+      }
+    } catch (err: any) {
+      setResult({ ok: false, msg: err.message })
+    }
+    setImporting(false)
+  }
+
+  async function handleClearAll() {
+    if (!confirm('Delete ALL custom imported medicines? The built-in 200+ drug database will remain.')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const res = await fetch('/api/medicines/import', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (res.ok) {
+        setCustomCount(0)
+        setResult({ ok: true, msg: 'Custom medicines cleared.' })
+        try {
+          const { setCustomMedicines } = await import('@/lib/drug-database')
+          setCustomMedicines([])
+        } catch {}
+      }
+    } catch {}
+  }
+
+  if (!isAdmin) return null
+
+  return (
+    <div className="card p-6 mb-6">
+      <h2 className="section-title flex items-center gap-2">
+        <Pill className="w-4 h-4 text-blue-600" /> Medicine Database (CSV Import)
+      </h2>
+      <p className="text-xs text-gray-400 mb-4">
+        Import additional medicines from a CSV file. These merge with the built-in 200+ drug database
+        and appear in prescription autocomplete and safety checks.
+      </p>
+
+      {customCount > 0 && (
+        <div className="mb-3 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 flex items-center justify-between">
+          <span><strong>{customCount}</strong> custom medicine{customCount !== 1 ? 's' : ''} currently imported.</span>
+          <button onClick={handleClearAll} className="text-red-500 hover:text-red-700 text-xs font-medium">
+            Clear All
+          </button>
+        </div>
+      )}
+
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-3">
+        <p className="text-xs font-semibold text-gray-600 mb-2">CSV Format (header row required):</p>
+        <code className="text-xs text-gray-500 block bg-white border rounded p-2 overflow-x-auto">
+          generic,brands,category,forms,strengths,defaultDose,defaultFrequency,defaultDuration,defaultRoute,pregnancyCategory
+          <br />Paracetamol,Dolo|Crocin,Analgesics,tablet|syrup,500mg|650mg,500mg,Thrice daily,3 days,Oral,B
+        </code>
+        <p className="text-xs text-gray-400 mt-2">
+          Use pipe (|) to separate multiple brands, forms, or strengths within a cell.
+          Only <strong>generic</strong> and <strong>category</strong> are required columns.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded-lg px-3 py-2 hover:border-blue-400 transition-colors">
+          <Upload className="w-4 h-4 text-gray-400" />
+          <span className="text-sm text-gray-600">{file ? file.name : 'Choose CSV file'}</span>
+          <input type="file" accept=".csv,text/csv" className="hidden"
+            onChange={e => { setFile(e.target.files?.[0] || null); setResult(null) }} />
+        </label>
+        <button onClick={handleImport} disabled={!file || importing}
+          className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
+          {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          {importing ? 'Importing...' : 'Import'}
+        </button>
+      </div>
+
+      {result && (
+        <div className={`mt-3 rounded-lg p-3 text-sm ${result.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {result.ok ? <CheckCircle className="w-4 h-4 inline mr-1" /> : <AlertCircle className="w-4 h-4 inline mr-1" />}
+          {result.msg}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Admin Bulk Data Download ─────────────────────────────────────
+function BulkDataDownloadSection() {
+  const { user } = useAuth()
+  const [downloading, setDownloading] = useState(false)
+  const [downloadResult, setDownloadResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const isAdmin = user?.role === 'admin'
+  if (!isAdmin) return null
+
+  async function handleDownload(format: 'csv' | 'json') {
+    setDownloading(true)
+    setDownloadResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setDownloadResult({ ok: false, msg: 'Not authenticated' }); setDownloading(false); return }
+
+      const res = await fetch(`/api/export?format=${format}&table=all`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Download failed' }))
+        setDownloadResult({ ok: false, msg: err.error || 'Download failed' })
+        setDownloading(false)
+        return
+      }
+
+      // Create download blob
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `nexmedicon-export-${new Date().toISOString().slice(0, 10)}.${format}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      setDownloadResult({ ok: true, msg: `${format.toUpperCase()} export downloaded successfully.` })
+    } catch (err: any) {
+      setDownloadResult({ ok: false, msg: err.message })
+    }
+    setDownloading(false)
+  }
+
+  return (
+    <div className="card p-6 mb-6">
+      <h2 className="section-title flex items-center gap-2">
+        <Download className="w-4 h-4 text-blue-600" /> Bulk Data Download
+      </h2>
+      <p className="text-xs text-gray-400 mb-4">
+        Download all hospital data (patients, encounters, prescriptions, bills, lab reports, appointments, beds) in one file.
+        Useful for backups, audits, or migration.
+      </p>
+
+      <div className="flex gap-3">
+        <button onClick={() => handleDownload('csv')} disabled={downloading}
+          className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+          Download CSV
+        </button>
+        <button onClick={() => handleDownload('json')} disabled={downloading}
+          className="btn-secondary text-sm flex items-center gap-2 disabled:opacity-50">
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          Download JSON
+        </button>
+      </div>
+
+      {downloadResult && (
+        <div className={`mt-3 rounded-lg p-3 text-sm ${downloadResult.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {downloadResult.ok ? <CheckCircle className="w-4 h-4 inline mr-1" /> : <AlertCircle className="w-4 h-4 inline mr-1" />}
+          {downloadResult.msg}
         </div>
       )}
     </div>

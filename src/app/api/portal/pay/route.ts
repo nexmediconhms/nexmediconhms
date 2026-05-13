@@ -112,8 +112,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: UPI deeplink
-    const upiId = process.env.NEXT_PUBLIC_UPI_ID ?? ''
+    // Fallback: UPI deeplink — resolve from clinic_settings based on bill context
+    // Determine context: if bill items contain IPD-related labels → ipd, else opd
+    const billItems = Array.isArray(bill.items) ? bill.items : []
+    const isIPD = billItems.some((item: any) =>
+      /ipd|admission|bed|nursing/i.test(item.label || '')
+    )
+    const upiContext = isIPD ? 'ipd' : 'opd'
+
+    let upiId = ''
+    try {
+      const { data: settingsRow } = await supabase
+        .from('clinic_settings')
+        .select('value')
+        .eq('key', 'hospital_settings')
+        .maybeSingle()
+      if (settingsRow?.value) {
+        const settings = JSON.parse(settingsRow.value)
+        upiId = upiContext === 'ipd'
+          ? (settings.upiIdIPD || settings.upiId || '')
+          : (settings.upiIdOPD || settings.upiId || '')
+      }
+    } catch { /* fall through */ }
+    // Final fallback to env var
+    if (!upiId) upiId = process.env.NEXT_PUBLIC_UPI_ID ?? ''
+
     if (upiId && !upiId.includes('YOUR')) {
       const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(hospitalName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Bill ${bill.mrn}`)}`
 

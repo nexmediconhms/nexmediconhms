@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -21,55 +21,90 @@ export default function Dashboard() {
   const [todayRevenue,      setTodayRevenue]      = useState(0)
   const [todayAppts,        setTodayAppts]        = useState(0)
   const [time,              setTime]              = useState(new Date())
+  // Deferred loading flag for secondary data (overdue list, recent encounters)
+  const [secondaryLoaded, setSecondaryLoaded] = useState(false)
+  const loadedRef = useRef(false)
 
   useEffect(() => {
+    // Prevent double-invoke in StrictMode
+    if (loadedRef.current) return
+    loadedRef.current = true
+
     loadData()
-    const t = setInterval(() => setTime(new Date()), 1000)
-    // Load today's appointments count from Supabase
-    const tod = new Date().toISOString().split('T')[0]
-    supabase
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('date', tod)
-      .neq('status', 'cancelled')
-      .then(({ count, error }) => {
-        if (!error) setTodayAppts(count || 0)
-      })
+    // Clock updates every 60s (not 1s — dashboard doesn't need seconds precision)
+    const t = setInterval(() => setTime(new Date()), 60000)
     return () => clearInterval(t)
   }, [])
 
+  // Deferred: load secondary data (overdue list, recent encounters, appointments)
+  // after primary stats have rendered — reduces initial time-to-interactive
+  useEffect(() => {
+    if (secondaryLoaded) return
+    const timer = setTimeout(() => {
+      loadSecondaryData()
+      setSecondaryLoaded(true)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [secondaryLoaded])
+
   async function loadData() {
-    const today   = new Date().toISOString().split('T')[0]  // used for both revenue query and OPD filter
-    // Revenue today (from billing table)
-    supabase.from('bills').select('net_amount,created_at').eq('status','paid')
+    const today   = new Date().toISOString().split('T')[0]
+
+    // Revenue today (from billing table) — fire-and-forget
+    supabase.from('bills').select('net_amount').eq('status','paid')
       .gte('created_at', today + 'T00:00:00').then(({data}) => {
         const rev = (data||[]).reduce((s:number,b:any)=>s+Number(b.net_amount),0)
         setTodayRevenue(rev)
       })
 
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
-
+    // Primary stats: patients count, today OPD, beds, overdue count, recent patients
+    // Appointments count folded into primary batch (was separate before)
     const [
       { count: pCount },
       { count: opdCount },
       { data: beds },
       { count: overdueCount },
-      { data: overdueRows },
       { data: patients },
-      { data: encounters },
-      { data: ancRows },
+      { count: apptCount },
     ] = await Promise.all([
       supabase.from('patients').select('*', { count:'exact', head:true }),
       supabase.from('encounters').select('*', { count:'exact', head:true }).eq('encounter_date', today),
       supabase.from('beds').select('status'),
       supabase.from('prescriptions').select('*', { count:'exact', head:true })
         .not('follow_up_date','is',null).lt('follow_up_date', today),
+      supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5),
+      supabase.from('appointments').select('id', { count:'exact', head:true })
+        .eq('date', today).neq('status', 'cancelled'),
+    ])
+
+    const bedArr = beds || []
+    setStats({
+      patients:          pCount || 0,
+      todayOPD:          opdCount || 0,
+      availableBeds:     bedArr.filter((b:any) => b.status === 'available').length,
+      occupiedBeds:      bedArr.filter((b:any) => b.status === 'occupied').length,
+      overdueFollowUps:  overdueCount || 0,
+      ancHighRisk:       0, // computed in secondary load
+    })
+    setRecentPatients(patients || [])
+    setTodayAppts(apptCount || 0)
+  }
+
+  // Secondary data: overdue list details, recent encounters, ANC high-risk
+  async function loadSecondaryData() {
+    const today   = new Date().toISOString().split('T')[0]
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
+
+    const [
+      { data: overdueRows },
+      { data: encounters },
+      { data: ancRows },
+    ] = await Promise.all([
       supabase.from('prescriptions')
         .select('follow_up_date, patients(full_name, mrn)')
         .not('follow_up_date','is',null).lt('follow_up_date', today)
         .order('follow_up_date', { ascending:true }).limit(4),
-      supabase.from('patients').select('*').order('created_at', { ascending:false }).limit(5),
-      supabase.from('encounters').select('*, patients(full_name, mrn)')
+      supabase.from('encounters').select('id, chief_complaint, created_at, patient_id, patients(full_name, mrn)')
         .order('created_at', { ascending:false }).limit(5),
       supabase.from('encounters').select('id, ob_data, patient_id')
         .not('ob_data','is',null).gte('encounter_date', weekAgo),
@@ -88,16 +123,7 @@ export default function Dashboard() {
       if (flags >= 1) ancHighRisk++
     })
 
-    const bedArr = beds || []
-    setStats({
-      patients:          pCount || 0,
-      todayOPD:          opdCount || 0,
-      availableBeds:     bedArr.filter((b:any) => b.status === 'available').length,
-      occupiedBeds:      bedArr.filter((b:any) => b.status === 'occupied').length,
-      overdueFollowUps:  overdueCount || 0,
-      ancHighRisk,
-    })
-    setRecentPatients(patients || [])
+    setStats(prev => ({ ...prev, ancHighRisk }))
     setRecentEncounters(encounters || [])
     setOverdueList(overdueRows || [])
   }
