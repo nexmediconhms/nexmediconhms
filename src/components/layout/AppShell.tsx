@@ -109,8 +109,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [])
 
-  // FIX #2: Handle role switching
+  // FIX #2: Handle role switching (ADMIN ONLY — preview mode)
+  // Only admins can simulate other roles. This is a UI-only preview;
+  // actual permissions are still enforced server-side via RLS.
   function handleRoleSwitch(targetRole: UserRole) {
+    // Security: only admin can simulate other roles
+    if (clinicUser?.role !== 'admin') return
+
     if (targetRole === clinicUser?.role) {
       // Revert to real role
       setRoleOverride(null)
@@ -119,6 +124,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setRoleOverride(targetRole)
       setRoleOverrideState(targetRole)
     }
+  }
+
+  // Always clear role override when signing out — prevents "stuck in doctor view"
+  function handleSignOut() {
+    setRoleOverride(null)
+    setRoleOverrideState(null)
+    supabase.auth.signOut().then(() => {
+      router.push('/login')
+    })
   }
 
   const authCtx: AuthContextType = {
@@ -215,17 +229,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* FIX #2: Role override banner — shown when using a simulated role */}
+          {/* FIX #2: Role override banner — shown when admin is previewing another role */}
           {isUsingOverride && (
             <div className="no-print bg-purple-50 border-b border-purple-200 px-4 py-2 flex items-center gap-3">
               <span className="text-xs font-semibold text-purple-800">
-                🔄 Viewing as: {roleOverride === 'doctor' ? '🩺 Doctor' : roleOverride === 'admin' ? '👑 Admin' : '📋 Staff'} (simulated view)
+                👁️ PREVIEW MODE: You are viewing the app as {roleOverride === 'doctor' ? '🩺 Doctor' : '📋 Staff'} would see it. Your actual role is still Admin — all actions use admin permissions.
               </span>
               <button
                 onClick={() => handleRoleSwitch(clinicUser!.role)}
-                className="text-xs text-purple-700 underline hover:text-purple-900 font-semibold ml-auto"
+                className="text-xs text-purple-700 underline hover:text-purple-900 font-semibold ml-auto flex-shrink-0"
               >
-                Back to {clinicUser!.role === 'admin' ? '👑 Admin' : '🩺 Doctor'} (real)
+                ✕ Exit Preview
               </button>
             </div>
           )}
@@ -259,22 +273,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </p>
                   </div>
 
-                  {/* FIX #2: Role switch options for same-credential setups */}
+                  {/* FIX #2: Role switch options — ADMIN ONLY can preview other roles */}
                   {clinicUser?.role === 'admin' && (
-                    <button
-                      onClick={() => handleRoleSwitch(roleOverride === 'doctor' ? 'admin' : 'doctor')}
-                      className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-blue-50 flex items-center gap-2"
-                    >
-                      {roleOverride === 'doctor' ? '👑 Back to Admin view' : '🩺 Switch to Doctor view'}
-                    </button>
-                  )}
-                  {clinicUser?.role === 'doctor' && (
-                    <button
-                      onClick={() => handleRoleSwitch(roleOverride === 'admin' ? 'doctor' : 'admin')}
-                      className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 flex items-center gap-2"
-                    >
-                      {roleOverride === 'admin' ? '🩺 Back to Doctor view' : '👑 Switch to Admin view'}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleRoleSwitch(roleOverride === 'doctor' ? 'admin' : 'doctor')}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-blue-50 flex items-center gap-2"
+                      >
+                        {roleOverride === 'doctor' ? '👑 Back to Admin view' : '🩺 Preview as Doctor'}
+                      </button>
+                      <button
+                        onClick={() => handleRoleSwitch(roleOverride === 'staff' ? 'admin' : 'staff')}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-green-50 flex items-center gap-2"
+                      >
+                        {roleOverride === 'staff' ? '👑 Back to Admin view' : '📋 Preview as Staff'}
+                      </button>
+                    </>
                   )}
                   {isUsingOverride && (
                     <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-purple-50 border-t border-purple-100">
@@ -284,11 +298,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                   {/* Sign out */}
                   <button
-                    onClick={async () => {
-                      setRoleOverride(null)
-                      await supabase.auth.signOut()
-                      router.push('/login')
-                    }}
+                    onClick={handleSignOut}
                     className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50"
                   >
                     🚪 Sign Out
