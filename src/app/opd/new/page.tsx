@@ -55,6 +55,7 @@ function NewConsultationContent() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [lastDiagnosis, setLastDiagnosis] = useState('')
+  const [visitedToday, setVisitedToday] = useState(false)
 
   // OCR highlights
   const [vHL, setVHL] = useState<VitalsHL>({})
@@ -141,6 +142,25 @@ function NewConsultationContent() {
         setLastDiagnosis(lastEnc.diagnosis)
       }
     })
+    const today = new Date().toISOString().split('T')[0] as string
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('encounters')
+          .select('id')
+          .eq('patient_id', patientId)
+          .eq('encounter_date', today)
+          .limit(1)
+          .maybeSingle()
+
+        setVisitedToday(!!data?.id)
+      } catch {
+        // ignore
+      }
+    })()
+
+
   }, [patientId])
 
 
@@ -377,27 +397,61 @@ function NewConsultationContent() {
     setSaving(true)
     setError('')
 
-    // Check if an encounter already exists for this patient today
+    // // Check if an encounter already exists for this patient today
     const today = new Date().toISOString().split('T')[0]
-    const { data: existing } = await supabase
-      .from('encounters')
-      .select('id')
-      .eq('patient_id', patientId)
-      .eq('encounter_date', today)
-      .limit(1)
-      .maybeSingle()
+    // const { data: existing } = await supabase
+    //   .from('encounters')
+    //   .select('id')
+    //   .eq('patient_id', patientId)
+    //   .eq('encounter_date', today)
+    //   .limit(1)
+    //   .maybeSingle()
 
-    if (existing?.id) {
-      // Encounter already exists — update it instead of creating a duplicate
-      setSaving(false)
-      const confirmUpdate = window.confirm(
-        'An OPD encounter for this patient already exists today.\n\nClick OK to update the existing encounter, or Cancel to go back.'
-      )
-      if (!confirmUpdate) return
-      // Redirect to edit the existing encounter
-      router.push(`/opd/${existing.id}/edit`)
-      return
+    // if (existing?.id) {
+    //   // Encounter already exists — update it instead of creating a duplicate
+    //   setSaving(false)
+    //   // Check if an encounter already exists for this patient today
+    //   const today = new Date().toISOString().split('T')[0]
+    //   const { data: existing } = await supabase
+    //     .from('encounters')
+    //     .select('id')
+    //     .eq('patient_id', patientId)
+    //     .eq('encounter_date', today)
+    //     .limit(1)
+    //     .maybeSingle()
+
+    //   if (existing?.id) {
+    //     // Encounter already exists — update it instead of creating a duplicate
+    //     setSaving(false)
+    //     const confirmUpdate = window.confirm(
+    //       'An OPD encounter for this patient already exists today.\n\nClick OK to update the existing encounter, or Cancel to go back.'
+    //     )
+    //     if (!confirmUpdate) return
+    //     // Redirect to edit the existing encounter
+    //     router.push(`/opd/${existing.id}/edit`)
+    //     return
+    //   }
+    //}
+    // ✅ FIXED: Allow multiple consultations in one day//')[0]
+
+    // Optional: check but DO NOT block
+    try {
+      const { data: existing } = await supabase
+        .from('encounters')
+        .select('id')
+        .eq('patient_id', patientId)
+        .eq('encounter_date', today)
+        .limit(1)
+        .maybeSingle()
+
+      // No action — just informational
+      if (existing?.id) {
+        console.log("Patient already visited today")
+      }
+    } catch (err) {
+      // ignore error
     }
+
 
     const obPayload: OBData = { ...ob }
     if (ob.lmp) { obPayload.edd = edd; obPayload.gestational_age = ga }
@@ -494,6 +548,12 @@ function NewConsultationContent() {
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          </div>
+        )}
+        {visitedToday && (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            Patient already has an OPD consultation today. You can still create a NEW consultation (allowed).
           </div>
         )}
 
