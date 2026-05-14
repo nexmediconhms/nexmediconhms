@@ -4,33 +4,30 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { createAppointment } from '@/lib/services/appointmentService'
 import {
-  Calendar, Plus, Search, X, Clock, CheckCircle,
-  MessageCircle, Phone, ChevronRight, Trash2,
+  Calendar, Plus, Search, X, CheckCircle,
+  MessageCircle, Phone, Trash2,
   AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing, ChevronDown,
+  UserCircle, BellRing,
 } from 'lucide-react'
 
-// ── Appointment types ─────────────────────────────────────────
 type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
-
-// FIXED: add a "view tab" type so user can quickly switch between Today / Upcoming / Past / All
-// without having to manually clear or set the date picker
 type ViewTab = 'today' | 'upcoming' | 'past' | 'all' | 'custom'
 
 interface Appointment {
-  id:            string
-  patient_id:    string
-  patient_name:  string
-  mrn:           string
-  mobile:        string
-  date:          string   // YYYY-MM-DD
-  time:          string   // HH:MM
-  type:          string
-  notes:         string
-  status:        ApptStatus
-  created_at:    string
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  mobile: string
+  date: string
+  time: string
+  type: string
+  notes: string
+  status: ApptStatus
+  created_at: string
   reminder_sent: boolean
 }
 
@@ -51,11 +48,11 @@ const APPT_TYPES = [
 ]
 
 const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: string }> = {
-  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700',    dot: 'bg-blue-500'   },
-  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700',  dot: 'bg-green-500'  },
-  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600',    dot: 'bg-gray-400'   },
-  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700',      dot: 'bg-red-400'    },
-  'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
+  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
+  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700', dot: 'bg-green-500' },
+  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600', dot: 'bg-gray-400' },
+  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700', dot: 'bg-red-400' },
+  'no-show': { label: 'No Show', cls: 'bg-orange-50 text-orange-700', dot: 'bg-orange-400' },
 }
 
 const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
@@ -63,52 +60,42 @@ const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
 ).flat().filter(t => t >= '08:00' && t <= '19:45')
 
 function AppointmentsContent() {
-  const [appts,        setAppts]        = useState<Appointment[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
-
-  // FIXED: default to 'upcoming' tab so upcoming appointments are visible immediately
-  // Previously defaulted to dateFilter = today which hid past AND upcoming appointments
-  const [activeTab,    setActiveTab_]   = useState<ViewTab>('upcoming')
-  const [dateFilter,   setDateFilter]   = useState('')   // only used when tab = 'custom'
+  const [appts, setAppts] = useState<Appointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<'list' | 'new' | 'reminder'>('list')
+  const [activeTab, setActiveTab_] = useState<ViewTab>('upcoming')
+  const [dateFilter, setDateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
-  const [typeFilter,   setTypeFilter]   = useState<string>('all')
-
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const today = new Date().toISOString().split('T')[0]
 
-  // Helper to switch tab and clear custom date filter
   function setViewTab(tab: ViewTab) {
     setActiveTab_(tab)
     if (tab !== 'custom') setDateFilter('')
   }
 
-  // New appointment form
-  const [patientQuery,   setPatientQuery]   = useState('')
+  const [patientQuery, setPatientQuery] = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
-  const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [apptDate,       setApptDate]       = useState(today)
-  const [apptTime,       setApptTime]       = useState('09:00')
-  const [apptType,       setApptType]       = useState(APPT_TYPES[0])
-  const [apptNotes,      setApptNotes]      = useState('')
-  const [saving,         setSaving]         = useState(false)
-  const [saveError,      setSaveError]      = useState('')
+  const [selPatient, setSelPatient] = useState<any>(null)
+  const [apptDate, setApptDate] = useState(today)
+  const [apptTime, setApptTime] = useState('09:00')
+  const [apptType, setApptType] = useState(APPT_TYPES[0])
+  const [apptNotes, setApptNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
-  // Reminder state
-  const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
-  const [patientMsg,        setPatientMsg]        = useState('')
-  const [doctorMsg,         setDoctorMsg]         = useState('')
-  const [reminderLoading,   setReminderLoading]   = useState(false)
-  const [copiedPatient,     setCopiedPatient]     = useState(false)
-  const [copiedDoctor,      setCopiedDoctor]      = useState(false)
-  const [reminderTab,       setReminderTab]       = useState<'patient' | 'doctor'>('patient')
+  const [reminderAppt, setReminderAppt] = useState<Appointment | null>(null)
+  const [patientMsg, setPatientMsg] = useState('')
+  const [doctorMsg, setDoctorMsg] = useState('')
+  const [reminderLoading, setReminderLoading] = useState(false)
+  const [copiedPatient, setCopiedPatient] = useState(false)
+  const [copiedDoctor, setCopiedDoctor] = useState(false)
+  const [reminderTab, setReminderTab] = useState<'patient' | 'doctor'>('patient')
 
-  const searchTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
-  const hs           = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : ({} as any)
 
-  // ── Load appointments ──────────────────────────────────────
-  // FIXED: query is now driven by activeTab, not just dateFilter.
-  // This is the root cause of why upcoming/past appointments were invisible.
   const fetchAppts = useCallback(async () => {
     setLoading(true)
     let query = supabase
@@ -117,13 +104,11 @@ function AppointmentsContent() {
       .order('date', { ascending: activeTab !== 'past' })
       .order('time', { ascending: activeTab !== 'past' })
 
-    // FIXED: apply date filter based on active tab
     switch (activeTab) {
       case 'today':
         query = query.eq('date', today)
         break
       case 'upcoming':
-        // Show today + future appointments (not cancelled unless explicitly filtered)
         query = query.gte('date', today)
         break
       case 'past':
@@ -134,57 +119,67 @@ function AppointmentsContent() {
         break
       case 'all':
       default:
-        // no date filter — show everything
         break
     }
 
-    if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
-    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
-
-    // Limit past results to avoid loading thousands of old records
-    if (activeTab === 'past' || activeTab === 'all') {
-      query = query.limit(200)
-    } else {
-      query = query.limit(500)
-    }
+    if (statusFilter !== 'all') query = query.eq('status', statusFilter)
+    if (typeFilter !== 'all') query = query.eq('type', typeFilter)
+    query = query.limit(activeTab === 'past' || activeTab === 'all' ? 200 : 500)
 
     const { data, error } = await query
-    if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
-    else        setAppts((data || []) as Appointment[])
+    if (error) {
+      console.error('[Appointments] fetch error:', error.message)
+      setAppts([])
+    } else {
+      setAppts((data ?? []) as Appointment[])
+    }
     setLoading(false)
   }, [activeTab, dateFilter, statusFilter, typeFilter, today])
 
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
-  // Summary counts — independent queries so they always reflect totals
-  const [todayCount,    setTodayCount]    = useState(0)
+  // ✅ REALTIME AUTO-REFRESH: when prescription updates follow-up -> appointments change -> refresh here
+  useEffect(() => {
+    const ch = supabase
+      .channel('appointments-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        () => fetchAppts()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch) }
+  }, [fetchAppts])
+
+  const [todayCount, setTodayCount] = useState(0)
   const [upcomingCount, setUpcomingCount] = useState(0)
-  const [pastCount,     setPastCount]     = useState(0)
+  const [pastCount, setPastCount] = useState(0)
 
   useEffect(() => {
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .eq('date', today).neq('status', 'cancelled')
       .then(({ count }) => setTodayCount(count || 0))
+
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .gt('date', today).in('status', ['scheduled', 'confirmed'])
       .then(({ count }) => setUpcomingCount(count || 0))
+
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .lt('date', today)
       .then(({ count }) => setPastCount(count || 0))
   }, [appts, today])
 
-  // Pre-fill patient from URL params
   useEffect(() => {
-    const pid   = searchParams.get('patientId')
+    const pid = searchParams.get('patientId')
     const pname = searchParams.get('patientName')
     if (pid && pname && !selPatient) {
       setSelPatient({ id: pid, full_name: decodeURIComponent(pname), mrn: '', mobile: '', age: '' })
       setView('new')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
-  // ── Patient search ─────────────────────────────────────────
   function searchPatients(q: string) {
     setPatientQuery(q); setSelPatient(null)
     if (q.trim().length < 2) { setPatientResults([]); return }
@@ -193,42 +188,48 @@ function AppointmentsContent() {
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, mobile, age')
         .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
-      setPatientResults(data || [])
+      setPatientResults(data ?? [])
     }, 300)
   }
 
-  // ── Book appointment ───────────────────────────────────────
+  // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
     setSaving(true); setSaveError('')
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id:    selPatient.id,
-        patient_name:  selPatient.full_name,
-        mrn:           selPatient.mrn || '',
-        mobile:        selPatient.mobile || '',
-        date:          apptDate,
-        time:          apptTime,
-        type:          apptType,
-        notes:         apptNotes.trim() || null,
-        status:        'scheduled',
-        reminder_sent: false,
+    try {
+      const newId = await createAppointment({
+        patientId: selPatient.id,
+        date: apptDate,
+        time: apptTime,
+        patientName: selPatient.full_name,
+        mrn: selPatient.mrn ?? '',
+        mobile: selPatient.mobile ?? '',
+        notes: apptNotes.trim() || null,
+        type: apptType,
       })
-      .select()
-      .single()
 
-    setSaving(false)
-    if (error) { setSaveError(`Failed to book: ${error.message}`); return }
+      const { data, error } = await supabase.from('appointments').select('*').eq('id', newId).single()
+      setSaving(false)
 
-    resetForm()
-    setView('list')
-    fetchAppts()
-    if (data) openReminder(data as Appointment)
+      if (error) {
+        setSaveError(`Booked but failed to load: ${error.message}`)
+        resetForm()
+        setView('list')
+        fetchAppts()
+        return
+      }
+
+      resetForm()
+      setView('list')
+      fetchAppts()
+      if (data) openReminder(data as Appointment)
+    } catch (e: any) {
+      setSaving(false)
+      setSaveError(`Failed to book: ${e?.message || 'Unknown error'}`)
+    }
   }
 
-  // ── Update status ──────────────────────────────────────────
   async function updateStatus(id: string, status: ApptStatus) {
     const { error } = await supabase
       .from('appointments')
@@ -237,14 +238,12 @@ function AppointmentsContent() {
     if (!error) setAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
-  // ── Delete ─────────────────────────────────────────────────
   async function deleteAppt(id: string) {
     if (!confirm('Delete this appointment?')) return
     const { error } = await supabase.from('appointments').delete().eq('id', id)
     if (!error) setAppts(prev => prev.filter(a => a.id !== id))
   }
 
-  // ── Open reminder — fetches full patient profile first ─────
   async function openReminder(appt: Appointment) {
     setReminderAppt(appt)
     setView('reminder')
@@ -257,112 +256,56 @@ function AppointmentsContent() {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })
 
-    // Calculate arrival time (30 min before appointment)
-    const [hh, mm]    = appt.time.split(':').map(Number)
+    const [hh, mm] = appt.time.split(':').map(Number)
     const arrivalDate = new Date()
     arrivalDate.setHours(hh, mm - 30, 0, 0)
-    if (arrivalDate.getMinutes() < 0) { arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes()) }
+    if (arrivalDate.getMinutes() < 0) arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes())
     const arrivalTime = arrivalDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    // Fetch patient profile + last encounter + last prescription
     const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
-      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, aadhaar_no, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
+      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
       supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
       supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).single(),
     ])
 
-    const p   = patient || {} as any
+    const p = patient ?? ({} as any)
     const enc = lastEnc as any
-    const rx  = lastRx  as any
-    const ob  = enc?.ob_data as any
-
-    let ageStr = ''
-    if (p.date_of_birth) {
-      const a = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-      ageStr = `${a} years`
-    } else if (p.age) {
-      ageStr = `${p.age} years`
-    }
+    const rx = lastRx as any
 
     const medsText = Array.isArray(rx?.medications)
       ? rx.medications.slice(0, 4).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim()).join('\n')
       : ''
 
-    let obText = ''
-    if (ob?.lmp) {
-      const weeksGA = ob.gestational_age ||
-        (() => {
-          const diffMs = Date.now() - new Date(ob.lmp).getTime()
-          const weeks  = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
-          const days   = Math.floor((diffMs % (7 * 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000))
-          return `${weeks} weeks ${days} days`
-        })()
-      obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
-    }
-
     const pMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
-
 Namaste ${appt.patient_name} ji 🙏
-
 This is a reminder for your *upcoming appointment*.
-
 📅 *Date:* ${dateStr}
 🕐 *Appointment Time:* ${appt.time}
 ⏰ *Please arrive by:* ${arrivalTime} *(30 minutes early)*
 🏥 *Visit Type:* ${appt.type}
 📍 *Address:* ${hs.address || 'Hospital address'}
-
 📋 *Please bring:*
 ✅ Previous prescriptions & reports
 ✅ Any lab reports / USG reports done recently
 ✅ Aadhaar card / ID proof${p.mediclaim ? '\n✅ Insurance / Mediclaim card' : ''}
 ${rx?.reports_needed ? `\n🔬 *Pending tests to get done:*\n${rx.reports_needed}` : ''}
 ${appt.notes ? `\n📝 *Note from doctor:* ${appt.notes}` : ''}
-
 For queries call: ${hs.phone || 'our helpdesk'}
-
 ---
-${appt.patient_name} ji, ${appt.type === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
-
 _${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
 
     const dMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
 *Patient Brief — Appointment Alert* 🩺
-
 📅 *Date:* ${dateStr} at *${appt.time}*
 🏥 *Visit Type:* ${appt.type}
-
-━━━━━━━━━━━━━━━━
-👤 *PATIENT PROFILE*
 ━━━━━━━━━━━━━━━━
 *Name:* ${appt.patient_name}
 *MRN:* ${appt.mrn}
-${ageStr ? `*Age:* ${ageStr}` : ''}${p.gender ? `  |  *Gender:* ${p.gender}` : ''}
-${p.blood_group ? `*Blood Group:* ${p.blood_group}` : ''}
 *Mobile:* ${appt.mobile}
-${p.abha_id ? `*ABHA ID:* ${p.abha_id}` : ''}${p.mediclaim ? `\n*Insurance:* ${p.cashless ? 'Cashless' : 'Mediclaim'}${p.policy_tpa_name ? ' — ' + p.policy_tpa_name : ''}` : ''}
-${obText}
-${enc ? `
-━━━━━━━━━━━━━━━━
-📋 *LAST VISIT* (${formatDate(enc.encounter_date)})
-━━━━━━━━━━━━━━━━
-*Type:* ${enc.encounter_type}
-${enc.chief_complaint ? `*Complaint:* ${enc.chief_complaint}` : ''}
-${enc.diagnosis ? `*Diagnosis:* ${enc.diagnosis}` : ''}
-${enc.bp_systolic ? `*BP:* ${enc.bp_systolic}/${enc.bp_diastolic} mmHg` : ''}${enc.pulse ? `  |  *Pulse:* ${enc.pulse} bpm` : ''}
-${enc.weight ? `*Weight:* ${enc.weight} kg` : ''}` : ''}
-${medsText ? `
-━━━━━━━━━━━━━━━━
-💊 *CURRENT MEDICATIONS*
-━━━━━━━━━━━━━━━━
-${medsText}` : ''}
-${rx?.advice ? `\n📝 *Last Advice:* ${rx.advice}` : ''}
-${appt.notes ? `\n🔔 *Appointment Note:* ${appt.notes}` : ''}
-
-━━━━━━━━━━━━━━━━
-_NexMedicon HMS — Patient brief for ${appt.patient_name}_`
+${enc ? `\nLast Visit: ${formatDate(enc.encounter_date)} · ${enc.encounter_type}` : ''}
+${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
 
     setPatientMsg(pMsg)
     setDoctorMsg(dMsg)
@@ -370,7 +313,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
   }
 
   function waLink(mobile: string, msg: string) {
-    const num  = mobile?.replace(/\D/g, '')
+    const num = mobile?.replace(/\D/g, '')
     const full = num?.length === 10 ? '91' + num : num
     return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`
   }
@@ -380,6 +323,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
       .from('appointments')
       .update({ reminder_sent: true, updated_at: new Date().toISOString() })
       .eq('id', appt.id)
+
     setAppts(prev => prev.map(a => a.id === appt.id ? { ...a, reminder_sent: true } : a))
   }
 
@@ -390,24 +334,20 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     setSaveError('')
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // REMINDER VIEW
-  // ═══════════════════════════════════════════════════════════════
   if (view === 'reminder' && reminderAppt) {
     const doctorMobile = hs.phone?.replace(/\D/g, '') || ''
-    const isDoctorWA   = doctorMobile.length >= 10
-
+    const isDoctorWA = doctorMobile.length >= 10
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
-
           <div className="flex items-center gap-3 mb-5">
             <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
+              <X className="w-5 h-5" />
             </button>
             <div>
               <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <BellRing className="w-5 h-5 text-blue-600"/>
+                <BellRing className="w-5 h-5 text-blue-600" />
                 WhatsApp Reminders
               </h1>
               <p className="text-xs text-gray-500">
@@ -418,7 +358,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
 
           {reminderLoading ? (
             <div className="card p-16 text-center">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3"/>
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3" />
               <p className="text-sm text-gray-500">Loading patient profile...</p>
             </div>
           ) : (
@@ -426,39 +366,31 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={() => setReminderTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${reminderTab === 'patient'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                    reminderTab === 'patient'
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'}`}>
-                  <MessageCircle className="w-4 h-4"/>
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  <MessageCircle className="w-4 h-4" />
                   Patient Message
                 </button>
+
                 <button
                   onClick={() => setReminderTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${reminderTab === 'doctor'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                    reminderTab === 'doctor'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
-                  <Stethoscope className="w-4 h-4"/>
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  <Stethoscope className="w-4 h-4" />
                   Doctor Brief
                 </button>
               </div>
 
               {reminderTab === 'patient' && (
                 <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-green-700 text-sm">{reminderAppt.patient_name.charAt(0)}</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{reminderAppt.patient_name}</div>
-                      <div className="text-xs text-gray-400">{reminderAppt.mrn} · {reminderAppt.mobile}</div>
-                    </div>
-                    <div className="ml-auto text-xs bg-green-50 text-green-700 font-semibold px-2 py-1 rounded-full border border-green-200">
-                      To Patient
-                    </div>
-                  </div>
-
                   <label className="label">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -466,19 +398,18 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                     value={patientMsg}
                     onChange={e => setPatientMsg(e.target.value)}
                   />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
-                  </p>
 
                   <div className="flex flex-col gap-2 mt-4">
                     <a
                       href={waLink(reminderAppt.mobile, patientMsg)}
                       target="_blank" rel="noopener noreferrer"
                       onClick={() => { markReminderSent(reminderAppt); setCopiedPatient(true) }}
-                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                      <MessageCircle className="w-4 h-4"/>
+                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                    >
+                      <MessageCircle className="w-4 h-4" />
                       Send to Patient via WhatsApp
                     </a>
+
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(patientMsg)
@@ -486,48 +417,24 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         markReminderSent(reminderAppt)
                         setTimeout(() => setCopiedPatient(false), 2500)
                       }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
+                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors"
+                    >
+                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500" /> : <MessageCircle className="w-4 h-4" />}
                       {copiedPatient ? 'Copied!' : 'Copy Message'}
                     </button>
+
                     {reminderAppt.mobile && (
-                      <a href={`tel:${reminderAppt.mobile}`}
-                        className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
-                        <Phone className="w-4 h-4"/> Call {reminderAppt.patient_name} ({reminderAppt.mobile})
+                      <a href={`tel:${reminderAppt.mobile}`} className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
+                        <Phone className="w-4 h-4" />
+                        Call {reminderAppt.patient_name} ({reminderAppt.mobile})
                       </a>
                     )}
                   </div>
-
-                  {reminderAppt.reminder_sent && (
-                    <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
-                    </p>
-                  )}
                 </div>
               )}
 
               {reminderTab === 'doctor' && (
                 <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Stethoscope className="w-4 h-4 text-blue-600"/>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{hs.doctorName || 'Doctor'}</div>
-                      <div className="text-xs text-gray-400">
-                        {isDoctorWA ? `Send to: ${hs.phone}` : "Add doctor's phone in Settings"}
-                      </div>
-                    </div>
-                    <div className="ml-auto text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full border border-blue-200">
-                      To Doctor
-                    </div>
-                  </div>
-
-                  <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
-                    <UserCircle className="w-4 h-4 flex-shrink-0"/>
-                    Full patient brief — profile, last visit, current medications, and OB data.
-                  </div>
-
                   <label className="label mt-3">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -542,38 +449,21 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         href={waLink(doctorMobile, doctorMsg)}
                         target="_blank" rel="noopener noreferrer"
                         onClick={() => setCopiedDoctor(true)}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                        <MessageCircle className="w-4 h-4"/>
+                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                      >
+                        <MessageCircle className="w-4 h-4" />
                         Send Patient Brief to Doctor via WhatsApp
                       </a>
                     ) : (
                       <div className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl py-3">
-                        ⚙️ Add doctor&apos;s phone number in{' '}
+                        ⚙️ Add doctor's phone number in{' '}
                         <Link href="/settings" className="text-blue-600 underline">Settings</Link>{' '}
-                        to enable direct WhatsApp send to doctor.
+                        to enable WhatsApp send to doctor.
                       </div>
                     )}
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(doctorMsg)
-                        setCopiedDoctor(true)
-                        setTimeout(() => setCopiedDoctor(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedDoctor ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedDoctor ? 'Copied!' : 'Copy Doctor Brief'}
-                    </button>
                   </div>
                 </div>
               )}
-
-              <p className="text-center text-xs text-gray-400">
-                Switch between tabs to send both messages —
-                <button onClick={() => setReminderTab(reminderTab === 'patient' ? 'doctor' : 'patient')}
-                  className="text-blue-500 underline ml-1">
-                  {reminderTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
-                </button>
-              </p>
             </>
           )}
         </div>
@@ -581,23 +471,21 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     )
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // NEW APPOINTMENT VIEW
-  // ═══════════════════════════════════════════════════════════════
   if (view === 'new') {
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
           <div className="flex items-center gap-3 mb-5">
             <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
+              <X className="w-5 h-5" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
           </div>
 
           {saveError && (
             <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{saveError}</span>
             </div>
           )}
@@ -611,14 +499,14 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                   <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.mobile}</div>
                 </div>
                 <button onClick={() => { setSelPatient(null); setPatientQuery('') }}>
-                  <X className="w-4 h-4 text-gray-400 hover:text-red-500"/>
+                  <X className="w-4 h-4 text-gray-400 hover:text-red-500" />
                 </button>
               </div>
             ) : (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)}/>
+                  value={patientQuery} onChange={e => searchPatients(e.target.value)} />
                 {patientResults.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
                     {patientResults.map(p => (
@@ -640,7 +528,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)}/>
+                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
               </div>
               <div>
                 <label className="label">Time</label>
@@ -658,7 +546,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                 <label className="label">Notes (optional)</label>
                 <textarea className="input resize-none" rows={2}
                   placeholder="e.g. Bring previous USG reports, fasting required…"
-                  value={apptNotes} onChange={e => setApptNotes(e.target.value)}/>
+                  value={apptNotes} onChange={e => setApptNotes(e.target.value)} />
               </div>
             </div>
           </div>
@@ -668,7 +556,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
             <button onClick={bookAppointment}
               disabled={saving || !selPatient || !apptDate || !apptTime}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
               {saving ? 'Booking…' : 'Book & Generate Reminder'}
             </button>
           </div>
@@ -677,60 +565,57 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     )
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LIST VIEW
-  // ═══════════════════════════════════════════════════════════════
+  // LIST VIEW (unchanged core UI)
   return (
     <AppShell>
       <div className="p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600"/> Appointments
+              <Calendar className="w-6 h-6 text-blue-600" /> Appointments
             </h1>
             <p className="text-sm text-gray-500">
               {todayCount} today · {upcomingCount} upcoming · {pastCount} past
             </p>
           </div>
+
           <div className="flex gap-2">
             <button onClick={fetchAppts} className="btn-secondary flex items-center gap-1.5 text-xs">
-              <RefreshCw className="w-3.5 h-3.5"/> Refresh
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
+
             <button onClick={() => { resetForm(); setView('new') }}
               className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4"/> Book Appointment
+              <Plus className="w-4 h-4" /> Book Appointment
             </button>
           </div>
         </div>
 
-        {/* ── FIXED: View tab bar — replaces the single date filter as primary nav ──
-            Previously the only way to see upcoming/past was to manually clear the date
-            picker. Now there are clear tabs that immediately show the right appointments. */}
+        {/* Tabs */}
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
           {([
-            { key: 'today',    label: `Today (${todayCount})` },
+            { key: 'today', label: `Today (${todayCount})` },
             { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
-            { key: 'past',     label: `Past (${pastCount})` },
-            { key: 'all',      label: 'All' },
-            { key: 'custom',   label: '📅 Pick date' },
+            { key: 'past', label: `Past (${pastCount})` },
+            { key: 'all', label: 'All' },
+            { key: 'custom', label: '📅 Pick date' },
           ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setViewTab(key)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                activeTab === key
-                  ? 'bg-white shadow text-blue-700'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}>
+                activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
               {label}
             </button>
           ))}
         </div>
 
-        {/* Custom date picker — only shown when "Pick date" tab is active */}
+        {/* Custom date picker */}
         {activeTab === 'custom' && (
           <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
             <label className="label mb-0 text-blue-700">Date:</label>
             <input className="input w-40 bg-white" type="date"
-              value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
+              value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
             <button onClick={() => { setDateFilter(today) }}
               className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-medium">
               Today
@@ -739,7 +624,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           </div>
         )}
 
-        {/* Secondary filters — status + type */}
+        {/* Filters */}
         <div className="card p-3 mb-5 flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2">
             <label className="label mb-0 text-xs">Status:</label>
@@ -751,6 +636,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
+
           <div className="flex items-center gap-2">
             <label className="label mb-0 text-xs">Type:</label>
             <select className="input text-xs py-1.5 w-44" value={typeFilter}
@@ -759,58 +645,38 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          {(statusFilter !== 'all' || typeFilter !== 'all') && (
-            <button
-              onClick={() => { setStatusFilter('all'); setTypeFilter('all') }}
-              className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1">
-              <X className="w-3 h-3"/> Clear filters
-            </button>
-          )}
+
           <span className="ml-auto text-xs text-gray-400">{appts.length} appointment{appts.length !== 1 ? 's' : ''}</span>
         </div>
 
         {/* List */}
         {loading ? (
           <div className="card p-12 text-center text-gray-400">
-            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40"/>
+            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40" />
             <p className="text-sm">Loading appointments...</p>
           </div>
         ) : appts.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
-            <p className="font-medium mb-1">
-              {activeTab === 'today'    ? 'No appointments today'
-               : activeTab === 'upcoming' ? 'No upcoming appointments'
-               : activeTab === 'past'   ? 'No past appointments'
-               : statusFilter !== 'all' || typeFilter !== 'all' ? 'No appointments match this filter'
-               : 'No appointments yet'}
-            </p>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
-              <Plus className="w-3.5 h-3.5"/> Book First Appointment
-            </button>
+            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p className="font-medium mb-1">No appointments yet</p>
           </div>
         ) : (
           <div className="space-y-2">
             {appts.map(appt => {
-              const cfg     = STATUS_CONFIG[appt.status]
+              const cfg = STATUS_CONFIG[appt.status]
               const isToday = appt.date === today
-              const isPast  = appt.date < today
+              const isPast = appt.date < today
               return (
-                <div key={appt.id}
-                  className={`card p-4 flex items-center gap-4 ${
-                    isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''
-                  }`}>
-
-                  {/* Time block */}
+                <div key={appt.id} className={`card p-4 flex items-center gap-4 ${isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''}`}>
                   <div className="text-center min-w-[52px]">
                     <div className="text-lg font-bold text-gray-800 leading-none">{appt.time}</div>
-                    {isToday
-                      ? <div className="text-xs text-blue-600 font-semibold">Today</div>
-                      : <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>}
+                    {isToday ? (
+                      <div className="text-xs text-blue-600 font-semibold">Today</div>
+                    ) : (
+                      <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>
+                    )}
                   </div>
 
-                  {/* Patient info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">{appt.patient_name}</span>
@@ -818,71 +684,42 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
                       {appt.reminder_sent && (
                         <span className="text-xs text-green-600 flex items-center gap-0.5">
-                          <CheckCircle className="w-3 h-3"/> Reminded
+                          <CheckCircle className="w-3 h-3" /> Reminded
                         </span>
                       )}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
-                      {appt.type === 'follow_up' && (
-                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
-                      )}
-                      {appt.type !== 'follow_up' && appt.type}
                     </div>
                     {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {appt.status === 'scheduled' && (
                       <>
                         <button onClick={() => updateStatus(appt.id, 'confirmed')}
-                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">
-                          Confirm
-                        </button>
+                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">Confirm</button>
                         <button onClick={() => updateStatus(appt.id, 'completed')}
-                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                          Done
-                        </button>
+                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">Done</button>
                         <button onClick={() => updateStatus(appt.id, 'no-show')}
-                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">
-                          No-show
-                        </button>
+                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">No-show</button>
                       </>
                     )}
-                    {appt.status === 'confirmed' && (
-                      <button onClick={() => updateStatus(appt.id, 'completed')}
-                        className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                        Mark Done
-                      </button>
-                    )}
-                    {/* Send Reminder */}
-                    <button
-                      onClick={() => openReminder(appt)}
+
+                    <button onClick={() => openReminder(appt)}
                       className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent
-                          ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                          : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                        appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
                       }`}>
-                      <MessageCircle className="w-3.5 h-3.5"/>
-                      {appt.reminder_sent ? 'Re-send' : 'Remind'}
+                      <MessageCircle className="w-3.5 h-3.5" /> {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
-                    {/* Start consultation */}
-                    <Link href={`/opd/new?patient=${appt.patient_id}`}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      title="Start consultation">
-                      <Stethoscope className="w-4 h-4"/>
+
+                    <Link href={`/opd/new?patient=${appt.patient_id}`} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Start consultation">
+                      <Stethoscope className="w-4 h-4" />
                     </Link>
-                    {/* View patient */}
-                    <Link href={`/patients/${appt.patient_id}`}
-                      className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                      title="View patient">
-                      <User className="w-4 h-4"/>
+
+                    <Link href={`/patients/${appt.patient_id}`} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg" title="View patient">
+                      <User className="w-4 h-4" />
                     </Link>
-                    {/* Delete */}
-                    <button onClick={() => deleteAppt(appt.id)}
-                      className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                      title="Delete appointment">
-                      <Trash2 className="w-4 h-4"/>
+
+                    <button onClick={() => deleteAppt(appt.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg" title="Delete appointment">
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -894,16 +731,18 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     </AppShell>
   )
 }
-// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+
 export default function AppointmentsPage() {
   return (
-    <Suspense fallback={
-      <AppShell>
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
-        </div>
-      </AppShell>
-    }>
+    <Suspense
+      fallback={
+        <AppShell>
+          <div className="flex items-center justify-center h-64">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        </AppShell>
+      }
+    >
       <AppointmentsContent />
     </Suspense>
   )
