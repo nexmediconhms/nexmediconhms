@@ -42,6 +42,7 @@ function NewConsultationContent() {
   const searchParams = useSearchParams()
   const patientId = searchParams.get('patient')
   const prefillFlag = searchParams.get('prefill')
+  const freshFlag = searchParams.get('fresh')
 
   const [patient, setPatient] = useState<Patient | null>(null)
   const [tab, setTab] = useState<Tab>('vitals')
@@ -83,18 +84,31 @@ function NewConsultationContent() {
     if (!patientId) { router.push('/opd'); return }
 
     // 1. Load draft from sessionStorage (persists if user navigated away)
+    //    BUT if 'fresh' flag is set, this is a brand-new consultation — clear old draft
     const key = `opd_draft_${patientId}`
-    try {
-      const draft = JSON.parse(sessionStorage.getItem(key) || 'null')
-      if (draft) {
-        if (draft.vitals) setVitals(draft.vitals)
-        if (draft.ob) setOB(draft.ob)
-        if (draft.chiefComplaint) setChiefComplaint(draft.chiefComplaint)
-        if (draft.hpi) setHpi(draft.hpi)
-        if (draft.diagnosis) setDiagnosis(draft.diagnosis)
-        if (draft.notes) setNotes(draft.notes)
+    if (freshFlag) {
+      // User explicitly clicked "New Consultation" — start with clean slate
+      sessionStorage.removeItem(key)
+      // Remove 'fresh' from URL so page refresh doesn't re-clear
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('fresh')
+        window.history.replaceState({}, '', url.toString())
       }
-    } catch { /* ignore */ }
+    } else {
+      // No fresh flag — try to restore a saved draft (e.g. user navigated away mid-entry)
+      try {
+        const draft = JSON.parse(sessionStorage.getItem(key) || 'null')
+        if (draft) {
+          if (draft.vitals) setVitals(draft.vitals)
+          if (draft.ob) setOB(draft.ob)
+          if (draft.chiefComplaint) setChiefComplaint(draft.chiefComplaint)
+          if (draft.hpi) setHpi(draft.hpi)
+          if (draft.diagnosis) setDiagnosis(draft.diagnosis)
+          if (draft.notes) setNotes(draft.notes)
+        }
+      } catch { /* ignore */ }
+    }
 
     // 2. Load OCR prefill from forms page scanner
     try {
