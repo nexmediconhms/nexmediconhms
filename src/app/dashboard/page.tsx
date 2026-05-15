@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     patients: 0, todayOPD: 0, availableBeds: 0,
     overdueFollowUps: 0, ancHighRisk: 0, occupiedBeds: 0,
+    queueWaiting: 0,
   })
   const [recentPatients,    setRecentPatients]    = useState<any[]>([])
   const [recentEncounters,  setRecentEncounters]  = useState<any[]>([])
@@ -66,15 +67,18 @@ export default function Dashboard() {
       { count: overdueCount },
       { data: patients },
       { count: apptCount },
+      { count: queueCount },
     ] = await Promise.all([
       supabase.from('patients').select('*', { count:'exact', head:true }),
       supabase.from('encounters').select('*', { count:'exact', head:true }).eq('encounter_date', today),
       supabase.from('beds').select('status'),
-      supabase.from('prescriptions').select('*', { count:'exact', head:true })
-        .not('follow_up_date','is',null).lt('follow_up_date', today),
+      supabase.from('follow_ups').select('*', { count:'exact', head:true })
+        .eq('status', 'pending').lt('recommended_date', today),
       supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5),
       supabase.from('appointments').select('id', { count:'exact', head:true })
         .eq('date', today).neq('status', 'cancelled'),
+      supabase.from('opd_queue').select('id', { count:'exact', head:true })
+        .eq('queue_date', today).in('status', ['waiting', 'in_progress']),
     ])
 
     const bedArr = beds || []
@@ -85,6 +89,7 @@ export default function Dashboard() {
       occupiedBeds:      bedArr.filter((b:any) => b.status === 'occupied').length,
       overdueFollowUps:  overdueCount || 0,
       ancHighRisk:       0, // computed in secondary load
+      queueWaiting:      queueCount || 0,
     })
     setRecentPatients(patients || [])
     setTodayAppts(apptCount || 0)
@@ -100,10 +105,10 @@ export default function Dashboard() {
       { data: encounters },
       { data: ancRows },
     ] = await Promise.all([
-      supabase.from('prescriptions')
-        .select('follow_up_date, patients(full_name, mrn)')
-        .not('follow_up_date','is',null).lt('follow_up_date', today)
-        .order('follow_up_date', { ascending:true }).limit(4),
+      supabase.from('follow_ups')
+        .select('recommended_date, patients(full_name, mrn)')
+        .eq('status', 'pending').lt('recommended_date', today)
+        .order('recommended_date', { ascending:true }).limit(4),
       supabase.from('encounters').select('id, chief_complaint, created_at, patient_id, patients(full_name, mrn)')
         .order('created_at', { ascending:false }).limit(5),
       supabase.from('encounters').select('id, ob_data, patient_id')
@@ -134,7 +139,7 @@ export default function Dashboard() {
     { label:'Beds Available',   value: stats.availableBeds,    sub:`${stats.occupiedBeds} occupied`, icon:BedDouble, bg:'bg-purple-50', ic:'bg-purple-100 text-purple-600', val:'text-purple-700', href:'/beds' },
     { label:'Overdue Follow-ups',value: stats.overdueFollowUps, sub:'require follow-up',   icon:CalendarClock,bg:'bg-orange-50', ic:'bg-orange-100 text-orange-600',  val:'text-orange-700', href:'/reports' },
     { label:"Today's Revenue",  value:`₹${todayRevenue.toLocaleString('en-IN')}`, sub:'payments collected today', icon:IndianRupee, bg:'bg-emerald-50', ic:'bg-emerald-100 text-emerald-600', val:'text-emerald-700', href:'/billing' },
-    { label:'OPD Queue',        value: stats.todayOPD,         sub:'patients in queue today',icon:Clock,       bg:'bg-sky-50',    ic:'bg-sky-100 text-sky-600',       val:'text-sky-700',    href:'/queue'    },
+    { label:'OPD Queue',        value: stats.queueWaiting,     sub:'waiting in queue now',   icon:Clock,       bg:'bg-sky-50',    ic:'bg-sky-100 text-sky-600',       val:'text-sky-700',    href:'/queue'    },
     { label:"Today's Appointments",value: todayAppts,             sub:'scheduled today',        icon:CalendarDays,bg:'bg-violet-50', ic:'bg-violet-100 text-violet-600', val:'text-violet-700', href:'/appointments' },
   ]
 
@@ -182,7 +187,7 @@ export default function Dashboard() {
         )}
 
         {/* KPI tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
           {tiles.map(({ label, value, sub, icon:Icon, bg, ic, val, href }) => (
             <Link key={label} href={href}
               className={`card p-5 ${bg} hover:shadow-md transition-shadow cursor-pointer`}>
@@ -277,14 +282,14 @@ export default function Dashboard() {
                 </div>
                 <div className="space-y-2">
                   {overdueList.map((f:any, i) => {
-                    const days = Math.floor((Date.now()-new Date(f.follow_up_date).getTime())/86400000)
+                    const days = Math.floor((Date.now()-new Date(f.recommended_date || f.follow_up_date).getTime())/86400000)
                     return (
                       <div key={i} className="p-2.5 rounded-lg bg-orange-50 border border-orange-100">
                         <div className="text-sm font-medium text-gray-800 truncate">
                           {(f.patients as any)?.full_name || '—'}
                         </div>
                         <div className="text-xs text-gray-500 flex items-center justify-between">
-                          <span>{formatDate(f.follow_up_date)}</span>
+                          <span>{formatDate(f.recommended_date || f.follow_up_date)}</span>
                           <span className="text-orange-600 font-semibold">{days}d overdue</span>
                         </div>
                       </div>
