@@ -109,6 +109,24 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   useEffect(() => () => stopCam(), [])
 
   async function detectStorageMode() {
+    // Cache the storage mode check result in sessionStorage so we don't
+    // run the health-check upload on every component mount (which causes
+    // the repeated "Storage unavailable (RLS policy)" message)
+    const CACHE_KEY = 'nexmedicon_storage_mode'
+    const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY)
+      if (cached) {
+        const { mode, ts } = JSON.parse(cached)
+        if (Date.now() - ts < CACHE_TTL) {
+          setStorageMode(mode)
+          // Don't show the setup note on cached reads — user already saw it once
+          return
+        }
+      }
+    } catch { /* ignore parse errors */ }
+
     try {
       const testFile = new Blob(['x'], { type: 'text/plain' })
       const testKey  = `_healthcheck/${Date.now()}.txt`
@@ -116,18 +134,23 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
       if (!error) {
         await supabase.storage.from(BUCKET).remove([testKey])
         setStorageMode('storage')
+        try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ mode: 'storage', ts: Date.now() })) } catch {}
       } else {
         setStorageMode('db')
+        try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ mode: 'db', ts: Date.now() })) } catch {}
         const isBucketMissing = error.message.toLowerCase().includes('bucket') ||
                                 error.message.toLowerCase().includes('not found') ||
                                 error.message.includes('404')
-        setSetupNote(isBucketMissing
-          ? 'Storage bucket not set up → using DB storage (max 2 MB). To enable up to 10 MB: Supabase Dashboard → Storage → New Bucket → name: "consultation-files" → Private → Save.'
-          : `Storage unavailable (${error.message}) → using DB storage (max 2 MB).`)
+        // Only show setup instructions if bucket is truly missing (admin action needed)
+        // Do NOT show RLS/policy errors to end users — it's confusing and not actionable by them
+        if (isBucketMissing) {
+          setSetupNote('Storage bucket not set up → using DB storage (max 2 MB). To enable up to 10 MB: Supabase Dashboard → Storage → New Bucket → name: "consultation-files" → Private → Save.')
+        }
+        // RLS policy errors are silently handled — DB fallback works fine
       }
     } catch {
       setStorageMode('db')
-      setSetupNote('Using database storage (max 2 MB per file).')
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ mode: 'db', ts: Date.now() })) } catch {}
     }
   }
 

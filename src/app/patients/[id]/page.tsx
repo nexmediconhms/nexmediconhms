@@ -276,7 +276,7 @@ export default function PatientDetailPage() {
                 </div>
                 {/* Action buttons */}
                 <div className="flex gap-2 flex-wrap justify-end">
-                  <Link href={`/opd/new?patient=${patient.id}`}
+                  <Link href={`/opd/new?patient=${patient.id}&fresh=1`}
                     className="btn-primary flex items-center gap-2 text-xs">
                     <Stethoscope className="w-3.5 h-3.5" /> New Consultation
                   </Link>

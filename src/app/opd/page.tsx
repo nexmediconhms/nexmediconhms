@@ -73,7 +73,7 @@ export default function OPDIndexPage() {
                 <div className="space-y-1">
                   {results.map(p => (
                     <button key={p.id}
-                      onClick={() => router.push(`/opd/new?patient=${p.id}`)}
+                      onClick={() => router.push(`/opd/new?patient=${p.id}&fresh=1`)}
                       className="w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all text-left">
                       <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                         <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>

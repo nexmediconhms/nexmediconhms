@@ -31,15 +31,18 @@ export default function PatientsPage() {
 
   async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
     setLoading(true)
-    let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
+    // Use count: 'exact' to get the ACTUAL total count from the database,
+    // not just the count of returned rows (which is capped at limit(100))
+    let req = supabase.from('patients').select('*', { count: 'exact' }).order('created_at', { ascending: false })
 
     if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
     if (gender)   req = req.eq('gender', gender)
     if (bg)       req = req.eq('blood_group', bg)
 
-    const { data } = await req.limit(100)
+    const { data, count } = await req.limit(100)
     setPatients(data || [])
-    setTotalCount(data?.length || 0)
+    // count is the TRUE total matching records (e.g. 5000), not data.length (max 100)
+    setTotalCount(count ?? (data?.length || 0))
     setLoading(false)
   }
 
