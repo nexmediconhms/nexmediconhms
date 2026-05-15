@@ -8,6 +8,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
+import { getTodayIST } from '@/lib/date-utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
@@ -142,7 +143,7 @@ function NewConsultationContent() {
         setLastDiagnosis(lastEnc.diagnosis)
       }
     })
-    const today = new Date().toISOString().split('T')[0] as string
+    const today = getTodayIST() as string
 
     (async () => {
       try {
@@ -398,7 +399,7 @@ function NewConsultationContent() {
     setError('')
 
     // // Check if an encounter already exists for this patient today
-    const today = new Date().toISOString().split('T')[0]
+    const today = getTodayIST()
 
     // Optional: check but DO NOT block
     try {

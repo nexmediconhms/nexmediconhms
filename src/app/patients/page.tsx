@@ -4,8 +4,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { sanitizeSearchInput } from '@/lib/sanitize-search'
+import { safeQuery } from '@/lib/query-helpers'
 import { formatDate, ageFromDOB } from '@/lib/utils'
-import { Search, UserPlus, ChevronRight, User, Filter, X } from 'lucide-react'
+import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 
@@ -24,6 +26,7 @@ export default function PatientsPage() {
   const [bgFilter,     setBgFilter]     = useState('')
   const [loading,      setLoading]      = useState(true)
   const [showFilters,  setShowFilters]  = useState(false)
+  const [fetchError,   setFetchError]   = useState('')
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -31,15 +34,25 @@ export default function PatientsPage() {
 
   async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
     setLoading(true)
-    let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
+    setFetchError('')
+    let req = supabase.from('patients').select('*', { count: 'exact' }).order('created_at', { ascending: false })
 
-    if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
+    if (q.trim()) {
+      const safe = sanitizeSearchInput(q.trim())
+      req = req.or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
+    }
     if (gender)   req = req.eq('gender', gender)
     if (bg)       req = req.eq('blood_group', bg)
 
-    const { data } = await req.limit(100)
-    setPatients(data || [])
-    setTotalCount(data?.length || 0)
+    const result = await safeQuery(req.limit(100))
+    if (result.error) {
+      setFetchError(result.error)
+      setPatients([])
+      setTotalCount(0)
+    } else {
+      setPatients(result.data || [])
+      setTotalCount(result.count ?? (result.data?.length || 0))
+    }
     setLoading(false)
   }
 
@@ -160,6 +173,15 @@ export default function PatientsPage() {
             </div>
           )}
         </div>
+
+        {/* Error banner */}
+        {fetchError && (
+          <div className="card p-4 mb-4 bg-red-50 border-red-200 flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span className="text-sm text-red-700 flex-1">{fetchError}</span>
+            <button onClick={() => loadPatients(query)} className="text-xs text-red-600 font-semibold hover:underline">Retry</button>
+          </div>
+        )}
 
         {/* Patient table — desktop */}
         <div className="card overflow-hidden hidden md:block">

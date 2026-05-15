@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { sanitizeSearchInput } from '@/lib/sanitize-search'
 import { Search, Stethoscope, UserPlus, ChevronRight } from 'lucide-react'
 
 export default function OPDIndexPage() {
@@ -21,10 +22,11 @@ export default function OPDIndexPage() {
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setLoading(true)
+      const safe = sanitizeSearchInput(val.trim())
       const { data } = await supabase
         .from('patients')
         .select('id, mrn, full_name, age, gender, mobile')
-        .or(`full_name.ilike.%${val}%,mobile.ilike.%${val}%,mrn.ilike.%${val}%`)
+        .or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
         .limit(10)
       setResults(data || [])
       setSearched(true)
