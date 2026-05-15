@@ -36,6 +36,7 @@ import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout'; 
 import VoiceAssistant from '../voice/VoiceAssistant';
+import KeyboardShortcuts from '../shared/KeyboardShortcuts';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -316,6 +317,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
        {/* ── Uncomment these when the files exist: ────────── */}
       <SessionTimeout />
       <VoiceAssistant />
+      <KeyboardShortcuts />
 
 
       </div>
