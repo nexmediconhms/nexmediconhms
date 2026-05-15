@@ -24,41 +24,47 @@ export default function PatientsPage() {
   const [bgFilter,     setBgFilter]     = useState('')
   const [loading,      setLoading]      = useState(true)
   const [showFilters,  setShowFilters]  = useState(false)
+  const [page,         setPage]         = useState(0) // 0-indexed page number
+  const PAGE_SIZE = 50
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { loadPatients() }, [])
 
-  async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
+  async function loadPatients(q = '', gender = genderFilter, bg = bgFilter, pageNum = 0) {
     setLoading(true)
-    let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
+    let req = supabase.from('patients').select('*', { count: 'exact' }).order('created_at', { ascending: false })
 
     if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
     if (gender)   req = req.eq('gender', gender)
     if (bg)       req = req.eq('blood_group', bg)
 
-    const { data } = await req.limit(100)
+    // Server-side pagination: fetch only one page of results
+    const from = pageNum * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    const { data, count } = await req.range(from, to)
     setPatients(data || [])
-    setTotalCount(data?.length || 0)
+    setTotalCount(count ?? (data?.length || 0))
+    setPage(pageNum)
     setLoading(false)
   }
 
   function handleSearch(val: string) {
     setQuery(val)
     if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => loadPatients(val, genderFilter, bgFilter), 300)
+    searchTimer.current = setTimeout(() => loadPatients(val, genderFilter, bgFilter, 0), 300)
   }
 
   function applyFilter(gender: string, bg: string) {
     setGenderFilter(gender)
     setBgFilter(bg)
-    loadPatients(query, gender, bg)
+    loadPatients(query, gender, bg, 0)
   }
 
   function clearFilters() {
     setGenderFilter('')
     setBgFilter('')
-    loadPatients(query, '', '')
+    loadPatients(query, '', '', 0)
   }
 
   // Fix 1: explicit boolean — prevents TS errors when used in className ternary and JSX conditions
@@ -271,9 +277,36 @@ export default function PatientsPage() {
           })}
         </div>
 
-        {totalCount >= 100 && (
+        {/* Pagination controls */}
+        {totalCount > PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <p className="text-xs text-gray-500">
+              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount.toLocaleString('en-IN')} patients
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => loadPatients(query, genderFilter, bgFilter, page - 1)}
+                disabled={page === 0 || loading}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Previous
+              </button>
+              <span className="px-3 py-1.5 text-xs text-gray-500">
+                Page {page + 1} of {Math.ceil(totalCount / PAGE_SIZE)}
+              </span>
+              <button
+                onClick={() => loadPatients(query, genderFilter, bgFilter, page + 1)}
+                disabled={(page + 1) * PAGE_SIZE >= totalCount || loading}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+        {totalCount > 0 && totalCount <= PAGE_SIZE && (
           <p className="text-center text-xs text-gray-400 mt-4">
-            Showing first 100 results. Use search to find specific patients.
+            Showing all {totalCount} patient{totalCount !== 1 ? 's' : ''}.
           </p>
         )}
 
