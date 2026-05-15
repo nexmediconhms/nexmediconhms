@@ -399,40 +399,6 @@ function NewConsultationContent() {
 
     // // Check if an encounter already exists for this patient today
     const today = new Date().toISOString().split('T')[0]
-    // const { data: existing } = await supabase
-    //   .from('encounters')
-    //   .select('id')
-    //   .eq('patient_id', patientId)
-    //   .eq('encounter_date', today)
-    //   .limit(1)
-    //   .maybeSingle()
-
-    // if (existing?.id) {
-    //   // Encounter already exists — update it instead of creating a duplicate
-    //   setSaving(false)
-    //   // Check if an encounter already exists for this patient today
-    //   const today = new Date().toISOString().split('T')[0]
-    //   const { data: existing } = await supabase
-    //     .from('encounters')
-    //     .select('id')
-    //     .eq('patient_id', patientId)
-    //     .eq('encounter_date', today)
-    //     .limit(1)
-    //     .maybeSingle()
-
-    //   if (existing?.id) {
-    //     // Encounter already exists — update it instead of creating a duplicate
-    //     setSaving(false)
-    //     const confirmUpdate = window.confirm(
-    //       'An OPD encounter for this patient already exists today.\n\nClick OK to update the existing encounter, or Cancel to go back.'
-    //     )
-    //     if (!confirmUpdate) return
-    //     // Redirect to edit the existing encounter
-    //     router.push(`/opd/${existing.id}/edit`)
-    //     return
-    //   }
-    //}
-    // ✅ FIXED: Allow multiple consultations in one day//')[0]
 
     // Optional: check but DO NOT block
     try {
@@ -461,7 +427,7 @@ function NewConsultationContent() {
       .insert({
         patient_id: patientId,
         encounter_type: 'OPD',
-        encounter_date: new Date().toISOString().split('T')[0],
+        encounter_date: today,
         chief_complaint: chiefComplaint.trim() || null,
         pulse: vitals.pulse ? parseInt(vitals.pulse) : null,
         bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : null,

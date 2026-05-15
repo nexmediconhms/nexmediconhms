@@ -23,18 +23,23 @@ function nowISO() {
 }
 
 /**
- * Cancels any ACTIVE appointment for a patient.
- * Active = scheduled/confirmed (same as DB constraint).
+ * Cancels only FOLLOW-UP related active appointments.
+ * DOES NOT cancel manual visits.
  */
 export async function cancelActiveAppointment(patientId: string) {
   const { error } = await supabase
     .from('appointments')
-    .update({ status: 'cancelled', updated_at: nowISO() })
+    .update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString()
+    })
     .eq('patient_id', patientId)
     .in('status', ['scheduled', 'confirmed'])
+    .eq('type', 'follow_up') // ✅ IMPORTANT FIX
 
   if (error) throw error
 }
+
 
 /**
  * Create a MANUAL appointment.
@@ -110,6 +115,16 @@ export async function createFollowUp(
     .eq('status', 'pending')
     .maybeSingle()
 
+  // ✅ Prevent duplicate same-date follow-ups
+  if (
+    existingFu &&
+    existingFu.recommended_date === followUpDate
+  ) {
+    return {
+      id: existingFu.id,
+      linked_appointment_id: existingFu.linked_appointment_id
+    }
+  }
   if (fuFindErr) throw fuFindErr
 
   const notes =
@@ -142,7 +157,7 @@ export async function createFollowUp(
         patient_name: meta?.patientName ?? '',
         mrn: meta?.mrn ?? '',
         mobile: meta?.mobile ?? '',
-        date: followUpDate,
+        date: new Date(followUpDate).toISOString().split('T')[0],
         time: '10:00',
         type: 'follow_up',
         notes,
@@ -190,7 +205,7 @@ export async function createFollowUp(
       patient_name: meta?.patientName ?? '',
       mrn: meta?.mrn ?? '',
       mobile: meta?.mobile ?? '',
-      date: followUpDate,
+      date: new Date(followUpDate).toISOString().split('T')[0],
       time: '10:00',
       type: 'follow_up',
       notes,
@@ -217,18 +232,23 @@ export async function createFollowUp(
 }
 
 /**
- * Visit completion cleanup (you already wired this in prescription save):
- * - fulfil pending follow-ups
- * - cancel active appointments
+ * Visit completion cleanup
+ * ✅ Only completes follow-up if it's future or same day with visit logic
  */
 export async function handleVisitCompletion(patientId: string) {
+
+  const today = new Date().toISOString().split('T')[0]
+
+  // ✅ Only complete FOLLOW-UP if scheduled for today or before
   const { error: fuErr } = await supabase
     .from('follow_ups')
     .update({ status: 'fulfilled' })
     .eq('patient_id', patientId)
     .eq('status', 'pending')
+    .lte('recommended_date', today)   // ✅ CRITICAL FIX
 
   if (fuErr) throw fuErr
 
+  // ✅ Cancel only follow-up appointments (safe)
   await cancelActiveAppointment(patientId)
 }

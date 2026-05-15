@@ -76,7 +76,7 @@ const VAX_SCHEDULE: { name: string; days: number }[] = [
 
 export interface ReminderItem {
   id:            string
-  type:          'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  type:          'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
   priority:      'urgent' | 'today' | 'tomorrow' | 'upcoming'
   patientId:     string
   patientName:   string

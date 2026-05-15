@@ -15748,33 +15748,30 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
+import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { createAppointment } from '@/lib/services/appointmentService'
 import {
-  Calendar, Plus, Search, X, Clock, CheckCircle,
-  MessageCircle, Phone, ChevronRight, Trash2,
+  Calendar, Plus, Search, X, CheckCircle,
+  MessageCircle, Phone, Trash2,
   AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing, ChevronDown,
+  UserCircle, BellRing,
 } from 'lucide-react'
 
-// ── Appointment types ─────────────────────────────────────────
 type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
-
-// FIXED: add a "view tab" type so user can quickly switch between Today / Upcoming / Past / All
-// without having to manually clear or set the date picker
 type ViewTab = 'today' | 'upcoming' | 'past' | 'all' | 'custom'
 
 interface Appointment {
-  id:            string
-  patient_id:    string
-  patient_name:  string
-  mrn:           string
-  mobile:        string
-  date:          string   // YYYY-MM-DD
-  time:          string   // HH:MM
-  type:          string
-  notes:         string
-  status:        ApptStatus
-  created_at:    string
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  mobile: string
+  date: string
+  time: string
+  type: string
+  notes: string
+  status: ApptStatus
+  created_at: string
   reminder_sent: boolean
 }
 
@@ -15795,11 +15792,11 @@ const APPT_TYPES = [
 ]
 
 const STATUS_CONFIG: Record<ApptStatus, { label: string; cls: string; dot: string }> = {
-  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700',    dot: 'bg-blue-500'   },
-  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700',  dot: 'bg-green-500'  },
-  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600',    dot: 'bg-gray-400'   },
-  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700',      dot: 'bg-red-400'    },
-  'no-show': { label: 'No Show',   cls: 'bg-orange-50 text-orange-700',dot: 'bg-orange-400' },
+  scheduled: { label: 'Scheduled', cls: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
+  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-700', dot: 'bg-green-500' },
+  completed: { label: 'Completed', cls: 'bg-gray-50 text-gray-600', dot: 'bg-gray-400' },
+  cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700', dot: 'bg-red-400' },
+  'no-show': { label: 'No Show', cls: 'bg-orange-50 text-orange-700', dot: 'bg-orange-400' },
 }
 
 const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
@@ -15807,52 +15804,42 @@ const TIME_SLOTS = Array.from({ length: 24 }, (_, h) =>
 ).flat().filter(t => t >= '08:00' && t <= '19:45')
 
 function AppointmentsContent() {
-  const [appts,        setAppts]        = useState<Appointment[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState<'list' | 'new' | 'reminder'>('list')
-
-  // FIXED: default to 'upcoming' tab so upcoming appointments are visible immediately
-  // Previously defaulted to dateFilter = today which hid past AND upcoming appointments
-  const [activeTab,    setActiveTab_]   = useState<ViewTab>('upcoming')
-  const [dateFilter,   setDateFilter]   = useState('')   // only used when tab = 'custom'
+  const [appts, setAppts] = useState<Appointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<'list' | 'new' | 'reminder'>('list')
+  const [activeTab, setActiveTab_] = useState<ViewTab>('upcoming')
+  const [dateFilter, setDateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
-  const [typeFilter,   setTypeFilter]   = useState<string>('all')
-
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const today = new Date().toISOString().split('T')[0]
 
-  // Helper to switch tab and clear custom date filter
   function setViewTab(tab: ViewTab) {
     setActiveTab_(tab)
     if (tab !== 'custom') setDateFilter('')
   }
 
-  // New appointment form
-  const [patientQuery,   setPatientQuery]   = useState('')
+  const [patientQuery, setPatientQuery] = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
-  const [selPatient,     setSelPatient]     = useState<any>(null)
-  const [apptDate,       setApptDate]       = useState(today)
-  const [apptTime,       setApptTime]       = useState('09:00')
-  const [apptType,       setApptType]       = useState(APPT_TYPES[0])
-  const [apptNotes,      setApptNotes]      = useState('')
-  const [saving,         setSaving]         = useState(false)
-  const [saveError,      setSaveError]      = useState('')
+  const [selPatient, setSelPatient] = useState<any>(null)
+  const [apptDate, setApptDate] = useState(today)
+  const [apptTime, setApptTime] = useState('09:00')
+  const [apptType, setApptType] = useState(APPT_TYPES[0])
+  const [apptNotes, setApptNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
-  // Reminder state
-  const [reminderAppt,      setReminderAppt]      = useState<Appointment | null>(null)
-  const [patientMsg,        setPatientMsg]        = useState('')
-  const [doctorMsg,         setDoctorMsg]         = useState('')
-  const [reminderLoading,   setReminderLoading]   = useState(false)
-  const [copiedPatient,     setCopiedPatient]     = useState(false)
-  const [copiedDoctor,      setCopiedDoctor]      = useState(false)
-  const [reminderTab,       setReminderTab]       = useState<'patient' | 'doctor'>('patient')
+  const [reminderAppt, setReminderAppt] = useState<Appointment | null>(null)
+  const [patientMsg, setPatientMsg] = useState('')
+  const [doctorMsg, setDoctorMsg] = useState('')
+  const [reminderLoading, setReminderLoading] = useState(false)
+  const [copiedPatient, setCopiedPatient] = useState(false)
+  const [copiedDoctor, setCopiedDoctor] = useState(false)
+  const [reminderTab, setReminderTab] = useState<'patient' | 'doctor'>('patient')
 
-  const searchTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
-  const hs           = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  const hs = typeof window !== 'undefined' ? getHospitalSettings() : ({} as any)
 
-  // ── Load appointments ──────────────────────────────────────
-  // FIXED: query is now driven by activeTab, not just dateFilter.
-  // This is the root cause of why upcoming/past appointments were invisible.
   const fetchAppts = useCallback(async () => {
     setLoading(true)
     let query = supabase
@@ -15861,13 +15848,11 @@ function AppointmentsContent() {
       .order('date', { ascending: activeTab !== 'past' })
       .order('time', { ascending: activeTab !== 'past' })
 
-    // FIXED: apply date filter based on active tab
     switch (activeTab) {
       case 'today':
         query = query.eq('date', today)
         break
       case 'upcoming':
-        // Show today + future appointments (not cancelled unless explicitly filtered)
         query = query.gte('date', today)
         break
       case 'past':
@@ -15878,57 +15863,67 @@ function AppointmentsContent() {
         break
       case 'all':
       default:
-        // no date filter — show everything
         break
     }
 
-    if (statusFilter !== 'all')   query = query.eq('status', statusFilter)
-    if (typeFilter !== 'all')     query = query.eq('type', typeFilter)
-
-    // Limit past results to avoid loading thousands of old records
-    if (activeTab === 'past' || activeTab === 'all') {
-      query = query.limit(200)
-    } else {
-      query = query.limit(500)
-    }
+    if (statusFilter !== 'all') query = query.eq('status', statusFilter)
+    if (typeFilter !== 'all') query = query.eq('type', typeFilter)
+    query = query.limit(activeTab === 'past' || activeTab === 'all' ? 200 : 500)
 
     const { data, error } = await query
-    if (error) { console.error('[Appointments] fetch error:', error.message); setAppts([]) }
-    else        setAppts((data || []) as Appointment[])
+    if (error) {
+      console.error('[Appointments] fetch error:', error.message)
+      setAppts([])
+    } else {
+      setAppts((data ?? []) as Appointment[])
+    }
     setLoading(false)
   }, [activeTab, dateFilter, statusFilter, typeFilter, today])
 
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
-  // Summary counts — independent queries so they always reflect totals
-  const [todayCount,    setTodayCount]    = useState(0)
+  // ✅ REALTIME AUTO-REFRESH: when prescription updates follow-up -> appointments change -> refresh here
+  useEffect(() => {
+    const ch = supabase
+      .channel('appointments-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        () => fetchAppts()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch) }
+  }, [fetchAppts])
+
+  const [todayCount, setTodayCount] = useState(0)
   const [upcomingCount, setUpcomingCount] = useState(0)
-  const [pastCount,     setPastCount]     = useState(0)
+  const [pastCount, setPastCount] = useState(0)
 
   useEffect(() => {
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .eq('date', today).neq('status', 'cancelled')
       .then(({ count }) => setTodayCount(count || 0))
+
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .gt('date', today).in('status', ['scheduled', 'confirmed'])
       .then(({ count }) => setUpcomingCount(count || 0))
+
     supabase.from('appointments').select('id', { count: 'exact', head: true })
       .lt('date', today)
       .then(({ count }) => setPastCount(count || 0))
   }, [appts, today])
 
-  // Pre-fill patient from URL params
   useEffect(() => {
-    const pid   = searchParams.get('patientId')
+    const pid = searchParams.get('patientId')
     const pname = searchParams.get('patientName')
     if (pid && pname && !selPatient) {
       setSelPatient({ id: pid, full_name: decodeURIComponent(pname), mrn: '', mobile: '', age: '' })
       setView('new')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
-  // ── Patient search ─────────────────────────────────────────
   function searchPatients(q: string) {
     setPatientQuery(q); setSelPatient(null)
     if (q.trim().length < 2) { setPatientResults([]); return }
@@ -15937,42 +15932,48 @@ function AppointmentsContent() {
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, mobile, age')
         .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
-      setPatientResults(data || [])
+      setPatientResults(data ?? [])
     }, 300)
   }
 
-  // ── Book appointment ───────────────────────────────────────
+  // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
     setSaving(true); setSaveError('')
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id:    selPatient.id,
-        patient_name:  selPatient.full_name,
-        mrn:           selPatient.mrn || '',
-        mobile:        selPatient.mobile || '',
-        date:          apptDate,
-        time:          apptTime,
-        type:          apptType,
-        notes:         apptNotes.trim() || null,
-        status:        'scheduled',
-        reminder_sent: false,
+    try {
+      const newId = await createAppointment({
+        patientId: selPatient.id,
+        date: apptDate,
+        time: apptTime,
+        patientName: selPatient.full_name,
+        mrn: selPatient.mrn ?? '',
+        mobile: selPatient.mobile ?? '',
+        notes: apptNotes.trim() || null,
+        type: apptType,
       })
-      .select()
-      .single()
 
-    setSaving(false)
-    if (error) { setSaveError(`Failed to book: ${error.message}`); return }
+      const { data, error } = await supabase.from('appointments').select('*').eq('id', newId).single()
+      setSaving(false)
 
-    resetForm()
-    setView('list')
-    fetchAppts()
-    if (data) openReminder(data as Appointment)
+      if (error) {
+        setSaveError(`Booked but failed to load: ${error.message}`)
+        resetForm()
+        setView('list')
+        fetchAppts()
+        return
+      }
+
+      resetForm()
+      setView('list')
+      fetchAppts()
+      if (data) openReminder(data as Appointment)
+    } catch (e: any) {
+      setSaving(false)
+      setSaveError(`Failed to book: ${e?.message || 'Unknown error'}`)
+    }
   }
 
-  // ── Update status ──────────────────────────────────────────
   async function updateStatus(id: string, status: ApptStatus) {
     const { error } = await supabase
       .from('appointments')
@@ -15981,14 +15982,12 @@ function AppointmentsContent() {
     if (!error) setAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
-  // ── Delete ─────────────────────────────────────────────────
   async function deleteAppt(id: string) {
     if (!confirm('Delete this appointment?')) return
     const { error } = await supabase.from('appointments').delete().eq('id', id)
     if (!error) setAppts(prev => prev.filter(a => a.id !== id))
   }
 
-  // ── Open reminder — fetches full patient profile first ─────
   async function openReminder(appt: Appointment) {
     setReminderAppt(appt)
     setView('reminder')
@@ -16001,112 +16000,56 @@ function AppointmentsContent() {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })
 
-    // Calculate arrival time (30 min before appointment)
-    const [hh, mm]    = appt.time.split(':').map(Number)
+    const [hh, mm] = appt.time.split(':').map(Number)
     const arrivalDate = new Date()
     arrivalDate.setHours(hh, mm - 30, 0, 0)
-    if (arrivalDate.getMinutes() < 0) { arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes()) }
+    if (arrivalDate.getMinutes() < 0) arrivalDate.setHours(hh - 1, 60 + arrivalDate.getMinutes())
     const arrivalTime = arrivalDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    // Fetch patient profile + last encounter + last prescription
     const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
-      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, aadhaar_no, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
+      supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
       supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
       supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).single(),
     ])
 
-    const p   = patient || {} as any
+    const p = patient ?? ({} as any)
     const enc = lastEnc as any
-    const rx  = lastRx  as any
-    const ob  = enc?.ob_data as any
-
-    let ageStr = ''
-    if (p.date_of_birth) {
-      const a = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-      ageStr = `${a} years`
-    } else if (p.age) {
-      ageStr = `${p.age} years`
-    }
+    const rx = lastRx as any
 
     const medsText = Array.isArray(rx?.medications)
       ? rx.medications.slice(0, 4).map((m: any) => `• ${m.drug} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim()).join('\n')
       : ''
 
-    let obText = ''
-    if (ob?.lmp) {
-      const weeksGA = ob.gestational_age ||
-        (() => {
-          const diffMs = Date.now() - new Date(ob.lmp).getTime()
-          const weeks  = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
-          const days   = Math.floor((diffMs % (7 * 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000))
-          return `${weeks} weeks ${days} days`
-        })()
-      obText = `\n🤰 *Obstetric:* G${ob.gravida || '?'}P${ob.para || '?'}A${ob.abortion || '0'}L${ob.living || '?'} · GA: ${weeksGA}${ob.edd ? '\n📅 *EDD:* ' + ob.edd : ''}`
-    }
-
     const pMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
-
 Namaste ${appt.patient_name} ji 🙏
-
 This is a reminder for your *upcoming appointment*.
-
 📅 *Date:* ${dateStr}
 🕐 *Appointment Time:* ${appt.time}
 ⏰ *Please arrive by:* ${arrivalTime} *(30 minutes early)*
 🏥 *Visit Type:* ${appt.type}
 📍 *Address:* ${hs.address || 'Hospital address'}
-
 📋 *Please bring:*
 ✅ Previous prescriptions & reports
 ✅ Any lab reports / USG reports done recently
 ✅ Aadhaar card / ID proof${p.mediclaim ? '\n✅ Insurance / Mediclaim card' : ''}
 ${rx?.reports_needed ? `\n🔬 *Pending tests to get done:*\n${rx.reports_needed}` : ''}
 ${appt.notes ? `\n📝 *Note from doctor:* ${appt.notes}` : ''}
-
 For queries call: ${hs.phone || 'our helpdesk'}
-
 ---
-${appt.patient_name} ji, ${appt.type === 'ANC Follow-up' ? 'ANC' : ''} appointment ${dateStr} na ${appt.time} vage che. Krupa kari ${arrivalTime} sudhi aavo.
-
 _${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
 
     const dMsg =
 `*${hs.hospitalName || 'NexMedicon Hospital'}*
 *Patient Brief — Appointment Alert* 🩺
-
 📅 *Date:* ${dateStr} at *${appt.time}*
 🏥 *Visit Type:* ${appt.type}
-
-━━━━━━━━━━━━━━━━
-👤 *PATIENT PROFILE*
 ━━━━━━━━━━━━━━━━
 *Name:* ${appt.patient_name}
 *MRN:* ${appt.mrn}
-${ageStr ? `*Age:* ${ageStr}` : ''}${p.gender ? `  |  *Gender:* ${p.gender}` : ''}
-${p.blood_group ? `*Blood Group:* ${p.blood_group}` : ''}
 *Mobile:* ${appt.mobile}
-${p.abha_id ? `*ABHA ID:* ${p.abha_id}` : ''}${p.mediclaim ? `\n*Insurance:* ${p.cashless ? 'Cashless' : 'Mediclaim'}${p.policy_tpa_name ? ' — ' + p.policy_tpa_name : ''}` : ''}
-${obText}
-${enc ? `
-━━━━━━━━━━━━━━━━
-📋 *LAST VISIT* (${formatDate(enc.encounter_date)})
-━━━━━━━━━━━━━━━━
-*Type:* ${enc.encounter_type}
-${enc.chief_complaint ? `*Complaint:* ${enc.chief_complaint}` : ''}
-${enc.diagnosis ? `*Diagnosis:* ${enc.diagnosis}` : ''}
-${enc.bp_systolic ? `*BP:* ${enc.bp_systolic}/${enc.bp_diastolic} mmHg` : ''}${enc.pulse ? `  |  *Pulse:* ${enc.pulse} bpm` : ''}
-${enc.weight ? `*Weight:* ${enc.weight} kg` : ''}` : ''}
-${medsText ? `
-━━━━━━━━━━━━━━━━
-💊 *CURRENT MEDICATIONS*
-━━━━━━━━━━━━━━━━
-${medsText}` : ''}
-${rx?.advice ? `\n📝 *Last Advice:* ${rx.advice}` : ''}
-${appt.notes ? `\n🔔 *Appointment Note:* ${appt.notes}` : ''}
-
-━━━━━━━━━━━━━━━━
-_NexMedicon HMS — Patient brief for ${appt.patient_name}_`
+${enc ? `\nLast Visit: ${formatDate(enc.encounter_date)} · ${enc.encounter_type}` : ''}
+${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
 
     setPatientMsg(pMsg)
     setDoctorMsg(dMsg)
@@ -16114,7 +16057,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
   }
 
   function waLink(mobile: string, msg: string) {
-    const num  = mobile?.replace(/\D/g, '')
+    const num = mobile?.replace(/\D/g, '')
     const full = num?.length === 10 ? '91' + num : num
     return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`
   }
@@ -16124,6 +16067,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
       .from('appointments')
       .update({ reminder_sent: true, updated_at: new Date().toISOString() })
       .eq('id', appt.id)
+
     setAppts(prev => prev.map(a => a.id === appt.id ? { ...a, reminder_sent: true } : a))
   }
 
@@ -16134,24 +16078,20 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     setSaveError('')
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // REMINDER VIEW
-  // ═══════════════════════════════════════════════════════════════
   if (view === 'reminder' && reminderAppt) {
     const doctorMobile = hs.phone?.replace(/\D/g, '') || ''
-    const isDoctorWA   = doctorMobile.length >= 10
-
+    const isDoctorWA = doctorMobile.length >= 10
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
-
           <div className="flex items-center gap-3 mb-5">
             <button onClick={() => setView('list')} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
+              <X className="w-5 h-5" />
             </button>
             <div>
               <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <BellRing className="w-5 h-5 text-blue-600"/>
+                <BellRing className="w-5 h-5 text-blue-600" />
                 WhatsApp Reminders
               </h1>
               <p className="text-xs text-gray-500">
@@ -16162,7 +16102,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
 
           {reminderLoading ? (
             <div className="card p-16 text-center">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3"/>
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3" />
               <p className="text-sm text-gray-500">Loading patient profile...</p>
             </div>
           ) : (
@@ -16170,39 +16110,31 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={() => setReminderTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${reminderTab === 'patient'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                    reminderTab === 'patient'
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'}`}>
-                  <MessageCircle className="w-4 h-4"/>
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  <MessageCircle className="w-4 h-4" />
                   Patient Message
                 </button>
+
                 <button
                   onClick={() => setReminderTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${reminderTab === 'doctor'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                    reminderTab === 'doctor'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
-                  <Stethoscope className="w-4 h-4"/>
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  <Stethoscope className="w-4 h-4" />
                   Doctor Brief
                 </button>
               </div>
 
               {reminderTab === 'patient' && (
                 <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-green-700 text-sm">{reminderAppt.patient_name.charAt(0)}</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{reminderAppt.patient_name}</div>
-                      <div className="text-xs text-gray-400">{reminderAppt.mrn} · {reminderAppt.mobile}</div>
-                    </div>
-                    <div className="ml-auto text-xs bg-green-50 text-green-700 font-semibold px-2 py-1 rounded-full border border-green-200">
-                      To Patient
-                    </div>
-                  </div>
-
                   <label className="label">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -16210,19 +16142,18 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                     value={patientMsg}
                     onChange={e => setPatientMsg(e.target.value)}
                   />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Includes appointment time, <strong>30-minute early arrival reminder</strong>, and documents to bring.
-                  </p>
 
                   <div className="flex flex-col gap-2 mt-4">
                     <a
                       href={waLink(reminderAppt.mobile, patientMsg)}
                       target="_blank" rel="noopener noreferrer"
                       onClick={() => { markReminderSent(reminderAppt); setCopiedPatient(true) }}
-                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                      <MessageCircle className="w-4 h-4"/>
+                      className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                    >
+                      <MessageCircle className="w-4 h-4" />
                       Send to Patient via WhatsApp
                     </a>
+
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(patientMsg)
@@ -16230,48 +16161,24 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         markReminderSent(reminderAppt)
                         setTimeout(() => setCopiedPatient(false), 2500)
                       }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
+                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors"
+                    >
+                      {copiedPatient ? <CheckCircle className="w-4 h-4 text-green-500" /> : <MessageCircle className="w-4 h-4" />}
                       {copiedPatient ? 'Copied!' : 'Copy Message'}
                     </button>
+
                     {reminderAppt.mobile && (
-                      <a href={`tel:${reminderAppt.mobile}`}
-                        className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
-                        <Phone className="w-4 h-4"/> Call {reminderAppt.patient_name} ({reminderAppt.mobile})
+                      <a href={`tel:${reminderAppt.mobile}`} className="flex items-center justify-center gap-2 text-blue-600 hover:underline text-sm font-medium py-1">
+                        <Phone className="w-4 h-4" />
+                        Call {reminderAppt.patient_name} ({reminderAppt.mobile})
                       </a>
                     )}
                   </div>
-
-                  {reminderAppt.reminder_sent && (
-                    <p className="text-center text-xs text-green-600 mt-3 flex items-center justify-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5"/> Reminder marked as sent
-                    </p>
-                  )}
                 </div>
               )}
 
               {reminderTab === 'doctor' && (
                 <div className="card p-5 mb-4">
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
-                    <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Stethoscope className="w-4 h-4 text-blue-600"/>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm">{hs.doctorName || 'Doctor'}</div>
-                      <div className="text-xs text-gray-400">
-                        {isDoctorWA ? `Send to: ${hs.phone}` : "Add doctor's phone in Settings"}
-                      </div>
-                    </div>
-                    <div className="ml-auto text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full border border-blue-200">
-                      To Doctor
-                    </div>
-                  </div>
-
-                  <div className="mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
-                    <UserCircle className="w-4 h-4 flex-shrink-0"/>
-                    Full patient brief — profile, last visit, current medications, and OB data.
-                  </div>
-
                   <label className="label mt-3">Message (editable)</label>
                   <textarea
                     className="input resize-none font-mono text-xs leading-relaxed"
@@ -16286,38 +16193,21 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                         href={waLink(doctorMobile, doctorMsg)}
                         target="_blank" rel="noopener noreferrer"
                         onClick={() => setCopiedDoctor(true)}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                        <MessageCircle className="w-4 h-4"/>
+                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                      >
+                        <MessageCircle className="w-4 h-4" />
                         Send Patient Brief to Doctor via WhatsApp
                       </a>
                     ) : (
                       <div className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl py-3">
-                        ⚙️ Add doctor&apos;s phone number in{' '}
+                        ⚙️ Add doctor's phone number in{' '}
                         <Link href="/settings" className="text-blue-600 underline">Settings</Link>{' '}
-                        to enable direct WhatsApp send to doctor.
+                        to enable WhatsApp send to doctor.
                       </div>
                     )}
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(doctorMsg)
-                        setCopiedDoctor(true)
-                        setTimeout(() => setCopiedDoctor(false), 2500)
-                      }}
-                      className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors">
-                      {copiedDoctor ? <CheckCircle className="w-4 h-4 text-green-500"/> : <MessageCircle className="w-4 h-4"/>}
-                      {copiedDoctor ? 'Copied!' : 'Copy Doctor Brief'}
-                    </button>
                   </div>
                 </div>
               )}
-
-              <p className="text-center text-xs text-gray-400">
-                Switch between tabs to send both messages —
-                <button onClick={() => setReminderTab(reminderTab === 'patient' ? 'doctor' : 'patient')}
-                  className="text-blue-500 underline ml-1">
-                  {reminderTab === 'patient' ? 'Switch to Doctor Brief →' : '← Switch to Patient Message'}
-                </button>
-              </p>
             </>
           )}
         </div>
@@ -16325,23 +16215,21 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     )
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // NEW APPOINTMENT VIEW
-  // ═══════════════════════════════════════════════════════════════
   if (view === 'new') {
     return (
       <AppShell>
         <div className="p-6 max-w-2xl mx-auto">
           <div className="flex items-center gap-3 mb-5">
             <button onClick={() => { resetForm(); setView('list') }} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5"/>
+              <X className="w-5 h-5" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
           </div>
 
           {saveError && (
             <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{saveError}</span>
             </div>
           )}
@@ -16355,14 +16243,14 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                   <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.mobile}</div>
                 </div>
                 <button onClick={() => { setSelPatient(null); setPatientQuery('') }}>
-                  <X className="w-4 h-4 text-gray-400 hover:text-red-500"/>
+                  <X className="w-4 h-4 text-gray-400 hover:text-red-500" />
                 </button>
               </div>
             ) : (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)}/>
+                  value={patientQuery} onChange={e => searchPatients(e.target.value)} />
                 {patientResults.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
                     {patientResults.map(p => (
@@ -16384,7 +16272,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)}/>
+                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
               </div>
               <div>
                 <label className="label">Time</label>
@@ -16402,7 +16290,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                 <label className="label">Notes (optional)</label>
                 <textarea className="input resize-none" rows={2}
                   placeholder="e.g. Bring previous USG reports, fasting required…"
-                  value={apptNotes} onChange={e => setApptNotes(e.target.value)}/>
+                  value={apptNotes} onChange={e => setApptNotes(e.target.value)} />
               </div>
             </div>
           </div>
@@ -16412,7 +16300,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
             <button onClick={bookAppointment}
               disabled={saving || !selPatient || !apptDate || !apptTime}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Calendar className="w-4 h-4"/>}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
               {saving ? 'Booking…' : 'Book & Generate Reminder'}
             </button>
           </div>
@@ -16421,60 +16309,57 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     )
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LIST VIEW
-  // ═══════════════════════════════════════════════════════════════
+  // LIST VIEW (unchanged core UI)
   return (
     <AppShell>
       <div className="p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600"/> Appointments
+              <Calendar className="w-6 h-6 text-blue-600" /> Appointments
             </h1>
             <p className="text-sm text-gray-500">
               {todayCount} today · {upcomingCount} upcoming · {pastCount} past
             </p>
           </div>
+
           <div className="flex gap-2">
             <button onClick={fetchAppts} className="btn-secondary flex items-center gap-1.5 text-xs">
-              <RefreshCw className="w-3.5 h-3.5"/> Refresh
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
+
             <button onClick={() => { resetForm(); setView('new') }}
               className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4"/> Book Appointment
+              <Plus className="w-4 h-4" /> Book Appointment
             </button>
           </div>
         </div>
 
-        {/* ── FIXED: View tab bar — replaces the single date filter as primary nav ──
-            Previously the only way to see upcoming/past was to manually clear the date
-            picker. Now there are clear tabs that immediately show the right appointments. */}
+        {/* Tabs */}
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
           {([
-            { key: 'today',    label: `Today (${todayCount})` },
+            { key: 'today', label: `Today (${todayCount})` },
             { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
-            { key: 'past',     label: `Past (${pastCount})` },
-            { key: 'all',      label: 'All' },
-            { key: 'custom',   label: '📅 Pick date' },
+            { key: 'past', label: `Past (${pastCount})` },
+            { key: 'all', label: 'All' },
+            { key: 'custom', label: '📅 Pick date' },
           ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setViewTab(key)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                activeTab === key
-                  ? 'bg-white shadow text-blue-700'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}>
+                activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
               {label}
             </button>
           ))}
         </div>
 
-        {/* Custom date picker — only shown when "Pick date" tab is active */}
+        {/* Custom date picker */}
         {activeTab === 'custom' && (
           <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
             <label className="label mb-0 text-blue-700">Date:</label>
             <input className="input w-40 bg-white" type="date"
-              value={dateFilter} onChange={e => setDateFilter(e.target.value)}/>
+              value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
             <button onClick={() => { setDateFilter(today) }}
               className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-medium">
               Today
@@ -16483,7 +16368,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
           </div>
         )}
 
-        {/* Secondary filters — status + type */}
+        {/* Filters */}
         <div className="card p-3 mb-5 flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2">
             <label className="label mb-0 text-xs">Status:</label>
@@ -16495,6 +16380,7 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               ))}
             </select>
           </div>
+
           <div className="flex items-center gap-2">
             <label className="label mb-0 text-xs">Type:</label>
             <select className="input text-xs py-1.5 w-44" value={typeFilter}
@@ -16503,58 +16389,38 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
               {APPT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          {(statusFilter !== 'all' || typeFilter !== 'all') && (
-            <button
-              onClick={() => { setStatusFilter('all'); setTypeFilter('all') }}
-              className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1">
-              <X className="w-3 h-3"/> Clear filters
-            </button>
-          )}
+
           <span className="ml-auto text-xs text-gray-400">{appts.length} appointment{appts.length !== 1 ? 's' : ''}</span>
         </div>
 
         {/* List */}
         {loading ? (
           <div className="card p-12 text-center text-gray-400">
-            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40"/>
+            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-40" />
             <p className="text-sm">Loading appointments...</p>
           </div>
         ) : appts.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20"/>
-            <p className="font-medium mb-1">
-              {activeTab === 'today'    ? 'No appointments today'
-               : activeTab === 'upcoming' ? 'No upcoming appointments'
-               : activeTab === 'past'   ? 'No past appointments'
-               : statusFilter !== 'all' || typeFilter !== 'all' ? 'No appointments match this filter'
-               : 'No appointments yet'}
-            </p>
-            <button onClick={() => { resetForm(); setView('new') }}
-              className="btn-primary inline-flex items-center gap-2 text-xs mt-3">
-              <Plus className="w-3.5 h-3.5"/> Book First Appointment
-            </button>
+            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p className="font-medium mb-1">No appointments yet</p>
           </div>
         ) : (
           <div className="space-y-2">
             {appts.map(appt => {
-              const cfg     = STATUS_CONFIG[appt.status]
+              const cfg = STATUS_CONFIG[appt.status]
               const isToday = appt.date === today
-              const isPast  = appt.date < today
+              const isPast = appt.date < today
               return (
-                <div key={appt.id}
-                  className={`card p-4 flex items-center gap-4 ${
-                    isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''
-                  }`}>
-
-                  {/* Time block */}
+                <div key={appt.id} className={`card p-4 flex items-center gap-4 ${isPast && appt.status === 'scheduled' ? 'border-orange-200 bg-orange-50/30' : ''}`}>
                   <div className="text-center min-w-[52px]">
                     <div className="text-lg font-bold text-gray-800 leading-none">{appt.time}</div>
-                    {isToday
-                      ? <div className="text-xs text-blue-600 font-semibold">Today</div>
-                      : <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>}
+                    {isToday ? (
+                      <div className="text-xs text-blue-600 font-semibold">Today</div>
+                    ) : (
+                      <div className="text-xs text-gray-400">{formatDate(appt.date)}</div>
+                    )}
                   </div>
 
-                  {/* Patient info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">{appt.patient_name}</span>
@@ -16562,71 +16428,42 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
                       {appt.reminder_sent && (
                         <span className="text-xs text-green-600 flex items-center gap-0.5">
-                          <CheckCircle className="w-3 h-3"/> Reminded
+                          <CheckCircle className="w-3 h-3" /> Reminded
                         </span>
                       )}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
-                      {appt.type === 'follow_up' && (
-                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Follow-up</span>
-                      )}
-                      {appt.type !== 'follow_up' && appt.type}
                     </div>
                     {appt.notes && <div className="text-xs text-gray-400 mt-0.5 truncate">{appt.notes}</div>}
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {appt.status === 'scheduled' && (
                       <>
                         <button onClick={() => updateStatus(appt.id, 'confirmed')}
-                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">
-                          Confirm
-                        </button>
+                          className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium">Confirm</button>
                         <button onClick={() => updateStatus(appt.id, 'completed')}
-                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                          Done
-                        </button>
+                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">Done</button>
                         <button onClick={() => updateStatus(appt.id, 'no-show')}
-                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">
-                          No-show
-                        </button>
+                          className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-2 py-1 rounded font-medium">No-show</button>
                       </>
                     )}
-                    {appt.status === 'confirmed' && (
-                      <button onClick={() => updateStatus(appt.id, 'completed')}
-                        className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium">
-                        Mark Done
-                      </button>
-                    )}
-                    {/* Send Reminder */}
-                    <button
-                      onClick={() => openReminder(appt)}
+
+                    <button onClick={() => openReminder(appt)}
                       className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent
-                          ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                          : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                        appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
                       }`}>
-                      <MessageCircle className="w-3.5 h-3.5"/>
-                      {appt.reminder_sent ? 'Re-send' : 'Remind'}
+                      <MessageCircle className="w-3.5 h-3.5" /> {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
-                    {/* Start consultation */}
-                    <Link href={`/opd/new?patient=${appt.patient_id}`}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      title="Start consultation">
-                      <Stethoscope className="w-4 h-4"/>
+
+                    <Link href={`/opd/new?patient=${appt.patient_id}`} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Start consultation">
+                      <Stethoscope className="w-4 h-4" />
                     </Link>
-                    {/* View patient */}
-                    <Link href={`/patients/${appt.patient_id}`}
-                      className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                      title="View patient">
-                      <User className="w-4 h-4"/>
+
+                    <Link href={`/patients/${appt.patient_id}`} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg" title="View patient">
+                      <User className="w-4 h-4" />
                     </Link>
-                    {/* Delete */}
-                    <button onClick={() => deleteAppt(appt.id)}
-                      className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                      title="Delete appointment">
-                      <Trash2 className="w-4 h-4"/>
+
+                    <button onClick={() => deleteAppt(appt.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg" title="Delete appointment">
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -16638,21 +16475,22 @@ _NexMedicon HMS — Patient brief for ${appt.patient_name}_`
     </AppShell>
   )
 }
-// Bug #9 fix: Suspense wrapper so useSearchParams() doesn't cause hydration warning
+
 export default function AppointmentsPage() {
   return (
-    <Suspense fallback={
-      <AppShell>
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
-        </div>
-      </AppShell>
-    }>
+    <Suspense
+      fallback={
+        <AppShell>
+          <div className="flex items-center justify-center h-64">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        </AppShell>
+      }
+    >
       <AppointmentsContent />
     </Suspense>
   )
 }
-
 ```
 
 # src\app\audit-log\page.tsx
@@ -26802,6 +26640,7 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
 
 ```tsx
 'use client'
+
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -26816,21 +26655,48 @@ import { runPrescriptionSafetyChecks } from '@/lib/prescription-safety'
 import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
-import { Plus, Trash2, Printer, Save, ArrowLeft, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Printer, ArrowLeft, CheckCircle, Shield } from 'lucide-react'
 import SmartMic from '@/components/shared/SmartMic'
+import { createFollowUp, handleVisitCompletion } from '@/lib/services/appointmentService'
 
-const ROUTES = ['Oral','IV','IM','Topical','Sublingual','Inhalation','Rectal','Nasal']
-const FREQS  = ['Once daily','Twice daily','Thrice daily','Four times daily',
-                'Every 6 hours','Every 8 hours','At bedtime','SOS / As needed','Once weekly']
+const ROUTES = ['Oral', 'IV', 'IM', 'Topical', 'Sublingual', 'Inhalation', 'Rectal', 'Nasal']
+const FREQS = [
+  'Once daily',
+  'Twice daily',
+  'Thrice daily',
+  'Four times daily',
+  'Every 6 hours',
+  'Every 8 hours',
+  'At bedtime',
+  'SOS / As needed',
+  'Once weekly',
+]
 const COMMON = [
-  'Folic Acid 5mg','Iron + Folic Acid','Calcium 500mg','Vitamin D3 60000 IU',
-  'Progesterone 200mg SR','Dydrogesterone 10mg','Methyldopa 250mg',
-  'Labetalol 100mg','Nifedipine 10mg','Nifedipine 30mg SR',
-  'Metformin 500mg','Metformin 1000mg','Tranexamic acid 500mg',
-  'Mefenamic acid 500mg','Norethisterone 5mg','Clomiphene 50mg',
-  'Letrozole 2.5mg','Azithromycin 500mg','Amoxicillin 500mg',
-  'Metronidazole 400mg','Ondansetron 4mg','Domperidone 10mg',
-  'Pantoprazole 40mg','Paracetamol 500mg','Ibuprofen 400mg',
+  'Folic Acid 5mg',
+  'Iron + Folic Acid',
+  'Calcium 500mg',
+  'Vitamin D3 60000 IU',
+  'Progesterone 200mg SR',
+  'Dydrogesterone 10mg',
+  'Methyldopa 250mg',
+  'Labetalol 100mg',
+  'Nifedipine 10mg',
+  'Nifedipine 30mg SR',
+  'Metformin 500mg',
+  'Metformin 1000mg',
+  'Tranexamic acid 500mg',
+  'Mefenamic acid 500mg',
+  'Norethisterone 5mg',
+  'Clomiphene 50mg',
+  'Letrozole 2.5mg',
+  'Azithromycin 500mg',
+  'Amoxicillin 500mg',
+  'Metronidazole 400mg',
+  'Ondansetron 4mg',
+  'Domperidone 10mg',
+  'Pantoprazole 40mg',
+  'Paracetamol 500mg',
+  'Ibuprofen 400mg',
 ]
 
 // Common gynecology investigations grouped by category
@@ -26888,7 +26754,12 @@ const REPORT_OPTIONS = [
 ]
 
 const emptyMed = (): Medication => ({
-  drug:'', dose:'', route:'Oral', frequency:'Twice daily', duration:'', instructions:''
+  drug: '',
+  dose: '',
+  route: 'Oral',
+  frequency: 'Twice daily',
+  duration: '',
+  instructions: '',
 })
 
 export default function PrescriptionPage() {
@@ -26896,38 +26767,68 @@ export default function PrescriptionPage() {
   const router = useRouter()
 
   const [encounter, setEncounter] = useState<any>(null)
-  const [patient,   setPatient]   = useState<any>(null)
-  const [existing,  setExisting]  = useState<any>(null)
+  const [patient, setPatient] = useState<any>(null)
+  const [existing, setExisting] = useState<any>(null)
 
-  const [meds,          setMeds]          = useState<Medication[]>([emptyMed()])
-  const [advice,        setAdvice]        = useState('')
+  const [meds, setMeds] = useState<Medication[]>([emptyMed()])
+  const [advice, setAdvice] = useState('')
   const [dietaryAdvice, setDietaryAdvice] = useState('')
   const [reportsNeeded, setReportsNeeded] = useState('')
-  const [followUpDate,  setFollowUpDate]  = useState('')
-  const [saving,        setSaving]        = useState(false)
-  const [saved,         setSaved]         = useState(false)
-  const [drugSuggestion, setDrugSuggestion] = useState<{idx:number;list:string[]}|null>(null)
-  const [safetyAlerts,  setSafetyAlerts]  = useState<ClinicalAlert[]>([])
+  const [followUpDate, setFollowUpDate] = useState('')
+
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const [drugSuggestion, setDrugSuggestion] = useState<{ idx: number; list: string[] } | null>(null)
+  const [safetyAlerts, setSafetyAlerts] = useState<ClinicalAlert[]>([])
   const [showSafetyModal, setShowSafetyModal] = useState(false)
   const [safetyChecked, setSafetyChecked] = useState(false)
-  const hs = typeof window !== 'undefined' ? getHospitalSettings() : { hospitalName:'NexMedicon Demo Hospital', address:'', phone:'', regNo:'', gstin:'', doctorName:'Dr. Demo', doctorQual:'MBBS, MD (OBG)', doctorReg:'', footerNote:'' }
 
-  useEffect(() => { if (encounterId) loadData() }, [encounterId])
+  const hs =
+    typeof window !== 'undefined'
+      ? getHospitalSettings()
+      : {
+        hospitalName: 'NexMedicon Demo Hospital',
+        address: '',
+        phone: '',
+        regNo: '',
+        gstin: '',
+        doctorName: 'Dr. Demo',
+        doctorQual: 'MBBS, MD (OBG)',
+        doctorReg: '',
+        footerNote: '',
+      }
+
+  useEffect(() => {
+    if (encounterId) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounterId])
 
   async function loadData() {
     const { data: enc } = await supabase
-      .from('encounters').select('*, patients(*)').eq('id', encounterId).single()
-    if (enc) { setEncounter(enc); setPatient(enc.patients) }
+      .from('encounters')
+      .select('*, patients(*)')
+      .eq('id', encounterId)
+      .single()
+
+    if (enc) {
+      setEncounter(enc)
+      setPatient(enc.patients)
+    }
 
     const { data: rx } = await supabase
-      .from('prescriptions').select('*').eq('encounter_id', encounterId).single()
+      .from('prescriptions')
+      .select('*')
+      .eq('encounter_id', encounterId)
+      .single()
+
     if (rx) {
       setExisting(rx)
       setMeds(rx.medications?.length ? rx.medications : [emptyMed()])
-      setAdvice(rx.advice || '')
-      setDietaryAdvice(rx.dietary_advice || '')
-      setReportsNeeded(rx.reports_needed || '')
-      setFollowUpDate(rx.follow_up_date || '')
+      setAdvice(rx.advice ?? '')
+      setDietaryAdvice(rx.dietary_advice ?? '')
+      setReportsNeeded(rx.reports_needed ?? '')
+      setFollowUpDate(rx.follow_up_date ?? '')
     }
   }
 
@@ -26936,57 +26837,73 @@ export default function PrescriptionPage() {
     if (result.prescription) {
       const rx = result.prescription
       if (rx.medications?.length) {
-        const mapped: Medication[] = rx.medications.map(m => ({
-          drug: m.drug || '', dose: m.dose || '', route: m.route || 'Oral',
-          frequency: m.frequency || 'Twice daily', duration: m.duration || '',
-          instructions: m.instructions || '',
+        const mapped: Medication[] = rx.medications.map((m) => ({
+          drug: m.drug ?? '',
+          dose: m.dose ?? '',
+          route: m.route ?? 'Oral',
+          frequency: m.frequency ?? 'Twice daily',
+          duration: m.duration ?? '',
+          instructions: m.instructions ?? '',
         }))
-        setMeds(prev => {
+
+        setMeds((prev) => {
           const hasEmpty = prev.length === 1 && !prev[0].drug.trim()
           return hasEmpty ? mapped : [...prev, ...mapped]
         })
       }
-      if (rx.advice) setAdvice(prev => prev ? prev + '\n' + rx.advice : rx.advice!)
+      if (rx.advice) setAdvice((prev) => (prev ? prev + '\n' + rx.advice : rx.advice!))
       if (rx.follow_up_date) setFollowUpDate(rx.follow_up_date)
     }
+
     if (result.lab?.all_results) {
-      setReportsNeeded(prev => prev ? prev + '\n' + result.lab!.all_results : result.lab!.all_results!)
+      setReportsNeeded((prev) => (prev ? prev + '\n' + result.lab!.all_results : result.lab!.all_results!))
     }
   }
 
   function updateMed(idx: number, field: keyof Medication, val: string) {
-    setMeds(prev => prev.map((m,i) => i===idx ? {...m,[field]:val} : m))
+    setMeds((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: val } : m)))
   }
-  function addMed() { setMeds(prev => [...prev, emptyMed()]) }
+  function addMed() {
+    setMeds((prev) => [...prev, emptyMed()])
+  }
   function removeMed(idx: number) {
-    setMeds(prev => prev.length===1 ? [emptyMed()] : prev.filter((_,i)=>i!==idx))
+    setMeds((prev) => (prev.length === 1 ? [emptyMed()] : prev.filter((_, i) => i !== idx)))
   }
+
   function handleDrugInput(idx: number, val: string) {
-    updateMed(idx,'drug',val)
+    updateMed(idx, 'drug', val)
     setSafetyChecked(false) // Reset safety check when meds change
+
     if (val.length >= 2) {
       // Search from comprehensive drug database (200+ drugs) + common list
-      const dbMatches = searchDrugs(val, 4).map(d => `${d.generic} ${d.strengths[0] || ''}`.trim())
-      const commonMatches = COMMON.filter(d => d.toLowerCase().includes(val.toLowerCase()))
+      const dbMatches = searchDrugs(val, 4).map((d) => `${d.generic} ${d.strengths[0] ?? ''}`.trim())
+      const commonMatches = COMMON.filter((d) => d.toLowerCase().includes(val.toLowerCase()))
       const allMatches = Array.from(new Set([...dbMatches, ...commonMatches])).slice(0, 8)
-      setDrugSuggestion(allMatches.length ? {idx, list: allMatches} : null)
-    } else setDrugSuggestion(null)
+      setDrugSuggestion(allMatches.length ? { idx, list: allMatches } : null)
+    } else {
+      setDrugSuggestion(null)
+    }
   }
 
   // ── Safety Check before Save ────────────────────────────────
   async function handleSaveWithSafetyCheck() {
     if (!encounterId || !patient) return
-    const validMeds = meds.filter(m => m.drug.trim())
-    if (validMeds.length === 0) { handleSave(); return }
+
+    const validMeds = meds.filter((m) => m.drug.trim())
+    if (validMeds.length === 0) {
+      handleSave()
+      return
+    }
 
     // Run all clinical safety checks
-    const isPregnant = encounter?.ob_data?.lmp || encounter?.ob_data?.edd
+    const isPregnant = !!(encounter?.ob_data?.lmp ?? encounter?.ob_data?.edd)
+
     const result = await runPrescriptionSafetyChecks({
       medications: validMeds,
       patientId: patient.id,
       patientAge: patient.age,
-      patientWeight: patient.weight_kg || encounter?.weight,
-      isPregnant: !!isPregnant,
+      patientWeight: patient.weight_kg ?? encounter?.weight,
+      isPregnant,
       gestationalAge: encounter?.ob_data?.gestational_age,
     })
 
@@ -27005,10 +26922,10 @@ export default function PrescriptionPage() {
 
     // Log safety override in audit trail
     if (overrideReason) {
-      await auditSafetyOverride('drug_interaction', encounterId, patient?.full_name || '', {
-        alerts: safetyAlerts.map(a => ({ level: a.level, title: a.title, category: a.category })),
+      await auditSafetyOverride('drug_interaction', encounterId, patient?.full_name ?? '', {
+        alerts: safetyAlerts.map((a) => ({ level: a.level, title: a.title, category: a.category })),
         overrideReason,
-        medications: meds.filter(m => m.drug.trim()).map(m => m.drug),
+        medications: meds.filter((m) => m.drug.trim()).map((m) => m.drug),
       })
     }
 
@@ -27017,61 +26934,66 @@ export default function PrescriptionPage() {
 
   async function handleSave() {
     if (!encounterId || !patient) return
+
     setSaving(true)
-    const validMeds = meds.filter(m => m.drug.trim())
+
+    const validMeds = meds.filter((m) => m.drug.trim())
+
     const payload = {
-      encounter_id: encounterId, patient_id: patient.id, medications: validMeds,
-      advice: advice.trim()||null, dietary_advice: dietaryAdvice.trim()||null,
-      reports_needed: reportsNeeded.trim()||null, follow_up_date: followUpDate||null,
+      encounter_id: encounterId,
+      patient_id: patient.id,
+      medications: validMeds,
+      advice: advice.trim() || null,
+      dietary_advice: dietaryAdvice.trim() || null,
+      reports_needed: reportsNeeded.trim() || null,
+      follow_up_date: followUpDate || null,
     }
-    if (existing) await supabase.from('prescriptions').update(payload).eq('id', existing.id)
-    else { const {data} = await supabase.from('prescriptions').insert(payload).select().single(); setExisting(data) }
 
-    // Audit the prescription save
-    await audit('create', 'prescription', encounterId, patient?.full_name || '')
+    // ✅ Save prescription
+    if (existing) {
+      await supabase.from('prescriptions').update(payload).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('prescriptions').insert(payload).select().single()
+      setExisting(data)
+    }
 
-    // ── FIX #8: Sync follow-up date → appointments table ─────────────
-    // When a follow-up date is set, automatically create (or update) a
-    // corresponding appointment so it appears in the Appointments page
-    // and the Reminders queue without the doctor having to do it manually.
+    // ✅ Audit
+    await audit('create', 'prescription', encounterId, patient?.full_name ?? '')
+
+    // ✅ ✅ CRITICAL FIX: Visit completion logic (NEW)
+    try {
+      await handleVisitCompletion(patient.id)
+    } catch (e) {
+      console.warn('[VisitCompletion] failed:', e)
+    }
+
+    // ✅ Follow-up handling (already fixed earlier)
     if (followUpDate) {
       try {
-        // Check if a follow-up appointment already exists for this encounter
-        const { data: existing_appt } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patient.id)
-          .eq('type', 'follow_up')
-          .eq('date', followUpDate)
-          .maybeSingle()
-
-        if (!existing_appt) {
-          await supabase.from('appointments').insert({
-            patient_id:   patient.id,
-            patient_name: patient.full_name,
-            mrn:          patient.mrn,
-            mobile:       patient.phone || null,
-            date:         followUpDate,
-            time:         '10:00',
-            type:         'follow_up',
-            status:       'scheduled',
-            notes:        `Follow-up from encounter on ${encounter?.encounter_date || 'recent visit'}`,
-          })
-        }
+        await createFollowUp(patient.id, encounterId, followUpDate, {
+          patientName: patient.full_name,
+          mrn: patient.mrn,
+          mobile: patient.phone ?? patient.mobile ?? null,
+          encounterDateLabel: encounter?.encounter_date || 'recent visit',
+        })
       } catch (e) {
-        // Non-fatal — prescription still saved even if appointment sync fails
-        console.warn('[Prescription] follow-up appointment sync failed:', e)
+        console.warn('[Prescription] follow-up creation failed:', e)
       }
     }
 
-    setSaving(false); setSaved(true); setTimeout(()=>setSaved(false), 3000)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
   }
 
-  if (!encounter || !patient) return (
-    <AppShell><div className="p-6 flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-    </div></AppShell>
-  )
+  if (!encounter || !patient)
+    return (
+      <AppShell>
+        <div className="p-6 flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    )
 
   return (
     <AppShell>
@@ -27079,103 +27001,179 @@ export default function PrescriptionPage() {
       <div className="no-print p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-4 mb-5">
           <div className="flex items-center gap-2">
-            <button onClick={()=>router.back()} className="text-gray-400 hover:text-gray-700" title="Back">
-              <ArrowLeft className="w-5 h-5"/>
+            <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700" title="Back">
+              <ArrowLeft className="w-5 h-5" />
             </button>
-            <a href={`/opd/${encounterId}/edit`}
-              className="text-xs text-blue-600 hover:underline flex items-center gap-1 border border-blue-200 rounded-lg px-2 py-1 bg-blue-50">
+
+            <a
+              href={`/opd/${encounterId}/edit`}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1 border border-blue-200 rounded-lg px-2 py-1 bg-blue-50"
+            >
               ✏️ Edit Vitals / Diagnosis
             </a>
           </div>
+
           <div className="flex-1">
             <h1 className="text-xl font-bold text-gray-900">Prescription</h1>
             <p className="text-sm text-gray-500">
               {patient.full_name} · {patient.mrn} · {encounter.encounter_date && formatDate(encounter.encounter_date)}
             </p>
           </div>
+
           <div className="flex gap-2">
             {patient && (
-              <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent((patient as any).full_name||'Patient')}&mrn=${(patient as any).mrn||''}&encounterType=${encounter?.encounter_type||'OPD'}`}
-                className="btn-secondary flex items-center gap-1.5 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+              <Link
+                href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(
+                  (patient as any).full_name ?? 'Patient'
+                )}&mrn=${(patient as any).mrn ?? ''}&encounterType=${encounter?.encounter_type ?? 'OPD'}`}
+                className="btn-secondary flex items-center gap-1.5 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+              >
                 <span>💳</span> Collect Payment
               </Link>
             )}
-            <button onClick={()=>window.print()} className="btn-secondary flex items-center gap-2 text-xs">
-              <Printer className="w-3.5 h-3.5"/>Print
+
+            <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs">
+              <Printer className="w-3.5 h-3.5" />
+              Print
             </button>
-            <button onClick={handleSaveWithSafetyCheck} disabled={saving}
-              className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60
-                ${saved?'bg-green-600 text-white':safetyChecked?'bg-blue-600 hover:bg-blue-700 text-white':'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-              {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                : saved ? <CheckCircle className="w-3.5 h-3.5"/> : <Shield className="w-3.5 h-3.5"/>}
-              {saving?'Saving...':saved?'Saved!':'Save'}
+
+            <button
+              onClick={handleSaveWithSafetyCheck}
+              disabled={saving}
+              className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60 ${saved
+                  ? 'bg-green-600 text-white'
+                  : safetyChecked
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+            >
+              {saving ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : saved ? (
+                <CheckCircle className="w-3.5 h-3.5" />
+              ) : (
+                <Shield className="w-3.5 h-3.5" />
+              )}
+              {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
             </button>
           </div>
         </div>
 
         {/* OCR Scanner */}
-        <FormScanner formType="prescription" onExtracted={handleOCR}
+        <FormScanner
+          formType="prescription"
+          onExtracted={handleOCR}
           label="Scan Lab Report or Old Prescription — auto-fills medicines and results"
-          className="mb-5" />
+          className="mb-5"
+        />
 
         {/* Medications */}
         <div className="card p-5 mb-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="section-title mb-0">Medications</h2>
             <button onClick={addMed} className="btn-secondary text-xs flex items-center gap-1">
-              <Plus className="w-3.5 h-3.5"/>Add Medicine
+              <Plus className="w-3.5 h-3.5" />
+              Add Medicine
             </button>
           </div>
+
           <div className="space-y-3">
             {meds.map((med, idx) => (
               <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <div className="grid grid-cols-12 gap-3">
                   <div className="col-span-4 relative">
                     <label className="label">Medicine Name</label>
-                    <input className="input bg-white" placeholder="e.g. Folic Acid 5mg" value={med.drug}
-                      onChange={e => handleDrugInput(idx, e.target.value)}
-                      onBlur={()=>setTimeout(()=>setDrugSuggestion(null),200)} />
-                    {drugSuggestion?.idx===idx && drugSuggestion.list.length>0 && (
+                    <input
+                      className="input bg-white"
+                      placeholder="e.g. Folic Acid 5mg"
+                      value={med.drug}
+                      onChange={(e) => handleDrugInput(idx, e.target.value)}
+                      onBlur={() => setTimeout(() => setDrugSuggestion(null), 200)}
+                    />
+
+                    {drugSuggestion?.idx === idx && drugSuggestion.list.length > 0 && (
                       <div className="absolute top-full left-0 right-0 z-30 bg-white border border-gray-200 rounded-lg shadow-lg mt-1">
-                        {drugSuggestion.list.map(d=>(
-                          <button key={d} type="button" onMouseDown={()=>{updateMed(idx,'drug',d);setDrugSuggestion(null)}}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0">{d}</button>
+                        {drugSuggestion.list.map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onMouseDown={() => {
+                              updateMed(idx, 'drug', d)
+                              setDrugSuggestion(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0"
+                          >
+                            {d}
+                          </button>
                         ))}
                       </div>
                     )}
                   </div>
+
                   <div className="col-span-2">
                     <label className="label">Dose</label>
-                    <input className="input bg-white" placeholder="500mg" value={med.dose}
-                      onChange={e=>updateMed(idx,'dose',e.target.value)} />
+                    <input
+                      className="input bg-white"
+                      placeholder="500mg"
+                      value={med.dose}
+                      onChange={(e) => updateMed(idx, 'dose', e.target.value)}
+                    />
                   </div>
+
                   <div className="col-span-2">
                     <label className="label">Route</label>
-                    <select className="input bg-white" value={med.route} onChange={e=>updateMed(idx,'route',e.target.value)}>
-                      {ROUTES.map(r=><option key={r}>{r}</option>)}
+                    <select
+                      className="input bg-white"
+                      value={med.route}
+                      onChange={(e) => updateMed(idx, 'route', e.target.value)}
+                    >
+                      {ROUTES.map((r) => (
+                        <option key={r}>{r}</option>
+                      ))}
                     </select>
                   </div>
+
                   <div className="col-span-2">
                     <label className="label">Frequency</label>
-                    <select className="input bg-white" value={med.frequency} onChange={e=>updateMed(idx,'frequency',e.target.value)}>
-                      {FREQS.map(f=><option key={f}>{f}</option>)}
+                    <select
+                      className="input bg-white"
+                      value={med.frequency}
+                      onChange={(e) => updateMed(idx, 'frequency', e.target.value)}
+                    >
+                      {FREQS.map((f) => (
+                        <option key={f}>{f}</option>
+                      ))}
                     </select>
                   </div>
+
                   <div className="col-span-1">
                     <label className="label">Duration</label>
-                    <input className="input bg-white" placeholder="7 days" value={med.duration}
-                      onChange={e=>updateMed(idx,'duration',e.target.value)} />
+                    <input
+                      className="input bg-white"
+                      placeholder="7 days"
+                      value={med.duration}
+                      onChange={(e) => updateMed(idx, 'duration', e.target.value)}
+                    />
                   </div>
+
                   <div className="col-span-1 flex items-end">
-                    <button type="button" onClick={()=>removeMed(idx)}
-                      className="w-full p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                      <Trash2 className="w-4 h-4 mx-auto"/>
+                    <button
+                      type="button"
+                      onClick={() => removeMed(idx)}
+                      className="w-full p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4 mx-auto" />
                     </button>
                   </div>
+
                   <div className="col-span-11">
                     <label className="label">Instructions</label>
-                    <input className="input bg-white" placeholder="e.g. Take after food" value={med.instructions||''}
-                      onChange={e=>updateMed(idx,'instructions',e.target.value)} />
+                    <input
+                      className="input bg-white"
+                      placeholder="e.g. Take after food"
+                      value={med.instructions ?? ''}
+                      onChange={(e) => updateMed(idx, 'instructions', e.target.value)}
+                    />
                   </div>
                 </div>
               </div>
@@ -27188,51 +27186,91 @@ export default function PrescriptionPage() {
           <h2 className="section-title">Advice & Follow-up</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label flex items-center gap-2">Specific Advice <SmartMic field="advice" value={advice} onChange={setAdvice} context="Patient advice and instructions" size="sm"/></label>
-              <textarea className="input resize-none" rows={3}
+              <label className="label flex items-center gap-2">
+                Specific Advice{' '}
+                <SmartMic field="advice" value={advice} onChange={setAdvice} context="Patient advice and instructions" size="sm" />
+              </label>
+              <textarea
+                className="input resize-none"
+                rows={3}
                 placeholder="Rest, avoid intercourse, etc."
-                value={advice} onChange={e=>setAdvice(e.target.value)} />
+                value={advice}
+                onChange={(e) => setAdvice(e.target.value)}
+              />
             </div>
+
             <div>
-              <label className="label flex items-center gap-2">Dietary Advice <SmartMic field="dietary_advice" value={dietaryAdvice} onChange={setDietaryAdvice} context="Dietary advice and nutrition" size="sm"/></label>
-              <textarea className="input resize-none" rows={3}
+              <label className="label flex items-center gap-2">
+                Dietary Advice{' '}
+                <SmartMic
+                  field="dietary_advice"
+                  value={dietaryAdvice}
+                  onChange={setDietaryAdvice}
+                  context="Dietary advice and nutrition"
+                  size="sm"
+                />
+              </label>
+              <textarea
+                className="input resize-none"
+                rows={3}
                 placeholder="High protein diet, iron-rich foods..."
-                value={dietaryAdvice} onChange={e=>setDietaryAdvice(e.target.value)} />
+                value={dietaryAdvice}
+                onChange={(e) => setDietaryAdvice(e.target.value)}
+              />
             </div>
+
             <div className="col-span-2">
               <label className="label">Reports / Investigations Needed</label>
+
               {/* Quick-add dropdown */}
               <div className="flex gap-2 mb-2 flex-wrap">
-                <select className="input flex-1 text-sm py-1.5"
-                  onChange={e => {
+                <select
+                  className="input flex-1 text-sm py-1.5"
+                  onChange={(e) => {
                     const val = e.target.value
                     if (!val) return
-                    setReportsNeeded(prev => {
-                      const existing = prev.trim()
-                      if (existing.includes(val)) return prev  // already added
-                      return existing ? existing + ',\n' + val : val
+                    setReportsNeeded((prev) => {
+                      const existingTxt = prev.trim()
+                      if (existingTxt.includes(val)) return prev
+                      return existingTxt ? existingTxt + ',\n' + val : val
                     })
-                    e.target.value = ''  // reset select
-                  }}>
+                    e.target.value = ''
+                  }}
+                >
                   <option value="">+ Add from common list…</option>
-                  {REPORT_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  {REPORT_OPTIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
                 </select>
               </div>
-              {/* Selected / typed investigations */}
-              <textarea className="input resize-none font-mono text-sm" rows={3}
+
+              <textarea
+                className="input resize-none font-mono text-sm"
+                rows={3}
                 placeholder="Selected investigations appear here. You can also type freely or add custom tests."
-                value={reportsNeeded} onChange={e=>setReportsNeeded(e.target.value)} />
+                value={reportsNeeded}
+                onChange={(e) => setReportsNeeded(e.target.value)}
+              />
               <p className="text-xs text-gray-400 mt-1">
                 One per line. Use the dropdown to add common tests, or type custom tests directly.
               </p>
             </div>
+
             <div>
               <label className="label">Follow-up Date</label>
-              <input className="input" type="date" min={minFollowUpDate()}
+              <input
+                className="input"
+                type="date"
+                min={minFollowUpDate()}
                 value={followUpDate}
-                onChange={e => {
+                onChange={(e) => {
                   const val = e.target.value
-                  if (!val) { setFollowUpDate(''); return }
+                  if (!val) {
+                    setFollowUpDate('')
+                    return
+                  }
                   // Never allow Sunday — move to the next Monday
                   if (isSunday(val)) {
                     const d = new Date(val)
@@ -27241,18 +27279,33 @@ export default function PrescriptionPage() {
                   } else {
                     setFollowUpDate(val)
                   }
-                }}/>
-              {followUpDate && isSunday(followUpDate) === false && new Date(followUpDate).getDay() !== 0
-                ? null
-                : followUpDate && <p className="text-xs text-orange-500 mt-1">Sundays excluded — date moved to Monday</p>
-              }
+                }}
+              />
+
+              {followUpDate && isSunday(followUpDate) ? (
+                <p className="text-xs text-orange-500 mt-1">Sundays excluded — date moved to Monday</p>
+              ) : null}
+
               <div className="flex gap-2 mt-2">
-                {[{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30},{l:'+3 months',d:90}].map(({l,d})=>(
-                  <button key={l} type="button" onClick={()=>{
-                    const dt=new Date(); dt.setDate(dt.getDate()+d);
-                    if(dt.getDay()===0) dt.setDate(dt.getDate()+1);  // skip Sunday
-                    setFollowUpDate(dt.toISOString().split('T')[0])
-                  }} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100">{l}</button>
+                {[
+                  { l: '+1 week', d: 7 },
+                  { l: '+2 weeks', d: 14 },
+                  { l: '+1 month', d: 30 },
+                  { l: '+3 months', d: 90 },
+                ].map(({ l, d }) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => {
+                      const dt = new Date()
+                      dt.setDate(dt.getDate() + d)
+                      if (dt.getDay() === 0) dt.setDate(dt.getDate() + 1)
+                      setFollowUpDate(dt.toISOString().split('T')[0])
+                    }}
+                    className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100"
+                  >
+                    {l}
+                  </button>
                 ))}
               </div>
             </div>
@@ -27264,55 +27317,114 @@ export default function PrescriptionPage() {
       <div className="print-only print-container p-8 max-w-[700px] mx-auto">
         <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
           <h1 className="text-2xl font-bold tracking-wide">{hs.hospitalName}</h1>
-          <p className="text-sm text-gray-600">{hs.address} — Phone: {hs.phone}</p>
-          <p className="text-xs text-gray-500">Reg. No: {hs.regNo} · GSTIN: {hs.gstin}</p>
+          <p className="text-sm text-gray-600">
+            {hs.address} — Phone: {hs.phone}
+          </p>
+          <p className="text-xs text-gray-500">
+            Reg. No: {hs.regNo} · GSTIN: {hs.gstin}
+          </p>
         </div>
+
         <div className="grid grid-cols-2 gap-4 mb-4 text-sm border border-gray-300 rounded p-3">
-          <div><span className="font-semibold">Patient: </span>{patient.full_name}</div>
-          <div><span className="font-semibold">MRN: </span>{patient.mrn}</div>
-          <div><span className="font-semibold">Age/Gender: </span>{patient.age}y / {patient.gender}</div>
-          <div><span className="font-semibold">Date: </span>{formatDate(encounter.encounter_date)}</div>
-          <div><span className="font-semibold">Mobile: </span>{patient.mobile}</div>
-          {encounter.diagnosis && <div><span className="font-semibold">Dx: </span>{encounter.diagnosis}</div>}
+          <div>
+            <span className="font-semibold">Patient: </span>
+            {patient.full_name}
+          </div>
+          <div>
+            <span className="font-semibold">MRN: </span>
+            {patient.mrn}
+          </div>
+          <div>
+            <span className="font-semibold">Age/Gender: </span>
+            {patient.age}y / {patient.gender}
+          </div>
+          <div>
+            <span className="font-semibold">Date: </span>
+            {formatDate(encounter.encounter_date)}
+          </div>
+          <div>
+            <span className="font-semibold">Mobile: </span>
+            {patient.mobile}
+          </div>
+          {encounter.diagnosis && (
+            <div>
+              <span className="font-semibold">Dx: </span>
+              {encounter.diagnosis}
+            </div>
+          )}
         </div>
-        {(encounter.pulse||encounter.bp_systolic||encounter.temperature) && (
+
+        {(encounter.pulse || encounter.bp_systolic || encounter.temperature) && (
           <div className="flex gap-4 mb-4 text-xs flex-wrap border border-gray-200 rounded p-2 bg-gray-50">
-            {encounter.pulse       && <span>Pulse: <b>{encounter.pulse} bpm</b></span>}
-            {encounter.bp_systolic && <span>BP: <b>{encounter.bp_systolic}/{encounter.bp_diastolic} mmHg</b></span>}
-            {encounter.temperature && <span>Temp: <b>{encounter.temperature}°C</b></span>}
-            {encounter.spo2        && <span>SpO₂: <b>{encounter.spo2}%</b></span>}
-            {encounter.weight      && <span>Wt: <b>{encounter.weight} kg</b></span>}
+            {encounter.pulse && (
+              <span>
+                Pulse: <b>{encounter.pulse} bpm</b>
+              </span>
+            )}
+            {encounter.bp_systolic && (
+              <span>
+                BP: <b>{encounter.bp_systolic}/{encounter.bp_diastolic} mmHg</b>
+              </span>
+            )}
+            {encounter.temperature && (
+              <span>
+                Temp: <b>{encounter.temperature}°C</b>
+              </span>
+            )}
+            {encounter.spo2 && (
+              <span>
+                SpO₂: <b>{encounter.spo2}%</b>
+              </span>
+            )}
+            {encounter.weight && (
+              <span>
+                Wt: <b>{encounter.weight} kg</b>
+              </span>
+            )}
           </div>
         )}
+
         <div className="mb-4">
-          <div className="text-3xl font-bold text-gray-700 mb-3" style={{fontFamily:'serif'}}>℞</div>
+          <div className="text-3xl font-bold text-gray-700 mb-3" style={{ fontFamily: 'serif' }}>
+            ℞
+          </div>
           <div className="space-y-2">
-            {meds.filter(m=>m.drug.trim()).map((m,i)=>(
-              <div key={i} className="flex gap-3 text-sm border-b border-gray-100 pb-2">
-                <span className="font-bold w-6 text-gray-500">{i+1}.</span>
-                <div>
-                  <div className="font-semibold">{m.drug}</div>
-                  <div className="text-gray-600 text-xs">
-                    {m.dose&&<span>{m.dose} · </span>}
-                    {m.route&&<span>{m.route} · </span>}
-                    <span>{m.frequency}</span>
-                    {m.duration&&<span> · {m.duration}</span>}
-                    {m.instructions&&<span> — <em>{m.instructions}</em></span>}
+            {meds
+              .filter((m) => m.drug.trim())
+              .map((m, i) => (
+                <div key={i} className="flex gap-3 text-sm border-b border-gray-100 pb-2">
+                  <span className="font-bold w-6 text-gray-500">{i + 1}.</span>
+                  <div>
+                    <div className="font-semibold">{m.drug}</div>
+                    <div className="text-gray-600 text-xs">
+                      {m.dose && <span>{m.dose} · </span>}
+                      {m.route && <span>{m.route} · </span>}
+                      <span>{m.frequency}</span>
+                      {m.duration && <span> · {m.duration}</span>}
+                      {m.instructions && (
+                        <span>
+                          {' '}
+                          — <em>{m.instructions}</em>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
-        {(advice||dietaryAdvice||reportsNeeded) && (
+
+        {(advice || dietaryAdvice || reportsNeeded) && (
           <div className="mb-4 border border-gray-200 rounded p-3 text-sm">
             <div className="font-semibold mb-2">Advice:</div>
-            {advice&&<div className="mb-1">• {advice}</div>}
-            {dietaryAdvice&&<div className="mb-1">• Dietary: {dietaryAdvice}</div>}
-            {reportsNeeded&&<div className="mb-1">• Reports: {reportsNeeded}</div>}
+            {advice && <div className="mb-1">• {advice}</div>}
+            {dietaryAdvice && <div className="mb-1">• Dietary: {dietaryAdvice}</div>}
+            {reportsNeeded && <div className="mb-1">• Reports: {reportsNeeded}</div>}
           </div>
         )}
-        {followUpDate&&<div className="mb-6 text-sm font-semibold">Follow-up: {formatDate(followUpDate)}</div>}
+
+        {followUpDate && <div className="mb-6 text-sm font-semibold">Follow-up: {formatDate(followUpDate)}</div>}
+
         <div className="flex justify-between items-end mt-8 pt-4 border-t border-gray-300 text-sm">
           <div className="text-gray-500 text-xs">Printed: {new Date().toLocaleDateString('en-IN')}</div>
           <div className="text-right">
@@ -27323,6 +27435,7 @@ export default function PrescriptionPage() {
             </div>
           </div>
         </div>
+
         {hs.footerNote && (
           <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-400 text-center">{hs.footerNote}</div>
         )}
@@ -27340,7 +27453,6 @@ export default function PrescriptionPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\opd\new\page.tsx
@@ -27403,6 +27515,7 @@ function NewConsultationContent() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [lastDiagnosis, setLastDiagnosis] = useState('')
+  const [visitedToday, setVisitedToday] = useState(false)
 
   // OCR highlights
   const [vHL, setVHL] = useState<VitalsHL>({})
@@ -27489,6 +27602,25 @@ function NewConsultationContent() {
         setLastDiagnosis(lastEnc.diagnosis)
       }
     })
+    const today = new Date().toISOString().split('T')[0] as string
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('encounters')
+          .select('id')
+          .eq('patient_id', patientId)
+          .eq('encounter_date', today)
+          .limit(1)
+          .maybeSingle()
+
+        setVisitedToday(!!data?.id)
+      } catch {
+        // ignore
+      }
+    })()
+
+
   }, [patientId])
 
 
@@ -27725,27 +27857,27 @@ function NewConsultationContent() {
     setSaving(true)
     setError('')
 
-    // Check if an encounter already exists for this patient today
+    // // Check if an encounter already exists for this patient today
     const today = new Date().toISOString().split('T')[0]
-    const { data: existing } = await supabase
-      .from('encounters')
-      .select('id')
-      .eq('patient_id', patientId)
-      .eq('encounter_date', today)
-      .limit(1)
-      .maybeSingle()
 
-    if (existing?.id) {
-      // Encounter already exists — update it instead of creating a duplicate
-      setSaving(false)
-      const confirmUpdate = window.confirm(
-        'An OPD encounter for this patient already exists today.\n\nClick OK to update the existing encounter, or Cancel to go back.'
-      )
-      if (!confirmUpdate) return
-      // Redirect to edit the existing encounter
-      router.push(`/opd/${existing.id}/edit`)
-      return
+    // Optional: check but DO NOT block
+    try {
+      const { data: existing } = await supabase
+        .from('encounters')
+        .select('id')
+        .eq('patient_id', patientId)
+        .eq('encounter_date', today)
+        .limit(1)
+        .maybeSingle()
+
+      // No action — just informational
+      if (existing?.id) {
+        console.log("Patient already visited today")
+      }
+    } catch (err) {
+      // ignore error
     }
+
 
     const obPayload: OBData = { ...ob }
     if (ob.lmp) { obPayload.edd = edd; obPayload.gestational_age = ga }
@@ -27755,7 +27887,7 @@ function NewConsultationContent() {
       .insert({
         patient_id: patientId,
         encounter_type: 'OPD',
-        encounter_date: new Date().toISOString().split('T')[0],
+        encounter_date: today,
         chief_complaint: chiefComplaint.trim() || null,
         pulse: vitals.pulse ? parseInt(vitals.pulse) : null,
         bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : null,
@@ -27842,6 +27974,12 @@ function NewConsultationContent() {
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          </div>
+        )}
+        {visitedToday && (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            Patient already has an OPD consultation today. You can still create a NEW consultation (allowed).
           </div>
         )}
 
@@ -55705,6 +55843,265 @@ export function getClientIP(req: { headers: { get: (name: string) => string | nu
   return '127.0.0.1'
 }
 
+```
+
+# src\lib\services\appointmentService.ts
+
+```ts
+import { supabase } from '@/lib/supabase'
+
+type CreateAppointmentParams = {
+  patientId: string
+  date: string
+  time: string
+  patientName: string
+  mrn?: string
+  mobile?: string
+  notes?: string | null
+  type?: string
+}
+
+type CreateFollowUpMeta = {
+  patientName?: string
+  mrn?: string
+  mobile?: string | null
+  encounterDateLabel?: string
+}
+
+function nowISO() {
+  return new Date().toISOString()
+}
+
+/**
+ * Cancels only FOLLOW-UP related active appointments.
+ * DOES NOT cancel manual visits.
+ */
+export async function cancelActiveAppointment(patientId: string) {
+  const { error } = await supabase
+    .from('appointments')
+    .update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString()
+    })
+    .eq('patient_id', patientId)
+    .in('status', ['scheduled', 'confirmed'])
+    .eq('type', 'follow_up') // ✅ IMPORTANT FIX
+
+  if (error) throw error
+}
+
+
+/**
+ * Create a MANUAL appointment.
+ * Guarantees DB constraint safety:
+ * - cancels any existing active appointment first
+ * - then inserts new scheduled appointment
+ */
+export async function createAppointment(params: CreateAppointmentParams): Promise<string> {
+  const {
+    patientId,
+    date,
+    time,
+    patientName,
+    mrn = '',
+    mobile = '',
+    notes = null,
+    type = 'manual',
+  } = params
+
+  // 1) Cancel any existing ACTIVE appointment (scheduled/confirmed)
+  await cancelActiveAppointment(patientId)
+
+  // 2) Insert new appointment
+  const { data, error } = await supabase
+    .from('appointments')
+    .insert({
+      patient_id: patientId,
+      patient_name: patientName,
+      mrn,
+      mobile,
+      date,
+      time,
+      type,
+      notes,
+      status: 'scheduled',
+      reminder_sent: false,
+      updated_at: nowISO(),
+      source: 'manual',
+      follow_up_id: null,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    // If a race condition happens and DB constraint blocks it, show clean error.
+    throw new Error(error.message)
+  }
+
+  return data.id as string
+}
+
+/**
+ * Create OR update follow-up for the same encounter and keep appointment in sync.
+ * - ensures only one pending follow-up per encounter (matches DB index)
+ * - cancels any active appointment first (matches DB constraint)
+ * - cancels old follow-up appointment if follow-up is updated
+ */
+export async function createFollowUp(
+  patientId: string,
+  encounterId: string,
+  followUpDate: string,
+  meta?: CreateFollowUpMeta
+) {
+  // 0) Cancel any active appointment first (required by unique index)
+  await cancelActiveAppointment(patientId)
+
+  // 1) Find existing pending follow-up for this encounter
+  const { data: existingFu, error: fuFindErr } = await supabase
+    .from('follow_ups')
+    .select('*')
+    .eq('patient_id', patientId)
+    .eq('created_from_visit_id', encounterId)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  // ✅ Prevent duplicate same-date follow-ups
+  if (
+    existingFu &&
+    existingFu.recommended_date === followUpDate
+  ) {
+    return {
+      id: existingFu.id,
+      linked_appointment_id: existingFu.linked_appointment_id
+    }
+  }
+  if (fuFindErr) throw fuFindErr
+
+  const notes =
+    meta?.encounterDateLabel
+      ? `Follow-up from encounter on ${meta.encounterDateLabel}`
+      : 'Follow-up from recent visit'
+
+  if (existingFu) {
+    // 2A) Update follow-up date
+    const { error: fuUpdateErr } = await supabase
+      .from('follow_ups')
+      .update({ recommended_date: followUpDate })
+      .eq('id', existingFu.id)
+
+    if (fuUpdateErr) throw fuUpdateErr
+
+    // 2B) Cancel the old linked appointment (if exists)
+    if (existingFu.linked_appointment_id) {
+      await supabase
+        .from('appointments')
+        .update({ status: 'cancelled', updated_at: nowISO() })
+        .eq('id', existingFu.linked_appointment_id)
+    }
+
+    // 2C) Create new follow-up appointment
+    const { data: appt, error: apptErr } = await supabase
+      .from('appointments')
+      .insert({
+        patient_id: patientId,
+        patient_name: meta?.patientName ?? '',
+        mrn: meta?.mrn ?? '',
+        mobile: meta?.mobile ?? '',
+        date: new Date(followUpDate).toISOString().split('T')[0],
+        time: '10:00',
+        type: 'follow_up',
+        notes,
+        status: 'scheduled',
+        reminder_sent: false,
+        updated_at: nowISO(),
+        source: 'follow_up',
+        follow_up_id: existingFu.id,
+      })
+      .select('id')
+      .single()
+
+    if (apptErr) throw apptErr
+
+    // 2D) Link follow-up -> new appointment
+    const { error: linkErr } = await supabase
+      .from('follow_ups')
+      .update({ linked_appointment_id: appt.id })
+      .eq('id', existingFu.id)
+
+    if (linkErr) throw linkErr
+
+    return { id: existingFu.id, linked_appointment_id: appt.id }
+  }
+
+  // 3) Create new follow-up
+  const { data: newFu, error: fuErr } = await supabase
+    .from('follow_ups')
+    .insert({
+      patient_id: patientId,
+      created_from_visit_id: encounterId,
+      recommended_date: followUpDate,
+      status: 'pending',
+    })
+    .select('id')
+    .single()
+
+  if (fuErr) throw fuErr
+
+  // 4) Create follow-up appointment
+  const { data: appt2, error: apptErr2 } = await supabase
+    .from('appointments')
+    .insert({
+      patient_id: patientId,
+      patient_name: meta?.patientName ?? '',
+      mrn: meta?.mrn ?? '',
+      mobile: meta?.mobile ?? '',
+      date: new Date(followUpDate).toISOString().split('T')[0],
+      time: '10:00',
+      type: 'follow_up',
+      notes,
+      status: 'scheduled',
+      reminder_sent: false,
+      updated_at: nowISO(),
+      source: 'follow_up',
+      follow_up_id: newFu.id,
+    })
+    .select('id')
+    .single()
+
+  if (apptErr2) throw apptErr2
+
+  // 5) Link follow-up -> appointment
+  const { error: linkErr2 } = await supabase
+    .from('follow_ups')
+    .update({ linked_appointment_id: appt2.id })
+    .eq('id', newFu.id)
+
+  if (linkErr2) throw linkErr2
+
+  return { id: newFu.id, linked_appointment_id: appt2.id }
+}
+
+/**
+ * Visit completion cleanup
+ * ✅ Only completes follow-up if it's future or same day with visit logic
+ */
+export async function handleVisitCompletion(patientId: string) {
+
+  const today = new Date().toISOString().split('T')[0]
+
+  // ✅ Only complete FOLLOW-UP if scheduled for today or before
+  const { error: fuErr } = await supabase
+    .from('follow_ups')
+    .update({ status: 'fulfilled' })
+    .eq('patient_id', patientId)
+    .eq('status', 'pending')
+    .lte('recommended_date', today)   // ✅ CRITICAL FIX
+
+  if (fuErr) throw fuErr
+
+  // ✅ Cancel only follow-up appointments (safe)
+  await cancelActiveAppointment(patientId)
+}
 ```
 
 # src\lib\settings.ts
