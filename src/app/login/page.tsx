@@ -291,6 +291,12 @@ export default function LoginPage() {
     try {
       const aal = await getAAL()
       if (aal.needsMFA) {
+        // Check if this device recently verified MFA (within last 12 hours)
+        // If so, auto-verify isn't possible (TOTP needs fresh code), but we can
+        // indicate to the user that MFA is required for this session
+        const lastMFA = localStorage.getItem('nexmedicon_last_mfa_ts')
+        const mfaRecent = lastMFA && (Date.now() - parseInt(lastMFA)) < 12 * 60 * 60 * 1000
+
         // User has a verified TOTP factor — require verification before dashboard
         setLoading(false)
         setView('mfa-verify')
@@ -310,6 +316,14 @@ export default function LoginPage() {
             .eq('auth_id', user.id)
             .single()
           if (cu?.role === 'admin') {
+            // Only prompt MFA enrollment ONCE per device — check localStorage
+            const enrollDismissed = localStorage.getItem('nexmedicon_mfa_enroll_dismissed')
+            if (enrollDismissed) {
+              // Admin previously skipped enrollment — don't ask again on this device
+              await auditLogin()
+              router.push('/dashboard')
+              return
+            }
             // BUG FIX: await startEnrollment() BEFORE setView so that the QR
             // code state is populated before the enrollment screen renders.
             await startEnrollment()
@@ -341,6 +355,8 @@ export default function LoginPage() {
     setMfaLoading(false)
 
     if (result.success) {
+      // Store MFA verification timestamp so we know this device recently verified
+      try { localStorage.setItem('nexmedicon_last_mfa_ts', String(Date.now())) } catch {}
       await auditLogin()
       router.push('/dashboard')
     } else {
@@ -385,6 +401,10 @@ export default function LoginPage() {
 
     if (result.success) {
       setEnrollDone(true)
+      // Store MFA verification timestamp
+      try { localStorage.setItem('nexmedicon_last_mfa_ts', String(Date.now())) } catch {}
+      // Clear the "dismissed" flag since they successfully enrolled
+      try { localStorage.removeItem('nexmedicon_mfa_enroll_dismissed') } catch {}
       setTimeout(async () => {
         await auditLogin()
         router.push('/dashboard')
@@ -398,6 +418,8 @@ export default function LoginPage() {
 
   // ── Skip MFA enrollment ───────────────────────────────────────
   async function skipMFAEnroll() {
+    // Mark that admin dismissed enrollment on this device — don't ask again
+    try { localStorage.setItem('nexmedicon_mfa_enroll_dismissed', '1') } catch {}
     await auditLogin()
     router.push('/dashboard')
   }

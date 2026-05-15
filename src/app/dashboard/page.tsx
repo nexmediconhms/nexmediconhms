@@ -4,6 +4,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime, ageFromDOB } from '@/lib/utils'
+import { COUNTABLE_STATUSES } from '@/lib/appointment-status'
 import {
   Users, BedDouble, CalendarClock, Stethoscope,
   UserPlus, ArrowRight, Clock, Baby, AlertTriangle,
@@ -74,7 +75,7 @@ export default function Dashboard() {
         .not('follow_up_date','is',null).lt('follow_up_date', today),
       supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5),
       supabase.from('appointments').select('id', { count:'exact', head:true })
-        .eq('date', today).neq('status', 'cancelled'),
+        .eq('date', today).in('status', COUNTABLE_STATUSES),
     ])
 
     const bedArr = beds || []
