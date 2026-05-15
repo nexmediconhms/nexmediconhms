@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import {
   Users, Stethoscope, BedDouble, Calendar,
   TrendingUp, TrendingDown, Minus, AlertCircle,
@@ -78,7 +78,7 @@ export default function ReportsPage() {
     const monthAgo  = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0]
 
     // Load billing revenue
-    const today2   = new Date().toISOString().split('T')[0]
+    const today2   = getIndiaToday()
     const weekAgo2 = new Date(Date.now() - 7*86400000).toISOString().split('T')[0]
     const mthAgo2  = new Date(Date.now() - 30*86400000).toISOString().split('T')[0]
     supabase.from('bills').select('net_amount,created_at').eq('status','paid').then(({data}) => {

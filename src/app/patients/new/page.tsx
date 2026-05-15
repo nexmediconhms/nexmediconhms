@@ -6,7 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
-import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii, getIndiaToday } from '@/lib/utils'
 import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
@@ -687,7 +687,7 @@ export default function NewPatientPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Date of Birth</label>
                   <input className={inputClass('date_of_birth')} type="date"
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={form.date_of_birth}
                     onChange={e => handleDOB(e.target.value)}
                   />

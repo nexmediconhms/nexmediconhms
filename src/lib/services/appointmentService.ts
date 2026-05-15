@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { getIndiaToday } from '../utils'
 
 type CreateAppointmentParams = {
   patientId: string
@@ -237,7 +238,7 @@ export async function createFollowUp(
  */
 export async function handleVisitCompletion(patientId: string) {
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   // ✅ Only complete FOLLOW-UP if scheduled for today or before
   const { error: fuErr } = await supabase

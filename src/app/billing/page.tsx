@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { loadSettings, type HospitalSettings } from '@/lib/settings'
 
 // ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
@@ -13,6 +13,7 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 // bill flow. Before this fix, GST was a separate library with no integration.
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
+import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
@@ -407,9 +408,10 @@ function BillingContent() {
     if (q.trim().length < 2) { setPatientResults([]); return }
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
+      const safe = escapeLike(q)
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, age, mobile')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
         .limit(6)
       setPatientResults(data || [])
     }, 300)
@@ -972,7 +974,7 @@ function BillingContent() {
                   <label className="label">To Date</label>
                   <input type="date" className="input"
                     min={customFrom || undefined}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={customTo} onChange={e => { setCustomTo(e.target.value); setCAReport(null) }} />
                 </div>
                 {customFrom && customTo && (

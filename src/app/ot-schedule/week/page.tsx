@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import {
   Scissors, Plus, ChevronLeft, ChevronRight, Calendar,
   CheckCircle, AlertTriangle, Clock,
@@ -42,11 +42,11 @@ const PRIORITY_DOTS: Record<string, string> = {
 }
 
 export default function OTWeekPage() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getIndiaToday())
   const [weekData, setWeekData] = useState<Record<string, OTSchedule[]>>({})
   const [loading, setLoading] = useState(true)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   // Calculate Monday-Sunday for the week containing `date`
   function getWeekDays(baseDate: string): string[] {

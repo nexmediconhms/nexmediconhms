@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { escapeLike, formatDate, getIndiaToday } from '@/lib/utils'
 import type { Bed } from '@/types'
 import { BedDouble, Search, X, CheckCircle, User } from 'lucide-react'
 
@@ -45,9 +45,10 @@ export default function BedsPage() {
     setPatientSearch(q)
     setSelectedPatient(null)
     if (q.length < 2) { setPatientResults([]); return }
+    const safe = escapeLike(q)
     const { data } = await supabase
       .from('patients').select('id, full_name, mrn, age, gender')
-      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
     setPatientResults(data || [])
   }
 
@@ -58,7 +59,7 @@ export default function BedsPage() {
       status: 'occupied',
       patient_id: selectedPatient.id,
       patient_name: selectedPatient.full_name,
-      admission_date: new Date().toISOString().split('T')[0],
+      admission_date: getIndiaToday(),
       expected_discharge: expectedDischarge || null,
       updated_at: new Date().toISOString(),
     }).eq('id', modal.bed.id)
@@ -270,7 +271,7 @@ export default function BedsPage() {
 
                 <div>
                   <label className="label">Expected Discharge Date (optional)</label>
-                  <input className="input" type="date" min={new Date().toISOString().split('T')[0]}
+                  <input className="input" type="date" min={getIndiaToday()}
                     value={expectedDischarge} onChange={e => setExpectedDischarge(e.target.value)} />
                 </div>
 

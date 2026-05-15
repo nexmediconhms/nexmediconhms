@@ -1195,6 +1195,128 @@ public/sw.js
 public/workbox-*.js
 ```
 
+# 02-fix-storage-rls.sql
+
+```sql
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║  BUG #3 FIX — "Storage unavailable (row-level security policy)"   ║
+-- ║                                                                    ║
+-- ║  INSTRUCTIONS:                                                     ║
+-- ║  1. Go to your Supabase project dashboard                         ║
+-- ║  2. Click "SQL Editor" in the left sidebar                        ║
+-- ║  3. Click "New query"                                              ║
+-- ║  4. Copy ALL the code below and paste it in the editor            ║
+-- ║  5. Click "Run" (or press Ctrl+Enter)                             ║
+-- ║  6. You should see "Success" message                              ║
+-- ║                                                                    ║
+-- ║  WHY THIS IS NEEDED:                                               ║
+-- ║  Your Supabase Storage bucket has Row Level Security (RLS) enabled ║
+-- ║  but there's no INSERT policy — so every file upload fails.        ║
+-- ║  The app falls back to storing files in the database (max 2 MB).   ║
+-- ║  After this fix, files will upload properly to Storage (up to 50MB)║
+-- ║                                                                    ║
+-- ║  IMPACT AFTER FIX:                                                 ║
+-- ║  ✅ No more "Storage unavailable" error message                    ║
+-- ║  ✅ Photos and PDFs upload correctly (up to 50 MB)                 ║
+-- ║  ✅ File attachments work properly for consultations               ║
+-- ║  ✅ X-ray images, ultrasound reports etc. can be stored properly   ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
+
+-- ─────────────────────────────────────────────────────
+-- STEP 1: Check your bucket name
+-- ─────────────────────────────────────────────────────
+-- First, let's see what buckets you have:
+SELECT id, name, public FROM storage.buckets;
+
+-- ⚠️ IMPORTANT: Look at the results above.
+-- If your bucket is named something OTHER than 'consultation-attachments',
+-- replace 'consultation-attachments' with YOUR bucket name in ALL the
+-- statements below.
+
+
+-- ─────────────────────────────────────────────────────
+-- STEP 2: Create the bucket if it doesn't exist
+-- ─────────────────────────────────────────────────────
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'consultation-attachments',          -- bucket ID
+  'consultation-attachments',          -- display name
+  false,                               -- NOT public (only logged-in users)
+  52428800,                            -- 50 MB max file size
+  ARRAY[
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'application/pdf'
+  ]
+)
+ON CONFLICT (id) DO UPDATE SET
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+
+-- ─────────────────────────────────────────────────────
+-- STEP 3: Drop any old/broken policies
+-- ─────────────────────────────────────────────────────
+DROP POLICY IF EXISTS "authenticated users can upload"        ON storage.objects;
+DROP POLICY IF EXISTS "authenticated users can read"          ON storage.objects;
+DROP POLICY IF EXISTS "authenticated users can delete"        ON storage.objects;
+DROP POLICY IF EXISTS "authenticated can upload to consultation-attachments"  ON storage.objects;
+DROP POLICY IF EXISTS "authenticated can read consultation-attachments"       ON storage.objects;
+DROP POLICY IF EXISTS "authenticated can delete own attachments"              ON storage.objects;
+
+
+-- ─────────────────────────────────────────────────────
+-- STEP 4: Create correct RLS policies
+-- ─────────────────────────────────────────────────────
+
+-- Allow logged-in users to UPLOAD files to this bucket
+CREATE POLICY "authenticated can upload to consultation-attachments"
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'consultation-attachments');
+
+-- Allow logged-in users to VIEW/DOWNLOAD files from this bucket
+CREATE POLICY "authenticated can read consultation-attachments"
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (bucket_id = 'consultation-attachments');
+
+-- Allow logged-in users to DELETE files from this bucket
+CREATE POLICY "authenticated can delete own attachments"
+  ON storage.objects
+  FOR DELETE
+  TO authenticated
+  USING (bucket_id = 'consultation-attachments');
+
+-- Allow logged-in users to UPDATE files (needed for overwrites)
+CREATE POLICY "authenticated can update consultation-attachments"
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (bucket_id = 'consultation-attachments');
+
+
+-- ─────────────────────────────────────────────────────
+-- DONE! Verify it worked:
+-- ─────────────────────────────────────────────────────
+SELECT
+  policyname,
+  cmd AS operation,
+  permissive
+FROM pg_policies
+WHERE tablename = 'objects' AND schemaname = 'storage'
+ORDER BY policyname;
+
+-- You should see 4 policies listed for consultation-attachments.
+-- Now go back to the app and try uploading a photo — it should work!
+
+```
+
 # ADMIN_SETUP_GUIDE.md
 
 ```md
@@ -13084,6 +13206,7 @@ export async function POST(req: NextRequest) {
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getIndiaToday } from '@/lib/utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13221,7 +13344,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const today    = new Date().toISOString().split('T')[0]
+    const today    = getIndiaToday()
     const nextWeek = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
 
     // Get open video slots
@@ -13715,6 +13838,7 @@ export async function POST(req: NextRequest) {
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getIndiaToday } from '@/lib/utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13817,7 +13941,7 @@ export async function GET(req: NextRequest) {
         .from('appointments')
         .select('*')
         .eq('patient_id', patient.id)
-        .gte('date', new Date().toISOString().split('T')[0])
+        .gte('date', getIndiaToday())
         .order('date', { ascending: true })
         .limit(20),
     ])
@@ -14561,7 +14685,7 @@ const VAX_SCHEDULE: { name: string; days: number }[] = [
 
 export interface ReminderItem {
   id:            string
-  type:          'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  type:          'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
   priority:      'urgent' | 'today' | 'tomorrow' | 'upcoming'
   patientId:     string
   patientName:   string
@@ -15748,8 +15872,10 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
+import { getIndiaToday } from '@/lib/utils'
+
 import {
   Calendar, Plus, Search, X, CheckCircle,
   MessageCircle, Phone, Trash2,
@@ -15811,7 +15937,7 @@ function AppointmentsContent() {
   const [dateFilter, setDateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   function setViewTab(tab: ViewTab) {
     setActiveTab_(tab)
@@ -15929,9 +16055,10 @@ function AppointmentsContent() {
     if (q.trim().length < 2) { setPatientResults([]); return }
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
+      const safe = escapeLike(q)
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, mobile, age')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
       setPatientResults(data ?? [])
     }, 300)
   }
@@ -16021,7 +16148,7 @@ function AppointmentsContent() {
       : ''
 
     const pMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
+      `*${hs.hospitalName || 'NexMedicon Hospital'}*
 Namaste ${appt.patient_name} ji 🙏
 This is a reminder for your *upcoming appointment*.
 📅 *Date:* ${dateStr}
@@ -16040,7 +16167,7 @@ For queries call: ${hs.phone || 'our helpdesk'}
 _${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
 
     const dMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
+      `*${hs.hospitalName || 'NexMedicon Hospital'}*
 *Patient Brief — Appointment Alert* 🩺
 📅 *Date:* ${dateStr} at *${appt.time}*
 🏥 *Visit Type:* ${appt.type}
@@ -16110,11 +16237,10 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={() => setReminderTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                    reminderTab === 'patient'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'patient'
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
-                  }`}
+                    }`}
                 >
                   <MessageCircle className="w-4 h-4" />
                   Patient Message
@@ -16122,11 +16248,10 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
 
                 <button
                   onClick={() => setReminderTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                    reminderTab === 'doctor'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'doctor'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                  }`}
+                    }`}
                 >
                   <Stethoscope className="w-4 h-4" />
                   Doctor Brief
@@ -16345,9 +16470,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
             { key: 'custom', label: '📅 Pick date' },
           ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setViewTab(key)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               {label}
             </button>
@@ -16448,9 +16572,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
                     )}
 
                     <button onClick={() => openReminder(appt)}
-                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                      }`}>
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                        }`}>
                       <MessageCircle className="w-3.5 h-3.5" /> {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
 
@@ -16890,7 +17013,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { escapeLike, formatDate, getIndiaToday } from '@/lib/utils'
 import type { Bed } from '@/types'
 import { BedDouble, Search, X, CheckCircle, User } from 'lucide-react'
 
@@ -16932,9 +17055,10 @@ export default function BedsPage() {
     setPatientSearch(q)
     setSelectedPatient(null)
     if (q.length < 2) { setPatientResults([]); return }
+    const safe = escapeLike(q)
     const { data } = await supabase
       .from('patients').select('id, full_name, mrn, age, gender')
-      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
     setPatientResults(data || [])
   }
 
@@ -16945,7 +17069,7 @@ export default function BedsPage() {
       status: 'occupied',
       patient_id: selectedPatient.id,
       patient_name: selectedPatient.full_name,
-      admission_date: new Date().toISOString().split('T')[0],
+      admission_date: getIndiaToday(),
       expected_discharge: expectedDischarge || null,
       updated_at: new Date().toISOString(),
     }).eq('id', modal.bed.id)
@@ -17157,7 +17281,7 @@ export default function BedsPage() {
 
                 <div>
                   <label className="label">Expected Discharge Date (optional)</label>
-                  <input className="input" type="date" min={new Date().toISOString().split('T')[0]}
+                  <input className="input" type="date" min={getIndiaToday()}
                     value={expectedDischarge} onChange={e => setExpectedDischarge(e.target.value)} />
                 </div>
 
@@ -17212,7 +17336,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { loadSettings, type HospitalSettings } from '@/lib/settings'
 
 // ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
@@ -17221,6 +17345,7 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 // bill flow. Before this fix, GST was a separate library with no integration.
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
+import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
@@ -17615,9 +17740,10 @@ function BillingContent() {
     if (q.trim().length < 2) { setPatientResults([]); return }
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
+      const safe = escapeLike(q)
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, age, mobile')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
         .limit(6)
       setPatientResults(data || [])
     }, 300)
@@ -18180,7 +18306,7 @@ function BillingContent() {
                   <label className="label">To Date</label>
                   <input type="date" className="input"
                     min={customFrom || undefined}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={customTo} onChange={e => { setCustomTo(e.target.value); setCAReport(null) }} />
                 </div>
                 {customFrom && customTo && (
@@ -18623,7 +18749,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime, ageFromDOB } from '@/lib/utils'
+import { formatDate, formatDateTime, ageFromDOB, getIndiaToday } from '@/lib/utils'
 import {
   Users, BedDouble, CalendarClock, Stethoscope,
   UserPlus, ArrowRight, Clock, Baby, AlertTriangle,
@@ -18668,7 +18794,7 @@ export default function Dashboard() {
   }, [secondaryLoaded])
 
   async function loadData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today   = getIndiaToday()
 
     // Revenue today (from billing table) — fire-and-forget
     supabase.from('bills').select('net_amount').eq('status','paid')
@@ -18712,7 +18838,7 @@ export default function Dashboard() {
 
   // Secondary data: overdue list details, recent encounters, ANC high-risk
   async function loadSecondaryData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today   = getIndiaToday()
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
 
     const [
@@ -19568,7 +19694,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { loadSettings } from '@/lib/settings'
 import { useAuth } from '@/lib/auth'
 import {
@@ -19638,7 +19764,7 @@ function statusBadge(s: ExpenseStatus) {
 
 // ── Date helpers ───────────────────────────────────────────────
 
-function getToday() { return new Date().toISOString().split('T')[0] }
+function getToday() { return getIndiaToday() }
 
 function getWeekStart() {
   const d = new Date()
@@ -20583,7 +20709,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   Shield, Plus, X, Search, ArrowLeft, Save, Loader2,
@@ -20730,7 +20856,7 @@ export default function InsurancePage() {
       const amt = prompt(`Approved Amount (claimed: ₹${claim.claim_amount}):`, String(claim.claim_amount))
       if (amt === null) return
       extra.settlement_utr = utr || null
-      extra.settlement_date = new Date().toISOString().split('T')[0]
+      extra.settlement_date = getIndiaToday()
       extra.approved_amount = Number(amt) || claim.claim_amount
     }
     if (newStatus === 'query_raised') {
@@ -20938,7 +21064,7 @@ export default function InsurancePage() {
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii, getIndiaToday } from '@/lib/utils'
 import { CheckCircle, AlertCircle, User, Phone, Calendar, Droplets, Globe } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
@@ -21131,7 +21257,7 @@ function IntakeContent() {
       await supabase.from('encounters').insert({
         patient_id:      data.id,
         encounter_type:  'OPD',
-        encounter_date:  new Date().toISOString().split('T')[0],
+        encounter_date:  getIndiaToday(),
         chief_complaint: form.chief_complaint.trim(),
       })
     }
@@ -21252,7 +21378,7 @@ function IntakeContent() {
               <input
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 type="date"
-                max={new Date().toISOString().split('T')[0]}
+                max={getIndiaToday()}
                 value={form.date_of_birth}
                 onChange={e => {
                   set('date_of_birth', e.target.value)
@@ -21458,7 +21584,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   ArrowLeft, Plus, Trash2, Save, Printer, IndianRupee,
@@ -21613,7 +21739,7 @@ export default function IPDBillingPage() {
 
   // ── Computed values ────────────────────────────────────────
   const admissionDate = admission?.admission_date || admission?.created_at?.split('T')[0]
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
   const daysAdmitted = admissionDate
     ? Math.max(1, Math.ceil((new Date(today).getTime() - new Date(admissionDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
     : 1
@@ -22997,7 +23123,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, formatDateTime, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   BedDouble, UserPlus, Search, RefreshCw, Stethoscope,
@@ -23327,7 +23453,7 @@ function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
 
   const [form, setForm] = useState({
     bed_id: '',
-    admission_date: new Date().toISOString().split('T')[0],
+    admission_date: getIndiaToday(),
     admission_time: new Date().toTimeString().slice(0, 5),
     admitting_doctor: '',
     consulting_doctors: [] as string[],
@@ -23357,10 +23483,11 @@ function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
   // Patient search
   const searchPatients = useCallback(async (q: string) => {
     if (q.length < 2) { setPatientResults([]); return }
+    const safe = escapeLike(q)
     const { data } = await supabase
       .from('patients')
       .select('id, full_name, mrn, age, gender, mobile')
-      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
       .limit(8)
     setPatientResults(data || [])
   }, [])
@@ -26957,6 +27084,37 @@ export default function PrescriptionPage() {
       setExisting(data)
     }
 
+    // ─── ADD THIS BLOCK after prescription saves successfully ───
+
+    // Sync follow-up date to Appointments + Reminders
+    // This function is smart — if a follow-up already exists for this
+    // encounter, it UPDATES it (not duplicate). If it doesn't exist, it CREATES one.
+    // It also creates/updates the matching appointment automatically.
+    if (followUpDate && encounterId && patient.id) {
+      try {
+        await createFollowUp(
+          patient.id,                    // which patient
+          encounterId,                  // which encounter/visit this follow-up is for
+          followUpDate,                 // the date the patient should come back (YYYY-MM-DD)
+          {
+            patientName: patient?.full_name || '',
+            mrn: patient?.mrn || '',
+            mobile: patient?.mobile || null,
+            encounterDateLabel: encounter?.encounter_date || '',
+          }
+        )
+        console.log('[Prescription] Follow-up synced:', followUpDate)
+      } catch (err) {
+        // This is non-fatal — don't block the prescription save
+        // The prescription was already saved above. If follow-up sync fails,
+        // we just log it. The doctor can manually create the appointment.
+        console.warn('[Prescription] Follow-up sync failed (non-fatal):', err)
+      }
+    }
+
+    // ─── END OF FOLLOW-UP SYNC BLOCK ───
+
+
     // ✅ Audit
     await audit('create', 'prescription', encounterId, patient?.full_name ?? '')
 
@@ -27041,10 +27199,10 @@ export default function PrescriptionPage() {
               onClick={handleSaveWithSafetyCheck}
               disabled={saving}
               className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60 ${saved
-                  ? 'bg-green-600 text-white'
-                  : safetyChecked
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                ? 'bg-green-600 text-white'
+                : safetyChecked
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
             >
               {saving ? (
@@ -27470,6 +27628,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
+import { getIndiaToday } from '@/lib/utils'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
 
 // ── Tab types ─────────────────────────────────────────────────
@@ -27539,6 +27698,118 @@ function NewConsultationContent() {
   const edd = ob.lmp ? calculateEDD(ob.lmp) : ''
   const ga = ob.lmp ? calculateGA(ob.lmp) : ''
 
+  // ╔══════════════════════════════════════════════════════════════════════╗
+  // ║  BUG #1 FIX — New Consultation Shows Old Data                      ║
+  // ║                                                                    ║
+  // ║  FILE TO EDIT: src/app/opd/new/[patientId]/page.tsx                ║
+  // ║                                                                    ║
+  // ║  INSTRUCTIONS:                                                     ║
+  // ║  1. Open the OPD new consultation page file                        ║
+  // ║  2. Find all the useState declarations (near the top of the        ║
+  // ║     component function)                                            ║
+  // ║  3. Find the FIRST useEffect in the file                           ║
+  // ║  4. ADD the new useEffect shown below BEFORE that first useEffect  ║
+  // ║  5. Save the file                                                  ║
+  // ║                                                                    ║
+  // ║  WHY THIS IS NEEDED:                                               ║
+  // ║  When a doctor clicks "New Consultation" for a patient, the form   ║
+  // ║  should be completely empty. But currently:                         ║
+  // ║  - Old vitals (BP, pulse, weight) from last visit show up          ║
+  // ║  - Old chief complaint and diagnosis appear                        ║
+  // ║  - Old notes from previous visit fill the notes field              ║
+  // ║  - sessionStorage draft from an interrupted session loads           ║
+  // ║                                                                    ║
+  // ║  This is DANGEROUS because a doctor might save old data as a new   ║
+  // ║  consultation without realizing it was from the previous visit.    ║
+  // ║                                                                    ║
+  // ║  IMPACT AFTER FIX:                                                 ║
+  // ║  ✅ Every new consultation starts with a completely empty form     ║
+  // ║  ✅ No risk of accidentally saving old data as new entry           ║
+  // ║  ✅ Clean slate every time, even if doctor navigated away before   ║
+  // ╚══════════════════════════════════════════════════════════════════════╝
+
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // ADD this useEffect BEFORE any other useEffects in the component.
+  // It should be the FIRST useEffect after all the useState declarations.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // ── 🧹 CLEAN FORM ON MOUNT — always start fresh ──────────────────────
+  // This runs once when the page opens for a new consultation.
+  // It clears any leftover draft data and resets all form fields.
+  useEffect(() => {
+    // Clear any saved draft from a previous unfinished session
+    try {
+      sessionStorage.removeItem(`opd_draft_${patientId}`)
+    } catch {
+      // sessionStorage might not be available (SSR) — that's fine
+    }
+
+    // Reset all form fields to empty/default values
+    // (These are the setter functions from your useState declarations)
+    setVitals({
+      pulse: '',
+      bp_systolic: '',
+      bp_diastolic: '',
+      temperature: '',
+      spo2: '',
+      weight: '',
+      height: '',
+    })
+    setChiefComplaint('')
+    setDiagnosis('')
+    setNotes('')
+    setHpi('')
+    setProcedures([])
+    setOB({})
+
+    // Reset OCR highlight indicators
+    setVHL({})
+    setCHL({})
+    setObHL({})
+
+    // Reset error and status flags
+    setError('')
+    setVisitedToday(false)
+    setNoteApplied(false)
+    setNoteOcrError('')
+    setNoteOcrPreview(null)
+    setNoteMedsQueue('')
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId])
+  // ↑ [patientId] means: re-run this reset whenever the patient changes
+  //   (or when the page first loads)
+
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // EXPLANATION FOR BEGINNERS:
+  //
+  // useEffect is a React feature that runs code when something happens.
+  //
+  // useEffect(() => {
+  //   // code here runs when the page loads
+  // }, [patientId])
+  //
+  // The [patientId] at the end is like saying:
+  // "Run this code when the page first opens, and also if the patient changes"
+  //
+  // Inside, we call all the "setter" functions (like setVitals, setDiagnosis)
+  // with empty values. This is like erasing a whiteboard before writing.
+  //
+  // The sessionStorage.removeItem line deletes any saved draft.
+  // sessionStorage is like a temporary notepad in the browser — it remembers
+  // things even if you navigate to another page. We need to clear it so
+  // old drafts don't show up as new consultation data.
+  //
+  // WHY IS THIS SAFE?
+  // - This only runs at the START (page mount)
+  // - It doesn't affect the save logic at all
+  // - After the user starts typing, their new data is in the form
+  // - The patient data (name, age, MRN) loads separately and is NOT reset
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
   useEffect(() => {
     if (!patientId) { router.push('/opd'); return }
 
@@ -27602,7 +27873,7 @@ function NewConsultationContent() {
         setLastDiagnosis(lastEnc.diagnosis)
       }
     })
-    const today = new Date().toISOString().split('T')[0] as string
+    const today = getIndiaToday() as string
 
     (async () => {
       try {
@@ -27858,7 +28129,7 @@ function NewConsultationContent() {
     setError('')
 
     // // Check if an encounter already exists for this patient today
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
 
     // Optional: check but DO NOT block
     try {
@@ -27988,7 +28259,7 @@ function NewConsultationContent() {
           <FormScanner
             formType="opd_consultation"
             onExtracted={handleOCRResult}
-            label="Scan OPD / ANC Paper Form"
+            label="📄 Scan Printed Form (OPD Registration / ANC Card)"
           />
           <p className="text-xs text-gray-400 mt-1.5 ml-1">
             📷 Reads Gujarati and English OPD chits, ANC cards, and consultation notes.
@@ -28005,7 +28276,7 @@ function NewConsultationContent() {
         <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">🩺 Click Photo of Doctor's Note</p>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">✍️ Read Doctor's Handwritten Note</p>
               <p className="text-xs text-blue-500 mt-0.5">
                 Take a photo of your handwritten note — AI reads it and fills in complaint, diagnosis, vitals, and plan automatically.
               </p>
@@ -28445,7 +28716,7 @@ function NewConsultationContent() {
                 <div>
                   <label className="label">LMP</label>
                   <input className={oc('lmp')} type="date"
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={ob.lmp || ''} onChange={e => setO('lmp', e.target.value)} />
                 </div>
                 <div>
@@ -29277,7 +29548,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
     Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
@@ -29336,7 +29607,7 @@ export default function OTSchedulePage() {
     const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
     const [schedules, setSchedules] = useState<OTSchedule[]>([])
     const [loading, setLoading] = useState(true)
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+    const [date, setDate] = useState(getIndiaToday())
     const [view, setView] = useState<'list' | 'new'>('list')
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -29345,14 +29616,14 @@ export default function OTSchedulePage() {
     const [patientResults, setPatientResults] = useState<any[]>([])
     const [selPatient, setSelPatient] = useState<any>(null)
     const [form, setForm] = useState({
-        surgery_name: SURGERIES[0], surgery_date: new Date().toISOString().split('T')[0],
+        surgery_name: SURGERIES[0], surgery_date: getIndiaToday(),
         start_time: '09:00', end_time: '10:00', surgeon: '', anesthetist: '',
         ot_room: 'OT-1', priority: 'elective' as 'elective' | 'urgent' | 'emergency',
         anesthesia_type: '', estimated_duration_min: '60', pre_op_notes: '',
         consent_taken: false, blood_arranged: false, fasting_confirmed: false,
     })
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
 
     const loadSchedules = useCallback(async () => {
         setLoading(true)
@@ -29613,7 +29884,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import {
   Scissors, Plus, ChevronLeft, ChevronRight, Calendar,
   CheckCircle, AlertTriangle, Clock,
@@ -29652,11 +29923,11 @@ const PRIORITY_DOTS: Record<string, string> = {
 }
 
 export default function OTWeekPage() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getIndiaToday())
   const [weekData, setWeekData] = useState<Record<string, OTSchedule[]>>({})
   const [loading, setLoading] = useState(true)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   // Calculate Monday-Sunday for the week containing `date`
   function getWeekDays(baseDate: string): string[] {
@@ -29938,7 +30209,7 @@ import AppShell from '@/components/layout/AppShell'
 // Hospital print settings loaded from Supabase-backed in-memory cache via getHospitalSettings()
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import {
   ArrowLeft, Sparkles, Save, Printer, CheckCircle,
@@ -29957,7 +30228,7 @@ interface DSForm {
 }
 
 const EMPTY: DSForm = {
-  admission_date: '', discharge_date: new Date().toISOString().split('T')[0],
+  admission_date: '', discharge_date: getIndiaToday(),
   final_diagnosis: '', secondary_diagnosis: '',
   clinical_summary: '', investigations: '', treatment_given: '',
   condition_at_discharge: 'Stable, afebrile, ambulant',
@@ -30074,7 +30345,7 @@ export default function DischargeSummaryPage() {
       setExisting(ds); setIsFinal(ds.is_final || false)
       setForm({
         admission_date: ds.admission_date || enc?.[0]?.encounter_date || '',
-        discharge_date: ds.discharge_date || new Date().toISOString().split('T')[0],
+        discharge_date: ds.discharge_date || getIndiaToday(),
         final_diagnosis: ds.final_diagnosis || '', secondary_diagnosis: ds.secondary_diagnosis || '',
         clinical_summary: ds.clinical_summary || '', investigations: ds.investigations || '',
         treatment_given: ds.treatment_given || '',
@@ -30409,6 +30680,7 @@ import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, CheckCircle, AlertCircle } from 'lucide-react'
+import { getIndiaToday } from '@/lib/utils'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 const GENDERS      = ['Female','Male','Other']
@@ -30617,7 +30889,7 @@ export default function EditPatientPage() {
               <div>
                 <label className="label">Date of Birth</label>
                 <input className={inputCls('date_of_birth')} type="date"
-                  max={new Date().toISOString().split('T')[0]}
+                  max={getIndiaToday()}
                   value={form.date_of_birth} onChange={e => handleDOB(e.target.value)} />
               </div>
               <div>
@@ -30768,7 +31040,7 @@ export default function EditPatientPage() {
 ```tsx
 
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -30911,8 +31183,20 @@ export default function PatientDetailPage() {
   const [summary, setSummary] = useState('')
   const [summaryState, setSummaryState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [summaryError, setSummaryError] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (id) loadAll() }, [id])
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   useEffect(() => {
     if (!id) return
       ; (async () => {
@@ -32005,7 +32289,7 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
-import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii, getIndiaToday } from '@/lib/utils'
 import {
   UserPlus, CheckCircle, AlertCircle, ArrowLeft,
   AlertTriangle, ExternalLink, User, Phone, MapPin,
@@ -32686,7 +32970,7 @@ export default function NewPatientPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Date of Birth</label>
                   <input className={inputClass('date_of_birth')} type="date"
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={form.date_of_birth}
                     onChange={e => handleDOB(e.target.value)}
                   />
@@ -33135,37 +33419,40 @@ import { supabase } from '@/lib/supabase'
 import { formatDate, ageFromDOB } from '@/lib/utils'
 import { Search, UserPlus, ChevronRight, User, Filter, X } from 'lucide-react'
 
-const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
 const bloodGroupColor: Record<string, string> = {
-  'A+':'badge-red','A-':'badge-red','B+':'badge-blue','B-':'badge-blue',
-  'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
+  'A+': 'badge-red', 'A-': 'badge-red', 'B+': 'badge-blue', 'B-': 'badge-blue',
+  'O+': 'badge-green', 'O-': 'badge-green', 'AB+': 'badge-yellow', 'AB-': 'badge-yellow'
 }
 
 export default function PatientsPage() {
   const router = useRouter()
 
-  const [patients,     setPatients]     = useState<any[]>([])
-  const [totalCount,   setTotalCount]   = useState(0)
-  const [query,        setQuery]        = useState('')
+  const [patients, setPatients] = useState<any[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [query, setQuery] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
-  const [bgFilter,     setBgFilter]     = useState('')
-  const [loading,      setLoading]      = useState(true)
-  const [showFilters,  setShowFilters]  = useState(false)
-
+  const [bgFilter, setBgFilter] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showFilters, setShowFilters] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(0)
 
   useEffect(() => { loadPatients() }, [])
+  useEffect(() => { loadPatients() }, [page])
 
   async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
     setLoading(true)
     let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
 
     if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
-    if (gender)   req = req.eq('gender', gender)
-    if (bg)       req = req.eq('blood_group', bg)
+    if (gender) req = req.eq('gender', gender)
+    if (bg) req = req.eq('blood_group', bg)
 
-    const { data } = await req.limit(100)
+    const { data } = await req.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
     setPatients(data || [])
     setTotalCount(data?.length || 0)
     setLoading(false)
@@ -33234,11 +33521,10 @@ export default function PatientsPage() {
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                hasFilters
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${hasFilters
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
             >
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filter</span>
@@ -33294,7 +33580,7 @@ export default function PatientsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Patient','MRN','Age / Gender','Mobile','Blood Group','Registered',''].map(h => (
+                {['Patient', 'MRN', 'Age / Gender', 'Mobile', 'Blood Group', 'Registered', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     {h}
                   </th>
@@ -33404,6 +33690,32 @@ export default function PatientsPage() {
             Showing first 100 results. Use search to find specific patients.
           </p>
         )}
+
+        {totalCount > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-4 py-4">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="btn-secondary text-sm disabled:opacity-40"
+            >
+              ← Previous
+            </button>
+
+            <span className="text-sm text-gray-500">
+              Page {page + 1} of {Math.ceil(totalCount / PAGE_SIZE)}
+              {' · '}{totalCount} total patients
+            </span>
+
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={(page + 1) * PAGE_SIZE >= totalCount}
+              className="btn-secondary text-sm disabled:opacity-40"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+
 
       </div>
     </AppShell>
@@ -35686,7 +35998,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
-import { formatDateTime } from '@/lib/utils'
+import { escapeLike, formatDateTime } from '@/lib/utils'
 import {
   Users, Plus, X, Clock, CheckCircle, Play,
   AlertTriangle, Loader2, RefreshCw, Zap,
@@ -35773,10 +36085,11 @@ function QueueContent() {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       const q = patientSearch.trim()
+      const safe = escapeLike(q)
       const { data, error } = await supabase
         .from('patients')
         .select('id, full_name, mrn, mobile')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
         .limit(8)
       if (!error) setPatientResults(data ?? [])
       setSearchLoading(false)
@@ -37114,7 +37427,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import {
   IndianRupee, Calendar, Printer, RefreshCw,
   TrendingUp, Users, Stethoscope, BedDouble,
@@ -37164,7 +37477,7 @@ function isSunday(dateStr: string): boolean {
 }
 // Get today — skip back if Sunday
 function getDefaultDate(): string {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
   return isSunday(today) ? prevWorkday(today) : today
 }
 
@@ -37253,7 +37566,7 @@ export default function DailyReportPage() {
 
   function changeDate(newDate: string) {
     if (isSunday(newDate)) return // don't navigate to Sunday
-    if (newDate > new Date().toISOString().split('T')[0]) return
+    if (newDate > getIndiaToday()) return
     setDate(newDate)
   }
 
@@ -38082,7 +38395,7 @@ export default function MonthlyReportPage() {
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import {
   Users, Stethoscope, BedDouble, Calendar,
   TrendingUp, TrendingDown, Minus, AlertCircle,
@@ -38158,7 +38471,7 @@ export default function ReportsPage() {
     const monthAgo  = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0]
 
     // Load billing revenue
-    const today2   = new Date().toISOString().split('T')[0]
+    const today2   = getIndiaToday()
     const weekAgo2 = new Date(Date.now() - 7*86400000).toISOString().split('T')[0]
     const mthAgo2  = new Date(Date.now() - 30*86400000).toISOString().split('T')[0]
     supabase.from('bills').select('net_amount,created_at').eq('status','paid').then(({data}) => {
@@ -38512,7 +38825,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import {
   IndianRupee, Printer, RefreshCw, Download,
   Users, Stethoscope, BedDouble, TrendingUp, Search
@@ -38530,7 +38843,7 @@ interface PatientPayment {
 }
 
 function getDefaultRange() {
-  const end   = new Date().toISOString().split('T')[0]
+  const end   = getIndiaToday()
   const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   return { start, end }
 }
@@ -38658,7 +38971,7 @@ export default function PaymentReportPage() {
             <div>
               <label className="label">To</label>
               <input type="date" className="input w-36" value={to} min={from}
-                max={new Date().toISOString().split('T')[0]}
+                max={getIndiaToday()}
                 onChange={e => setTo(e.target.value)}/>
             </div>
             <div>
@@ -40435,6 +40748,25 @@ function UserManagementSection() {
     staff: 'bg-green-100 text-green-700',
   }
 
+  async function adminResetPassword(userEmail: string, userName: string) {
+  if (!confirm(`Send password reset email to ${userName} (${userEmail})?`)) return
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+    })
+
+    if (error) {
+      alert(`Failed to send reset email: ${error.message}`)
+    } else {
+      alert(`✅ Password reset email sent to ${userEmail}.\nAsk ${userName} to check their inbox.`)
+    }
+  } catch (err: any) {
+    alert(`Error: ${err?.message || 'Unknown error'}`)
+  }
+}
+
+
   return (
     <div className="card p-6 mb-6">
       <h2 className="section-title flex items-center gap-2">
@@ -41433,7 +41765,7 @@ export default function StatusPage() {
 import { useEffect, useState, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   Video, Plus, Calendar, Clock, Users, CheckCircle,
@@ -41508,7 +41840,7 @@ export default function VideoConsultPage() {
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null)
 
   const [form, setForm] = useState({
-    date:         new Date().toISOString().split('T')[0],
+    date:         getIndiaToday(),
     time:         '10:00',
     doctor_name:  '',
     duration_min: '15',
@@ -41537,7 +41869,7 @@ export default function VideoConsultPage() {
 
   async function loadData() {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
     const [apptRes, docRes] = await Promise.all([
       supabase
         .from('appointments')
@@ -41655,7 +41987,7 @@ export default function VideoConsultPage() {
   // ── Derived lists ───────────────────────────────────────────
   const openSlots   = appointments.filter(a => a.status === 'open')
   const bookedSlots = appointments.filter(a => ['video', 'booked'].includes(a.status) && a.patient_name)
-  const todayStr    = new Date().toISOString().split('T')[0]
+  const todayStr    = getIndiaToday()
   const todayBooked = bookedSlots.filter(a => a.date === todayStr)
 
   // ── Render ──────────────────────────────────────────────────
@@ -43076,7 +43408,7 @@ import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
-import SessionTimeout from './SessionTimeout'; 
+import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
@@ -43096,11 +43428,11 @@ function setRoleOverride(role: UserRole | null) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const [loading,      setLoading]      = useState(true)
-  const [clinicUser,   setClinicUser]   = useState<ClinicUser | null>(null)
-  const [noProfile,    setNoProfile]    = useState(false)
-  const [configWarn,   setConfigWarn]   = useState<string[]>([])
-  const [warnDismissed,setWarnDismissed]= useState(false)
+  const [loading, setLoading] = useState(true)
+  const [clinicUser, setClinicUser] = useState<ClinicUser | null>(null)
+  const [noProfile, setNoProfile] = useState(false)
+  const [configWarn, setConfigWarn] = useState<string[]>([])
+  const [warnDismissed, setWarnDismissed] = useState(false)
 
   // FIX #2: Role override state for single-user setups
   const [roleOverride, setRoleOverrideState] = useState<UserRole | null>(null)
@@ -43138,17 +43470,47 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [router])
 
   useEffect(() => { loadUser() }, [loadUser])
+  useEffect(() => {
+    function handleKeyboard(e: KeyboardEvent) {
+      // Don't trigger shortcuts when typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.altKey) {
+        switch (e.key) {
+          case 'n': e.preventDefault(); router.push('/patients/new'); break
+          case 'd': e.preventDefault(); router.push('/dashboard'); break
+          case 'p': e.preventDefault(); window.print(); break
+          case '/': e.preventDefault();
+            // Focus the search input if it exists on this page
+            document.querySelector<HTMLInputElement>('input[type="text"][placeholder*="Search"]')?.focus()
+            break
+        }
+      }
+      if (e.key === 'Escape') {
+        // Close any open modal or go back
+        const modal = document.querySelector('[role="dialog"]')
+        if (modal) {
+          (modal.querySelector('button[aria-label="Close"]') as HTMLButtonElement)?.click()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyboard)
+    return () => window.removeEventListener('keydown', handleKeyboard)
+  }, [router])
+
 
   useEffect(() => {
     fetch('/api/check-config')
       .then(r => r.json())
       .then(({ anthropicOk, supabaseOk }) => {
         const w: string[] = []
-        if (!supabaseOk)  w.push('Supabase not configured — patient data won\'t save')
+        if (!supabaseOk) w.push('Supabase not configured — patient data won\'t save')
         if (!anthropicOk) w.push('AI API key missing — OCR, summaries and voice won\'t work')
         setConfigWarn(w)
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   // FIX #2: Handle role switching (ADMIN ONLY — preview mode)
@@ -43178,13 +43540,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const authCtx: AuthContextType = {
-    user:     effectiveUser,
+    user: effectiveUser,
     loading,
-    isAdmin:  effectiveUser?.role === 'admin',
+    isAdmin: effectiveUser?.role === 'admin',
     isDoctor: effectiveUser?.role === 'doctor',
-    isStaff:  effectiveUser?.role === 'staff',
-    can:      (permission: Permission) => hasPermission(effectiveUser?.role ?? null, permission),
-    reload:   loadUser,
+    isStaff: effectiveUser?.role === 'staff',
+    can: (permission: Permission) => hasPermission(effectiveUser?.role ?? null, permission),
+    reload: loadUser,
   }
 
   if (loading) {
@@ -43292,14 +43654,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="relative group">
                 {/* Badge button */}
                 <button
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
-                    effectiveUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
-                    effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                                                     'bg-green-100 text-green-700 hover:bg-green-200'
-                  }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${effectiveUser.role === 'admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                      effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                        'bg-green-100 text-green-700 hover:bg-green-200'
+                    }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
                 >
-                  {effectiveUser.role === 'admin'  ? '👑 Admin' :
-                   effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {effectiveUser.role === 'admin' ? '👑 Admin' :
+                    effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
                   {' · '}{effectiveUser.full_name}
                   {isUsingOverride && <span className="ml-1 text-purple-500 text-[10px]">(sim)</span>}
                   <span className="ml-0.5 opacity-50">▾</span>
@@ -43355,9 +43716,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <MobileNav />
 
-       {/* ── Uncomment these when the files exist: ────────── */}
-      <SessionTimeout />
-      <VoiceAssistant />
+        {/* ── Uncomment these when the files exist: ────────── */}
+        <SessionTimeout />
+        <VoiceAssistant />
 
 
       </div>
@@ -55849,6 +56210,7 @@ export function getClientIP(req: { headers: { get: (name: string) => string | nu
 
 ```ts
 import { supabase } from '@/lib/supabase'
+import { getIndiaToday } from '../utils'
 
 type CreateAppointmentParams = {
   patientId: string
@@ -56087,7 +56449,7 @@ export async function createFollowUp(
  */
 export async function handleVisitCompletion(patientId: string) {
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   // ✅ Only complete FOLLOW-UP if scheduled for today or before
   const { error: fuErr } = await supabase
@@ -56387,7 +56749,15 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const replicaUrl = process.env.NEXT_PUBLIC_SUPABASE_REPLICA_URL || ''
 
 // Client-side Supabase client (uses anon key, respects RLS)
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: true,              // ← Saves session in browser storage
+    storageKey: 'nexmedicon-auth',     // ← Unique key so it doesn't clash
+    autoRefreshToken: true,            // ← Auto-refreshes before token expires
+    detectSessionInUrl: true,          // ← Handles magic link callbacks
+  }
+})
+
 
 // ─── Read Replica Support ─────────────────────────────────────
 
@@ -56739,6 +57109,184 @@ export function sanitiseText(input: string | undefined | null): string {
     .replace(/javascript\s*:/gi, '')
 }
 
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  BUG #19 FIX — IST Timezone "Today" Helper                        ║
+// ║  BUG #9  FIX — SQL Injection Escape for ilike                     ║
+// ║                                                                    ║
+// ║  INSTRUCTIONS:                                                     ║
+// ║  Open your file: src/lib/utils.ts                                  ║
+// ║  Copy ALL the code below and PASTE it at the BOTTOM of utils.ts    ║
+// ║  (after the last export function)                                  ║
+// ║  DO NOT delete anything that's already in utils.ts                 ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #19 FIX — India Standard Time "Today" Date
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// Your code currently does: new Date().toISOString().split('T')[0]
+// This gives you the date in UTC (London time).
+// India is 5 hours 30 minutes AHEAD of UTC.
+// So between 12:00 AM and 5:30 AM India time, this returns YESTERDAY's date!
+//
+// REAL EXAMPLE:
+// It's 1:00 AM on January 15th in India.
+// But in UTC (London), it's still 7:30 PM on January 14th.
+// So your code would say "today = 2025-01-14" when it's actually January 15th.
+// The dashboard shows yesterday's OPD count, appointments look wrong, etc.
+//
+// IMPACT AFTER FIX:
+// ✅ Dashboard "Today's OPD" count will always be correct, even at midnight
+// ✅ Appointment "Today" tab shows the right day
+// ✅ Reminders fire on the correct day
+// ✅ Revenue reports match the actual clinic day
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Returns today's date in YYYY-MM-DD format using India Standard Time (IST).
+ *
+ * IST is always UTC+5:30. Unlike some countries, India does NOT have
+ * daylight saving time, so this offset never changes.
+ *
+ * Use this EVERYWHERE instead of: new Date().toISOString().split('T')[0]
+ */
+export function getIndiaToday(): string {
+  // Step 1: Get the current time
+  const now = new Date()
+
+  // Step 2: Convert to IST
+  // IST = UTC + 5 hours + 30 minutes = UTC + 330 minutes
+  const IST_OFFSET_MINUTES = 5 * 60 + 30 // = 330
+
+  // getTimezoneOffset() returns the difference in minutes between UTC and LOCAL time.
+  // We first convert "now" to UTC milliseconds, then add IST offset.
+  const utcMilliseconds = now.getTime() + (now.getTimezoneOffset() * 60 * 1000)
+  const istDate = new Date(utcMilliseconds + (IST_OFFSET_MINUTES * 60 * 1000))
+
+  // Step 3: Format as YYYY-MM-DD
+  const year  = istDate.getFullYear()
+  const month = String(istDate.getMonth() + 1).padStart(2, '0')  // months are 0-based
+  const day   = String(istDate.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Returns the current IST datetime as an ISO string.
+ * Use this when you need the full timestamp, not just the date.
+ */
+export function getIndiaNow(): Date {
+  const now = new Date()
+  const IST_OFFSET_MINUTES = 5 * 60 + 30
+  const utcMs = now.getTime() + (now.getTimezoneOffset() * 60 * 1000)
+  return new Date(utcMs + (IST_OFFSET_MINUTES * 60 * 1000))
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #9 FIX — SQL Injection Protection for Search Queries
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// When a user types in the patient search box, their text goes directly
+// into a database query like:  .ilike.%${userInput}%
+//
+// If someone types:  %' OR 1=1 --
+// The query becomes: .ilike.%%' OR 1=1 --%
+// This could return ALL patients (data leak) or cause errors.
+//
+// Even innocent characters are a problem:
+// - Typing "%" makes the search match everything
+// - Typing "_" matches any single character (wildcard in SQL)
+//
+// IMPACT AFTER FIX:
+// ✅ Search works correctly even if user types special characters
+// ✅ No more risk of data leaks through search
+// ✅ "_" and "%" in names (rare but possible) are searched literally
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Escapes special characters that have meaning in PostgreSQL LIKE/ILIKE patterns.
+ *
+ * In SQL:
+ *   %  means "match any number of characters"
+ *   _  means "match exactly one character"
+ *   \  is the escape character
+ *
+ * We need to put a backslash (\) before these so they are treated as
+ * regular characters, not wildcards.
+ *
+ * USAGE:
+ *   const safe = escapeLike(userInput)
+ *   supabase.from('patients').select('*').or(`full_name.ilike.%${safe}%`)
+ */
+export function escapeLike(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')   // escape backslash FIRST (otherwise it escapes our escapes!)
+    .replace(/%/g,  '\\%')    // escape percent sign
+    .replace(/_/g,  '\\_')    // escape underscore
+    .trim()                    // remove extra whitespace
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #20 FIX — Single Source of Truth for Appointment Status Logic
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// Different pages in your app treat appointment statuses differently.
+// Dashboard says "completed" AND "no-show" = visited.
+// Billing says only "completed" = visited.
+// Follow-up overdue logic counts "cancelled" as missed.
+// This makes numbers not match across pages.
+//
+// IMPACT AFTER FIX:
+// ✅ Dashboard, Billing, Appointments, Reminders all agree on counts
+// ✅ "Today's OPD" on dashboard matches Appointments page exactly
+// ✅ Overdue follow-ups won't count cancelled appointments
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Statuses that mean "the patient actually came and was seen" */
+export const VISIT_HAPPENED = ['completed'] as const
+
+/** Statuses that mean "patient was expected but didn't show" */
+export const NO_SHOW = ['no-show'] as const
+
+/** Statuses that mean "appointment is still active, patient is coming" */
+export const ACTIVE_APPOINTMENT = ['scheduled', 'confirmed'] as const
+
+/** Statuses that mean "appointment was cancelled, no follow-up expected" */
+export const CANCELLED = ['cancelled'] as const
+
+/**
+ * Check if an appointment status means the patient was actually seen.
+ * Use this in Dashboard, Billing, and Reports when counting visits.
+ *
+ * USAGE:
+ *   const todayVisits = appointments.filter(a => visitHappened(a.status))
+ */
+export function visitHappened(status: string): boolean {
+  return (VISIT_HAPPENED as readonly string[]).includes(status)
+}
+
+/**
+ * Check if an appointment is overdue (past the date and still not resolved).
+ * Only scheduled/confirmed appointments can be overdue.
+ * Cancelled and no-show are RESOLVED — they are not overdue.
+ *
+ * USAGE:
+ *   const overdueAppts = appointments.filter(a => isAppointmentOverdue(a, today))
+ */
+export function isAppointmentOverdue(
+  appointment: { date: string; status: string },
+  today: string
+): boolean {
+  return (
+    appointment.date < today &&
+    (ACTIVE_APPOINTMENT as readonly string[]).includes(appointment.status)
+  )
+}
 
 ```
 

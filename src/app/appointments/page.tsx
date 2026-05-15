@@ -4,8 +4,10 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
+import { getIndiaToday } from '@/lib/utils'
+
 import {
   Calendar, Plus, Search, X, CheckCircle,
   MessageCircle, Phone, Trash2,
@@ -67,7 +69,7 @@ function AppointmentsContent() {
   const [dateFilter, setDateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
 
   function setViewTab(tab: ViewTab) {
     setActiveTab_(tab)
@@ -185,9 +187,10 @@ function AppointmentsContent() {
     if (q.trim().length < 2) { setPatientResults([]); return }
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
+      const safe = escapeLike(q)
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, mobile, age')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
       setPatientResults(data ?? [])
     }, 300)
   }
@@ -277,7 +280,7 @@ function AppointmentsContent() {
       : ''
 
     const pMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
+      `*${hs.hospitalName || 'NexMedicon Hospital'}*
 Namaste ${appt.patient_name} ji 🙏
 This is a reminder for your *upcoming appointment*.
 📅 *Date:* ${dateStr}
@@ -296,7 +299,7 @@ For queries call: ${hs.phone || 'our helpdesk'}
 _${hs.hospitalName || 'NexMedicon Hospital'} — Caring for you_ 🙏`
 
     const dMsg =
-`*${hs.hospitalName || 'NexMedicon Hospital'}*
+      `*${hs.hospitalName || 'NexMedicon Hospital'}*
 *Patient Brief — Appointment Alert* 🩺
 📅 *Date:* ${dateStr} at *${appt.time}*
 🏥 *Visit Type:* ${appt.type}
@@ -366,11 +369,10 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={() => setReminderTab('patient')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                    reminderTab === 'patient'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'patient'
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
-                  }`}
+                    }`}
                 >
                   <MessageCircle className="w-4 h-4" />
                   Patient Message
@@ -378,11 +380,10 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
 
                 <button
                   onClick={() => setReminderTab('doctor')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                    reminderTab === 'doctor'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'doctor'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                  }`}
+                    }`}
                 >
                   <Stethoscope className="w-4 h-4" />
                   Doctor Brief
@@ -601,9 +602,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
             { key: 'custom', label: '📅 Pick date' },
           ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setViewTab(key)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${activeTab === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               {label}
             </button>
@@ -704,9 +704,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
                     )}
 
                     <button onClick={() => openReminder(appt)}
-                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                        appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                      }`}>
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${appt.reminder_sent ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                        }`}>
                       <MessageCircle className="w-3.5 h-3.5" /> {appt.reminder_sent ? 'Re-send' : 'Remind'}
                     </button>
 

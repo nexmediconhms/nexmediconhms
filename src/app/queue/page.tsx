@@ -18,7 +18,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
-import { formatDateTime } from '@/lib/utils'
+import { escapeLike, formatDateTime } from '@/lib/utils'
 import {
   Users, Plus, X, Clock, CheckCircle, Play,
   AlertTriangle, Loader2, RefreshCw, Zap,
@@ -105,10 +105,11 @@ function QueueContent() {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       const q = patientSearch.trim()
+      const safe = escapeLike(q)
       const { data, error } = await supabase
         .from('patients')
         .select('id, full_name, mrn, mobile')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
         .limit(8)
       if (!error) setPatientResults(data ?? [])
       setSearchLoading(false)

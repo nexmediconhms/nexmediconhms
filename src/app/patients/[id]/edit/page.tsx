@@ -7,6 +7,7 @@ import FormScanner from '@/components/shared/FormScanner'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
 import { ArrowLeft, Save, CheckCircle, AlertCircle } from 'lucide-react'
+import { getIndiaToday } from '@/lib/utils'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
 const GENDERS      = ['Female','Male','Other']
@@ -215,7 +216,7 @@ export default function EditPatientPage() {
               <div>
                 <label className="label">Date of Birth</label>
                 <input className={inputCls('date_of_birth')} type="date"
-                  max={new Date().toISOString().split('T')[0]}
+                  max={getIndiaToday()}
                   value={form.date_of_birth} onChange={e => handleDOB(e.target.value)} />
               </div>
               <div>

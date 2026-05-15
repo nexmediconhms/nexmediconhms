@@ -6,7 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 // Hospital print settings loaded from Supabase-backed in-memory cache via getHospitalSettings()
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import {
   ArrowLeft, Sparkles, Save, Printer, CheckCircle,
@@ -25,7 +25,7 @@ interface DSForm {
 }
 
 const EMPTY: DSForm = {
-  admission_date: '', discharge_date: new Date().toISOString().split('T')[0],
+  admission_date: '', discharge_date: getIndiaToday(),
   final_diagnosis: '', secondary_diagnosis: '',
   clinical_summary: '', investigations: '', treatment_given: '',
   condition_at_discharge: 'Stable, afebrile, ambulant',
@@ -142,7 +142,7 @@ export default function DischargeSummaryPage() {
       setExisting(ds); setIsFinal(ds.is_final || false)
       setForm({
         admission_date: ds.admission_date || enc?.[0]?.encounter_date || '',
-        discharge_date: ds.discharge_date || new Date().toISOString().split('T')[0],
+        discharge_date: ds.discharge_date || getIndiaToday(),
         final_diagnosis: ds.final_diagnosis || '', secondary_diagnosis: ds.secondary_diagnosis || '',
         clinical_summary: ds.clinical_summary || '', investigations: ds.investigations || '',
         treatment_given: ds.treatment_given || '',

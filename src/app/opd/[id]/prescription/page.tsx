@@ -316,6 +316,37 @@ export default function PrescriptionPage() {
       setExisting(data)
     }
 
+    // ─── ADD THIS BLOCK after prescription saves successfully ───
+
+    // Sync follow-up date to Appointments + Reminders
+    // This function is smart — if a follow-up already exists for this
+    // encounter, it UPDATES it (not duplicate). If it doesn't exist, it CREATES one.
+    // It also creates/updates the matching appointment automatically.
+    if (followUpDate && encounterId && patient.id) {
+      try {
+        await createFollowUp(
+          patient.id,                    // which patient
+          encounterId,                  // which encounter/visit this follow-up is for
+          followUpDate,                 // the date the patient should come back (YYYY-MM-DD)
+          {
+            patientName: patient?.full_name || '',
+            mrn: patient?.mrn || '',
+            mobile: patient?.mobile || null,
+            encounterDateLabel: encounter?.encounter_date || '',
+          }
+        )
+        console.log('[Prescription] Follow-up synced:', followUpDate)
+      } catch (err) {
+        // This is non-fatal — don't block the prescription save
+        // The prescription was already saved above. If follow-up sync fails,
+        // we just log it. The doctor can manually create the appointment.
+        console.warn('[Prescription] Follow-up sync failed (non-fatal):', err)
+      }
+    }
+
+    // ─── END OF FOLLOW-UP SYNC BLOCK ───
+
+
     // ✅ Audit
     await audit('create', 'prescription', encounterId, patient?.full_name ?? '')
 
@@ -400,10 +431,10 @@ export default function PrescriptionPage() {
               onClick={handleSaveWithSafetyCheck}
               disabled={saving}
               className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-60 ${saved
-                  ? 'bg-green-600 text-white'
-                  : safetyChecked
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                ? 'bg-green-600 text-white'
+                : safetyChecked
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
             >
               {saving ? (

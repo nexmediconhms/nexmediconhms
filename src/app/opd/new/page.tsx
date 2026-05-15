@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
+import { getIndiaToday } from '@/lib/utils'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
 
 // ── Tab types ─────────────────────────────────────────────────
@@ -79,6 +80,118 @@ function NewConsultationContent() {
   const edd = ob.lmp ? calculateEDD(ob.lmp) : ''
   const ga = ob.lmp ? calculateGA(ob.lmp) : ''
 
+  // ╔══════════════════════════════════════════════════════════════════════╗
+  // ║  BUG #1 FIX — New Consultation Shows Old Data                      ║
+  // ║                                                                    ║
+  // ║  FILE TO EDIT: src/app/opd/new/[patientId]/page.tsx                ║
+  // ║                                                                    ║
+  // ║  INSTRUCTIONS:                                                     ║
+  // ║  1. Open the OPD new consultation page file                        ║
+  // ║  2. Find all the useState declarations (near the top of the        ║
+  // ║     component function)                                            ║
+  // ║  3. Find the FIRST useEffect in the file                           ║
+  // ║  4. ADD the new useEffect shown below BEFORE that first useEffect  ║
+  // ║  5. Save the file                                                  ║
+  // ║                                                                    ║
+  // ║  WHY THIS IS NEEDED:                                               ║
+  // ║  When a doctor clicks "New Consultation" for a patient, the form   ║
+  // ║  should be completely empty. But currently:                         ║
+  // ║  - Old vitals (BP, pulse, weight) from last visit show up          ║
+  // ║  - Old chief complaint and diagnosis appear                        ║
+  // ║  - Old notes from previous visit fill the notes field              ║
+  // ║  - sessionStorage draft from an interrupted session loads           ║
+  // ║                                                                    ║
+  // ║  This is DANGEROUS because a doctor might save old data as a new   ║
+  // ║  consultation without realizing it was from the previous visit.    ║
+  // ║                                                                    ║
+  // ║  IMPACT AFTER FIX:                                                 ║
+  // ║  ✅ Every new consultation starts with a completely empty form     ║
+  // ║  ✅ No risk of accidentally saving old data as new entry           ║
+  // ║  ✅ Clean slate every time, even if doctor navigated away before   ║
+  // ╚══════════════════════════════════════════════════════════════════════╝
+
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // ADD this useEffect BEFORE any other useEffects in the component.
+  // It should be the FIRST useEffect after all the useState declarations.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // ── 🧹 CLEAN FORM ON MOUNT — always start fresh ──────────────────────
+  // This runs once when the page opens for a new consultation.
+  // It clears any leftover draft data and resets all form fields.
+  useEffect(() => {
+    // Clear any saved draft from a previous unfinished session
+    try {
+      sessionStorage.removeItem(`opd_draft_${patientId}`)
+    } catch {
+      // sessionStorage might not be available (SSR) — that's fine
+    }
+
+    // Reset all form fields to empty/default values
+    // (These are the setter functions from your useState declarations)
+    setVitals({
+      pulse: '',
+      bp_systolic: '',
+      bp_diastolic: '',
+      temperature: '',
+      spo2: '',
+      weight: '',
+      height: '',
+    })
+    setChiefComplaint('')
+    setDiagnosis('')
+    setNotes('')
+    setHpi('')
+    setProcedures([])
+    setOB({})
+
+    // Reset OCR highlight indicators
+    setVHL({})
+    setCHL({})
+    setObHL({})
+
+    // Reset error and status flags
+    setError('')
+    setVisitedToday(false)
+    setNoteApplied(false)
+    setNoteOcrError('')
+    setNoteOcrPreview(null)
+    setNoteMedsQueue('')
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId])
+  // ↑ [patientId] means: re-run this reset whenever the patient changes
+  //   (or when the page first loads)
+
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // EXPLANATION FOR BEGINNERS:
+  //
+  // useEffect is a React feature that runs code when something happens.
+  //
+  // useEffect(() => {
+  //   // code here runs when the page loads
+  // }, [patientId])
+  //
+  // The [patientId] at the end is like saying:
+  // "Run this code when the page first opens, and also if the patient changes"
+  //
+  // Inside, we call all the "setter" functions (like setVitals, setDiagnosis)
+  // with empty values. This is like erasing a whiteboard before writing.
+  //
+  // The sessionStorage.removeItem line deletes any saved draft.
+  // sessionStorage is like a temporary notepad in the browser — it remembers
+  // things even if you navigate to another page. We need to clear it so
+  // old drafts don't show up as new consultation data.
+  //
+  // WHY IS THIS SAFE?
+  // - This only runs at the START (page mount)
+  // - It doesn't affect the save logic at all
+  // - After the user starts typing, their new data is in the form
+  // - The patient data (name, age, MRN) loads separately and is NOT reset
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
   useEffect(() => {
     if (!patientId) { router.push('/opd'); return }
 
@@ -142,7 +255,7 @@ function NewConsultationContent() {
         setLastDiagnosis(lastEnc.diagnosis)
       }
     })
-    const today = new Date().toISOString().split('T')[0] as string
+    const today = getIndiaToday() as string
 
     (async () => {
       try {
@@ -398,7 +511,7 @@ function NewConsultationContent() {
     setError('')
 
     // // Check if an encounter already exists for this patient today
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
 
     // Optional: check but DO NOT block
     try {
@@ -528,7 +641,7 @@ function NewConsultationContent() {
           <FormScanner
             formType="opd_consultation"
             onExtracted={handleOCRResult}
-            label="Scan OPD / ANC Paper Form"
+            label="📄 Scan Printed Form (OPD Registration / ANC Card)"
           />
           <p className="text-xs text-gray-400 mt-1.5 ml-1">
             📷 Reads Gujarati and English OPD chits, ANC cards, and consultation notes.
@@ -545,7 +658,7 @@ function NewConsultationContent() {
         <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">🩺 Click Photo of Doctor's Note</p>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">✍️ Read Doctor's Handwritten Note</p>
               <p className="text-xs text-blue-500 mt-0.5">
                 Take a photo of your handwritten note — AI reads it and fills in complaint, diagnosis, vitals, and plan automatically.
               </p>
@@ -985,7 +1098,7 @@ function NewConsultationContent() {
                 <div>
                   <label className="label">LMP</label>
                   <input className={oc('lmp')} type="date"
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getIndiaToday()}
                     value={ob.lmp || ''} onChange={e => setO('lmp', e.target.value)} />
                 </div>
                 <div>

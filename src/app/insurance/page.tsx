@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   Shield, Plus, X, Search, ArrowLeft, Save, Loader2,
@@ -150,7 +150,7 @@ export default function InsurancePage() {
       const amt = prompt(`Approved Amount (claimed: ₹${claim.claim_amount}):`, String(claim.claim_amount))
       if (amt === null) return
       extra.settlement_utr = utr || null
-      extra.settlement_date = new Date().toISOString().split('T')[0]
+      extra.settlement_date = getIndiaToday()
       extra.approved_amount = Number(amt) || claim.claim_amount
     }
     if (newStatus === 'query_raised') {

@@ -2,7 +2,7 @@
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { normalizePhone, normalizeDigits, indicDigitsToAscii } from '@/lib/utils'
+import { normalizePhone, normalizeDigits, indicDigitsToAscii, getIndiaToday } from '@/lib/utils'
 import { CheckCircle, AlertCircle, User, Phone, Calendar, Droplets, Globe } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
@@ -195,7 +195,7 @@ function IntakeContent() {
       await supabase.from('encounters').insert({
         patient_id:      data.id,
         encounter_type:  'OPD',
-        encounter_date:  new Date().toISOString().split('T')[0],
+        encounter_date:  getIndiaToday(),
         chief_complaint: form.chief_complaint.trim(),
       })
     }
@@ -316,7 +316,7 @@ function IntakeContent() {
               <input
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 type="date"
-                max={new Date().toISOString().split('T')[0]}
+                max={getIndiaToday()}
                 value={form.date_of_birth}
                 onChange={e => {
                   set('date_of_birth', e.target.value)

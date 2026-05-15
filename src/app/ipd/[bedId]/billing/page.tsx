@@ -20,7 +20,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   ArrowLeft, Plus, Trash2, Save, Printer, IndianRupee,
@@ -175,7 +175,7 @@ export default function IPDBillingPage() {
 
   // ── Computed values ────────────────────────────────────────
   const admissionDate = admission?.admission_date || admission?.created_at?.split('T')[0]
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
   const daysAdmitted = admissionDate
     ? Math.max(1, Math.ceil((new Date(today).getTime() - new Date(admissionDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
     : 1

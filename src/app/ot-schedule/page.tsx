@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
     Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
@@ -62,7 +62,7 @@ export default function OTSchedulePage() {
     const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
     const [schedules, setSchedules] = useState<OTSchedule[]>([])
     const [loading, setLoading] = useState(true)
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+    const [date, setDate] = useState(getIndiaToday())
     const [view, setView] = useState<'list' | 'new'>('list')
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -71,14 +71,14 @@ export default function OTSchedulePage() {
     const [patientResults, setPatientResults] = useState<any[]>([])
     const [selPatient, setSelPatient] = useState<any>(null)
     const [form, setForm] = useState({
-        surgery_name: SURGERIES[0], surgery_date: new Date().toISOString().split('T')[0],
+        surgery_name: SURGERIES[0], surgery_date: getIndiaToday(),
         start_time: '09:00', end_time: '10:00', surgeon: '', anesthetist: '',
         ot_room: 'OT-1', priority: 'elective' as 'elective' | 'urgent' | 'emergency',
         anesthesia_type: '', estimated_duration_min: '60', pre_op_notes: '',
         consent_taken: false, blood_arranged: false, fasting_confirmed: false,
     })
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
 
     const loadSchedules = useCallback(async () => {
         setLoading(true)

@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { loadSettings } from '@/lib/settings'
 import { useAuth } from '@/lib/auth'
 import {
@@ -86,7 +86,7 @@ function statusBadge(s: ExpenseStatus) {
 
 // ── Date helpers ───────────────────────────────────────────────
 
-function getToday() { return new Date().toISOString().split('T')[0] }
+function getToday() { return getIndiaToday() }
 
 function getWeekStart() {
   const d = new Date()

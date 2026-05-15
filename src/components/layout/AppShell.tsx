@@ -34,7 +34,7 @@ import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
-import SessionTimeout from './SessionTimeout'; 
+import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
@@ -54,11 +54,11 @@ function setRoleOverride(role: UserRole | null) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const [loading,      setLoading]      = useState(true)
-  const [clinicUser,   setClinicUser]   = useState<ClinicUser | null>(null)
-  const [noProfile,    setNoProfile]    = useState(false)
-  const [configWarn,   setConfigWarn]   = useState<string[]>([])
-  const [warnDismissed,setWarnDismissed]= useState(false)
+  const [loading, setLoading] = useState(true)
+  const [clinicUser, setClinicUser] = useState<ClinicUser | null>(null)
+  const [noProfile, setNoProfile] = useState(false)
+  const [configWarn, setConfigWarn] = useState<string[]>([])
+  const [warnDismissed, setWarnDismissed] = useState(false)
 
   // FIX #2: Role override state for single-user setups
   const [roleOverride, setRoleOverrideState] = useState<UserRole | null>(null)
@@ -96,17 +96,47 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [router])
 
   useEffect(() => { loadUser() }, [loadUser])
+  useEffect(() => {
+    function handleKeyboard(e: KeyboardEvent) {
+      // Don't trigger shortcuts when typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.altKey) {
+        switch (e.key) {
+          case 'n': e.preventDefault(); router.push('/patients/new'); break
+          case 'd': e.preventDefault(); router.push('/dashboard'); break
+          case 'p': e.preventDefault(); window.print(); break
+          case '/': e.preventDefault();
+            // Focus the search input if it exists on this page
+            document.querySelector<HTMLInputElement>('input[type="text"][placeholder*="Search"]')?.focus()
+            break
+        }
+      }
+      if (e.key === 'Escape') {
+        // Close any open modal or go back
+        const modal = document.querySelector('[role="dialog"]')
+        if (modal) {
+          (modal.querySelector('button[aria-label="Close"]') as HTMLButtonElement)?.click()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyboard)
+    return () => window.removeEventListener('keydown', handleKeyboard)
+  }, [router])
+
 
   useEffect(() => {
     fetch('/api/check-config')
       .then(r => r.json())
       .then(({ anthropicOk, supabaseOk }) => {
         const w: string[] = []
-        if (!supabaseOk)  w.push('Supabase not configured — patient data won\'t save')
+        if (!supabaseOk) w.push('Supabase not configured — patient data won\'t save')
         if (!anthropicOk) w.push('AI API key missing — OCR, summaries and voice won\'t work')
         setConfigWarn(w)
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   // FIX #2: Handle role switching (ADMIN ONLY — preview mode)
@@ -136,13 +166,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const authCtx: AuthContextType = {
-    user:     effectiveUser,
+    user: effectiveUser,
     loading,
-    isAdmin:  effectiveUser?.role === 'admin',
+    isAdmin: effectiveUser?.role === 'admin',
     isDoctor: effectiveUser?.role === 'doctor',
-    isStaff:  effectiveUser?.role === 'staff',
-    can:      (permission: Permission) => hasPermission(effectiveUser?.role ?? null, permission),
-    reload:   loadUser,
+    isStaff: effectiveUser?.role === 'staff',
+    can: (permission: Permission) => hasPermission(effectiveUser?.role ?? null, permission),
+    reload: loadUser,
   }
 
   if (loading) {
@@ -250,14 +280,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="relative group">
                 {/* Badge button */}
                 <button
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
-                    effectiveUser.role === 'admin'  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
-                    effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                                                     'bg-green-100 text-green-700 hover:bg-green-200'
-                  }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${effectiveUser.role === 'admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                      effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                        'bg-green-100 text-green-700 hover:bg-green-200'
+                    }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
                 >
-                  {effectiveUser.role === 'admin'  ? '👑 Admin' :
-                   effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {effectiveUser.role === 'admin' ? '👑 Admin' :
+                    effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
                   {' · '}{effectiveUser.full_name}
                   {isUsingOverride && <span className="ml-1 text-purple-500 text-[10px]">(sim)</span>}
                   <span className="ml-0.5 opacity-50">▾</span>
@@ -313,9 +342,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <MobileNav />
 
-       {/* ── Uncomment these when the files exist: ────────── */}
-      <SessionTimeout />
-      <VoiceAssistant />
+        {/* ── Uncomment these when the files exist: ────────── */}
+        <SessionTimeout />
+        <VoiceAssistant />
 
 
       </div>

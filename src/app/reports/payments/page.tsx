@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import {
   IndianRupee, Printer, RefreshCw, Download,
   Users, Stethoscope, BedDouble, TrendingUp, Search
@@ -21,7 +21,7 @@ interface PatientPayment {
 }
 
 function getDefaultRange() {
-  const end   = new Date().toISOString().split('T')[0]
+  const end   = getIndiaToday()
   const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   return { start, end }
 }
@@ -149,7 +149,7 @@ export default function PaymentReportPage() {
             <div>
               <label className="label">To</label>
               <input type="date" className="input w-36" value={to} min={from}
-                max={new Date().toISOString().split('T')[0]}
+                max={getIndiaToday()}
                 onChange={e => setTo(e.target.value)}/>
             </div>
             <div>

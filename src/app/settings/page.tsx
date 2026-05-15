@@ -402,6 +402,25 @@ function UserManagementSection() {
     staff: 'bg-green-100 text-green-700',
   }
 
+  async function adminResetPassword(userEmail: string, userName: string) {
+  if (!confirm(`Send password reset email to ${userName} (${userEmail})?`)) return
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+    })
+
+    if (error) {
+      alert(`Failed to send reset email: ${error.message}`)
+    } else {
+      alert(`✅ Password reset email sent to ${userEmail}.\nAsk ${userName} to check their inbox.`)
+    }
+  } catch (err: any) {
+    alert(`Error: ${err?.message || 'Unknown error'}`)
+  }
+}
+
+
   return (
     <div className="card p-6 mb-6">
       <h2 className="section-title flex items-center gap-2">

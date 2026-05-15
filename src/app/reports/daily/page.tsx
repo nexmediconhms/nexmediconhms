@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import {
   IndianRupee, Calendar, Printer, RefreshCw,
   TrendingUp, Users, Stethoscope, BedDouble,
@@ -53,7 +53,7 @@ function isSunday(dateStr: string): boolean {
 }
 // Get today — skip back if Sunday
 function getDefaultDate(): string {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getIndiaToday()
   return isSunday(today) ? prevWorkday(today) : today
 }
 
@@ -142,7 +142,7 @@ export default function DailyReportPage() {
 
   function changeDate(newDate: string) {
     if (isSunday(newDate)) return // don't navigate to Sunday
-    if (newDate > new Date().toISOString().split('T')[0]) return
+    if (newDate > getIndiaToday()) return
     setDate(newDate)
   }
 

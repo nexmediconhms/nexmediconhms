@@ -21,7 +21,7 @@
 import { useEffect, useState, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   Video, Plus, Calendar, Clock, Users, CheckCircle,
@@ -96,7 +96,7 @@ export default function VideoConsultPage() {
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null)
 
   const [form, setForm] = useState({
-    date:         new Date().toISOString().split('T')[0],
+    date:         getIndiaToday(),
     time:         '10:00',
     doctor_name:  '',
     duration_min: '15',
@@ -125,7 +125,7 @@ export default function VideoConsultPage() {
 
   async function loadData() {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = getIndiaToday()
     const [apptRes, docRes] = await Promise.all([
       supabase
         .from('appointments')
@@ -243,7 +243,7 @@ export default function VideoConsultPage() {
   // ── Derived lists ───────────────────────────────────────────
   const openSlots   = appointments.filter(a => a.status === 'open')
   const bookedSlots = appointments.filter(a => ['video', 'booked'].includes(a.status) && a.patient_name)
-  const todayStr    = new Date().toISOString().split('T')[0]
+  const todayStr    = getIndiaToday()
   const todayBooked = bookedSlots.filter(a => a.date === todayStr)
 
   // ── Render ──────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -143,8 +143,20 @@ export default function PatientDetailPage() {
   const [summary, setSummary] = useState('')
   const [summaryState, setSummaryState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [summaryError, setSummaryError] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (id) loadAll() }, [id])
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   useEffect(() => {
     if (!id) return
       ; (async () => {

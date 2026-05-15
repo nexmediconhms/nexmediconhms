@@ -18,7 +18,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, formatDateTime, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   BedDouble, UserPlus, Search, RefreshCw, Stethoscope,
@@ -348,7 +348,7 @@ function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
 
   const [form, setForm] = useState({
     bed_id: '',
-    admission_date: new Date().toISOString().split('T')[0],
+    admission_date: getIndiaToday(),
     admission_time: new Date().toTimeString().slice(0, 5),
     admitting_doctor: '',
     consulting_doctors: [] as string[],
@@ -378,10 +378,11 @@ function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
   // Patient search
   const searchPatients = useCallback(async (q: string) => {
     if (q.length < 2) { setPatientResults([]); return }
+    const safe = escapeLike(q)
     const { data } = await supabase
       .from('patients')
       .select('id, full_name, mrn, age, gender, mobile')
-      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
       .limit(8)
     setPatientResults(data || [])
   }, [])

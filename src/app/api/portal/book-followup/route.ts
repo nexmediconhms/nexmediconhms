@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getIndiaToday } from '@/lib/utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -149,7 +150,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const today    = new Date().toISOString().split('T')[0]
+    const today    = getIndiaToday()
     const nextWeek = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
 
     // Get open video slots

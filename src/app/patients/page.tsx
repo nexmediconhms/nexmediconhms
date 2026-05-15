@@ -7,37 +7,40 @@ import { supabase } from '@/lib/supabase'
 import { formatDate, ageFromDOB } from '@/lib/utils'
 import { Search, UserPlus, ChevronRight, User, Filter, X } from 'lucide-react'
 
-const BLOOD_GROUPS = ['A+','A-','B+','B-','O+','O-','AB+','AB-']
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
 const bloodGroupColor: Record<string, string> = {
-  'A+':'badge-red','A-':'badge-red','B+':'badge-blue','B-':'badge-blue',
-  'O+':'badge-green','O-':'badge-green','AB+':'badge-yellow','AB-':'badge-yellow'
+  'A+': 'badge-red', 'A-': 'badge-red', 'B+': 'badge-blue', 'B-': 'badge-blue',
+  'O+': 'badge-green', 'O-': 'badge-green', 'AB+': 'badge-yellow', 'AB-': 'badge-yellow'
 }
 
 export default function PatientsPage() {
   const router = useRouter()
 
-  const [patients,     setPatients]     = useState<any[]>([])
-  const [totalCount,   setTotalCount]   = useState(0)
-  const [query,        setQuery]        = useState('')
+  const [patients, setPatients] = useState<any[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [query, setQuery] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
-  const [bgFilter,     setBgFilter]     = useState('')
-  const [loading,      setLoading]      = useState(true)
-  const [showFilters,  setShowFilters]  = useState(false)
-
+  const [bgFilter, setBgFilter] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showFilters, setShowFilters] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(0)
 
   useEffect(() => { loadPatients() }, [])
+  useEffect(() => { loadPatients() }, [page])
 
   async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
     setLoading(true)
     let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
 
     if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
-    if (gender)   req = req.eq('gender', gender)
-    if (bg)       req = req.eq('blood_group', bg)
+    if (gender) req = req.eq('gender', gender)
+    if (bg) req = req.eq('blood_group', bg)
 
-    const { data } = await req.limit(100)
+    const { data } = await req.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
     setPatients(data || [])
     setTotalCount(data?.length || 0)
     setLoading(false)
@@ -106,11 +109,10 @@ export default function PatientsPage() {
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                hasFilters
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${hasFilters
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
             >
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filter</span>
@@ -166,7 +168,7 @@ export default function PatientsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Patient','MRN','Age / Gender','Mobile','Blood Group','Registered',''].map(h => (
+                {['Patient', 'MRN', 'Age / Gender', 'Mobile', 'Blood Group', 'Registered', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     {h}
                   </th>
@@ -276,6 +278,32 @@ export default function PatientsPage() {
             Showing first 100 results. Use search to find specific patients.
           </p>
         )}
+
+        {totalCount > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-4 py-4">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="btn-secondary text-sm disabled:opacity-40"
+            >
+              ← Previous
+            </button>
+
+            <span className="text-sm text-gray-500">
+              Page {page + 1} of {Math.ceil(totalCount / PAGE_SIZE)}
+              {' · '}{totalCount} total patients
+            </span>
+
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={(page + 1) * PAGE_SIZE >= totalCount}
+              className="btn-secondary text-sm disabled:opacity-40"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+
 
       </div>
     </AppShell>

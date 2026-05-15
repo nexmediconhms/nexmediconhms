@@ -7,7 +7,15 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const replicaUrl = process.env.NEXT_PUBLIC_SUPABASE_REPLICA_URL || ''
 
 // Client-side Supabase client (uses anon key, respects RLS)
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: true,              // ← Saves session in browser storage
+    storageKey: 'nexmedicon-auth',     // ← Unique key so it doesn't clash
+    autoRefreshToken: true,            // ← Auto-refreshes before token expires
+    detectSessionInUrl: true,          // ← Handles magic link callbacks
+  }
+})
+
 
 // ─── Read Replica Support ─────────────────────────────────────
 

@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime, ageFromDOB } from '@/lib/utils'
+import { formatDate, formatDateTime, ageFromDOB, getIndiaToday } from '@/lib/utils'
 import {
   Users, BedDouble, CalendarClock, Stethoscope,
   UserPlus, ArrowRight, Clock, Baby, AlertTriangle,
@@ -48,7 +48,7 @@ export default function Dashboard() {
   }, [secondaryLoaded])
 
   async function loadData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today   = getIndiaToday()
 
     // Revenue today (from billing table) — fire-and-forget
     supabase.from('bills').select('net_amount').eq('status','paid')
@@ -92,7 +92,7 @@ export default function Dashboard() {
 
   // Secondary data: overdue list details, recent encounters, ANC high-risk
   async function loadSecondaryData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today   = getIndiaToday()
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
 
     const [

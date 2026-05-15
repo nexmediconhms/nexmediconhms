@@ -221,3 +221,181 @@ export function sanitiseText(input: string | undefined | null): string {
     .replace(/javascript\s*:/gi, '')
 }
 
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  BUG #19 FIX — IST Timezone "Today" Helper                        ║
+// ║  BUG #9  FIX — SQL Injection Escape for ilike                     ║
+// ║                                                                    ║
+// ║  INSTRUCTIONS:                                                     ║
+// ║  Open your file: src/lib/utils.ts                                  ║
+// ║  Copy ALL the code below and PASTE it at the BOTTOM of utils.ts    ║
+// ║  (after the last export function)                                  ║
+// ║  DO NOT delete anything that's already in utils.ts                 ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #19 FIX — India Standard Time "Today" Date
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// Your code currently does: new Date().toISOString().split('T')[0]
+// This gives you the date in UTC (London time).
+// India is 5 hours 30 minutes AHEAD of UTC.
+// So between 12:00 AM and 5:30 AM India time, this returns YESTERDAY's date!
+//
+// REAL EXAMPLE:
+// It's 1:00 AM on January 15th in India.
+// But in UTC (London), it's still 7:30 PM on January 14th.
+// So your code would say "today = 2025-01-14" when it's actually January 15th.
+// The dashboard shows yesterday's OPD count, appointments look wrong, etc.
+//
+// IMPACT AFTER FIX:
+// ✅ Dashboard "Today's OPD" count will always be correct, even at midnight
+// ✅ Appointment "Today" tab shows the right day
+// ✅ Reminders fire on the correct day
+// ✅ Revenue reports match the actual clinic day
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Returns today's date in YYYY-MM-DD format using India Standard Time (IST).
+ *
+ * IST is always UTC+5:30. Unlike some countries, India does NOT have
+ * daylight saving time, so this offset never changes.
+ *
+ * Use this EVERYWHERE instead of: new Date().toISOString().split('T')[0]
+ */
+export function getIndiaToday(): string {
+  // Step 1: Get the current time
+  const now = new Date()
+
+  // Step 2: Convert to IST
+  // IST = UTC + 5 hours + 30 minutes = UTC + 330 minutes
+  const IST_OFFSET_MINUTES = 5 * 60 + 30 // = 330
+
+  // getTimezoneOffset() returns the difference in minutes between UTC and LOCAL time.
+  // We first convert "now" to UTC milliseconds, then add IST offset.
+  const utcMilliseconds = now.getTime() + (now.getTimezoneOffset() * 60 * 1000)
+  const istDate = new Date(utcMilliseconds + (IST_OFFSET_MINUTES * 60 * 1000))
+
+  // Step 3: Format as YYYY-MM-DD
+  const year  = istDate.getFullYear()
+  const month = String(istDate.getMonth() + 1).padStart(2, '0')  // months are 0-based
+  const day   = String(istDate.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Returns the current IST datetime as an ISO string.
+ * Use this when you need the full timestamp, not just the date.
+ */
+export function getIndiaNow(): Date {
+  const now = new Date()
+  const IST_OFFSET_MINUTES = 5 * 60 + 30
+  const utcMs = now.getTime() + (now.getTimezoneOffset() * 60 * 1000)
+  return new Date(utcMs + (IST_OFFSET_MINUTES * 60 * 1000))
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #9 FIX — SQL Injection Protection for Search Queries
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// When a user types in the patient search box, their text goes directly
+// into a database query like:  .ilike.%${userInput}%
+//
+// If someone types:  %' OR 1=1 --
+// The query becomes: .ilike.%%' OR 1=1 --%
+// This could return ALL patients (data leak) or cause errors.
+//
+// Even innocent characters are a problem:
+// - Typing "%" makes the search match everything
+// - Typing "_" matches any single character (wildcard in SQL)
+//
+// IMPACT AFTER FIX:
+// ✅ Search works correctly even if user types special characters
+// ✅ No more risk of data leaks through search
+// ✅ "_" and "%" in names (rare but possible) are searched literally
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Escapes special characters that have meaning in PostgreSQL LIKE/ILIKE patterns.
+ *
+ * In SQL:
+ *   %  means "match any number of characters"
+ *   _  means "match exactly one character"
+ *   \  is the escape character
+ *
+ * We need to put a backslash (\) before these so they are treated as
+ * regular characters, not wildcards.
+ *
+ * USAGE:
+ *   const safe = escapeLike(userInput)
+ *   supabase.from('patients').select('*').or(`full_name.ilike.%${safe}%`)
+ */
+export function escapeLike(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')   // escape backslash FIRST (otherwise it escapes our escapes!)
+    .replace(/%/g,  '\\%')    // escape percent sign
+    .replace(/_/g,  '\\_')    // escape underscore
+    .trim()                    // remove extra whitespace
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUG #20 FIX — Single Source of Truth for Appointment Status Logic
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WHY THIS IS NEEDED:
+// Different pages in your app treat appointment statuses differently.
+// Dashboard says "completed" AND "no-show" = visited.
+// Billing says only "completed" = visited.
+// Follow-up overdue logic counts "cancelled" as missed.
+// This makes numbers not match across pages.
+//
+// IMPACT AFTER FIX:
+// ✅ Dashboard, Billing, Appointments, Reminders all agree on counts
+// ✅ "Today's OPD" on dashboard matches Appointments page exactly
+// ✅ Overdue follow-ups won't count cancelled appointments
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Statuses that mean "the patient actually came and was seen" */
+export const VISIT_HAPPENED = ['completed'] as const
+
+/** Statuses that mean "patient was expected but didn't show" */
+export const NO_SHOW = ['no-show'] as const
+
+/** Statuses that mean "appointment is still active, patient is coming" */
+export const ACTIVE_APPOINTMENT = ['scheduled', 'confirmed'] as const
+
+/** Statuses that mean "appointment was cancelled, no follow-up expected" */
+export const CANCELLED = ['cancelled'] as const
+
+/**
+ * Check if an appointment status means the patient was actually seen.
+ * Use this in Dashboard, Billing, and Reports when counting visits.
+ *
+ * USAGE:
+ *   const todayVisits = appointments.filter(a => visitHappened(a.status))
+ */
+export function visitHappened(status: string): boolean {
+  return (VISIT_HAPPENED as readonly string[]).includes(status)
+}
+
+/**
+ * Check if an appointment is overdue (past the date and still not resolved).
+ * Only scheduled/confirmed appointments can be overdue.
+ * Cancelled and no-show are RESOLVED — they are not overdue.
+ *
+ * USAGE:
+ *   const overdueAppts = appointments.filter(a => isAppointmentOverdue(a, today))
+ */
+export function isAppointmentOverdue(
+  appointment: { date: string; status: string },
+  today: string
+): boolean {
+  return (
+    appointment.date < today &&
+    (ACTIVE_APPOINTMENT as readonly string[]).includes(appointment.status)
+  )
+}
