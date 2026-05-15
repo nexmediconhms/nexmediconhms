@@ -4,6 +4,8 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { sanitizeSearchInput } from '@/lib/sanitize-search'
+import { getTodayIST } from '@/lib/date-utils'
 import { formatDate, getHospitalSettings } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
 import {
@@ -67,7 +69,7 @@ function AppointmentsContent() {
   const [dateFilter, setDateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<ApptStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const today = new Date().toISOString().split('T')[0]
+  const today = getTodayIST()
 
   function setViewTab(tab: ViewTab) {
     setActiveTab_(tab)
@@ -185,9 +187,10 @@ function AppointmentsContent() {
     if (q.trim().length < 2) { setPatientResults([]); return }
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
+      const safe = sanitizeSearchInput(q.trim())
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, mobile, age')
-        .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%`).limit(6)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
       setPatientResults(data ?? [])
     }, 300)
   }

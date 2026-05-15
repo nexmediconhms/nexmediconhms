@@ -4,6 +4,8 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime, ageFromDOB } from '@/lib/utils'
+import { getTodayIST, getISTDayBoundsUTC } from '@/lib/date-utils'
+import { safeQuery } from '@/lib/query-helpers'
 import {
   Users, BedDouble, CalendarClock, Stethoscope,
   UserPlus, ArrowRight, Clock, Baby, AlertTriangle,
@@ -21,6 +23,7 @@ export default function Dashboard() {
   const [todayRevenue,      setTodayRevenue]      = useState(0)
   const [todayAppts,        setTodayAppts]        = useState(0)
   const [time,              setTime]              = useState(new Date())
+  const [fetchError,        setFetchError]        = useState('')
   // Deferred loading flag for secondary data (overdue list, recent encounters)
   const [secondaryLoaded, setSecondaryLoaded] = useState(false)
   const loadedRef = useRef(false)
@@ -48,11 +51,12 @@ export default function Dashboard() {
   }, [secondaryLoaded])
 
   async function loadData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today = getTodayIST()
+    const todayBounds = getISTDayBoundsUTC(today)
 
     // Revenue today (from billing table) — fire-and-forget
     supabase.from('bills').select('net_amount').eq('status','paid')
-      .gte('created_at', today + 'T00:00:00').then(({data}) => {
+      .gte('created_at', todayBounds.start).lt('created_at', todayBounds.end).then(({data}) => {
         const rev = (data||[]).reduce((s:number,b:any)=>s+Number(b.net_amount),0)
         setTodayRevenue(rev)
       })
@@ -60,39 +64,48 @@ export default function Dashboard() {
     // Primary stats: patients count, today OPD, beds, overdue count, recent patients
     // Appointments count folded into primary batch (was separate before)
     const [
-      { count: pCount },
-      { count: opdCount },
-      { data: beds },
-      { count: overdueCount },
-      { data: patients },
-      { count: apptCount },
+      pResult,
+      opdResult,
+      bedsResult,
+      overdueResult,
+      patientsResult,
+      apptResult,
     ] = await Promise.all([
-      supabase.from('patients').select('*', { count:'exact', head:true }),
-      supabase.from('encounters').select('*', { count:'exact', head:true }).eq('encounter_date', today),
-      supabase.from('beds').select('status'),
-      supabase.from('prescriptions').select('*', { count:'exact', head:true })
-        .not('follow_up_date','is',null).lt('follow_up_date', today),
-      supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5),
-      supabase.from('appointments').select('id', { count:'exact', head:true })
-        .eq('date', today).neq('status', 'cancelled'),
+      safeQuery(supabase.from('patients').select('*', { count:'exact', head:true })),
+      safeQuery(supabase.from('encounters').select('*', { count:'exact', head:true }).eq('encounter_date', today)),
+      safeQuery(supabase.from('beds').select('status')),
+      safeQuery(supabase.from('prescriptions').select('*', { count:'exact', head:true })
+        .not('follow_up_date','is',null).lt('follow_up_date', today)),
+      safeQuery(supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5)),
+      safeQuery(supabase.from('appointments').select('id', { count:'exact', head:true })
+        .eq('date', today).neq('status', 'cancelled')),
     ])
 
-    const bedArr = beds || []
+    // Check if any critical query failed
+    const firstError = [pResult, opdResult, bedsResult, overdueResult, patientsResult, apptResult]
+      .find(r => r.error)
+    if (firstError?.error) {
+      setFetchError(firstError.error)
+    } else {
+      setFetchError('')
+    }
+
+    const bedArr = bedsResult.data || []
     setStats({
-      patients:          pCount || 0,
-      todayOPD:          opdCount || 0,
+      patients:          pResult.count || 0,
+      todayOPD:          opdResult.count || 0,
       availableBeds:     bedArr.filter((b:any) => b.status === 'available').length,
       occupiedBeds:      bedArr.filter((b:any) => b.status === 'occupied').length,
-      overdueFollowUps:  overdueCount || 0,
+      overdueFollowUps:  overdueResult.count || 0,
       ancHighRisk:       0, // computed in secondary load
     })
-    setRecentPatients(patients || [])
-    setTodayAppts(apptCount || 0)
+    setRecentPatients(patientsResult.data || [])
+    setTodayAppts(apptResult.count || 0)
   }
 
   // Secondary data: overdue list details, recent encounters, ANC high-risk
   async function loadSecondaryData() {
-    const today   = new Date().toISOString().split('T')[0]
+    const today   = getTodayIST()
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
 
     const [
@@ -162,6 +175,13 @@ export default function Dashboard() {
         </div>
 
         {/* Alert banners */}
+        {fetchError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0"/>
+            <span className="text-red-800">{fetchError}</span>
+            <button onClick={() => { setFetchError(''); loadData() }} className="ml-auto text-red-600 hover:underline text-xs font-semibold flex-shrink-0">Retry →</button>
+          </div>
+        )}
         {stats.overdueFollowUps > 0 && (
           <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
             <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0"/>
