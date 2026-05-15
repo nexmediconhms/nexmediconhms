@@ -287,74 +287,84 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
                 {/* Action buttons */}
-                <div className="flex gap-2 flex-wrap justify-end">
+                <div className="flex gap-2 items-start flex-shrink-0">
                   <Link href={`/opd/new?patient=${patient.id}`}
-                    className="btn-primary flex items-center gap-2 text-xs">
+                    className="btn-primary flex items-center gap-2 text-xs whitespace-nowrap">
                     <Stethoscope className="w-3.5 h-3.5" /> New Consultation
                   </Link>
-                  <Link href={`/ot-schedule?view=new&patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
-                    className="flex items-center gap-1.5 text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-lg transition-colors">
-                    <Scissors className="w-3.5 h-3.5" /> Schedule Surgery
-                  </Link>
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors">
-                    <Calendar className="w-4 h-4" /> Book Appointment
+                    className="btn-secondary flex items-center gap-2 text-xs whitespace-nowrap">
+                    <Calendar className="w-3.5 h-3.5" /> Appointment
                   </Link>
-                  {/* FIX #5: Add to OPD Queue directly from patient profile */}
-                  <Link
-                    href={`/queue?patient=${patient.id}`}
-                    onClick={async (e) => {
-                      // If queue page is already open, dispatch a custom event instead of navigating
-                      // This allows adding directly without leaving the patient profile
-                      e.preventDefault()
-                      // Navigate to queue page pre-filled with this patient
-                      window.location.href = `/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 hover:border-yellow-400 transition-colors font-medium">
-                    <Users className="w-4 h-4" /> Add to OPD Queue
-                  </Link>
-                  {bills.length === 0 && (
-                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 font-medium w-full">
-                      <span>⚠️</span>
-                      <span>No payment recorded yet</span>
-                      <Link href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
-                        className="ml-auto text-amber-700 underline hover:text-amber-900" onClick={e => e.stopPropagation()}>
-                        Collect Payment
-                      </Link>
-                    </div>
-                  )}
-                  <Link href={`/patients/${patient.id}/discharge`}
-                    className="btn-secondary flex items-center gap-2 text-xs bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">
-                    <FileText className="w-3.5 h-3.5" /> Discharge Summary
-                  </Link>
-                  <button
-                    onClick={async () => {
-                      setFhirExporting(true)
-                      try {
-                        const res = await fetch(`/api/fhir/patient/${patient.id}`)
-                        const bundle = await res.json()
-                        const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json' })
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = `${patient.mrn}_FHIR_Bundle.json`
-                        a.click()
-                        URL.revokeObjectURL(url)
-                      } catch { } finally { setFhirExporting(false) }
-                    }}
-                    disabled={fhirExporting}
-                    className="btn-secondary flex items-center gap-2 text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50"
-                    title="Export patient record as HL7 FHIR R4 Bundle"
-                  >
-                    {fhirExporting
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Download className="w-3.5 h-3.5" />}
-                    FHIR Export
-                  </button>
                   <Link href={`/patients/${patient.id}/edit`}
-                    className="btn-secondary flex items-center gap-2 text-xs">
+                    className="btn-secondary flex items-center gap-2 text-xs whitespace-nowrap">
                     <Edit className="w-3.5 h-3.5" /> Edit
                   </Link>
+
+                  {/* Overflow menu */}
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setMenuOpen(!menuOpen)}
+                      className="btn-secondary text-xs px-2.5 py-2 font-bold"
+                      title="More actions"
+                    >
+                      ⋯
+                    </button>
+                    {menuOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-56 bg-white shadow-xl rounded-xl border border-gray-200 py-1 z-50">
+                        <Link
+                          href={`/queue?patient=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${encodeURIComponent(patient.mrn || '')}`}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <Users className="w-4 h-4 text-yellow-500" /> Add to OPD Queue
+                        </Link>
+                        <Link
+                          href={`/ot-schedule?view=new&patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <Scissors className="w-4 h-4 text-purple-500" /> Schedule Surgery
+                        </Link>
+                        <Link
+                          href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}&mrn=${patient.mrn}`}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <IndianRupee className="w-4 h-4 text-green-500" /> Collect Payment
+                        </Link>
+                        <Link
+                          href={`/patients/${patient.id}/discharge`}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <FileText className="w-4 h-4 text-purple-500" /> Discharge Summary
+                        </Link>
+                        <button
+                          onClick={async () => {
+                            setMenuOpen(false)
+                            setFhirExporting(true)
+                            try {
+                              const res = await fetch(`/api/fhir/patient/${patient.id}`)
+                              const bundle = await res.json()
+                              const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json' })
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `${patient.mrn}_FHIR_Bundle.json`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            } catch { } finally { setFhirExporting(false) }
+                          }}
+                          disabled={fhirExporting}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <Download className="w-4 h-4 text-green-500" />
+                          {fhirExporting ? 'Exporting...' : 'FHIR Export'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

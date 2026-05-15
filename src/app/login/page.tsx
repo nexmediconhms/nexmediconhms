@@ -254,7 +254,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-        const rateCheck = loginLimiter.check()
+    const rateCheck = loginLimiter.check()
     if (!rateCheck.allowed) { setError(rateCheck.message); setLoading(false); return }
 
 
@@ -778,13 +778,9 @@ export default function LoginPage() {
           </div>
 
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Forgot password?
-            </button>
+            <span className="text-xs text-gray-400">
+              Forgot password? Contact your clinic admin to reset it.
+            </span>
           </div>
 
           <button

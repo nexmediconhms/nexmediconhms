@@ -3,27 +3,27 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, ageFromDOB } from '@/lib/utils'
+import { formatDate, ageFromDOB, escapeLike } from '@/lib/utils'
 import {
   Search, User, Stethoscope, Pill, X,
   ChevronRight, Loader2
 } from 'lucide-react'
 
 interface SearchResult {
-  type:     'patient' | 'encounter' | 'prescription'
-  id:       string
-  title:    string
+  type: 'patient' | 'encounter' | 'prescription'
+  id: string
+  title: string
   subtitle: string
-  meta:     string
-  href:     string
+  meta: string
+  href: string
 }
 
 export default function SearchPage() {
-  const [query,   setQuery]   = useState('')
+  const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout>|null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function doSearch(q: string) {
@@ -32,67 +32,68 @@ export default function SearchPage() {
     setSearched(true)
 
     const out: SearchResult[] = []
+    const safe = escapeLike(q)
 
     // ── Search patients ──────────────────────────────────────────
     const { data: pts } = await supabase
       .from('patients')
       .select('id, full_name, mrn, age, date_of_birth, gender, mobile, blood_group')
-      .or(`full_name.ilike.%${q}%,mrn.ilike.%${q}%,mobile.ilike.%${q}%,abha_id.ilike.%${q}%`)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%,abha_id.ilike.%${safe}%`)
       .limit(8)
 
-    ;(pts || []).forEach(p => {
-      const age = ageFromDOB(p.date_of_birth) ?? p.age
-      out.push({
-        type:     'patient',
-        id:       p.id,
-        title:    p.full_name,
-        subtitle: `${p.mrn} · ${age ? age + 'y' : ''} · ${p.gender || ''}`,
-        meta:     p.mobile || '',
-        href:     `/patients/${p.id}`,
+      ; (pts || []).forEach(p => {
+        const age = ageFromDOB(p.date_of_birth) ?? p.age
+        out.push({
+          type: 'patient',
+          id: p.id,
+          title: p.full_name,
+          subtitle: `${p.mrn} · ${age ? age + 'y' : ''} · ${p.gender || ''}`,
+          meta: p.mobile || '',
+          href: `/patients/${p.id}`,
+        })
       })
-    })
 
     // ── Search encounters by diagnosis or chief complaint ────────
     const { data: encs } = await supabase
       .from('encounters')
       .select('id, encounter_date, diagnosis, chief_complaint, patients(full_name, mrn)')
-      .or(`diagnosis.ilike.%${q}%,chief_complaint.ilike.%${q}%`)
+      .or(`diagnosis.ilike.%${safe}%,chief_complaint.ilike.%${safe}%`)
       .order('encounter_date', { ascending: false })
       .limit(6)
 
-    ;(encs || []).forEach((e: any) => {
-      const pt = e.patients || {}
-      out.push({
-        type:     'encounter',
-        id:       e.id,
-        title:    e.diagnosis || e.chief_complaint || 'Consultation',
-        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
-        meta:     formatDate(e.encounter_date),
-        href:     `/opd/${e.id}`,
+      ; (encs || []).forEach((e: any) => {
+        const pt = e.patients || {}
+        out.push({
+          type: 'encounter',
+          id: e.id,
+          title: e.diagnosis || e.chief_complaint || 'Consultation',
+          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+          meta: formatDate(e.encounter_date),
+          href: `/opd/${e.id}`,
+        })
       })
-    })
 
     // ── Search clinical notes (OPD encounters) ──────────────────
     const { data: opdNotes } = await supabase
       .from('encounters')
       .select('id, encounter_date, notes, patients(full_name, mrn)')
-      .ilike('notes', `%${q}%`)
+      .ilike('notes', `%${safe}%`)
       .order('encounter_date', { ascending: false })
       .limit(5)
 
-    ;(opdNotes || []).forEach((e: any) => {
-      // Skip if already matched by diagnosis/complaint above
-      if (out.some(r => r.id === e.id)) return
-      const pt = e.patients || {}
-      out.push({
-        type:     'encounter',
-        id:       e.id,
-        title:    `Note: "${(e.notes || '').slice(0, 60)}…"`,
-        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
-        meta:     formatDate(e.encounter_date),
-        href:     `/opd/${e.id}`,
+      ; (opdNotes || []).forEach((e: any) => {
+        // Skip if already matched by diagnosis/complaint above
+        if (out.some(r => r.id === e.id)) return
+        const pt = e.patients || {}
+        out.push({
+          type: 'encounter',
+          id: e.id,
+          title: `Note: "${(e.notes || '').slice(0, 60)}…"`,
+          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+          meta: formatDate(e.encounter_date),
+          href: `/opd/${e.id}`,
+        })
       })
-    })
 
     // ── Search IPD nursing notes ────────────────────────────────
     try {
@@ -100,20 +101,20 @@ export default function SearchPage() {
         .from('ipd_nursing')
         .select('id, note_text, bed_id, patient_id, patients(full_name, mrn)')
         .eq('entry_type', 'note')
-        .ilike('note_text', `%${q}%`)
+        .ilike('note_text', `%${safe}%`)
         .limit(5)
 
-      ;(ipdNotes || []).forEach((n: any) => {
-        const pt = n.patients || {}
-        out.push({
-          type:     'encounter',
-          id:       n.id,
-          title:    `IPD Note: "${(n.note_text || '').slice(0, 60)}…"`,
-          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
-          meta:     'IPD',
-          href:     `/ipd/${n.bed_id}`,
+        ; (ipdNotes || []).forEach((n: any) => {
+          const pt = n.patients || {}
+          out.push({
+            type: 'encounter',
+            id: n.id,
+            title: `IPD Note: "${(n.note_text || '').slice(0, 60)}…"`,
+            subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+            meta: 'IPD',
+            href: `/ipd/${n.bed_id}`,
+          })
         })
-      })
     } catch { /* ipd_nursing table may not exist yet */ }
 
     // ── Search prescriptions by drug name — server-side JSONB ────
@@ -123,28 +124,28 @@ export default function SearchPage() {
     const { data: rxs } = await supabase
       .from('prescriptions')
       .select('id, medications, patients(full_name, mrn), created_at')
-      .ilike('medications::text', `%${q}%`)
+      .ilike('medications::text', `%${safe}%`)
       .order('created_at', { ascending: false })
       .limit(8)
 
-    ;(rxs || []).forEach((rx: any) => {
-      // Find the specific drug that matched so we can show a useful title
-      const meds: any[] = Array.isArray(rx.medications) ? rx.medications : []
-      const match = meds.find(m =>
-        m.drug?.toLowerCase().includes(q.toLowerCase())
-      ) || meds[0]
+      ; (rxs || []).forEach((rx: any) => {
+        // Find the specific drug that matched so we can show a useful title
+        const meds: any[] = Array.isArray(rx.medications) ? rx.medications : []
+        const match = meds.find(m =>
+          m.drug?.toLowerCase().includes(q.toLowerCase())
+        ) || meds[0]
 
-      if (!match) return
-      const pt = rx.patients || {}
-      out.push({
-        type:     'prescription',
-        id:       rx.id,
-        title:    `Rx: ${match.drug || '—'} ${match.dose || ''}`.trim(),
-        subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
-        meta:     formatDate(rx.created_at),
-        href:     `/opd/${rx.id}/prescription`,
+        if (!match) return
+        const pt = rx.patients || {}
+        out.push({
+          type: 'prescription',
+          id: rx.id,
+          title: `Rx: ${match.drug || '—'} ${match.dose || ''}`.trim(),
+          subtitle: `${pt.full_name || '?'} · ${pt.mrn || ''}`,
+          meta: formatDate(rx.created_at),
+          href: `/opd/${rx.id}/prescription`,
+        })
       })
-    })
 
     setResults(out.slice(0, 20))
     setLoading(false)
@@ -156,14 +157,14 @@ export default function SearchPage() {
     timer.current = setTimeout(() => doSearch(val), 300)
   }
 
-  const patients      = results.filter(r => r.type === 'patient')
-  const encounters    = results.filter(r => r.type === 'encounter')
+  const patients = results.filter(r => r.type === 'patient')
+  const encounters = results.filter(r => r.type === 'encounter')
   const prescriptions = results.filter(r => r.type === 'prescription')
 
   const TypeIcon = ({ type }: { type: SearchResult['type'] }) => {
-    if (type === 'patient')      return <User       className="w-4 h-4 text-blue-500"/>
-    if (type === 'encounter')    return <Stethoscope className="w-4 h-4 text-green-500"/>
-    if (type === 'prescription') return <Pill        className="w-4 h-4 text-purple-500"/>
+    if (type === 'patient') return <User className="w-4 h-4 text-blue-500" />
+    if (type === 'encounter') return <Stethoscope className="w-4 h-4 text-green-500" />
+    if (type === 'prescription') return <Pill className="w-4 h-4 text-purple-500" />
     return null
   }
 
@@ -177,7 +178,7 @@ export default function SearchPage() {
             <Link key={r.id} href={r.href}
               className={`flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}>
               <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <TypeIcon type={r.type}/>
+                <TypeIcon type={r.type} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-gray-900 text-sm truncate">{r.title}</div>
@@ -185,7 +186,7 @@ export default function SearchPage() {
               </div>
               <div className="text-xs text-gray-400 flex-shrink-0 flex items-center gap-1">
                 {r.meta}
-                <ChevronRight className="w-3.5 h-3.5"/>
+                <ChevronRight className="w-3.5 h-3.5" />
               </div>
             </Link>
           ))}
@@ -199,7 +200,7 @@ export default function SearchPage() {
       <div className="p-6 max-w-3xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1">
-            <Search className="w-6 h-6 text-blue-600"/> Global Search
+            <Search className="w-6 h-6 text-blue-600" /> Global Search
           </h1>
           <p className="text-sm text-gray-500">Search patients, diagnoses, and prescriptions</p>
         </div>
@@ -208,8 +209,8 @@ export default function SearchPage() {
         <div className="card p-4 mb-5">
           <div className="relative">
             {loading
-              ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 animate-spin"/>
-              : <Search  className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
+              ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 animate-spin" />
+              : <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             }
             <input
               ref={inputRef}
@@ -222,7 +223,7 @@ export default function SearchPage() {
             {query && (
               <button onClick={() => { setQuery(''); setResults([]); setSearched(false); inputRef.current?.focus() }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4"/>
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -234,15 +235,15 @@ export default function SearchPage() {
         {/* Results */}
         {searched && !loading && results.length === 0 && (
           <div className="text-center py-16 text-gray-400">
-            <Search className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+            <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
             <p className="font-medium">No results for "{query}"</p>
             <p className="text-sm mt-1">Try a different spelling or search term</p>
           </div>
         )}
 
-        <ResultGroup title={`Patients (${patients.length})`}      items={patients}/>
-        <ResultGroup title={`Encounters (${encounters.length})`}   items={encounters}/>
-        <ResultGroup title={`Prescriptions (${prescriptions.length})`} items={prescriptions}/>
+        <ResultGroup title={`Patients (${patients.length})`} items={patients} />
+        <ResultGroup title={`Encounters (${encounters.length})`} items={encounters} />
+        <ResultGroup title={`Prescriptions (${prescriptions.length})`} items={prescriptions} />
       </div>
     </AppShell>
   )

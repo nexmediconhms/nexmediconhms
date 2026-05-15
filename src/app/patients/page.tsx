@@ -4,8 +4,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, ageFromDOB } from '@/lib/utils'
-import { Search, UserPlus, ChevronRight, User, Filter, X } from 'lucide-react'
+import { formatDate, ageFromDOB, escapeLike } from '@/lib/utils'
+import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
@@ -24,30 +24,68 @@ export default function PatientsPage() {
   const [bgFilter, setBgFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [showFilters, setShowFilters] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const PAGE_SIZE = 50
   const [page, setPage] = useState(0)
 
-  useEffect(() => { loadPatients() }, [])
   useEffect(() => { loadPatients() }, [page])
 
-  async function loadPatients(q = '', gender = genderFilter, bg = bgFilter) {
+  async function loadPatients(q = query, gender = genderFilter, bg = bgFilter) {
     setLoading(true)
-    let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
+    setFetchError(null)
 
-    if (q.trim()) req = req.or(`full_name.ilike.%${q}%,mobile.ilike.%${q}%,mrn.ilike.%${q}%`)
-    if (gender) req = req.eq('gender', gender)
-    if (bg) req = req.eq('blood_group', bg)
+    try {
+      let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
 
-    const { data } = await req.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      // BUG #9 FIX: escapeLike prevents SQL injection via search
+      if (q.trim()) {
+        const safe = escapeLike(q)
+        req = req.or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
+      }
+      if (gender) req = req.eq('gender', gender)
+      if (bg) req = req.eq('blood_group', bg)
 
-    setPatients(data || [])
-    setTotalCount(data?.length || 0)
+      // BUG #15 FIX: Server-side pagination using .range()
+      const from = page * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data, error } = await req.range(from, to)
+
+      // BUG #12 FIX: Error handling
+      if (error) {
+        console.error('[Patients] fetch error:', error.message)
+        setFetchError('Unable to load patients. Please check your connection and try again.')
+        setPatients([])
+        setTotalCount(0)
+        setLoading(false)
+        return
+      }
+
+      setPatients(data || [])
+
+      // BUG #13 FIX: Get REAL total count from database, not data.length
+      let countReq = supabase.from('patients').select('*', { count: 'exact', head: true })
+      if (q.trim()) {
+        const safe = escapeLike(q)
+        countReq = countReq.or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
+      }
+      if (gender) countReq = countReq.eq('gender', gender)
+      if (bg) countReq = countReq.eq('blood_group', bg)
+      const { count } = await countReq
+      setTotalCount(count ?? 0)
+    } catch (err: any) {
+      console.error('[Patients] unexpected error:', err)
+      setFetchError('Something went wrong. Please refresh the page.')
+      setPatients([])
+      setTotalCount(0)
+    }
+
     setLoading(false)
   }
 
   function handleSearch(val: string) {
     setQuery(val)
+    setPage(0)
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => loadPatients(val, genderFilter, bgFilter), 300)
   }
@@ -55,17 +93,19 @@ export default function PatientsPage() {
   function applyFilter(gender: string, bg: string) {
     setGenderFilter(gender)
     setBgFilter(bg)
+    setPage(0)
     loadPatients(query, gender, bg)
   }
 
   function clearFilters() {
     setGenderFilter('')
     setBgFilter('')
+    setPage(0)
     loadPatients(query, '', '')
   }
 
-  // Fix 1: explicit boolean — prevents TS errors when used in className ternary and JSX conditions
   const hasFilters = Boolean(genderFilter || bgFilter)
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
   return (
     <AppShell>
@@ -76,7 +116,7 @@ export default function PatientsPage() {
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Patients</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {loading ? 'Loading...' : `${totalCount} patient${totalCount !== 1 ? 's' : ''} found`}
+              {loading ? 'Loading...' : `${totalCount.toLocaleString()} patient${totalCount !== 1 ? 's' : ''} found`}
               {hasFilters && <span className="ml-1 text-blue-600">(filtered)</span>}
             </p>
           </div>
@@ -86,6 +126,20 @@ export default function PatientsPage() {
             <span className="sm:hidden">Register</span>
           </Link>
         </div>
+
+        {/* BUG #12: Error banner with retry */}
+        {fetchError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1">{fetchError}</span>
+            <button
+              onClick={() => loadPatients()}
+              className="text-xs font-semibold text-red-800 underline hover:text-red-900 flex-shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Search + Filter bar */}
         <div className="card p-3 md:p-4 mb-4">
@@ -201,7 +255,6 @@ export default function PatientsPage() {
                   <tr
                     key={p.id}
                     className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors cursor-pointer"
-                    // Fix 2: router.push() returns void — window.location.href assignment returns string which TS rejects
                     onClick={() => router.push(`/patients/${p.id}`)}
                   >
                     <td className="px-4 py-3">
@@ -273,14 +326,9 @@ export default function PatientsPage() {
           })}
         </div>
 
-        {totalCount >= 100 && (
-          <p className="text-center text-xs text-gray-400 mt-4">
-            Showing first 100 results. Use search to find specific patients.
-          </p>
-        )}
-
-        {totalCount > PAGE_SIZE && (
-          <div className="flex items-center justify-center gap-4 py-4">
+        {/* BUG #15: Proper pagination controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 py-4 mt-2">
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
@@ -288,22 +336,18 @@ export default function PatientsPage() {
             >
               ← Previous
             </button>
-
             <span className="text-sm text-gray-500">
-              Page {page + 1} of {Math.ceil(totalCount / PAGE_SIZE)}
-              {' · '}{totalCount} total patients
+              Page {page + 1} of {totalPages} · {totalCount.toLocaleString()} total
             </span>
-
             <button
               onClick={() => setPage(p => p + 1)}
-              disabled={(page + 1) * PAGE_SIZE >= totalCount}
+              disabled={page + 1 >= totalPages}
               className="btn-secondary text-sm disabled:opacity-40"
             >
               Next →
             </button>
           </div>
         )}
-
 
       </div>
     </AppShell>

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { escapeLike } from '@/lib/utils'
 import { Search, Stethoscope, UserPlus, ChevronRight } from 'lucide-react'
 
 export default function OPDIndexPage() {
@@ -21,10 +22,11 @@ export default function OPDIndexPage() {
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setLoading(true)
+      const safe = escapeLike(val)
       const { data } = await supabase
         .from('patients')
         .select('id, mrn, full_name, age, gender, mobile')
-        .or(`full_name.ilike.%${val}%,mobile.ilike.%${val}%,mrn.ilike.%${val}%`)
+        .or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
         .limit(10)
       setResults(data || [])
       setSearched(true)
@@ -64,7 +66,7 @@ export default function OPDIndexPage() {
             <div className="mt-3">
               {results.length === 0 ? (
                 <div className="text-center py-6 text-gray-400">
-                  <p className="text-sm mb-3">No patient found for "{query}"</p>
+                  <p className="text-sm mb-3">No patient found for &quot;{query}&quot;</p>
                   <Link href="/patients/new" className="btn-primary inline-flex items-center gap-2 text-xs">
                     <UserPlus className="w-3.5 h-3.5" /> Register New Patient
                   </Link>

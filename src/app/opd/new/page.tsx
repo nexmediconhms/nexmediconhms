@@ -3,7 +3,6 @@ import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-import FormScanner from '@/components/shared/FormScanner'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
@@ -194,20 +193,6 @@ function NewConsultationContent() {
 
   useEffect(() => {
     if (!patientId) { router.push('/opd'); return }
-
-    // 1. Load draft from sessionStorage (persists if user navigated away)
-    const key = `opd_draft_${patientId}`
-    try {
-      const draft = JSON.parse(sessionStorage.getItem(key) || 'null')
-      if (draft) {
-        if (draft.vitals) setVitals(draft.vitals)
-        if (draft.ob) setOB(draft.ob)
-        if (draft.chiefComplaint) setChiefComplaint(draft.chiefComplaint)
-        if (draft.hpi) setHpi(draft.hpi)
-        if (draft.diagnosis) setDiagnosis(draft.diagnosis)
-        if (draft.notes) setNotes(draft.notes)
-      }
-    } catch { /* ignore */ }
 
     // 2. Load OCR prefill from forms page scanner
     try {
@@ -636,38 +621,24 @@ function NewConsultationContent() {
           </div>
         )}
 
-        {/* ══ OCR SCANNER ════════════════════════════════════════ */}
-        <div className="mb-5">
-          <FormScanner
-            formType="opd_consultation"
-            onExtracted={handleOCRResult}
-            label="📄 Scan Printed Form (OPD Registration / ANC Card)"
-          />
-          <p className="text-xs text-gray-400 mt-1.5 ml-1">
-            📷 Reads Gujarati and English OPD chits, ANC cards, and consultation notes.
-            Automatically fills vitals, complaints, diagnosis, and OB/GYN fields.
-          </p>
-        </div>
 
-        {/* ══ DOCTOR NOTE CAMERA ════════════════════════════════════
-            Doctor clicks a photo of their handwritten note during
-            the consultation. AI extracts chief complaint, diagnosis,
-            vitals, history, plan, and medications — each placed into
-            the correct field automatically.
-        ════════════════════════════════════════════════════════ */}
-        <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl p-4">
+        {/* ══ UNIFIED SMART DOCUMENT SCANNER ══════════════════════ */}
+        <div className="mb-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">✍️ Read Doctor's Handwritten Note</p>
+              <p className="text-sm font-bold text-blue-800 flex items-center gap-2">
+                📷 Upload Medical Document
+              </p>
               <p className="text-xs text-blue-500 mt-0.5">
-                Take a photo of your handwritten note — AI reads it and fills in complaint, diagnosis, vitals, and plan automatically.
+                Upload any photo — handwritten doctor note, printed OPD form, ANC card, or prescription.
+                AI automatically detects the type and fills the correct fields.
               </p>
             </div>
-            <label className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all
+            <label className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-pointer transition-all
               ${noteOcrLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}>
               {noteOcrLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Reading…</>
-                : <><Camera className="w-4 h-4" /> Click Note Photo</>}
+                : <><Camera className="w-4 h-4" /> Upload Photo</>}
               <input
                 type="file"
                 accept="image/jpeg,image/jpg,image/png,image/webp"
@@ -691,7 +662,7 @@ function NewConsultationContent() {
           {noteApplied && (
             <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-              Doctor note applied! Fields highlighted in yellow were auto-filled — please review before saving.
+              ✅ Document processed! Fields highlighted in yellow were auto-filled — please review before saving.
             </div>
           )}
 
@@ -703,7 +674,15 @@ function NewConsultationContent() {
                   <Sparkles className="w-3.5 h-3.5" />
                   AI Extracted — review before applying
                   <span className="font-normal text-blue-500 ml-1">
-                    ({Math.round((noteOcrPreview.confidence || 0) * 100)}% confidence)
+                    ({Math.round((noteOcrPreview.confidence || 0) * 100)}% confidence
+                    {noteOcrPreview.formType && noteOcrPreview.formType !== 'unknown' && (
+                      <> · Detected: {
+                        noteOcrPreview.formType === 'ob_exam' ? '🩺 OB/GYN Form' :
+                          noteOcrPreview.formType === 'vitals' ? '💉 Vitals Form' :
+                            noteOcrPreview.formType === 'encounter' ? '📋 Consultation Note' :
+                              noteOcrPreview.formType
+                      }</>
+                    )})
                   </span>
                 </p>
                 <button onClick={() => setNoteOcrPreview(null)} className="text-blue-300 hover:text-blue-600">

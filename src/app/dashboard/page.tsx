@@ -15,15 +15,17 @@ export default function Dashboard() {
     patients: 0, todayOPD: 0, availableBeds: 0,
     overdueFollowUps: 0, ancHighRisk: 0, occupiedBeds: 0,
   })
-  const [recentPatients,    setRecentPatients]    = useState<any[]>([])
-  const [recentEncounters,  setRecentEncounters]  = useState<any[]>([])
-  const [overdueList,       setOverdueList]       = useState<any[]>([])
-  const [todayRevenue,      setTodayRevenue]      = useState(0)
-  const [todayAppts,        setTodayAppts]        = useState(0)
-  const [time,              setTime]              = useState(new Date())
+  const [recentPatients, setRecentPatients] = useState<any[]>([])
+  const [recentEncounters, setRecentEncounters] = useState<any[]>([])
+  const [overdueList, setOverdueList] = useState<any[]>([])
+  const [todayRevenue, setTodayRevenue] = useState(0)
+  const [todayAppts, setTodayAppts] = useState(0)
+  const [queueCount, setQueueCount] = useState(0)
+  const [time, setTime] = useState(new Date())
   // Deferred loading flag for secondary data (overdue list, recent encounters)
   const [secondaryLoaded, setSecondaryLoaded] = useState(false)
   const loadedRef = useRef(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     // Prevent double-invoke in StrictMode
@@ -48,51 +50,61 @@ export default function Dashboard() {
   }, [secondaryLoaded])
 
   async function loadData() {
-    const today   = getIndiaToday()
+    setFetchError(null)
+    const today = getIndiaToday()
+    try {
+      supabase.from('opd_queue')
+        .select('patient_id', { count: 'exact', head: true })
+        .eq('date', today)
+        .in('status', ['waiting', 'in_consultation']),
+        // Revenue today (from billing table) — fire-and-forget
+        supabase.from('bills').select('net_amount').eq('status', 'paid')
+          .gte('created_at', today + 'T00:00:00').then(({ data }) => {
+            const rev = (data || []).reduce((s: number, b: any) => s + Number(b.net_amount), 0)
+            setTodayRevenue(rev)
+          })
 
-    // Revenue today (from billing table) — fire-and-forget
-    supabase.from('bills').select('net_amount').eq('status','paid')
-      .gte('created_at', today + 'T00:00:00').then(({data}) => {
-        const rev = (data||[]).reduce((s:number,b:any)=>s+Number(b.net_amount),0)
-        setTodayRevenue(rev)
+      // Primary stats: patients count, today OPD, beds, overdue count, recent patients
+      // Appointments count folded into primary batch (was separate before)
+      const [
+        { count: pCount },
+        { count: opdCount },
+        { data: beds },
+        { count: overdueCount },
+        { data: patients },
+        { count: apptCount },
+      ] = await Promise.all([
+        supabase.from('patients').select('*', { count: 'exact', head: true }),
+        supabase.from('encounters').select('*', { count: 'exact', head: true }).eq('encounter_date', today),
+        supabase.from('beds').select('status'),
+        supabase.from('prescriptions').select('*', { count: 'exact', head: true })
+          .not('follow_up_date', 'is', null).lt('follow_up_date', today),
+        supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending: false }).limit(5),
+        supabase.from('appointments').select('id', { count: 'exact', head: true })
+          .eq('date', today).neq('status', 'cancelled'),
+      ])
+
+      const bedArr = beds || []
+      setStats({
+        patients: pCount || 0,
+        todayOPD: opdCount || 0,
+        availableBeds: bedArr.filter((b: any) => b.status === 'available').length,
+        occupiedBeds: bedArr.filter((b: any) => b.status === 'occupied').length,
+        overdueFollowUps: overdueCount || 0,
+        ancHighRisk: 0, // computed in secondary load
       })
-
-    // Primary stats: patients count, today OPD, beds, overdue count, recent patients
-    // Appointments count folded into primary batch (was separate before)
-    const [
-      { count: pCount },
-      { count: opdCount },
-      { data: beds },
-      { count: overdueCount },
-      { data: patients },
-      { count: apptCount },
-    ] = await Promise.all([
-      supabase.from('patients').select('*', { count:'exact', head:true }),
-      supabase.from('encounters').select('*', { count:'exact', head:true }).eq('encounter_date', today),
-      supabase.from('beds').select('status'),
-      supabase.from('prescriptions').select('*', { count:'exact', head:true })
-        .not('follow_up_date','is',null).lt('follow_up_date', today),
-      supabase.from('patients').select('id,full_name,mrn,date_of_birth,age,gender,created_at').order('created_at', { ascending:false }).limit(5),
-      supabase.from('appointments').select('id', { count:'exact', head:true })
-        .eq('date', today).neq('status', 'cancelled'),
-    ])
-
-    const bedArr = beds || []
-    setStats({
-      patients:          pCount || 0,
-      todayOPD:          opdCount || 0,
-      availableBeds:     bedArr.filter((b:any) => b.status === 'available').length,
-      occupiedBeds:      bedArr.filter((b:any) => b.status === 'occupied').length,
-      overdueFollowUps:  overdueCount || 0,
-      ancHighRisk:       0, // computed in secondary load
-    })
-    setRecentPatients(patients || [])
-    setTodayAppts(apptCount || 0)
+      setRecentPatients(patients || [])
+      setTodayAppts(apptCount || 0)
+    }
+    catch (err) {                // ← ADD CATCH
+      console.error('[Dashboard] load failed:', err)
+      setFetchError('Dashboard data failed to load. Check your connection.')
+    }
   }
 
   // Secondary data: overdue list details, recent encounters, ANC high-risk
   async function loadSecondaryData() {
-    const today   = getIndiaToday()
+    const today = getIndiaToday()
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
 
     const [
@@ -102,26 +114,26 @@ export default function Dashboard() {
     ] = await Promise.all([
       supabase.from('prescriptions')
         .select('follow_up_date, patients(full_name, mrn)')
-        .not('follow_up_date','is',null).lt('follow_up_date', today)
-        .order('follow_up_date', { ascending:true }).limit(4),
+        .not('follow_up_date', 'is', null).lt('follow_up_date', today)
+        .order('follow_up_date', { ascending: true }).limit(4),
       supabase.from('encounters').select('id, chief_complaint, created_at, patient_id, patients(full_name, mrn)')
-        .order('created_at', { ascending:false }).limit(5),
+        .order('created_at', { ascending: false }).limit(5),
       supabase.from('encounters').select('id, ob_data, patient_id')
-        .not('ob_data','is',null).gte('encounter_date', weekAgo),
+        .not('ob_data', 'is', null).gte('encounter_date', weekAgo),
     ])
 
     // Count high-risk ANC
     let ancHighRisk = 0
-    ;(ancRows || []).forEach((e: any) => {
-      const ob = e.ob_data || {}
-      if (!ob.lmp) return
-      const flags = [
-        ob.liquor === 'Reduced' || ob.liquor === 'Absent',
-        ob.presentation === 'Breech' || ob.presentation === 'Transverse',
-        ob.fhs && (ob.fhs < 110 || ob.fhs > 160),
-      ].filter(Boolean).length
-      if (flags >= 1) ancHighRisk++
-    })
+      ; (ancRows || []).forEach((e: any) => {
+        const ob = e.ob_data || {}
+        if (!ob.lmp) return
+        const flags = [
+          ob.liquor === 'Reduced' || ob.liquor === 'Absent',
+          ob.presentation === 'Breech' || ob.presentation === 'Transverse',
+          ob.fhs && (ob.fhs < 110 || ob.fhs > 160),
+        ].filter(Boolean).length
+        if (flags >= 1) ancHighRisk++
+      })
 
     setStats(prev => ({ ...prev, ancHighRisk }))
     setRecentEncounters(encounters || [])
@@ -129,13 +141,13 @@ export default function Dashboard() {
   }
 
   const tiles = [
-    { label:"Today's OPD",      value: stats.todayOPD,         sub:'consultations today',  icon:Stethoscope,  bg:'bg-blue-50',   ic:'bg-blue-100 text-blue-600',    val:'text-blue-700',   href:'/opd'      },
-    { label:'Total Patients',   value: stats.patients,         sub:'registered patients',  icon:Users,        bg:'bg-green-50',  ic:'bg-green-100 text-green-600',   val:'text-green-700',  href:'/patients' },
-    { label:'Beds Available',   value: stats.availableBeds,    sub:`${stats.occupiedBeds} occupied`, icon:BedDouble, bg:'bg-purple-50', ic:'bg-purple-100 text-purple-600', val:'text-purple-700', href:'/beds' },
-    { label:'Overdue Follow-ups',value: stats.overdueFollowUps, sub:'require follow-up',   icon:CalendarClock,bg:'bg-orange-50', ic:'bg-orange-100 text-orange-600',  val:'text-orange-700', href:'/reports' },
-    { label:"Today's Revenue",  value:`₹${todayRevenue.toLocaleString('en-IN')}`, sub:'payments collected today', icon:IndianRupee, bg:'bg-emerald-50', ic:'bg-emerald-100 text-emerald-600', val:'text-emerald-700', href:'/billing' },
-    { label:'OPD Queue',        value: stats.todayOPD,         sub:'patients in queue today',icon:Clock,       bg:'bg-sky-50',    ic:'bg-sky-100 text-sky-600',       val:'text-sky-700',    href:'/queue'    },
-    { label:"Today's Appointments",value: todayAppts,             sub:'scheduled today',        icon:CalendarDays,bg:'bg-violet-50', ic:'bg-violet-100 text-violet-600', val:'text-violet-700', href:'/appointments' },
+    { label: "Today's OPD", value: stats.todayOPD, sub: 'consultations today', icon: Stethoscope, bg: 'bg-blue-50', ic: 'bg-blue-100 text-blue-600', val: 'text-blue-700', href: '/opd' },
+    { label: 'Total Patients', value: stats.patients, sub: 'registered patients', icon: Users, bg: 'bg-green-50', ic: 'bg-green-100 text-green-600', val: 'text-green-700', href: '/patients' },
+    { label: 'Beds Available', value: stats.availableBeds, sub: `${stats.occupiedBeds} occupied`, icon: BedDouble, bg: 'bg-purple-50', ic: 'bg-purple-100 text-purple-600', val: 'text-purple-700', href: '/beds' },
+    { label: 'Overdue Follow-ups', value: stats.overdueFollowUps, sub: 'require follow-up', icon: CalendarClock, bg: 'bg-orange-50', ic: 'bg-orange-100 text-orange-600', val: 'text-orange-700', href: '/reports' },
+    { label: "Today's Revenue", value: `₹${todayRevenue.toLocaleString('en-IN')}`, sub: 'payments collected today', icon: IndianRupee, bg: 'bg-emerald-50', ic: 'bg-emerald-100 text-emerald-600', val: 'text-emerald-700', href: '/billing' },
+    { label: 'OPD Queue', value: queueCount, sub: 'patients in queue today', icon: Clock, bg: 'bg-sky-50', ic: 'bg-sky-100 text-sky-600', val: 'text-sky-700', href: '/queue' },
+    { label: "Today's Appointments", value: todayAppts, sub: 'scheduled today', icon: CalendarDays, bg: 'bg-violet-50', ic: 'bg-violet-100 text-violet-600', val: 'text-violet-700', href: '/appointments' },
   ]
 
   return (
@@ -147,16 +159,16 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {time.toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}
-              {' · '}{time.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}
+              {time.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              {' · '}{time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </p>
           </div>
           <div className="flex gap-3">
             <Link href="/patients/new" className="btn-secondary flex items-center gap-2">
-              <UserPlus className="w-4 h-4"/> Register Patient
+              <UserPlus className="w-4 h-4" /> Register Patient
             </Link>
             <Link href="/opd" className="btn-primary flex items-center gap-2">
-              <Stethoscope className="w-4 h-4"/> New Consultation
+              <Stethoscope className="w-4 h-4" /> New Consultation
             </Link>
           </div>
         </div>
@@ -164,33 +176,45 @@ export default function Dashboard() {
         {/* Alert banners */}
         {stats.overdueFollowUps > 0 && (
           <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
-            <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0"/>
+            <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0" />
             <span className="text-orange-800">
-              <strong>{stats.overdueFollowUps}</strong> patient{stats.overdueFollowUps!==1?'s':''} have overdue follow-up appointments.
+              <strong>{stats.overdueFollowUps}</strong> patient{stats.overdueFollowUps !== 1 ? 's' : ''} have overdue follow-up appointments.
             </span>
             <Link href="/reports" className="ml-auto text-orange-600 hover:underline text-xs font-semibold flex-shrink-0">View list →</Link>
           </div>
         )}
         {stats.ancHighRisk > 0 && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
-            <Baby className="w-4 h-4 text-red-500 flex-shrink-0"/>
+            <Baby className="w-4 h-4 text-red-500 flex-shrink-0" />
             <span className="text-red-800">
-              <strong>{stats.ancHighRisk}</strong> high-risk ANC patient{stats.ancHighRisk!==1?'s':''} flagged this week.
+              <strong>{stats.ancHighRisk}</strong> high-risk ANC patient{stats.ancHighRisk !== 1 ? 's' : ''} flagged this week.
             </span>
             <Link href="/anc" className="ml-auto text-red-600 hover:underline text-xs font-semibold flex-shrink-0">Review →</Link>
           </div>
         )}
 
+        {fetchError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1">{fetchError}</span>
+            <button
+              onClick={() => { loadedRef.current = false; loadData() }}
+              className="text-xs font-semibold underline">
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* KPI tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          {tiles.map(({ label, value, sub, icon:Icon, bg, ic, val, href }) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+          {tiles.map(({ label, value, sub, icon: Icon, bg, ic, val, href }) => (
             <Link key={label} href={href}
               className={`card p-5 ${bg} hover:shadow-md transition-shadow cursor-pointer`}>
               <div className="flex items-center justify-between mb-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${ic}`}>
-                  <Icon className="w-5 h-5"/>
+                  <Icon className="w-5 h-5" />
                 </div>
-                <TrendingUp className="w-4 h-4 text-gray-300"/>
+                <TrendingUp className="w-4 h-4 text-gray-300" />
               </div>
               <div className={`text-3xl font-bold mb-1 ${val}`}>{value}</div>
               <div className="text-xs font-semibold text-gray-700">{label}</div>
@@ -207,12 +231,12 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Recent Patients</h2>
               <Link href="/patients" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                View all <ArrowRight className="w-3 h-3"/>
+                View all <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
             {recentPatients.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
-                <Users className="w-8 h-8 mx-auto mb-2 opacity-40"/>
+                <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
                 <p className="text-sm">No patients registered yet</p>
                 <Link href="/patients/new" className="text-blue-600 text-xs hover:underline mt-1 block">Register first patient →</Link>
               </div>
@@ -231,7 +255,7 @@ export default function Dashboard() {
                         <div className="text-xs text-gray-400">{p.mrn} · {age}y · {p.gender}</div>
                       </div>
                       <div className="text-xs text-gray-400 flex items-center gap-1 flex-shrink-0">
-                        <Clock className="w-3 h-3"/>
+                        <Clock className="w-3 h-3" />
                         {formatDateTime(p.created_at).split(',')[0]}
                       </div>
                     </Link>
@@ -249,16 +273,16 @@ export default function Dashboard() {
               <h2 className="font-semibold text-gray-900 mb-3">Quick Actions</h2>
               <div className="space-y-2">
                 {[
-                  { href:'/patients/new',  icon:UserPlus,    label:'Register New Patient',   hoverCls:'hover:border-blue-300   hover:bg-blue-50',    ic:'group-hover:text-blue-500',   tx:'group-hover:text-blue-700'   },
-                  { href:'/opd',           icon:Stethoscope, label:'Start OPD Consultation', hoverCls:'hover:border-green-300  hover:bg-green-50',   ic:'group-hover:text-green-500',  tx:'group-hover:text-green-700'  },
-                  { href:'/appointments',  icon:CalendarDays,label:'Book Appointment',        hoverCls:'hover:border-purple-300 hover:bg-purple-50',  ic:'group-hover:text-purple-500', tx:'group-hover:text-purple-700' },
-                  { href:'/billing',       icon:IndianRupee, label:'Collect Payment',         hoverCls:'hover:border-emerald-300 hover:bg-emerald-50', ic:'group-hover:text-emerald-500',tx:'group-hover:text-emerald-700'},
-                  { href:'/beds',         icon:BedDouble,   label:'View Bed Board',          hoverCls:'hover:border-purple-300 hover:bg-purple-50', ic:'group-hover:text-purple-500', tx:'group-hover:text-purple-700' },
-                  { href:'/anc',          icon:Baby,        label:'ANC Registry',            hoverCls:'hover:border-pink-300   hover:bg-pink-50',   ic:'group-hover:text-pink-500',   tx:'group-hover:text-pink-700'   },
-                ].map(({ href, icon:Icon, label, hoverCls, ic, tx }) => (
+                  { href: '/patients/new', icon: UserPlus, label: 'Register New Patient', hoverCls: 'hover:border-blue-300   hover:bg-blue-50', ic: 'group-hover:text-blue-500', tx: 'group-hover:text-blue-700' },
+                  { href: '/opd', icon: Stethoscope, label: 'Start OPD Consultation', hoverCls: 'hover:border-green-300  hover:bg-green-50', ic: 'group-hover:text-green-500', tx: 'group-hover:text-green-700' },
+                  { href: '/appointments', icon: CalendarDays, label: 'Book Appointment', hoverCls: 'hover:border-purple-300 hover:bg-purple-50', ic: 'group-hover:text-purple-500', tx: 'group-hover:text-purple-700' },
+                  { href: '/billing', icon: IndianRupee, label: 'Collect Payment', hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50', ic: 'group-hover:text-emerald-500', tx: 'group-hover:text-emerald-700' },
+                  { href: '/beds', icon: BedDouble, label: 'View Bed Board', hoverCls: 'hover:border-purple-300 hover:bg-purple-50', ic: 'group-hover:text-purple-500', tx: 'group-hover:text-purple-700' },
+                  { href: '/anc', icon: Baby, label: 'ANC Registry', hoverCls: 'hover:border-pink-300   hover:bg-pink-50', ic: 'group-hover:text-pink-500', tx: 'group-hover:text-pink-700' },
+                ].map(({ href, icon: Icon, label, hoverCls, ic, tx }) => (
                   <Link key={href} href={href}
                     className={`flex items-center gap-3 p-3 rounded-lg border border-dashed border-gray-200 transition-all group ${hoverCls}`}>
-                    <Icon className={`w-4 h-4 text-gray-400 ${ic}`}/>
+                    <Icon className={`w-4 h-4 text-gray-400 ${ic}`} />
                     <span className={`text-sm text-gray-600 ${tx}`}>{label}</span>
                   </Link>
                 ))}
@@ -270,14 +294,14 @@ export default function Dashboard() {
               <div className="card p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-orange-500"/>
+                    <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
                     Overdue Follow-ups
                   </h2>
                   <Link href="/reports" className="text-xs text-orange-600 hover:underline">All</Link>
                 </div>
                 <div className="space-y-2">
-                  {overdueList.map((f:any, i) => {
-                    const days = Math.floor((Date.now()-new Date(f.follow_up_date).getTime())/86400000)
+                  {overdueList.map((f: any, i) => {
+                    const days = Math.floor((Date.now() - new Date(f.follow_up_date).getTime()) / 86400000)
                     return (
                       <div key={i} className="p-2.5 rounded-lg bg-orange-50 border border-orange-100">
                         <div className="text-sm font-medium text-gray-800 truncate">
@@ -304,7 +328,7 @@ export default function Dashboard() {
                       className="block p-2.5 rounded-lg bg-gray-50 hover:bg-blue-50 transition-colors">
                       <div className="text-sm font-medium text-gray-800 truncate">{e.patients?.full_name}</div>
                       <div className="text-xs text-gray-400">
-                        {e.patients?.mrn} · {e.chief_complaint?.slice(0,28) || 'General consultation'}
+                        {e.patients?.mrn} · {e.chief_complaint?.slice(0, 28) || 'General consultation'}
                       </div>
                     </Link>
                   ))}

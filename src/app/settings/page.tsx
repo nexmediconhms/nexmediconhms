@@ -403,22 +403,22 @@ function UserManagementSection() {
   }
 
   async function adminResetPassword(userEmail: string, userName: string) {
-  if (!confirm(`Send password reset email to ${userName} (${userEmail})?`)) return
+    if (!confirm(`Send password reset email to ${userName} (${userEmail})?`)) return
 
-  try {
-    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-    })
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+        redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+      })
 
-    if (error) {
-      alert(`Failed to send reset email: ${error.message}`)
-    } else {
-      alert(`✅ Password reset email sent to ${userEmail}.\nAsk ${userName} to check their inbox.`)
+      if (error) {
+        alert(`Failed to send reset email: ${error.message}`)
+      } else {
+        alert(`✅ Password reset email sent to ${userEmail}.\nAsk ${userName} to check their inbox.`)
+      }
+    } catch (err: any) {
+      alert(`Error: ${err?.message || 'Unknown error'}`)
     }
-  } catch (err: any) {
-    alert(`Error: ${err?.message || 'Unknown error'}`)
   }
-}
 
 
   return (
@@ -473,9 +473,11 @@ function UserManagementSection() {
                 <option value="doctor">🩺 Doctor</option>
                 <option value="staff">📋 Staff</option>
               </select>
-              <button onClick={() => toggleActive(u.id, u.is_active)}
-                className={`text-xs px-2 py-1 rounded-lg border ${u.is_active ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
-                {u.is_active ? 'Deactivate' : 'Activate'}
+              <button
+                onClick={() => adminResetPassword(u.email, u.full_name)}
+                className="text-xs px-2 py-1 rounded-lg border text-orange-600 border-orange-200 hover:bg-orange-50"
+                title="Send password reset email">
+                🔑 Reset Pwd
               </button>
             </div>
           ))}
@@ -513,8 +515,8 @@ function UserManagementSection() {
               {(['doctor', 'staff'] as const).map(r => (
                 <button key={r} type="button" onClick={() => setInvRole(r)}
                   className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${invRole === r
-                      ? r === 'doctor' ? 'bg-blue-600 text-white border-blue-600' : 'bg-green-600 text-white border-green-600'
-                      : 'bg-white text-gray-600 border-gray-300'
+                    ? r === 'doctor' ? 'bg-blue-600 text-white border-blue-600' : 'bg-green-600 text-white border-green-600'
+                    : 'bg-white text-gray-600 border-gray-300'
                     }`}>
                   {r === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
                 </button>
@@ -570,20 +572,20 @@ function MedicineImportSection() {
 
   useEffect(() => {
     if (!isAdmin) return
-    // Fetch current custom medicine count
-    ;(async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
-        const res = await fetch('/api/medicines/import', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (res.ok) {
-          const json = await res.json()
-          setCustomCount(json.count || 0)
-        }
-      } catch {}
-    })()
+      // Fetch current custom medicine count
+      ; (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) return
+          const res = await fetch('/api/medicines/import', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          if (res.ok) {
+            const json = await res.json()
+            setCustomCount(json.count || 0)
+          }
+        } catch { }
+      })()
   }, [isAdmin])
 
   async function handleImport() {
@@ -617,7 +619,7 @@ function MedicineImportSection() {
             const data = await fetchRes.json()
             setCustomMedicines(data.medicines || [])
           }
-        } catch {}
+        } catch { }
       } else {
         setResult({ ok: false, msg: json.error || 'Import failed' })
       }
@@ -642,9 +644,9 @@ function MedicineImportSection() {
         try {
           const { setCustomMedicines } = await import('@/lib/drug-database')
           setCustomMedicines([])
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
   }
 
   if (!isAdmin) return null
