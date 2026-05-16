@@ -224,11 +224,11 @@ export async function GET(req: NextRequest) {
     // src/app/api/reminders/route.ts — FIXED query
     const { data: encs } = await supabase
       .from('encounters')
-      // Use 'date' not 'encounter_date' — matches the actual DB schema
-      .select('id, patient_id, date, ob_data, patients(fullname, mrn, mobile, dob)')
+      // Use 'encounter_date' — matches the actual DB schema (supabase_setup.sql)
+      .select('id, patient_id, encounter_date, ob_data, patients!inner(full_name, mrn, mobile, date_of_birth)')
       .not('ob_data', 'is', null)
-      .gte('date', ancFrom)           // ← was: .gte('encounter_date', ancFrom)
-      .order('date', { ascending: false }) // ← was: .order('encounter_date', ...)
+      .gte('encounter_date', ancFrom)
+      .order('encounter_date', { ascending: false })
       .limit(500)
 
     // Keep only the most recent encounter per patient
@@ -265,7 +265,7 @@ export async function GET(req: NextRequest) {
             type: 'anc',
             priority,
             patientId: enc.patient_id,
-            patientName: pat.full_name ?? '',
+            patientName: pat.full_name ?? pat.fullname ?? '',
             mobile: pat.mobile ?? '',
             mrn: pat.mrn ?? '',
             sourceId: enc.id,
@@ -292,7 +292,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: dsList } = await supabase
       .from('discharge_summaries')
-      .select('id, patient_id, delivery_date, reminder_sent_at, patients(full_name, mrn, mobile)')
+      .select('id, patient_id, delivery_date, reminder_sent_at, patients!inner(full_name, mrn, mobile)')
       .not('delivery_date', 'is', null)
       .order('delivery_date', { ascending: false })
       .limit(100)
@@ -340,7 +340,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: dsList } = await supabase
       .from('discharge_summaries')
-      .select('id, patient_id, delivery_date, baby_sex, reminder_sent_at, patients(full_name, mrn, mobile)')
+      .select('id, patient_id, delivery_date, baby_sex, reminder_sent_at, patients!inner(full_name, mrn, mobile)')
       .not('delivery_date', 'is', null)
       .order('delivery_date', { ascending: false })
       .limit(100)
@@ -400,7 +400,7 @@ export async function GET(req: NextRequest) {
       .limit(50)
 
     // Batch-fetch mobiles to avoid N+1
-    const patientIds = Array.from(new Set((bills || []).map(b => b.patient_id).filter(Boolean)))
+    const patientIds = Array.from(new Set((bills || []).map((b: any) => b.patient_id).filter(Boolean)))
     const mobileMap = new Map<string, string>()
     if (patientIds.length > 0) {
       const { data: pats } = await supabase
@@ -448,7 +448,7 @@ export async function GET(req: NextRequest) {
     return (a.dueDate ?? '').localeCompare(b.dueDate ?? '')
   })
 
-  return NextResponse.json({ reminders, total: reminders.length })
+  return NextResponse.json({ reminders, total: reminders.length, generatedAt: new Date().toISOString() })
 }
 
 // ── PATCH — log a reminder as sent ──────────────────────────

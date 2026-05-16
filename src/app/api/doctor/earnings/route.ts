@@ -6,17 +6,13 @@
  * GET /api/doctor/earnings?from=2024-01-01&to=2024-01-31
  * GET /api/doctor/earnings?doctorId=xxx&from=...&to=...
  *
- * Uses ACTUAL schema:
- * - encounters.encounter_date  (renamed from 'date' by v30 migration)
- * - encounters.patientid       (lowercase, no underscore)
- * - encounters.doctorid        (lowercase)
- * - clinicusers.share_pct      (added by v30 migration)
- * - ipdadmissions.doctorid     (added by v30 migration)
- *
- * ERROR YOU WERE GETTING:
- * "column e.patientid does not exist" — this was because previous code used
- * JOINs with wrong column names. This version uses Supabase client instead
- * of raw SQL joins, so column names are handled automatically.
+ * FIXED: Uses correct snake_case table/column names matching deployed DB:
+ * - encounters.encounter_date
+ * - encounters.patient_id
+ * - encounters.doctor_name  (text field)
+ * - ipd_admissions (NOT ipdadmissions)
+ * - bills.patient_id, bills.net_amount, bills.status, bills.created_at
+ * - clinic_users.share_pct
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -44,14 +40,11 @@ export async function GET(req: NextRequest) {
   const sb = getSupabase()
 
   // ── Fetch OPD encounters in the date range ────────────────
-  // Using encounter_date (renamed from date by v30 migration)
   let encQuery = sb
     .from('encounters')
-    .select('id, patientid, doctorid, doctorname, encounter_date')
+    .select('id, patient_id, doctor_name, encounter_date')
     .gte('encounter_date', from)
     .lte('encounter_date', to)
-
-  if (doctorId) encQuery = encQuery.eq('doctorid', doctorId)
 
   const { data: encounters, error: encErr } = await encQuery
   if (encErr) {
@@ -59,56 +52,72 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Fetch IPD admissions in the date range ────────────────
+  // Use ipd_admissions (snake_case) — the actual table in deployed DB
   let ipdQuery = sb
-    .from('ipdadmissions')
-    .select('id, patientid, doctorid, admittingdoctor, admissiondate')
-    .gte('admissiondate', from)
-    .lte('admissiondate', to)
-
-  if (doctorId) ipdQuery = ipdQuery.eq('doctorid', doctorId)
+    .from('ipd_admissions')
+    .select('id, patient_id, admitting_doctor, admission_date')
+    .gte('admission_date', from)
+    .lte('admission_date', to)
 
   const { data: admissions } = await ipdQuery
 
   // ── Fetch bills for encountered patients ──────────────────
-  // Group bills by patientid for later lookup
-  const patientIds = [new Set((encounters || []).map(e => e.patientid).filter(Boolean))]
+  const patientIdSet = new Set<string>(
+    (encounters || []).map((e: any) => e.patient_id).filter(Boolean)
+  )
+  // Also include IPD patient_ids
+  for (const adm of admissions || []) {
+    if (adm.patient_id) patientIdSet.add(adm.patient_id)
+  }
+  const patientIds = Array.from(patientIdSet)
 
   let billsData: any[] = []
   if (patientIds.length > 0) {
     const { data: bills } = await sb
       .from('bills')
-      .select('patientid, total, paid, status, createdat')
-      .in('patientid', patientIds)
-      .gte('createdat', from + 'T00:00:00')
-      .lte('createdat', to + 'T23:59:59')
+      .select('patient_id, net_amount, status, created_at')
+      .in('patient_id', patientIds)
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59')
 
     billsData = bills || []
   }
 
-  // Map patientid → total collected
+  // Map patient_id → total collected
   const paidByPatient = new Map<string, number>()
-  const grossByPatient = new Map<string, number>()
   for (const b of billsData) {
-    const pid = b.patientid
-    paidByPatient.set(pid,  (paidByPatient.get(pid)  || 0) + Number(b.paid  || 0))
-    grossByPatient.set(pid, (grossByPatient.get(pid) || 0) + Number(b.total || 0))
+    if (b.status === 'paid') {
+      const pid = b.patient_id
+      paidByPatient.set(pid, (paidByPatient.get(pid) || 0) + Number(b.net_amount || 0))
+    }
   }
 
   // ── Fetch doctor share percentages ────────────────────────
-  const { data: doctors } = await sb
-    .from('clinicusers')
-    .select('id, fullname, share_pct, earning_model')
-    .eq('role', 'doctor')
+  // Try clinic_users (snake_case) first, fall back to clinicusers
+  let doctors: any[] = []
+  const { data: d1 } = await sb
+    .from('clinic_users')
+    .select('id, full_name, share_pct, earning_model')
+    .in('role', ['admin', 'doctor'])
+
+  if (d1 && d1.length > 0) {
+    doctors = d1
+  } else {
+    const { data: d2 } = await sb
+      .from('clinicusers')
+      .select('id, fullname, share_pct, earning_model')
+      .eq('role', 'doctor')
+    doctors = d2 || []
+  }
 
   const shareByDoctor = new Map<string, number>()
-  for (const d of doctors || []) {
-    shareByDoctor.set(d.id, Number(d.share_pct || 40))
+  for (const d of doctors) {
+    shareByDoctor.set(d.full_name || d.fullname || '', Number(d.share_pct || 40))
   }
 
   // ── Build per-doctor earnings ─────────────────────────────
 
   const doctorMap = new Map<string, {
-    doctorid:    string
     doctorname:  string
     opdCount:    number
     ipdCount:    number
@@ -120,48 +129,48 @@ export async function GET(req: NextRequest) {
 
   // OPD encounters
   for (const enc of encounters || []) {
-    const key  = enc.doctorid || 'unknown'
-    const name = enc.doctorname || 'Unknown Doctor'
+    const name = enc.doctor_name || 'Unknown Doctor'
 
-    if (!doctorMap.has(key)) {
-      doctorMap.set(key, {
-        doctorid:   key,
+    if (!doctorMap.has(name)) {
+      doctorMap.set(name, {
         doctorname: name,
         opdCount:   0,
         ipdCount:   0,
         opdRevenue: 0,
         ipdRevenue: 0,
         collected:  0,
-        sharePct:   shareByDoctor.get(key) || 40,
+        sharePct:   shareByDoctor.get(name) || 40,
       })
     }
 
-    const d = doctorMap.get(key)!
+    const d = doctorMap.get(name)!
     d.opdCount++
-    const paid = paidByPatient.get(enc.patientid) || 0
+    const paid = paidByPatient.get(enc.patient_id) || 0
     d.opdRevenue += paid
     d.collected  += paid
   }
 
   // IPD admissions
   for (const adm of admissions || []) {
-    const key  = adm.doctorid || 'unknown'
-    const name = adm.admittingdoctor || 'Unknown Doctor'
+    const name = adm.admitting_doctor || 'Unknown Doctor'
 
-    if (!doctorMap.has(key)) {
-      doctorMap.set(key, {
-        doctorid:   key,
+    if (!doctorMap.has(name)) {
+      doctorMap.set(name, {
         doctorname: name,
         opdCount:   0,
         ipdCount:   0,
         opdRevenue: 0,
         ipdRevenue: 0,
         collected:  0,
-        sharePct:   shareByDoctor.get(key) || 40,
+        sharePct:   shareByDoctor.get(name) || 40,
       })
     }
 
-    doctorMap.get(key)!.ipdCount++
+    const d = doctorMap.get(name)!
+    d.ipdCount++
+    const paid = paidByPatient.get(adm.patient_id) || 0
+    d.ipdRevenue += paid
+    d.collected  += paid
   }
 
   // Calculate earnings for each doctor

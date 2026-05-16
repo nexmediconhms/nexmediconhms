@@ -128,33 +128,42 @@ export async function uploadFile(
   const mimeType = getCorrectMimeType(file)
 
   // ── Try Supabase Storage first ────────────────────────────
-  try {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(path, file, {
-        contentType: mimeType,  // ← CRITICAL: explicit mime type
-        upsert:      false,
-        cacheControl: '3600',
-      })
+  // Try both bucket names: 'consultation-files' first, then 'consultation-attachments'
+  const bucketsToTry = [bucket, 'consultation-attachments']
+  
+  for (const tryBucket of bucketsToTry) {
+    try {
+      const { data, error } = await supabase.storage
+        .from(tryBucket)
+        .upload(path, file, {
+          contentType: mimeType,  // ← CRITICAL: explicit mime type
+          upsert:      false,
+          cacheControl: '3600',
+        })
 
-    if (!error && data) {
-      // Storage upload succeeded
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(path)
+      if (!error && data) {
+        // Storage upload succeeded
+        const { data: urlData } = supabase.storage
+          .from(tryBucket)
+          .getPublicUrl(path)
 
-      return {
-        source:     'storage',
-        storageKey: path,
-        publicUrl:  urlData?.publicUrl,
+        return {
+          source:     'storage',
+          storageKey: path,
+          publicUrl:  urlData?.publicUrl,
+        }
       }
+
+      // If error is about bucket not found, try next bucket
+      if (error?.message?.includes('not found') || error?.message?.includes('Bucket')) {
+        continue
+      }
+
+      // Other storage errors — log and fall through to DB fallback
+      console.warn(`[storage-upload] Storage upload failed for "${file.name}" in bucket "${tryBucket}":`, error?.message)
+    } catch (storageErr: any) {
+      console.warn(`[storage-upload] Storage exception for "${file.name}" in bucket "${tryBucket}":`, storageErr?.message)
     }
-
-    // Storage failed — log why and fall through to DB fallback
-    console.warn(`[storage-upload] Storage upload failed for "${file.name}":`, error?.message)
-
-  } catch (storageErr: any) {
-    console.warn(`[storage-upload] Storage exception for "${file.name}":`, storageErr?.message)
   }
 
   // ── Fallback: store as base64 in database ─────────────────
@@ -224,7 +233,10 @@ export function getFileUrl(
 export async function isStorageAvailable(bucket = 'consultation-files'): Promise<boolean> {
   try {
     const { error } = await supabase.storage.getBucket(bucket)
-    return !error
+    if (!error) return true
+    // Try fallback bucket name
+    const { error: err2 } = await supabase.storage.getBucket('consultation-attachments')
+    return !err2
   } catch {
     return false
   }

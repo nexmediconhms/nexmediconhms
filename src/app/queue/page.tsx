@@ -132,9 +132,10 @@ function QueueContent() {
   }
 
   const today = new Date().toISOString().slice(0, 10)
+  const [queueDate, setQueueDate] = useState(today)  // ← Date filter state
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Load queue for today ──────────────────────────────────
+  // ── Load queue for selected date ──────────────────────────
   async function load() {
     setLoading(true)
     try {
@@ -146,7 +147,7 @@ function QueueContent() {
           patient_id, encounter_id,
           patients!inner ( full_name, mrn )
         `)
-        .eq('queue_date', today)
+        .eq('queue_date', queueDate)
         .order('token_number', { ascending: true })
 
       if (e) throw e
@@ -202,7 +203,7 @@ function QueueContent() {
       channel.unsubscribe()
       channelRef.current = null
     }
-  }, [today])
+  }, [queueDate])
 
   // ── Status update ─────────────────────────────────────────
   async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
@@ -224,7 +225,7 @@ function QueueContent() {
     const { data } = await supabase
       .from('opd_queue')
       .select('token_number')
-      .eq('queue_date', today)
+      .eq('queue_date', queueDate)
       .order('token_number', { ascending: false })
       .limit(1)
     return ((data?.[0]?.token_number ?? 0) as number) + 1
@@ -242,7 +243,7 @@ function QueueContent() {
         .insert({
           patient_id: addPatientId,
           encounter_id: addEncounter || null,
-          queue_date: today,
+          queue_date: queueDate,
           token_number: token,
           status: 'waiting',
           priority: addPriority,
@@ -286,14 +287,50 @@ function QueueContent() {
               </span>
             </h1>
             <p className="text-sm text-gray-500">
-              Today — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
+              {queueDate === today ? 'Today' : queueDate} — {new Date(queueDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
               {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
             </p>
           </div>
-          <button onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-            <Plus className="w-4 h-4" /> Add to Queue
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Date Filter */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const d = new Date(queueDate)
+                  d.setDate(d.getDate() - 1)
+                  setQueueDate(d.toISOString().slice(0, 10))
+                }}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 text-xs">
+                ←
+              </button>
+              <input
+                type="date"
+                value={queueDate}
+                onChange={e => setQueueDate(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              />
+              <button
+                onClick={() => {
+                  const d = new Date(queueDate)
+                  d.setDate(d.getDate() + 1)
+                  setQueueDate(d.toISOString().slice(0, 10))
+                }}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 text-xs">
+                →
+              </button>
+              {queueDate !== today && (
+                <button
+                  onClick={() => setQueueDate(today)}
+                  className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200 font-medium">
+                  Today
+                </button>
+              )}
+            </div>
+            <button onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+              <Plus className="w-4 h-4" /> Add to Queue
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
