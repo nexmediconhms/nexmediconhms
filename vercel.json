@@ -1,16 +1,16 @@
 {
-  "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "crons": [
+    {
+      "path": "/api/cron/followup-escalation",
+      "schedule": "0 2 * * *"
+    },
     {
       "path": "/api/reminders/auto-generate",
       "schedule": "30 2 * * *"
     },
     {
-      "path": "/api/backup",
-      "schedule": "30 20 * * *"
+      "path": "/api/billing/daily-closing",
+      "schedule": "30 17 * * *"
     }
   ]
 }
