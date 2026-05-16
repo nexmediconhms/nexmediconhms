@@ -289,6 +289,14 @@ export default function LoginPage() {
 
     // MFA gate — check AAL level
     try {
+      // Skip MFA if already verified in this browser session
+      const alreadyVerified = sessionStorage.getItem('nexmedicon_mfa_verified')
+      if (alreadyVerified === 'true') {
+        // Session still has valid token, skip MFA prompt
+        router.push('/dashboard')
+        return
+      }
+      await supabase.auth.refreshSession()
       const aal = await getAAL()
       if (aal.needsMFA) {
         // User has a verified TOTP factor — require verification before dashboard
@@ -339,6 +347,7 @@ export default function LoginPage() {
 
     const result = await verifyMFACode(mfaCode)
     setMfaLoading(false)
+    sessionStorage.setItem('nexmedicon_mfa_verified', 'true')
 
     if (result.success) {
       await auditLogin()

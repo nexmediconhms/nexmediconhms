@@ -1,15 +1,14 @@
 'use client'
 /**
- * src/components/layout/Sidebar.tsx
+ * src/components/layout/Sidebar.tsx — BUG 6 FIX
  *
- * UPDATED for v11 — adds nav items for:
- *   - IPD Management       (/ipd)
- *   - Video Consultations  (/video)
- *   - Hospital Fund        (/fund)
- *   - Patient Portal links (/settings/doctors for doctor management)
+ * WHAT CHANGED:
+ * - When you navigate to a page, the sidebar auto-opens ONLY the 
+ *   section containing that page and collapses all others
+ * - You don't have to manually open/close dropdowns anymore
+ * - If you manually click a section header, it toggles as before
  *
- * Drop-in replacement for the existing Sidebar.tsx.
- * All original logic is preserved; only NAV_GROUPS is extended.
+ * COPY THIS ENTIRE FILE and replace src/components/layout/Sidebar.tsx
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -35,7 +34,7 @@ interface NavItemDef {
   label:       string
   permission?: Permission
   badge?:      number
-  external?:   boolean   // opens in new tab (patient portal link)
+  external?:   boolean
 }
 
 interface NavGroupDef {
@@ -49,15 +48,10 @@ export default function Sidebar() {
   const router   = useRouter()
   const { user, can } = useAuth()
 
-  const [open, setOpen] = useState<Record<string, boolean>>({
-    Clinical:   true,
-    IPD:        true,
-    Finance:    true,
-    Tools:      true,
-    Admin:      false,
-  })
+  // BUG 6 FIX: Start with all sections collapsed
+  const [open, setOpen] = useState<Record<string, boolean>>({})
 
-  // Live badge count — urgent + today reminders
+  // Live badge count
   const [reminderBadge, setReminderBadge] = useState(0)
 
   useEffect(() => {
@@ -78,7 +72,6 @@ export default function Sidebar() {
   }, [])
 
   const NAV_GROUPS: NavGroupDef[] = [
-    // ── CLINICAL ──────────────────────────────────────────
     {
       label: 'Clinical',
       emoji: '🏥',
@@ -96,8 +89,6 @@ export default function Sidebar() {
         { href: '/forms',        icon: ClipboardList,   label: 'Patient Intake',    permission: 'forms.view'         },
       ],
     },
-
-    // ── IPD (IN-PATIENT DEPARTMENT) ────────────────────────   ← NEW v11
     {
       label: 'IPD',
       emoji: '🛏️',
@@ -106,22 +97,18 @@ export default function Sidebar() {
         { href: '/ipd',   icon: BedSingle,  label: 'IPD Admissions',   permission: 'ipd.view'      },
       ],
     },
-
-    // ── FINANCE ───────────────────────────────────────────
     {
       label: 'Finance',
       emoji: '💰',
       items: [
         { href: '/billing',          icon: IndianRupee, label: 'Billing',          permission: 'billing.view'       },
-        { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          }, // ← NEW v11
+        { href: '/fund',             icon: PiggyBank,   label: 'Hospital Fund',    permission: 'fund.view'          },
         { href: '/reports/daily',    icon: TrendingUp,  label: 'Daily Report',     permission: 'reports.view'       },
         { href: '/reports/monthly',  icon: BarChart3,   label: 'Monthly Report',   permission: 'reports.view'       },
         { href: '/insurance',        icon: Shield,      label: 'Insurance Claims', permission: 'billing.view'       },
         { href: '/reports/payments', icon: IndianRupee, label: 'Payment Report',   permission: 'reports.financial'  },
       ],
     },
-
-    // ── TOOLS ─────────────────────────────────────────────
     {
       label: 'Tools',
       emoji: '🔧',
@@ -130,13 +117,11 @@ export default function Sidebar() {
         { href: '/search',  icon: SearchIcon,  label: 'Global Search'                             },
       ],
     },
-
-    // ── ADMIN ─────────────────────────────────────────────  ← NEW v11 (admin only)
     {
       label: 'Admin',
       emoji: '⚙️',
       items: [
-        { href: '/settings/doctors', icon: UserCog,      label: 'Doctor Management', permission: 'settings.edit'    }, // ← NEW v11
+        { href: '/settings/doctors', icon: UserCog,      label: 'Doctor Management', permission: 'settings.edit'    },
         { href: '/audit-log',        icon: Shield,       label: 'Audit Log',         permission: 'audit.view'       },
       ],
     },
@@ -148,6 +133,18 @@ export default function Sidebar() {
     { href: '/setup',      icon: BookOpen,      label: 'Setup Guide'                             },
     { href: '/settings',   icon: Settings,      label: 'Settings',   permission: 'settings.view' },
   ]
+
+  // ═══ BUG 6 FIX: Auto-open only the active section ═══
+  // When the URL changes, find which section contains the active page
+  // and open ONLY that section, closing all others.
+  useEffect(() => {
+    const newOpen: Record<string, boolean> = {}
+    for (const group of NAV_GROUPS) {
+      const hasActivePage = group.items.some(item => isActive(item.href))
+      newOpen[group.label] = hasActivePage
+    }
+    setOpen(newOpen)
+  }, [pathname])  // runs every time the URL changes
 
   function toggle(label: string) {
     setOpen(prev => ({ ...prev, [label]: !prev[label] }))
@@ -235,7 +232,7 @@ export default function Sidebar() {
           const filteredItems = filterItems(group.items)
           if (filteredItems.length === 0) return null
 
-          const isOpen    = open[group.label] ?? true
+          const isOpen    = open[group.label] ?? false
           const hasActive = filteredItems.some(i => isActive(i.href))
 
           return (

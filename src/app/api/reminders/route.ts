@@ -56,54 +56,54 @@ function parseISTDate(dateStr: string): Date {
 }
 function daysSince(dateStr: string): number {
   const todayIST = parseISTDate(today())
-  const target   = parseISTDate(dateStr)
+  const target = parseISTDate(dateStr)
   return Math.floor((todayIST.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
 }
 function daysUntil(dateStr: string): number {
   const todayIST = parseISTDate(today())
-  const target   = parseISTDate(dateStr)
+  const target = parseISTDate(dateStr)
   return Math.round((target.getTime() - todayIST.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 const ANC_SCHEDULE_WEEKS = [16, 20, 24, 28, 32, 36, 38, 40]
 
 const VAX_SCHEDULE: { name: string; days: number }[] = [
-  { name: 'OPV / DPT / Hep-B (6 weeks)',  days: 42  },
-  { name: 'OPV / DPT / Hep-B (10 weeks)', days: 70  },
-  { name: 'OPV / DPT / Hep-B (14 weeks)', days: 98  },
-  { name: 'Measles / MMR (9 months)',      days: 270 },
+  { name: 'OPV / DPT / Hep-B (6 weeks)', days: 42 },
+  { name: 'OPV / DPT / Hep-B (10 weeks)', days: 70 },
+  { name: 'OPV / DPT / Hep-B (14 weeks)', days: 98 },
+  { name: 'Measles / MMR (9 months)', days: 270 },
 ]
 
 export interface ReminderItem {
-  id:            string
-  type:          'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
-  priority:      'urgent' | 'today' | 'tomorrow' | 'upcoming'
-  patientId:     string
-  patientName:   string
-  mobile:        string
-  mrn:           string
-  sourceId:      string
-  sourceTable:   'appointments' | 'prescriptions' | 'discharge_summaries' | 'bills' | 'encounters'
-  title:         string
-  subtitle:      string
-  dueDate?:      string
+  id: string
+  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  priority: 'urgent' | 'today' | 'tomorrow' | 'upcoming'
+  patientId: string
+  patientName: string
+  mobile: string
+  mrn: string
+  sourceId: string
+  sourceTable: 'appointments' | 'prescriptions' | 'discharge_summaries' | 'bills' | 'encounters'
+  title: string
+  subtitle: string
+  dueDate?: string
   reminderSentAt?: string | null
   context: {
-    lmp?:          string
-    edd?:          string
+    lmp?: string
+    edd?: string
     deliveryDate?: string
-    babyName?:     string
-    apptDate?:     string
-    apptTime?:     string
-    apptType?:     string
+    babyName?: string
+    apptDate?: string
+    apptTime?: string
+    apptType?: string
     followUpDate?: string
-    diagnosis?:    string
-    labTests?:     string
-    billAmount?:   number
-    vaxName?:      string
-    daysOverdue?:  number
-    weeksGA?:      string
-    riskReasons?:  string[]
+    diagnosis?: string
+    labTests?: string
+    billAmount?: number
+    vaxName?: string
+    daysOverdue?: number
+    weeksGA?: string
+    riskReasons?: string[]
   }
 }
 
@@ -120,11 +120,11 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth
   // ─────────────────────────────────────────────────────────
 
-  const tod  = today()
-  const tom  = tomorrow()
+  const tod = today()
+  const tom = tomorrow()
   // Expanded from 3 days to 30 days — so "All" tab shows all upcoming appointments
   const in30 = daysFromNow(30)
-  const in7  = daysFromNow(7)
+  const in7 = daysFromNow(7)
 
   const reminders: ReminderItem[] = []
 
@@ -143,24 +143,24 @@ export async function GET(req: NextRequest) {
     for (const a of appts || []) {
       const daysAway = daysUntil(a.date)
       let priority: ReminderItem['priority']
-      if (daysAway === 0)      priority = 'today'
+      if (daysAway === 0) priority = 'today'
       else if (daysAway === 1) priority = 'tomorrow'
-      else if (daysAway <= 7)  priority = 'upcoming'
-      else                     priority = 'upcoming'
+      else if (daysAway <= 7) priority = 'upcoming'
+      else priority = 'upcoming'
 
       reminders.push({
-        id:            `appt-${a.id}`,
-        type:          'appointment',
+        id: `appt-${a.id}`,
+        type: 'appointment',
         priority,
-        patientId:     a.patient_id   ?? '',
-        patientName:   a.patient_name ?? '',
-        mobile:        a.mobile       ?? '',
-        mrn:           a.mrn          ?? '',
-        sourceId:      a.id,
-        sourceTable:   'appointments',
-        title:         `Appointment — ${a.type || 'OPD'}`,
-        subtitle:      `${a.date} at ${a.time || '—'}`,
-        dueDate:       a.date,
+        patientId: a.patient_id ?? '',
+        patientName: a.patient_name ?? '',
+        mobile: a.mobile ?? '',
+        mrn: a.mrn ?? '',
+        sourceId: a.id,
+        sourceTable: 'appointments',
+        title: `Appointment — ${a.type || 'OPD'}`,
+        subtitle: `${a.date} at ${a.time || '—'}`,
+        dueDate: a.date,
         reminderSentAt: a.reminder_sent_at ?? null,
         context: {
           apptDate: a.date,
@@ -186,28 +186,28 @@ export async function GET(req: NextRequest) {
       if (!rx.follow_up_date) continue
       const daysAway = daysUntil(rx.follow_up_date)
       let priority: ReminderItem['priority']
-      if (daysAway === 0)      priority = 'today'
+      if (daysAway === 0) priority = 'today'
       else if (daysAway === 1) priority = 'tomorrow'
-      else                     priority = 'upcoming'
+      else priority = 'upcoming'
 
       reminders.push({
-        id:            `rx-${rx.id}`,
-        type:          'follow_up',
+        id: `rx-${rx.id}`,
+        type: 'follow_up',
         priority,
-        patientId:     rx.patient_id   ?? '',
-        patientName:   rx.patient_name ?? '',
-        mobile:        rx.mobile       ?? '',
-        mrn:           rx.mrn          ?? '',
-        sourceId:      rx.id,
-        sourceTable:   'prescriptions',
-        title:         'Follow-up Due',
-        subtitle:      `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
-        dueDate:       rx.follow_up_date,
+        patientId: rx.patient_id ?? '',
+        patientName: rx.patient_name ?? '',
+        mobile: rx.mobile ?? '',
+        mrn: rx.mrn ?? '',
+        sourceId: rx.id,
+        sourceTable: 'prescriptions',
+        title: 'Follow-up Due',
+        subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
+        dueDate: rx.follow_up_date,
         reminderSentAt: rx.reminder_sent_at ?? null,
         context: {
           followUpDate: rx.follow_up_date,
-          diagnosis:    rx.diagnosis,
-          labTests:     rx.lab_tests,
+          diagnosis: rx.diagnosis,
+          labTests: rx.lab_tests,
         },
       })
     }
@@ -221,12 +221,14 @@ export async function GET(req: NextRequest) {
     ancLookback.setMonth(ancLookback.getMonth() - 10)
     const ancFrom = ancLookback.toLocaleDateString('en-CA', { timeZone: IST })
 
+    // src/app/api/reminders/route.ts — FIXED query
     const { data: encs } = await supabase
       .from('encounters')
-      .select('id, patient_id, encounter_date, ob_data, patients(full_name, mrn, mobile, date_of_birth)')
+      // Use 'date' not 'encounter_date' — matches the actual DB schema
+      .select('id, patient_id, date, ob_data, patients(fullname, mrn, mobile, dob)')
       .not('ob_data', 'is', null)
-      .gte('encounter_date', ancFrom)
-      .order('encounter_date', { ascending: false })
+      .gte('date', ancFrom)           // ← was: .gte('encounter_date', ancFrom)
+      .order('date', { ascending: false }) // ← was: .order('encounter_date', ...)
       .limit(500)
 
     // Keep only the most recent encounter per patient
@@ -238,43 +240,43 @@ export async function GET(req: NextRequest) {
     }
 
     for (const enc of Array.from(latestByPatient.values())) {
-      const ob  = enc.ob_data
+      const ob = enc.ob_data
       const pat = enc.patients as any
       if (!ob?.lmp || !pat?.mobile) continue
 
-      const lmpDate   = parseISTDate(ob.lmp)
-      const nowMs     = new Date().getTime()
-      const weeksNow  = (nowMs - lmpDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
+      const lmpDate = parseISTDate(ob.lmp)
+      const nowMs = new Date().getTime()
+      const weeksNow = (nowMs - lmpDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
       if (weeksNow > 42) continue  // delivered — skip
 
       for (const targetWeek of ANC_SCHEDULE_WEEKS) {
-        const targetMs  = lmpDate.getTime() + targetWeek * 7 * 24 * 60 * 60 * 1000
+        const targetMs = lmpDate.getTime() + targetWeek * 7 * 24 * 60 * 60 * 1000
         const targetStr = new Date(targetMs).toLocaleDateString('en-CA', { timeZone: IST })
-        const daysAway  = daysUntil(targetStr)
+        const daysAway = daysUntil(targetStr)
 
         if (daysAway >= -3 && daysAway <= 7) {
           let priority: ReminderItem['priority']
-          if (daysAway <= 0)      priority = 'urgent'
+          if (daysAway <= 0) priority = 'urgent'
           else if (daysAway <= 1) priority = 'tomorrow'
-          else                    priority = 'upcoming'
+          else priority = 'upcoming'
 
           reminders.push({
-            id:          `anc-${enc.id}-w${targetWeek}`,
-            type:        'anc',
+            id: `anc-${enc.id}-w${targetWeek}`,
+            type: 'anc',
             priority,
-            patientId:   enc.patient_id,
+            patientId: enc.patient_id,
             patientName: pat.full_name ?? '',
-            mobile:      pat.mobile    ?? '',
-            mrn:         pat.mrn       ?? '',
-            sourceId:    enc.id,
+            mobile: pat.mobile ?? '',
+            mrn: pat.mrn ?? '',
+            sourceId: enc.id,
             sourceTable: 'encounters',
-            title:       `ANC Visit — Week ${targetWeek}`,
-            subtitle:    `Due ${targetStr} · GA ${Math.floor(weeksNow)}w`,
-            dueDate:     targetStr,
+            title: `ANC Visit — Week ${targetWeek}`,
+            subtitle: `Due ${targetStr} · GA ${Math.floor(weeksNow)}w`,
+            dueDate: targetStr,
             reminderSentAt: null,
             context: {
-              lmp:    ob.lmp,
-              edd:    ob.edd,
+              lmp: ob.lmp,
+              edd: ob.edd,
               weeksGA: `${Math.floor(weeksNow)} weeks`,
             },
           })
@@ -299,29 +301,29 @@ export async function GET(req: NextRequest) {
       const pat = ds.patients as any
       if (!ds.delivery_date || !pat?.mobile) continue
 
-      const followUpMs  = new Date(ds.delivery_date).getTime() + 42 * 24 * 60 * 60 * 1000
+      const followUpMs = new Date(ds.delivery_date).getTime() + 42 * 24 * 60 * 60 * 1000
       const followUpStr = new Date(followUpMs).toLocaleDateString('en-CA', { timeZone: IST })
-      const daysAway    = daysUntil(followUpStr)
+      const daysAway = daysUntil(followUpStr)
 
       if (daysAway >= -7 && daysAway <= 7) {
         let priority: ReminderItem['priority']
-        if (daysAway <= 0)      priority = 'urgent'
+        if (daysAway <= 0) priority = 'urgent'
         else if (daysAway === 1) priority = 'tomorrow'
-        else                    priority = 'upcoming'
+        else priority = 'upcoming'
 
         reminders.push({
-          id:            `pnd-${ds.id}`,
-          type:          'post_delivery',
+          id: `pnd-${ds.id}`,
+          type: 'post_delivery',
           priority,
-          patientId:     ds.patient_id,
-          patientName:   pat.full_name ?? '',
-          mobile:        pat.mobile    ?? '',
-          mrn:           pat.mrn       ?? '',
-          sourceId:      ds.id,
-          sourceTable:   'discharge_summaries',
-          title:         'Post-Delivery Follow-up',
-          subtitle:      `42-day check · Due ${followUpStr}`,
-          dueDate:       followUpStr,
+          patientId: ds.patient_id,
+          patientName: pat.full_name ?? '',
+          mobile: pat.mobile ?? '',
+          mrn: pat.mrn ?? '',
+          sourceId: ds.id,
+          sourceTable: 'discharge_summaries',
+          title: 'Post-Delivery Follow-up',
+          subtitle: `42-day check · Due ${followUpStr}`,
+          dueDate: followUpStr,
           reminderSentAt: ds.reminder_sent_at ?? null,
           context: {
             deliveryDate: ds.delivery_date,
@@ -349,33 +351,33 @@ export async function GET(req: NextRequest) {
 
       const delivMs = new Date(ds.delivery_date).getTime()
       for (const vax of VAX_SCHEDULE) {
-        const vaxDueMs  = delivMs + vax.days * 24 * 60 * 60 * 1000
+        const vaxDueMs = delivMs + vax.days * 24 * 60 * 60 * 1000
         const vaxDueStr = new Date(vaxDueMs).toLocaleDateString('en-CA', { timeZone: IST })
-        const daysAway  = daysUntil(vaxDueStr)
+        const daysAway = daysUntil(vaxDueStr)
 
         if (daysAway >= -5 && daysAway <= 7) {
           let priority: ReminderItem['priority']
-          if (daysAway <= 0)       priority = 'urgent'
+          if (daysAway <= 0) priority = 'urgent'
           else if (daysAway === 1) priority = 'tomorrow'
-          else                     priority = 'upcoming'
+          else priority = 'upcoming'
 
           reminders.push({
-            id:            `vax-${ds.id}-${vax.days}`,
-            type:          'vaccination',
+            id: `vax-${ds.id}-${vax.days}`,
+            type: 'vaccination',
             priority,
-            patientId:     ds.patient_id,
-            patientName:   pat.full_name ?? '',
-            mobile:        pat.mobile    ?? '',
-            mrn:           pat.mrn       ?? '',
-            sourceId:      ds.id,
-            sourceTable:   'discharge_summaries',
-            title:         `Vaccination Due — ${vax.name}`,
-            subtitle:      `Due ${vaxDueStr}`,
-            dueDate:       vaxDueStr,
+            patientId: ds.patient_id,
+            patientName: pat.full_name ?? '',
+            mobile: pat.mobile ?? '',
+            mrn: pat.mrn ?? '',
+            sourceId: ds.id,
+            sourceTable: 'discharge_summaries',
+            title: `Vaccination Due — ${vax.name}`,
+            subtitle: `Due ${vaxDueStr}`,
+            dueDate: vaxDueStr,
             reminderSentAt: ds.reminder_sent_at ?? null,
             context: {
               deliveryDate: ds.delivery_date,
-              vaxName:      vax.name,
+              vaxName: vax.name,
             },
           })
           break // only the soonest vaccine per child
@@ -399,7 +401,7 @@ export async function GET(req: NextRequest) {
 
     // Batch-fetch mobiles to avoid N+1
     const patientIds = Array.from(new Set((bills || []).map(b => b.patient_id).filter(Boolean)))
-    const mobileMap  = new Map<string, string>()
+    const mobileMap = new Map<string, string>()
     if (patientIds.length > 0) {
       const { data: pats } = await supabase
         .from('patients')
@@ -416,20 +418,20 @@ export async function GET(req: NextRequest) {
 
       const overdue = daysSince(bill.created_at.split('T')[0])
       reminders.push({
-        id:            `bill-${bill.id}`,
-        type:          'pending_bill',
-        priority:      overdue > 7 ? 'urgent' : 'upcoming',
-        patientId:     bill.patient_id,
-        patientName:   bill.patient_name ?? '',
+        id: `bill-${bill.id}`,
+        type: 'pending_bill',
+        priority: overdue > 7 ? 'urgent' : 'upcoming',
+        patientId: bill.patient_id,
+        patientName: bill.patient_name ?? '',
         mobile,
-        mrn:           bill.mrn ?? '',
-        sourceId:      bill.id,
-        sourceTable:   'bills',
-        title:         'Pending Bill',
-        subtitle:      `₹${Number(bill.net_amount).toLocaleString('en-IN')} · ${overdue}d overdue`,
+        mrn: bill.mrn ?? '',
+        sourceId: bill.id,
+        sourceTable: 'bills',
+        title: 'Pending Bill',
+        subtitle: `₹${Number(bill.net_amount).toLocaleString('en-IN')} · ${overdue}d overdue`,
         reminderSentAt: null,
         context: {
-          billAmount:  Number(bill.net_amount),
+          billAmount: Number(bill.net_amount),
           daysOverdue: overdue,
         },
       })
@@ -467,23 +469,23 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    const now     = new Date().toISOString()
+    const now = new Date().toISOString()
     const batchId = crypto.randomUUID()
 
     // Insert into reminder_log
     const { error: logErr } = await supabase.from('reminder_log').insert({
-      patient_id:      patientId,
-      patient_name:    patientName ?? '',
+      patient_id: patientId,
+      patient_name: patientName ?? '',
       mobile,
-      reminder_type:   reminderType,
-      source_table:    sourceTable ?? null,
-      source_id:       sourceId    ?? null,
+      reminder_type: reminderType,
+      source_table: sourceTable ?? null,
+      source_id: sourceId ?? null,
       message_preview: (message ?? '').slice(0, 200),
-      channel:         'whatsapp',
-      status:          'sent',
-      sent_at:         now,
-      sent_by:         auth.userId ?? 'staff',
-      batch_id:        batchId,
+      channel: 'whatsapp',
+      status: 'sent',
+      sent_at: now,
+      sent_by: auth.userId ?? 'staff',
+      batch_id: batchId,
     })
 
     if (logErr) {

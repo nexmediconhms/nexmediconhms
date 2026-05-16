@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '@/lib/api-auth'
+import { randomInt } from 'crypto'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   let magicLinkToken = ''
 
   if (normalizedMobile && patient_id) {
-    otpCode = String(Math.floor(100000 + Math.random() * 900000))
+    otpCode = String(randomInt(100000, 999999))
     magicLinkToken = crypto.randomUUID()
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 

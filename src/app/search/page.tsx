@@ -147,6 +147,27 @@ export default function SearchPage() {
         })
       })
 
+    // ── Search pharmacy medicines inventory ────────────────
+    try {
+      const { data: meds } = await supabase
+        .from('pharmacy_medicines')
+        .select('id, name, generic_name, brand_name, form, strength, category, current_stock, unit')
+        .or(`name.ilike.%${safe}%,generic_name.ilike.%${safe}%,brand_name.ilike.%${safe}%`)
+        .eq('is_active', true)
+        .limit(8)
+
+        ; (meds || []).forEach((m: any) => {
+          out.push({
+            type: 'prescription' as const,  // reuse the Pill icon
+            id: m.id,
+            title: `💊 ${m.name} ${m.strength || ''}`.trim(),
+            subtitle: `${m.generic_name || m.brand_name || m.category || 'Medicine'} · ${m.form}`,
+            meta: `Stock: ${m.current_stock} ${m.unit}s`,
+            href: '/pharmacy',
+          })
+        })
+    } catch { /* pharmacy_medicines table may not exist */ }
+
     setResults(out.slice(0, 20))
     setLoading(false)
   }
@@ -202,7 +223,7 @@ export default function SearchPage() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1">
             <Search className="w-6 h-6 text-blue-600" /> Global Search
           </h1>
-          <p className="text-sm text-gray-500">Search patients, diagnoses, and prescriptions</p>
+          <p className="text-sm text-gray-500">Search patients, diagnoses, prescriptions, and medicines</p>
         </div>
 
         {/* Search input */}
@@ -228,7 +249,7 @@ export default function SearchPage() {
             )}
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            Searches: patient name · MRN · mobile number · diagnosis · drug/medicine name
+            Searches: patient name · MRN · mobile · diagnosis · drug name · pharmacy inventory
           </p>
         </div>
 
