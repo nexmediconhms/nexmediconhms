@@ -192,7 +192,7 @@ export default function VoiceAssistant() {
       try {
         // FIX: Pass Supabase auth token to avoid 401 error on /api/voice-command
         const { data: { session } } = await supabase.auth.getSession()
-        const authHeader = session?.access_token
+        const authHeader: Record<string, string> = session?.access_token
           ? { Authorization: `Bearer ${session.access_token}` }
           : {}
 

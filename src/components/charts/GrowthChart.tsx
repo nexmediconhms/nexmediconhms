@@ -421,7 +421,7 @@ export function GrowthChartPanel({ encounters, patientName }: GrowthChartPanelPr
 
     if (enc.weight) {
       if (!baseWeight) baseWeight = enc.weight
-      weightData.push({ ga, value: enc.weight - baseWeight, date })
+      weightData.push({ ga, value: enc.weight - (baseWeight ?? enc.weight), date })
     }
 
     if (ob.bpd) bpdData.push({ ga, value: ob.bpd, date })
