@@ -1,0 +1,524 @@
+'use client'
+/**
+ * src/app/ipd/beds/page.tsx
+ *
+ * Full Bed Management page.
+ * Requires v30-master-fix.sql to have been run first (adds reservedfor, reservedat, reservednote columns).
+ *
+ * HOW TO ADD TO NAVIGATION:
+ * In your sidebar/nav, add a link to /ipd/beds
+ */
+
+import { useEffect, useState, useCallback } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { BedStatus, getBedActions, isBedAssignable } from '@/lib/business-logic'
+import {
+  Bed, User, Lock, Wrench, CheckCircle, Plus,
+  RefreshCw, Search, X, AlertCircle,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────
+
+interface BedRecord {
+  id:           string
+  bednumber:    string
+  ward:         string | null
+  type:         string
+  status:       BedStatus
+  reservedfor:  string | null
+  reservedat:   string | null
+  reservednote: string | null
+  notes:        string | null
+  patient_name?: string
+  patient_mrn?:  string
+}
+
+// ── Status styles ─────────────────────────────────────────────
+
+const STATUS_STYLES: Record<BedStatus, {
+  border: string; bg: string; text: string; dot: string; label: string
+}> = {
+  available:   { border: 'border-green-300',  bg: 'bg-green-50',   text: 'text-green-700',  dot: 'bg-green-500',  label: 'Available'   },
+  occupied:    { border: 'border-red-300',    bg: 'bg-red-50',     text: 'text-red-700',    dot: 'bg-red-500',    label: 'Occupied'    },
+  reserved:    { border: 'border-amber-300',  bg: 'bg-amber-50',   text: 'text-amber-700',  dot: 'bg-amber-500',  label: 'Reserved'    },
+  maintenance: { border: 'border-gray-300',   bg: 'bg-gray-50',    text: 'text-gray-600',   dot: 'bg-gray-400',   label: 'Maintenance' },
+}
+
+// ── Reserve Modal ─────────────────────────────────────────────
+
+function ReserveModal({
+  bed, onClose, onDone,
+}: { bed: BedRecord; onClose: () => void; onDone: () => void }) {
+  const [name,   setName]   = useState('')
+  const [note,   setNote]   = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+
+  async function confirm() {
+    if (!name.trim()) { setError('Patient name is required'); return }
+    setSaving(true)
+    const { error: err } = await supabase
+      .from('beds')
+      .update({
+        status:       'reserved',
+        reservedfor:  name.trim(),
+        reservednote: note.trim() || null,
+        reservedat:   new Date().toISOString(),
+        updatedat:    new Date().toISOString(),
+      })
+      .eq('id', bed.id)
+
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900">🔒 Reserve Bed {bed.bednumber}</h3>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 rounded-xl p-3 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Patient / Person Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              autoFocus
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-amber-400"
+              placeholder="e.g. Priya Sharma"
+              value={name}
+              onChange={e => { setName(e.target.value); setError('') }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Note (optional)</label>
+            <textarea
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+              rows={2}
+              placeholder="e.g. Expected tomorrow morning"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={confirm}
+            disabled={saving || !name.trim()}
+            className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5
+                       rounded-xl font-semibold text-sm disabled:opacity-50"
+          >
+            {saving ? 'Reserving…' : '🔒 Reserve Bed'}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-semibold text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Add Bed Modal ─────────────────────────────────────────────
+
+function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [form,   setForm]   = useState({ bednumber: '', ward: '', type: 'General' })
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+
+  async function save() {
+    if (!form.bednumber.trim()) { setError('Bed number is required'); return }
+    setSaving(true)
+    const { error: err } = await supabase.from('beds').insert({
+      bednumber: form.bednumber.trim().toUpperCase(),
+      ward:      form.ward.trim() || null,
+      type:      form.type,
+      status:    'available',
+    })
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900">+ Add New Bed</h3>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Bed Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              autoFocus
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. B01, W2-03"
+              value={form.bednumber}
+              onChange={e => setForm(f => ({ ...f, bednumber: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Ward</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. General, Maternity, Private"
+              value={form.ward}
+              onChange={e => setForm(f => ({ ...f, ward: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Bed Type</label>
+            <select
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              value={form.type}
+              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+            >
+              {['General', 'Semi-Private', 'Private', 'ICU', 'HDU', 'Labour Room', 'Maternity'].map(t => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5
+                       rounded-xl font-semibold text-sm disabled:opacity-50"
+          >
+            {saving ? 'Adding…' : '+ Add Bed'}
+          </button>
+          <button onClick={onClose}
+            className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-semibold text-sm">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Bed Card ──────────────────────────────────────────────────
+
+function BedCard({
+  bed, onAction,
+}: {
+  bed:      BedRecord
+  onAction: (bed: BedRecord, action: string) => void
+}) {
+  const s = STATUS_STYLES[bed.status]
+
+  return (
+    <div className={`border-2 ${s.border} ${s.bg} rounded-2xl p-4 space-y-3`}>
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${s.dot} flex-shrink-0`} />
+          <div>
+            <div className="font-bold text-gray-900">Bed {bed.bednumber}</div>
+            <div className="text-xs text-gray-500">{bed.ward || 'General'} · {bed.type}</div>
+          </div>
+        </div>
+        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/70 ${s.text}`}>
+          {s.label}
+        </span>
+      </div>
+
+      {/* Occupied info */}
+      {bed.status === 'occupied' && bed.patient_name && (
+        <div className="flex items-center gap-2 bg-white/60 rounded-xl px-3 py-2">
+          <User className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold truncate">{bed.patient_name}</div>
+            {bed.patient_mrn && (
+              <div className="text-xs text-gray-500">{bed.patient_mrn}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Reserved info */}
+      {bed.status === 'reserved' && bed.reservedfor && (
+        <div className="flex items-start gap-2 bg-white/60 rounded-xl px-3 py-2">
+          <Lock className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold truncate">{bed.reservedfor}</div>
+            {bed.reservednote && (
+              <div className="text-xs text-gray-500 mt-0.5">{bed.reservednote}</div>
+            )}
+            {bed.reservedat && (
+              <div className="text-xs text-gray-400 mt-0.5">
+                Reserved: {new Date(bed.reservedat).toLocaleString('en-IN', {
+                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2">
+        {bed.status === 'available' && (
+          <>
+            <button
+              onClick={() => onAction(bed, 'reserve')}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                         bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold"
+            >
+              <Lock className="w-3 h-3" /> Reserve
+            </button>
+            <button
+              onClick={() => onAction(bed, 'maintenance')}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                         bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-semibold"
+            >
+              <Wrench className="w-3 h-3" /> Maintenance
+            </button>
+          </>
+        )}
+
+        {bed.status === 'reserved' && (
+          <>
+            <button
+              onClick={() => onAction(bed, 'available')}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                         bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold"
+            >
+              <CheckCircle className="w-3 h-3" /> Unreserve
+            </button>
+            <button
+              onClick={() => onAction(bed, 'maintenance')}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                         bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-semibold"
+            >
+              <Wrench className="w-3 h-3" /> Maintenance
+            </button>
+          </>
+        )}
+
+        {bed.status === 'maintenance' && (
+          <button
+            onClick={() => onAction(bed, 'available')}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                       bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold"
+          >
+            <CheckCircle className="w-3 h-3" /> Mark Available
+          </button>
+        )}
+
+        {bed.status === 'occupied' && (
+          <p className="text-xs text-red-600 opacity-70 italic">
+            Discharge patient to free this bed
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────
+
+export default function BedsPage() {
+  const [beds,         setBeds]         = useState<BedRecord[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [search,       setSearch]       = useState('')
+  const [filterStatus, setFilterStatus] = useState<BedStatus | 'all'>('all')
+  const [reservingBed, setReservingBed] = useState<BedRecord | null>(null)
+  const [showAdd,      setShowAdd]      = useState(false)
+
+  const stats = {
+    available:   beds.filter(b => b.status === 'available').length,
+    occupied:    beds.filter(b => b.status === 'occupied').length,
+    reserved:    beds.filter(b => b.status === 'reserved').length,
+    maintenance: beds.filter(b => b.status === 'maintenance').length,
+  }
+
+  const loadBeds = useCallback(async () => {
+    setLoading(true)
+
+    const { data: bedData } = await supabase
+      .from('beds')
+      .select('*')
+      .order('bednumber')
+
+    if (!bedData) { setLoading(false); return }
+
+    // Get active admissions to find who's in each bed
+    const { data: admissions } = await supabase
+      .from('ipdadmissions')
+      .select('id, bedid, patientid, patients(fullname, mrn)')
+      .eq('status', 'admitted')
+
+    const admMap = new Map<string, any>()
+    for (const adm of admissions || []) {
+      if (adm.bedid) admMap.set(adm.bedid, adm)
+    }
+
+    setBeds(bedData.map(b => ({
+      ...b,
+      patient_name: admMap.get(b.id)?.patients?.fullname,
+      patient_mrn:  admMap.get(b.id)?.patients?.mrn,
+    })))
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadBeds() }, [loadBeds])
+
+  async function handleAction(bed: BedRecord, action: string) {
+    if (action === 'reserve') {
+      setReservingBed(bed)
+      return
+    }
+
+    const newStatus = action as BedStatus
+    await supabase.from('beds').update({
+      status:       newStatus,
+      reservedfor:  null,
+      reservednote: null,
+      reservedat:   null,
+      updatedat:    new Date().toISOString(),
+    }).eq('id', bed.id)
+
+    await loadBeds()
+  }
+
+  const filtered = beds.filter(b => {
+    const matchSearch =
+      !search ||
+      b.bednumber.toLowerCase().includes(search.toLowerCase()) ||
+      (b.ward || '').toLowerCase().includes(search.toLowerCase()) ||
+      (b.patient_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (b.reservedfor || '').toLowerCase().includes(search.toLowerCase())
+    const matchStatus = filterStatus === 'all' || b.status === filterStatus
+    return matchSearch && matchStatus
+  })
+
+  return (
+    <AppShell>
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Bed Management</h1>
+            <p className="text-sm text-gray-500">
+              {beds.length} total · {stats.available} available
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={loadBeds}
+              className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200">
+              <RefreshCw className="w-4 h-4 text-gray-600" />
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                         px-4 py-2 rounded-xl font-semibold text-sm"
+            >
+              <Plus className="w-4 h-4" /> Add Bed
+            </button>
+          </div>
+        </div>
+
+        {/* Stats bar — also filter buttons */}
+        <div className="grid grid-cols-4 gap-3">
+          {(Object.entries(stats) as [BedStatus, number][]).map(([status, count]) => {
+            const s = STATUS_STYLES[status]
+            const isActive = filterStatus === status
+            return (
+              <button
+                key={status}
+                onClick={() => setFilterStatus(isActive ? 'all' : status)}
+                className={`rounded-xl p-3 text-center border-2 transition-all
+                  ${isActive ? `${s.border} ${s.bg}` : 'border-gray-200 bg-white hover:border-gray-300'}`}
+              >
+                <div className={`text-2xl font-black ${s.text}`}>{count}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm
+                       focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Search bed number, ward, patient name…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Bed grid */}
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <Bed className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500 font-medium">
+              {beds.length === 0 ? 'No beds added yet — add your first bed!' : 'No beds match your search'}
+            </p>
+            {beds.length === 0 && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-xl font-semibold text-sm"
+              >
+                + Add First Bed
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map(bed => (
+              <BedCard key={bed.id} bed={bed} onAction={handleAction} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {reservingBed && (
+        <ReserveModal
+          bed={reservingBed}
+          onClose={() => setReservingBed(null)}
+          onDone={() => { setReservingBed(null); loadBeds() }}
+        />
+      )}
+      {showAdd && (
+        <AddBedModal
+          onClose={() => setShowAdd(false)}
+          onDone={() => { setShowAdd(false); loadBeds() }}
+        />
+      )}
+    </AppShell>
+  )
+}
