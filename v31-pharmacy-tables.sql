@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_pharmacy_batch_med
 CREATE INDEX IF NOT EXISTS idx_pharmacy_batch_expiry
   ON pharmacy_batches(expiry_date);
 CREATE INDEX IF NOT EXISTS idx_pharmacy_batch_active
-  ON pharmacy_batches(is_active, expiry_date)
+  ON pharmacy_batches(expiry_date)
   WHERE is_active = TRUE;
 
 -- RLS

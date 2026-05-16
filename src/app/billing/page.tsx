@@ -598,7 +598,7 @@ function BillingContent() {
   }
 
   // ── CA Report generation ─────────────────────────────────────
-  function generateCAReport() {
+  async function generateCAReport() {
     setCALoading(true)
     const { from, to, label } = getPeriodDates(period, customFrom, customTo)
 
@@ -624,7 +624,16 @@ function BillingContent() {
       }
     }
 
-    const report = computeCAReport(bills, from, to, label)
+    // FIX: Fetch bills fresh for the selected period instead of using stale 30-day cache
+    const { data: periodBills } = await supabase
+      .from('bills')
+      .select('*')
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59.999')
+      .order('created_at', { ascending: false })
+      .limit(2000)
+
+    const report = computeCAReport((periodBills || []) as Bill[], from, to, label)
     setCAReport(report)
     setCALoading(false)
   }
