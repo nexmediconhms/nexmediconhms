@@ -11,7 +11,7 @@
  *   4. All original search logic preserved (debounce, escapeLike).
  *   5. Smooth animations on patient card entry.
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
