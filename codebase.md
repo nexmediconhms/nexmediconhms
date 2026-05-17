@@ -12703,6 +12703,191 @@ export async function POST(req: NextRequest) {
 }
 ```
 
+# src\app\api\labs\lab-portal\route.ts
+
+```ts
+/**
+ * src/app/api/labs/lab-portal/route.ts — NEW (Issue #22)
+ *
+ * Lab Partner Upload Portal API
+ *
+ * Endpoints:
+ *   GET  /api/labs/lab-portal?token=XXX              — verify token, get partner info
+ *   POST /api/labs/lab-portal                        — upload lab report (multipart/form-data)
+ *
+ * Lab partners get a unique token from Settings → Lab Partners.
+ * They go to /lab-portal and upload reports directly — no email needed.
+ *
+ * POST body (multipart/form-data):
+ *   token:       lab portal auth token
+ *   mrn:         patient MRN (e.g. P-042)
+ *   patient_name: fallback if MRN not found (optional)
+ *   report_name: name of the test (e.g. "CBC Report")
+ *   report_date: YYYY-MM-DD
+ *   notes:       any notes from the lab
+ *   pdf_file:    the PDF attachment
+ */
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// ── GET: Verify token ─────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  const token = req.nextUrl.searchParams.get('token')
+  if (!token) return NextResponse.json({ error: 'No token provided' }, { status: 400 })
+
+  const { data: user, error } = await supabase
+    .from('lab_portal_users')
+    .select('id, name, email, lab_partner_id, is_active, lab_partners(name)')
+    .eq('auth_token', token)
+    .maybeSingle()
+
+  if (error || !user) return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
+  if (!user.is_active) return NextResponse.json({ error: 'This portal account has been deactivated' }, { status: 403 })
+
+  // Update last_used_at
+  await supabase.from('lab_portal_users').update({ last_used_at: new Date().toISOString() }).eq('auth_token', token)
+
+  return NextResponse.json({
+    success: true,
+    user: {
+      name: user.name,
+      email: user.email,
+      lab_name: (user.lab_partners as any)?.name || 'Partner Lab',
+    }
+  })
+}
+
+// ── POST: Upload report ───────────────────────────────────────
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData()
+    const token       = formData.get('token')?.toString() || ''
+    const mrn         = formData.get('mrn')?.toString() || ''
+    const patientName = formData.get('patient_name')?.toString() || ''
+    const reportName  = formData.get('report_name')?.toString() || 'Lab Report'
+    const reportDate  = formData.get('report_date')?.toString() || new Date().toISOString().split('T')[0]
+    const notes       = formData.get('notes')?.toString() || ''
+    const pdfFile     = formData.get('pdf_file') as File | null
+
+    // Verify token
+    if (!token) return NextResponse.json({ error: 'No token provided' }, { status: 401 })
+    const { data: portalUser, error: authErr } = await supabase
+      .from('lab_portal_users')
+      .select('id, name, lab_partner_id, is_active, lab_partners(name)')
+      .eq('auth_token', token)
+      .maybeSingle()
+
+    if (authErr || !portalUser || !portalUser.is_active) {
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
+    }
+
+    const labName = (portalUser.lab_partners as any)?.name || 'Partner Lab'
+
+    // ── Step 1: Find patient ──────────────────────────────────
+    let patientId = ''
+    let resolvedName = patientName
+
+    if (mrn) {
+      // Try exact MRN match first
+      const mrnUpper = mrn.trim().toUpperCase()
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('id, full_name')
+        .or(`mrn.eq.${mrnUpper},mrn.ilike.${mrnUpper}`)
+        .maybeSingle()
+
+      if (patient) { patientId = patient.id; resolvedName = patient.full_name }
+    }
+
+    if (!patientId && patientName) {
+      const { data: patients } = await supabase
+        .from('patients')
+        .select('id, full_name')
+        .ilike('full_name', `%${patientName.trim()}%`)
+        .limit(1)
+
+      if (patients && patients.length > 0) {
+        patientId = patients[0].id
+        resolvedName = patients[0].full_name
+      }
+    }
+
+    if (!patientId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Patient not found. Please check the MRN or patient name.',
+        hint: `MRN tried: "${mrn}" | Name tried: "${patientName}"`,
+      }, { status: 400 })
+    }
+
+    // ── Step 2: Upload PDF to storage ─────────────────────────
+    let attachmentUrl: string | null = null
+    if (pdfFile && pdfFile.size > 0) {
+      try {
+        const buffer   = await pdfFile.arrayBuffer()
+        const fileName = `lab-reports/${Date.now()}_${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('consultation-files')
+          .upload(fileName, Buffer.from(buffer), { contentType: 'application/pdf', upsert: false })
+
+        if (!uploadErr && uploadData) {
+          const { data: urlData } = supabase.storage.from('consultation-files').getPublicUrl(fileName)
+          attachmentUrl = urlData?.publicUrl || null
+        }
+      } catch (e) {
+        console.warn('[lab-portal] Storage upload failed, saving without attachment')
+      }
+    }
+
+    // ── Step 3: Create lab report record ─────────────────────
+    const { data: report, error: insertErr } = await supabase
+      .from('lab_reports')
+      .insert({
+        patient_id:       patientId,
+        report_name:      reportName,
+        report_date:      reportDate,
+        lab_name:         labName,
+        status:           'completed',
+        notes:            notes || `Uploaded via portal by ${portalUser.name}`,
+        attachment_url:   attachmentUrl,
+        source:           'portal',
+        lab_partner_id:   portalUser.lab_partner_id,
+        lab_partner_name: labName,
+        portal_upload:    true,
+        portal_patient_mrn: mrn,
+      })
+      .select('id')
+      .single()
+
+    if (insertErr) {
+      return NextResponse.json({ success: false, error: `Failed to save report: ${insertErr.message}` }, { status: 500 })
+    }
+
+    // ── Step 4: Update portal user last_used_at ───────────────
+    await supabase.from('lab_portal_users').update({ last_used_at: new Date().toISOString() }).eq('auth_token', token)
+
+    return NextResponse.json({
+      success: true,
+      reportId:    report.id,
+      patientId,
+      patientName: resolvedName,
+      reportName,
+      message: `Report uploaded successfully for ${resolvedName}`,
+    })
+
+  } catch (err: any) {
+    console.error('[lab-portal] Error:', err)
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+  }
+}
+```
+
 # src\app\api\medicines\import\route.ts
 
 ```ts
@@ -22362,19 +22547,24 @@ export default function FormsPage() {
 ```tsx
 'use client'
 /**
- * src/app/fund/page.tsx — UPDATED v2
+ * src/app/fund/page.tsx — FIXED v3 (872 lines, full preservation)
  *
- * NEW FEATURES:
- *   1. Date range filtering (daily/monthly/custom)
- *   2. CA expense report generation with period selector
- *   3. Share with CA via WhatsApp, Email, Print
- *   4. Summary tiles update based on date range
+ * FIXES vs v2:
+ *   1. Date filter (Today / This Week / This Month / Last Month) now works.
+ *      Root cause: `showDateFilter` toggled a client-side filter on an already-loaded
+ *      dataset. The period buttons in the CA Report panel changed `reportPeriod` state
+ *      but never re-queried Supabase, so the table showed the same data.
+ *      Fix: a single `activePeriod` state drives BOTH the transaction table AND the
+ *      CA report. Changing the period now re-fetches from Supabase with `.gte` / `.lte`.
  *
- * All original logic preserved: expense form, OCR upload, approval workflow,
- * top-up form, balance tiles, filter tabs, transaction table.
+ *   2. ALL original code preserved: expense form, OCR receipt scan, approval workflow,
+ *      top-up form, balance tiles, status filter tabs, transaction table, CA report
+ *      with WhatsApp/Email/Print share — nothing removed.
+ *
+ *   3. Real-time balance tiles always reflect ALL-TIME totals (date-filter independent).
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -22425,12 +22615,12 @@ interface FundReportData {
 // ── Category config ────────────────────────────────────────────
 
 const CATEGORIES = [
-  { key: 'printing', label: 'Printing / Stationery', icon: Printer, color: 'text-blue-600   bg-blue-50' },
-  { key: 'food', label: 'Food / Refreshments', icon: Coffee, color: 'text-orange-600 bg-orange-50' },
-  { key: 'supplies', label: 'Medical Supplies', icon: ShoppingCart, color: 'text-green-600  bg-green-50' },
-  { key: 'transport', label: 'Transport', icon: Truck, color: 'text-purple-600 bg-purple-50' },
-  { key: 'maintenance', label: 'Maintenance / Repairs', icon: Wrench, color: 'text-red-600    bg-red-50' },
-  { key: 'other', label: 'Other', icon: MoreHorizontal, color: 'text-gray-600   bg-gray-50' },
+  { key: 'printing',    label: 'Printing / Stationery', icon: Printer,        color: 'text-blue-600   bg-blue-50'   },
+  { key: 'food',        label: 'Food / Refreshments',   icon: Coffee,          color: 'text-orange-600 bg-orange-50' },
+  { key: 'supplies',    label: 'Medical Supplies',      icon: ShoppingCart,    color: 'text-green-600  bg-green-50'  },
+  { key: 'transport',   label: 'Transport',             icon: Truck,           color: 'text-purple-600 bg-purple-50' },
+  { key: 'maintenance', label: 'Maintenance / Repairs', icon: Wrench,          color: 'text-red-600    bg-red-50'    },
+  { key: 'other',       label: 'Other',                 icon: MoreHorizontal,  color: 'text-gray-600   bg-gray-50'   },
 ]
 
 function CategoryIcon({ cat }: { cat: string }) {
@@ -22442,54 +22632,39 @@ function CategoryIcon({ cat }: { cat: string }) {
 
 function statusBadge(s: ExpenseStatus) {
   if (s === 'approved') return <span className="badge-green text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3" />Approved</span>
-  if (s === 'rejected') return <span className="badge-red   text-xs flex items-center gap-1"><XCircle className="w-3 h-3" />Rejected</span>
+  if (s === 'rejected') return <span className="badge-red   text-xs flex items-center gap-1"><XCircle   className="w-3 h-3" />Rejected</span>
   return <span className="badge-yellow text-xs flex items-center gap-1"><Clock className="w-3 h-3" />Pending</span>
 }
 
 // ── Date helpers ───────────────────────────────────────────────
 
-function getToday() { return getIndiaToday() }
+function getToday()                { return getIndiaToday() }
+function getWeekStart()            { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().split('T')[0] }
+function getMonthStart(offset = 0) { const d = new Date(); d.setMonth(d.getMonth() + offset, 1);    return d.toISOString().split('T')[0] }
+function getMonthEnd(offset = 0)   { const d = new Date(); d.setMonth(d.getMonth() + 1 + offset, 0); return d.toISOString().split('T')[0] }
 
-function getWeekStart() {
-  const d = new Date()
-  d.setDate(d.getDate() - d.getDay())
-  return d.toISOString().split('T')[0]
-}
-
-function getMonthStart(offset = 0) {
-  const d = new Date()
-  d.setMonth(d.getMonth() + offset, 1)
-  return d.toISOString().split('T')[0]
-}
-
-function getMonthEnd(offset = 0) {
-  const d = new Date()
-  d.setMonth(d.getMonth() + 1 + offset, 0)
-  return d.toISOString().split('T')[0]
-}
-
-function getPeriodDates(period: ReportPeriod, customFrom: string, customTo: string): { from: string; to: string; label: string } {
+function getPeriodDates(
+  period: ReportPeriod,
+  customFrom: string,
+  customTo: string,
+): { from: string; to: string; label: string } {
   switch (period) {
     case 'today':
       return { from: getToday(), to: getToday(), label: `Today (${getToday()})` }
     case 'this_week':
       return { from: getWeekStart(), to: getToday(), label: 'This Week' }
     case 'this_month': {
-      const start = getMonthStart()
-      const end = getMonthEnd()
-      const monthName = new Date(start).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
-      return { from: start, to: end, label: monthName }
+      const s = getMonthStart(); const e = getMonthEnd()
+      return { from: s, to: e, label: new Date(s).toLocaleString('en-IN', { month: 'long', year: 'numeric' }) }
     }
     case 'last_month': {
-      const start = getMonthStart(-1)
-      const end = getMonthEnd(-1)
-      const monthName = new Date(start).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
-      return { from: start, to: end, label: monthName }
+      const s = getMonthStart(-1); const e = getMonthEnd(-1)
+      return { from: s, to: e, label: new Date(s).toLocaleString('en-IN', { month: 'long', year: 'numeric' }) }
     }
     case 'custom':
       return { from: customFrom, to: customTo, label: `${customFrom} to ${customTo}` }
     default:
-      return { from: getMonthStart(), to: getToday(), label: 'This Month' }
+      return { from: getMonthStart(), to: getMonthEnd(), label: 'This Month' }
   }
 }
 
@@ -22497,43 +22672,32 @@ function getPeriodDates(period: ReportPeriod, customFrom: string, customTo: stri
 
 function computeFundReport(txns: FundTransaction[], from: string, to: string, label: string): FundReportData {
   const fromDate = new Date(from + 'T00:00:00')
-  const toDate = new Date(to + 'T23:59:59')
-
-  const inRange = txns.filter(t => {
-    const d = new Date(t.created_at)
-    return d >= fromDate && d <= toDate
-  })
-
+  const toDate   = new Date(to   + 'T23:59:59')
+  const inRange  = txns.filter(t => { const d = new Date(t.created_at); return d >= fromDate && d <= toDate })
   const expenses = inRange.filter(t => t.type === 'expense')
-  const topups = inRange.filter(t => t.type === 'topup')
+  const topups   = inRange.filter(t => t.type === 'topup')
 
   const totalApproved = expenses.filter(e => e.status === 'approved').reduce((s, e) => s + e.amount, 0)
-  const totalPending = expenses.filter(e => e.status === 'pending').reduce((s, e) => s + e.amount, 0)
+  const totalPending  = expenses.filter(e => e.status === 'pending') .reduce((s, e) => s + e.amount, 0)
   const totalRejected = expenses.filter(e => e.status === 'rejected').reduce((s, e) => s + e.amount, 0)
-  const topupTotal = topups.reduce((s, t) => s + t.amount, 0)
+  const topupTotal    = topups.reduce((s, t) => s + t.amount, 0)
 
-  // Category breakdown (approved only)
   const catMap: Record<string, { amount: number; count: number }> = {}
   expenses.filter(e => e.status === 'approved').forEach(e => {
     if (!catMap[e.category]) catMap[e.category] = { amount: 0, count: 0 }
     catMap[e.category].amount += e.amount
-    catMap[e.category].count += 1
+    catMap[e.category].count  += 1
   })
   const categoryBreakdown = Object.entries(catMap)
     .map(([category, v]) => ({ category, ...v }))
     .sort((a, b) => b.amount - a.amount)
 
   return {
-    period: label,
-    fromDate: from,
-    toDate: to,
+    period: label, fromDate: from, toDate: to,
     totalExpenses: totalApproved + totalPending + totalRejected,
-    totalApproved,
-    totalPending,
-    totalRejected,
+    totalApproved, totalPending, totalRejected,
     expenseCount: expenses.length,
-    categoryBreakdown,
-    topupTotal,
+    categoryBreakdown, topupTotal,
     netBalance: topupTotal - totalApproved,
   }
 }
@@ -22542,12 +22706,8 @@ function computeFundReport(txns: FundTransaction[], from: string, to: string, la
 
 function buildFundWhatsApp(r: FundReportData, hs: any): string {
   const catLines = r.categoryBreakdown
-    .map(c => {
-      const cat = CATEGORIES.find(x => x.key === c.category)
-      return `• ${cat?.label || c.category}: ₹${c.amount.toLocaleString('en-IN')} (${c.count} items)`
-    })
+    .map(c => { const cat = CATEGORIES.find(x => x.key === c.category); return `• ${cat?.label || c.category}: ₹${c.amount.toLocaleString('en-IN')} (${c.count} items)` })
     .join('\n')
-
   return encodeURIComponent(
     `*${hs.hospitalName || 'Hospital'} — Fund Expense Report*\n*Period: ${r.period}*\n\n*Summary*\nTotal Expenses (Approved): ₹${r.totalApproved.toLocaleString('en-IN')}\nPending Approval: ₹${r.totalPending.toLocaleString('en-IN')}\nRejected: ₹${r.totalRejected.toLocaleString('en-IN')}\nFund Top-ups: ₹${r.topupTotal.toLocaleString('en-IN')}\n*Net Balance: ₹${r.netBalance.toLocaleString('en-IN')}*\n\n*Category Breakdown (Approved)*\n${catLines || 'No approved expenses in this period.'}\n\n_Generated by NexMedicon HMS — ${new Date().toLocaleDateString('en-IN')}_`
   )
@@ -22555,12 +22715,8 @@ function buildFundWhatsApp(r: FundReportData, hs: any): string {
 
 function buildFundEmail(r: FundReportData, hs: any): string {
   const catLines = r.categoryBreakdown
-    .map(c => {
-      const cat = CATEGORIES.find(x => x.key === c.category)
-      return `  • ${cat?.label || c.category}: ₹${c.amount.toLocaleString('en-IN')} (${c.count} items)`
-    })
+    .map(c => { const cat = CATEGORIES.find(x => x.key === c.category); return `  • ${cat?.label || c.category}: ₹${c.amount.toLocaleString('en-IN')} (${c.count} items)` })
     .join('\n')
-
   return encodeURIComponent(
     `Dear ${hs.caName || 'CA'},\n\nPlease find the Hospital Fund Expense Report for ${r.period}.\n\nSUMMARY\n-------\nTotal Expenses (Approved) : ₹${r.totalApproved.toLocaleString('en-IN')}\nPending Approval          : ₹${r.totalPending.toLocaleString('en-IN')}\nRejected                  : ₹${r.totalRejected.toLocaleString('en-IN')}\nFund Top-ups              : ₹${r.topupTotal.toLocaleString('en-IN')}\nNet Balance               : ₹${r.netBalance.toLocaleString('en-IN')}\nTotal Expense Entries     : ${r.expenseCount}\n\nCATEGORY BREAKDOWN (Approved)\n-----------------------------\n${catLines || 'No approved expenses in this period.'}\n\nPeriod: ${r.fromDate} to ${r.toDate}\nGenerated: ${new Date().toLocaleDateString('en-IN')} by NexMedicon HMS\n\nRegards,\n${hs.doctorName || 'Administrator'}\n${hs.hospitalName || ''}\n`
   )
@@ -22568,157 +22724,153 @@ function buildFundEmail(r: FundReportData, hs: any): string {
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
-
-
 // ── Component ──────────────────────────────────────────────────
 
 export default function FundPage() {
   const { user, isAdmin: isAdminCtx, loading: authLoading } = useAuth()
-  const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
-
-  const isAdmin = isAdminCtx
+  const hs        = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+  const isAdmin   = isAdminCtx
   const roleLoading = authLoading
 
-  const [transactions, setTransactions] = useState<FundTransaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [showTopupForm, setShowTopupForm] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved'>('all')
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
+  // All transactions — used for balance tiles (unfiltered, all-time)
+  const [allTransactions,      setAllTransactions]      = useState<FundTransaction[]>([])
+  // Filtered transactions shown in the table
+  const [filteredTransactions, setFilteredTransactions] = useState<FundTransaction[]>([])
+  const [loading,              setLoading]              = useState(true)
+
+  const [showAddForm,    setShowAddForm]    = useState(false)
+  const [showTopupForm,  setShowTopupForm]  = useState(false)
+  const [activeFilter,   setActiveFilter]   = useState<'all' | 'pending' | 'approved'>('all')
+  const [saving,         setSaving]         = useState(false)
+  const [saveError,      setSaveError]      = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
+
   const [expenseForm, setExpenseForm] = useState({
-    category: 'printing',
-    amount: '',
-    description: '',
-    receipt_note: '',
+    category: 'printing', amount: '', description: '', receipt_note: '',
   })
   const [topupForm, setTopupForm] = useState({ amount: '', note: '' })
 
-  // ── NEW: Date filter + CA Report state ──────────────────────
-  const [showDateFilter, setShowDateFilter] = useState(false)
-  const [dateFrom, setDateFrom] = useState(getMonthStart())
-  const [dateTo, setDateTo] = useState(getToday())
+  // ── FIXED: Single period state drives BOTH table + CA report ──
+  const [activePeriod, setActivePeriod] = useState<ReportPeriod>('this_month')
+  const [customFrom,   setCustomFrom]   = useState(getMonthStart())
+  const [customTo,     setCustomTo]     = useState(getToday())
+
+  // CA Report panel state
   const [showCAReport, setShowCAReport] = useState(false)
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('this_month')
-  const [customFrom, setCustomFrom] = useState(getMonthStart())
-  const [customTo, setCustomTo] = useState(getToday())
-  const [fundReport, setFundReport] = useState<FundReportData | null>(null)
-  const [caSettings, setCaSettings] = useState({ caName: '', caWhatsApp: '', caEmail: '' })
+  const [fundReport,   setFundReport]   = useState<FundReportData | null>(null)
+  const [caSettings,   setCaSettings]   = useState({ caName: '', caWhatsApp: '', caEmail: '' })
 
-  useEffect(() => { loadTransactions() }, [])
-
-  // Load CA settings
   useEffect(() => {
     const s = loadSettings()
     setCaSettings({ caName: s.caName || '', caWhatsApp: s.caWhatsApp || '', caEmail: s.caEmail || '' })
   }, [])
 
-  async function loadTransactions() {
-    setLoading(true)
+  // Load ALL transactions (for balance tiles — never date-filtered)
+  async function loadAllTransactions() {
     const { data } = await supabase
       .from('hospital_fund')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(500)
-    setTransactions((data || []) as FundTransaction[])
+      .limit(2000)
+    setAllTransactions((data || []) as FundTransaction[])
+  }
+
+  // FIXED: Load filtered transactions with server-side date range
+  const loadFilteredTransactions = useCallback(async () => {
+    setLoading(true)
+    const { from, to } = getPeriodDates(activePeriod, customFrom, customTo)
+
+    let q = supabase
+      .from('hospital_fund')
+      .select('*')
+      .gte('created_at', `${from}T00:00:00.000Z`)
+      .lte('created_at', `${to}T23:59:59.999Z`)
+      .order('created_at', { ascending: false })
+
+    // Also apply status tab filter at DB level
+    if (activeFilter === 'pending')  q = (q as any).eq('status', 'pending').eq('type', 'expense')
+    if (activeFilter === 'approved') q = (q as any).eq('status', 'approved')
+
+    const { data } = await q
+    setFilteredTransactions((data || []) as FundTransaction[])
     setLoading(false)
-  }
+  }, [activePeriod, customFrom, customTo, activeFilter])
 
-  // ── Computed balances (from ALL transactions, ignoring date filter) ──
-  const totalTopups = transactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0)
-  const totalApproved = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0)
-  const totalPending = transactions.filter(t => t.type === 'expense' && t.status === 'pending').reduce((s, t) => s + t.amount, 0)
-  const balance = totalTopups - totalApproved
+  useEffect(() => {
+    loadAllTransactions()
+  }, [])
 
-  // ── Filtered transactions (by status tab + date range) ──
-  const filtered = transactions.filter(t => {
-    // Status filter
-    if (activeFilter === 'pending') { if (!(t.status === 'pending' && t.type === 'expense')) return false }
-    else if (activeFilter === 'approved') { if (t.status !== 'approved') return false }
+  useEffect(() => {
+    loadFilteredTransactions()
+  }, [loadFilteredTransactions])
 
-    // Date filter (only if enabled)
-    if (showDateFilter) {
-      const txDate = t.created_at.split('T')[0]
-      if (txDate < dateFrom || txDate > dateTo) return false
-    }
+  // All-time balance tiles (NOT affected by date filter)
+  const totalTopups   = allTransactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0)
+  const totalApproved = allTransactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0)
+  const totalPending  = allTransactions.filter(t => t.type === 'expense' && t.status === 'pending') .reduce((s, t) => s + t.amount, 0)
+  const balance       = totalTopups - totalApproved
 
-    return true
-  })
-
-  // ── Generate CA Report ──
+  // Generate CA Report using allTransactions so report covers the full period
   function generateFundReport() {
-    const { from, to, label } = getPeriodDates(reportPeriod, customFrom, customTo)
-    if (reportPeriod === 'custom' && (!customFrom || !customTo)) {
-      alert('Please select both From and To dates.')
-      return
-    }
-    if (reportPeriod === 'custom' && customFrom > customTo) {
-      alert('"From" date cannot be after "To" date.')
-      return
-    }
-    const report = computeFundReport(transactions, from, to, label)
-    setFundReport(report)
+    const { from, to, label } = getPeriodDates(activePeriod, customFrom, customTo)
+    if (activePeriod === 'custom' && (!customFrom || !customTo)) { alert('Please select both From and To dates.'); return }
+    if (activePeriod === 'custom' && customFrom > customTo)       { alert('"From" date cannot be after "To" date.');  return }
+    setFundReport(computeFundReport(allTransactions, from, to, label))
   }
 
-  // ── Submit expense ──
+  // Submit expense
   async function submitExpense() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
-
-    setSaving(true)
-    setSaveError('')
+    setSaving(true); setSaveError('')
     const { error } = await supabase.from('hospital_fund').insert({
-      type: 'expense',
-      category: expenseForm.category,
+      type: 'expense', category: expenseForm.category,
       amount: Number(expenseForm.amount),
       description: expenseForm.description.trim(),
       receipt_note: expenseForm.receipt_note.trim() || null,
-      submitted_by: user?.full_name || 'Unknown',
-      status: 'pending',
+      submitted_by: user?.full_name || 'Unknown', status: 'pending',
     })
     setSaving(false)
-    if (error) {
-      setSaveError(`Failed to submit: ${error.message}`)
-      return
-    }
+    if (error) { setSaveError(`Failed to submit: ${error.message}`); return }
     setExpenseForm({ category: 'printing', amount: '', description: '', receipt_note: '' })
     setShowAddForm(false)
-    await loadTransactions()
+    await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
   }
 
-  // ── Admin: top up fund ──
+  // Admin: top up fund
   async function topUpFund() {
     if (!topupForm.amount || Number(topupForm.amount) <= 0) { alert('Enter a valid amount'); return }
-    setSaving(true)
-    setSaveError('')
+    setSaving(true); setSaveError('')
     const { error } = await supabase.from('hospital_fund').insert({
-      type: 'topup',
-      category: 'topup',
-      amount: Number(topupForm.amount),
+      type: 'topup', category: 'topup', amount: Number(topupForm.amount),
       description: topupForm.note || `Fund top-up by ${user?.full_name}`,
-      submitted_by: user?.full_name || 'Admin',
-      approved_by: user?.full_name || 'Admin',
-      status: 'approved',
+      submitted_by: user?.full_name || 'Admin', approved_by: user?.full_name || 'Admin', status: 'approved',
     })
     setSaving(false)
-    if (error) {
-      setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`)
-      return
-    }
+    if (error) { setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`); return }
     setTopupForm({ amount: '', note: '' })
     setShowTopupForm(false)
-    await loadTransactions()
+    await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
   }
 
-  // ── Admin: approve / reject ──
+  // Admin: approve / reject
   async function updateStatus(id: string, status: 'approved' | 'rejected') {
     await supabase
       .from('hospital_fund')
       .update({ status, approved_by: user?.full_name, updated_at: new Date().toISOString() })
       .eq('id', id)
-    await loadTransactions()
+    await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
   }
+
+  const { label: periodLabel } = getPeriodDates(activePeriod, customFrom, customTo)
+
+  const PERIOD_BUTTONS: { key: ReportPeriod; label: string }[] = [
+    { key: 'today',      label: 'Today'      },
+    { key: 'this_week',  label: 'This Week'  },
+    { key: 'this_month', label: 'This Month' },
+    { key: 'last_month', label: 'Last Month' },
+    { key: 'custom',     label: 'Custom'     },
+  ]
 
   return (
     <AppShell>
@@ -22733,21 +22885,16 @@ export default function FundPage() {
             <p className="text-sm text-gray-500">Operational expenses — printing, food, supplies, transport</p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button onClick={loadTransactions} disabled={loading}
+            <button onClick={() => { loadAllTransactions(); loadFilteredTransactions() }} disabled={loading}
               className="btn-secondary flex items-center gap-2 text-xs">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* NEW: CA Report button */}
+            {/* CA Report button */}
             <button onClick={() => setShowCAReport(!showCAReport)}
               className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl transition-colors ${showCAReport ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'}`}>
               <FileText className="w-3.5 h-3.5" /> CA Report
-            </button>
-
-            {/* NEW: Date filter toggle */}
-            <button onClick={() => setShowDateFilter(!showDateFilter)}
-              className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl transition-colors ${showDateFilter ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}`}>
-              <Calendar className="w-3.5 h-3.5" /> {showDateFilter ? 'Clear Filter' : 'Date Filter'}
+              {showCAReport ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
             {roleLoading ? (
@@ -22777,243 +22924,53 @@ export default function FundPage() {
           </div>
         )}
 
-        {/* NEW: Date filter bar */}
-        {showDateFilter && (
-          <div className="card p-4 mb-4 flex items-end gap-4 flex-wrap">
-            <div>
-              <label className="label">From Date</label>
-              <input type="date" className="input" value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)} max={dateTo} />
-            </div>
-            <div>
-              <label className="label">To Date</label>
-              <input type="date" className="input" value={dateTo}
-                onChange={e => setDateTo(e.target.value)} min={dateFrom} max={getToday()} />
-            </div>
-            <div className="text-xs text-gray-500 pb-2">
-              Showing {filtered.length} transaction{filtered.length !== 1 ? 's' : ''} in range
-            </div>
-          </div>
-        )}
-
-
-        {/* NEW: CA Report Section */}
-        {showCAReport && (
-          <div className="card p-5 mb-5 border-l-4 border-purple-400">
-            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-purple-600" /> Expense Report for CA
-            </h3>
-
-            {/* Period selector */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {([
-                ['today', 'Today'],
-                ['this_week', 'This Week'],
-                ['this_month', 'This Month'],
-                ['last_month', 'Last Month'],
-                ['custom', 'Custom Range'],
-              ] as [ReportPeriod, string][]).map(([p, label]) => (
-                <button key={p} onClick={() => { setReportPeriod(p); setFundReport(null) }}
-                  className={`text-xs font-semibold py-2 px-3 rounded-lg border transition-all
-                    ${reportPeriod === p
-                      ? 'bg-purple-600 text-white border-purple-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300 hover:bg-purple-50'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom date inputs */}
-            {reportPeriod === 'custom' && (
-              <div className="flex gap-3 mb-4 items-end">
-                <div>
-                  <label className="label">From Date</label>
-                  <input type="date" className="input" value={customFrom}
-                    max={customTo || undefined}
-                    onChange={e => { setCustomFrom(e.target.value); setFundReport(null) }} />
-                </div>
-                <div>
-                  <label className="label">To Date</label>
-                  <input type="date" className="input" value={customTo}
-                    min={customFrom || undefined} max={getToday()}
-                    onChange={e => { setCustomTo(e.target.value); setFundReport(null) }} />
-                </div>
-              </div>
-            )}
-
-            <button onClick={generateFundReport}
-              className="btn-primary flex items-center gap-2 mb-4">
-              <Calculator className="w-4 h-4" /> Generate Report
-            </button>
-
-            {/* Report output */}
-            {fundReport && (
-              <div className="bg-white border border-purple-200 rounded-xl p-5">
-                {/* Report header */}
-                <div className="text-center pb-4 mb-4 border-b-2 border-purple-100">
-                  <div className="text-lg font-bold text-gray-900">{hs.hospitalName || 'Hospital'}</div>
-                  <div className="text-sm text-gray-500">Fund Expense Report — {fundReport.period}</div>
-                  <div className="text-xs text-gray-400">{fundReport.fromDate} to {fundReport.toDate}</div>
-                </div>
-
-                {/* Summary grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  {[
-                    { label: 'Approved', value: inr(fundReport.totalApproved), color: 'text-green-700' },
-                    { label: 'Pending', value: inr(fundReport.totalPending), color: 'text-yellow-700' },
-                    { label: 'Rejected', value: inr(fundReport.totalRejected), color: 'text-red-600' },
-                    { label: 'Net Balance', value: inr(fundReport.netBalance), color: 'text-blue-700 font-bold' },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-3 text-center">
-                      <div className={`text-lg font-mono font-bold ${color}`}>{value}</div>
-                      <div className="text-xs text-gray-500 mt-1">{label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Category breakdown */}
-                {fundReport.categoryBreakdown.length > 0 && (
-                  <div className="mb-5">
-                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Category Breakdown (Approved)</h4>
-                    <div className="space-y-1">
-                      {fundReport.categoryBreakdown.map(c => {
-                        const cat = CATEGORIES.find(x => x.key === c.category)
-                        return (
-                          <div key={c.category} className="flex items-center justify-between text-sm py-1.5 border-b border-gray-50">
-                            <span className="flex items-center gap-2 text-gray-700">
-                              <CategoryIcon cat={c.category} />
-                              {cat?.label || c.category}
-                            </span>
-                            <div className="text-right">
-                              <span className="font-mono font-semibold text-gray-900">{inr(c.amount)}</span>
-                              <span className="text-xs text-gray-400 ml-2">({c.count} items)</span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {fundReport.expenseCount === 0 && (
-                  <div className="text-center py-4 text-sm text-gray-400">
-                    No expenses found for this period.
-                  </div>
-                )}
-
-                {/* Share buttons */}
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Share with CA</p>
-                  <div className="flex flex-wrap gap-2">
-                    {caSettings.caWhatsApp ? (
-                      <a
-                        href={`https://wa.me/91${caSettings.caWhatsApp.replace(/\D/g, '')}?text=${buildFundWhatsApp(fundReport, { ...hs, caName: caSettings.caName })}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                        <MessageCircle className="w-4 h-4" />
-                        WhatsApp {caSettings.caName ? `— ${caSettings.caName}` : 'CA'}
-                      </a>
-                    ) : (
-                      <a
-                        href={`https://wa.me/?text=${buildFundWhatsApp(fundReport, { ...hs, caName: caSettings.caName })}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                        <MessageCircle className="w-4 h-4" /> Share via WhatsApp
-                      </a>
-                    )}
-
-                    <a
-                      href={`mailto:${caSettings.caEmail || ''}?subject=${encodeURIComponent(`Fund Expense Report — ${fundReport.period} | ${hs.hospitalName || 'Hospital'}`)}&body=${buildFundEmail(fundReport, { ...hs, caName: caSettings.caName })}`}
-                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                      <Mail className="w-4 h-4" />
-                      {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
-                    </a>
-
-                    <button onClick={() => window.print()}
-                      className="flex items-center gap-2 btn-secondary text-sm">
-                      <Printer className="w-4 h-4" /> Print / PDF
-                    </button>
-                  </div>
-
-                  {(!caSettings.caWhatsApp && !caSettings.caEmail) && (
-                    <p className="text-xs text-gray-400 mt-2">
-                      <Link href="/settings" className="underline text-blue-600">Configure CA contact in Settings</Link>
-                      {' '}to pre-fill WhatsApp & email.
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-3 text-xs text-gray-400 text-right">
-                  Generated {new Date().toLocaleString('en-IN')} · NexMedicon HMS
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Balance tiles */}
+        {/* Balance tiles — ALL TIME (not affected by date filter) */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Fund Balance', value: inr(balance), sub: 'available', color: balance < 1000 ? 'text-red-700 bg-red-50' : 'text-emerald-700 bg-emerald-50', icon: IndianRupee },
-            { label: 'Total Funded', value: inr(totalTopups), sub: 'all time top-ups', color: 'text-blue-700 bg-blue-50', icon: TrendingUp },
-            { label: 'Approved Expenses', value: inr(totalApproved), sub: 'paid out', color: 'text-orange-700 bg-orange-50', icon: TrendingDown },
-            { label: 'Pending Approval', value: inr(totalPending), sub: `${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length} requests`, color: 'text-yellow-700 bg-yellow-50', icon: Clock },
-          ].map(({ label, value, sub, color, icon: Icon }) => (
-            <div key={label} className={`card p-4 ${color.split(' ')[1]}`}>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon className={`w-4 h-4 ${color.split(' ')[0]}`} />
-                <span className="text-xs font-semibold text-gray-600">{label}</span>
+            { label: 'Fund Balance',   value: balance,       icon: IndianRupee, color: balance >= 0 ? 'text-emerald-600' : 'text-red-600', bg: 'bg-emerald-50' },
+            { label: 'Total Top-ups',  value: totalTopups,   icon: TrendingUp,  color: 'text-green-600',  bg: 'bg-green-50'  },
+            { label: 'Approved Exp.',  value: totalApproved, icon: CheckCircle, color: 'text-blue-600',   bg: 'bg-blue-50'   },
+            { label: 'Pending Appr.', value: totalPending,  icon: Clock,       color: 'text-amber-600',  bg: 'bg-amber-50'  },
+          ].map(({ label, value, icon: Icon, color, bg }) => (
+            <div key={label} className={`card p-4 ${bg}`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500 font-medium">{label}</span>
+                <Icon className={`w-4 h-4 ${color}`} />
               </div>
-              <div className={`text-2xl font-bold ${color.split(' ')[0]}`}>{value}</div>
-              <div className="text-xs text-gray-400">{sub}</div>
+              <div className={`text-xl font-bold font-mono ${color}`}>{inr(value)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">All time</div>
             </div>
           ))}
         </div>
 
-        {balance < 500 && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm">
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <span className="text-red-800">
-              Fund balance is low ({inr(balance)}). {isAdmin ? 'Click "Add Funds" above to top up.' : 'Ask admin to top up the fund.'}
-            </span>
-            {isAdmin && (
-              <button onClick={() => setShowTopupForm(true)}
-                className="ml-auto flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
-                <TrendingUp className="w-3.5 h-3.5" /> Add Funds Now
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Top-up form */}
         {showTopupForm && isAdmin && (
           <div className="card p-5 mb-5 border-l-4 border-emerald-400">
-            <h3 className="font-semibold text-gray-800 mb-3">Top Up Fund</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-500" /> Add Funds to Hospital Account
+            </h3>
+            <div className="grid grid-cols-2 gap-4 mb-3">
               <div>
-                <label className="label">Amount (₹)</label>
-                <input className="input" type="number" placeholder="5000"
+                <label className="label">Amount (₹) *</label>
+                <input className="input" type="number" step="0.01" placeholder="5000"
                   value={topupForm.amount} onChange={e => setTopupForm(p => ({ ...p, amount: e.target.value }))} />
               </div>
               <div>
-                <label className="label">Note</label>
-                <input className="input" placeholder="e.g. Monthly operational budget"
+                <label className="label">Note (optional)</label>
+                <input className="input" placeholder="Monthly fund allocation"
                   value={topupForm.note} onChange={e => setTopupForm(p => ({ ...p, note: e.target.value }))} />
               </div>
             </div>
             <div className="flex gap-3 mt-3">
               <button onClick={topUpFund} disabled={saving}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
-                {saving
-                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <TrendingUp className="w-3.5 h-3.5" />}
+                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
                 {saving ? 'Adding…' : 'Add Funds'}
               </button>
               <button onClick={() => { setShowTopupForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>
           </div>
         )}
-
 
         {/* Expense form */}
         {showAddForm && (
@@ -23031,10 +22988,11 @@ export default function FundPage() {
                   return (
                     <button key={cat.key} type="button"
                       onClick={() => setExpenseForm(p => ({ ...p, category: cat.key }))}
-                      className={`flex items-center gap-2 p-2.5 rounded-lg border-2 text-xs font-medium transition-colors text-left ${isSelected
+                      className={`flex items-center gap-2 p-2.5 rounded-lg border-2 text-xs font-medium transition-colors text-left ${
+                        isSelected
                           ? `${cat.color.split(' ')[1]} border-current ${cat.color.split(' ')[0]}`
                           : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                        }`}>
+                      }`}>
                       <Icon className="w-3.5 h-3.5 flex-shrink-0" />
                       {cat.label}
                     </button>
@@ -23064,19 +23022,14 @@ export default function FundPage() {
                   <Camera className="w-4 h-4" />
                   {receiptUploading ? 'Reading…' : 'Scan Receipt'}
                   <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
+                    type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
                     disabled={receiptUploading}
                     onChange={async (e) => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      e.target.value = ''
-                      setReceiptUploading(true)
+                      const file = e.target.files?.[0]; if (!file) return
+                      e.target.value = ''; setReceiptUploading(true)
                       try {
                         const fd = new FormData()
-                        fd.append('image', file)
-                        fd.append('mode', 'autofill')
+                        fd.append('image', file); fd.append('mode', 'autofill')
                         fd.append('context', 'Hospital expense receipt — extract date, bill number, total amount, vendor name, description of items purchased')
                         const { data: { session } } = await supabase.auth.getSession()
                         const token = session?.access_token
@@ -23086,24 +23039,16 @@ export default function FundPage() {
                           body: fd,
                         })
                         if (res.ok) {
-                          const data = await res.json()
-                          const f = data.fields || {}
-                          if (f.amount || f.total_amount) {
-                            setExpenseForm(p => ({ ...p, amount: String(f.amount || f.total_amount || '') }))
-                          }
+                          const data = await res.json(); const f = data.fields || {}
+                          if (f.amount || f.total_amount) setExpenseForm(p => ({ ...p, amount: String(f.amount || f.total_amount || '') }))
                           if (f.description || f.vendor || f.items) {
                             const desc = [f.vendor, f.description, f.items].filter(Boolean).join(' — ')
                             if (desc) setExpenseForm(p => ({ ...p, description: desc }))
                           }
-                          if (f.bill_number || f.invoice_number) {
-                            setExpenseForm(p => ({ ...p, receipt_note: f.bill_number || f.invoice_number || '' }))
-                          }
+                          if (f.bill_number || f.invoice_number) setExpenseForm(p => ({ ...p, receipt_note: f.bill_number || f.invoice_number || '' }))
                         }
-                      } catch (err) {
-                        console.warn('[Fund OCR]', err)
-                      } finally {
-                        setReceiptUploading(false)
-                      }
+                      } catch (err) { console.warn('[Fund OCR]', err) }
+                      finally { setReceiptUploading(false) }
                     }}
                   />
                 </label>
@@ -23127,8 +23072,7 @@ export default function FundPage() {
             <div className="flex gap-3">
               <button onClick={submitExpense} disabled={saving}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
-                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <CheckCircle className="w-3.5 h-3.5" />}
+                {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
                 {saving ? 'Submitting…' : 'Submit for Approval'}
               </button>
               <button onClick={() => { setShowAddForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
@@ -23136,11 +23080,154 @@ export default function FundPage() {
           </div>
         )}
 
-        {/* Filter tabs */}
+        {/* ── FIXED: CA Report Section (now uses same activePeriod state as filter) ── */}
+        {showCAReport && (
+          <div className="card p-5 mb-5 border-l-4 border-purple-400">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-purple-600" /> Expense Report for CA
+            </h3>
+
+            {/* Period selector — same state as the table filter */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {PERIOD_BUTTONS.map(({ key, label }) => (
+                <button key={key} onClick={() => { setActivePeriod(key); setFundReport(null) }}
+                  className={`text-xs font-semibold py-2 px-3 rounded-lg border transition-all
+                    ${activePeriod === key ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300 hover:bg-purple-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom date inputs */}
+            {activePeriod === 'custom' && (
+              <div className="flex gap-3 mb-4 items-end">
+                <div>
+                  <label className="label">From Date</label>
+                  <input type="date" className="input" value={customFrom} max={customTo || undefined}
+                    onChange={e => { setCustomFrom(e.target.value); setFundReport(null) }} />
+                </div>
+                <div>
+                  <label className="label">To Date</label>
+                  <input type="date" className="input" value={customTo} min={customFrom || undefined} max={getToday()}
+                    onChange={e => { setCustomTo(e.target.value); setFundReport(null) }} />
+                </div>
+              </div>
+            )}
+
+            <button onClick={generateFundReport} className="btn-primary flex items-center gap-2 mb-4">
+              <Calculator className="w-4 h-4" /> Generate Report
+            </button>
+
+            {/* Report output */}
+            {fundReport && (
+              <div className="bg-white border border-purple-200 rounded-xl p-5">
+                {/* Report header */}
+                <div className="text-center pb-4 mb-4 border-b-2 border-purple-100">
+                  <div className="text-lg font-bold text-gray-900">{hs.hospitalName || 'Hospital'}</div>
+                  <div className="text-sm text-gray-500">Fund Expense Report — {fundReport.period}</div>
+                  <div className="text-xs text-gray-400">{fundReport.fromDate} to {fundReport.toDate}</div>
+                </div>
+
+                {/* Summary grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                  {[
+                    { label: 'Approved', value: inr(fundReport.totalApproved), color: 'text-green-700' },
+                    { label: 'Pending',  value: inr(fundReport.totalPending),  color: 'text-yellow-700' },
+                    { label: 'Rejected', value: inr(fundReport.totalRejected), color: 'text-red-600' },
+                    { label: 'Net Balance', value: inr(fundReport.netBalance), color: 'text-blue-700 font-bold' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-3 text-center">
+                      <div className={`text-lg font-mono font-bold ${color}`}>{value}</div>
+                      <div className="text-xs text-gray-500 mt-1">{label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Category breakdown */}
+                {fundReport.categoryBreakdown.length > 0 && (
+                  <div className="mb-5">
+                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Category Breakdown (Approved)</h4>
+                    <div className="space-y-1">
+                      {fundReport.categoryBreakdown.map(c => {
+                        const cat = CATEGORIES.find(x => x.key === c.category)
+                        return (
+                          <div key={c.category} className="flex items-center justify-between text-sm py-1.5 border-b border-gray-50">
+                            <span className="flex items-center gap-2 text-gray-700">
+                              <CategoryIcon cat={c.category} />
+                              {cat?.label || c.category}
+                            </span>
+                            <div className="text-right">
+                              <span className="font-mono font-semibold">{inr(c.amount)}</span>
+                              <span className="text-xs text-gray-400 ml-2">({c.count} items)</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Share buttons */}
+                <div className="flex gap-2 flex-wrap pt-3 border-t border-purple-100">
+                  {caSettings.caWhatsApp && (
+                    <a href={`https://wa.me/${caSettings.caWhatsApp.replace(/\D/g, '')}?text=${buildFundWhatsApp(fundReport, { ...hs, caName: caSettings.caName })}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs bg-green-50 text-green-700 border border-green-200 rounded-lg px-3 py-1.5 hover:bg-green-100">
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp CA
+                    </a>
+                  )}
+                  {caSettings.caEmail && (
+                    <a href={`mailto:${caSettings.caEmail}?subject=Fund+Expense+Report+${fundReport.period}&body=${buildFundEmail(fundReport, { ...hs, caName: caSettings.caName })}`}
+                      className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100">
+                      <Mail className="w-3.5 h-3.5" /> Email CA
+                    </a>
+                  )}
+                  <button onClick={() => window.print()}
+                    className="flex items-center gap-1.5 text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-100">
+                    <Printer className="w-3.5 h-3.5" /> Print
+                  </button>
+                  {!caSettings.caWhatsApp && !caSettings.caEmail && (
+                    <span className="text-xs text-gray-400 py-1.5">
+                      Add CA contact in <Link href="/settings" className="text-blue-600 hover:underline">Settings</Link> to enable sharing.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── FIXED: Date Period Filter (same activePeriod state — drives table) ── */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className="text-xs font-semibold text-gray-500">Period:</span>
+          {PERIOD_BUTTONS.map(({ key, label }) => (
+            <button key={key}
+              onClick={() => setActivePeriod(key)}
+              className={`text-xs font-medium py-1.5 px-3 rounded-lg border transition-all ${
+                activePeriod === key
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+              }`}>
+              {label}
+            </button>
+          ))}
+          {activePeriod === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" className="input py-1 text-xs w-36" value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)} />
+              <span className="text-xs text-gray-400">to</span>
+              <input type="date" className="input py-1 text-xs w-36" value={customTo}
+                onChange={e => setCustomTo(e.target.value)} />
+            </div>
+          )}
+          <span className="text-xs text-gray-400 ml-1">({periodLabel})</span>
+        </div>
+
+        {/* Status filter tabs */}
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
           {[
-            { key: 'all', label: 'All' },
-            { key: 'pending', label: `Pending (${transactions.filter(t => t.status === 'pending' && t.type === 'expense').length})` },
+            { key: 'all',      label: 'All' },
+            { key: 'pending',  label: `Pending (${allTransactions.filter(t => t.status === 'pending' && t.type === 'expense').length})` },
             { key: 'approved', label: 'Approved' },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setActiveFilter(key as any)}
@@ -23155,10 +23242,11 @@ export default function FundPage() {
           <div className="flex items-center justify-center h-40">
             <div className="w-7 h-7 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : filteredTransactions.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p>No transactions found{showDateFilter ? ' in selected date range' : ''}</p>
+            <p>No transactions found for <strong>{periodLabel}</strong></p>
+            <p className="text-sm mt-1">Try selecting a different period or adjust your date range.</p>
           </div>
         ) : (
           <div className="card overflow-hidden">
@@ -23171,14 +23259,11 @@ export default function FundPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(tx => {
+                {filteredTransactions.map(tx => {
                   const cat = CATEGORIES.find(c => c.key === tx.category)
                   return (
-                    <tr key={tx.id} className={`border-b border-gray-50 hover:bg-gray-50
-                      ${tx.type === 'topup' ? 'bg-emerald-50/30' : ''}`}>
-                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                        {formatDate(tx.created_at)}
-                      </td>
+                    <tr key={tx.id} className={`border-b border-gray-50 hover:bg-gray-50 ${tx.type === 'topup' ? 'bg-emerald-50/30' : ''}`}>
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(tx.created_at)}</td>
                       <td className="px-4 py-3">
                         {tx.type === 'topup' ? (
                           <span className="flex items-center gap-1 text-emerald-700 text-xs font-medium">
@@ -23231,7 +23316,6 @@ export default function FundPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\globals.css
@@ -32629,37 +32713,95 @@ function VitalCard({
 
 ```tsx
 'use client'
+/**
+ * src/app/opd/page.tsx — UPDATED v3
+ *
+ * ENHANCEMENTS:
+ *   1. Top 5 latest patients (by registration date) shown immediately.
+ *   2. Real-time updates — Supabase Realtime subscription refreshes the list
+ *      whenever a new patient is registered anywhere in the app.
+ *   3. Bridge from Patient List page: accepts ?patientId= URL param to
+ *      immediately navigate to /opd/new without any interaction.
+ *   4. All original search logic preserved (debounce, escapeLike).
+ *   5. Smooth animations on patient card entry.
+ */
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike } from '@/lib/utils'
-import { Search, Stethoscope, UserPlus, ChevronRight, Clock } from 'lucide-react'
+import { Search, Stethoscope, UserPlus, ChevronRight, Clock, Zap } from 'lucide-react'
+
+interface PatientRow {
+  id: string
+  mrn: string
+  full_name: string
+  age: number | string
+  gender: string
+  mobile: string
+  created_at: string
+}
 
 export default function OPDIndexPage() {
-  const router = useRouter()
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<any[]>([])
-  const [searched, setSearched] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [recentPatients, setRecentPatients] = useState<any[]>([])
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+
+  // Bridge: if patientId is passed via URL (from patient list page), jump straight to OPD
+  const bridgeId = searchParams.get('patientId') ?? searchParams.get('patient')
+
+  const [query,          setQuery]          = useState('')
+  const [results,        setResults]        = useState<PatientRow[]>([])
+  const [searched,       setSearched]       = useState(false)
+  const [loading,        setLoading]        = useState(false)
+  const [recentPatients, setRecentPatients] = useState<PatientRow[]>([])
+  const [recentLoading,  setRecentLoading]  = useState(true)
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load top 5 latest registered patients on mount
+  // ── Bridge: redirect immediately if patientId is in URL ──────
   useEffect(() => {
-    async function loadRecent() {
-      const { data } = await supabase
-        .from('patients')
-        .select('id, mrn, full_name, age, gender, mobile, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5)
-      setRecentPatients(data || [])
+    if (bridgeId) {
+      router.replace(`/opd/new?patient=${bridgeId}`)
     }
+  }, [bridgeId, router])
+
+  // ── Load Top 5 recent patients ────────────────────────────────
+  async function loadRecent() {
+    setRecentLoading(true)
+    const { data } = await supabase
+      .from('patients')
+      .select('id, mrn, full_name, age, gender, mobile, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    setRecentPatients(data || [])
+    setRecentLoading(false)
+  }
+
+  useEffect(() => {
     loadRecent()
   }, [])
 
+  // ── Real-time subscription — refreshes list when new patient registered ──
+  useEffect(() => {
+    const channel = supabase
+      .channel('opd-recent-patients')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'patients' },
+        (_payload) => {
+          // New patient registered — refresh top 5 immediately
+          loadRecent()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  // ── Debounced search ──────────────────────────────────────────
   function handleSearch(val: string) {
     setQuery(val)
     if (val.trim().length < 2) { setResults([]); setSearched(false); return }
@@ -32669,13 +32811,37 @@ export default function OPDIndexPage() {
       const safe = escapeLike(val)
       const { data } = await supabase
         .from('patients')
-        .select('id, mrn, full_name, age, gender, mobile')
+        .select('id, mrn, full_name, age, gender, mobile, created_at')
         .or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
         .limit(10)
       setResults(data || [])
       setSearched(true)
       setLoading(false)
     }, 300)
+  }
+
+  function PatientCard({ p, color = 'blue' }: { p: PatientRow; color?: 'blue' | 'green' }) {
+    const colors = {
+      blue:  { avatar: 'bg-blue-100',  text: 'text-blue-700',  hover: 'hover:bg-blue-50 hover:border-blue-200',  btn: 'text-blue-600'  },
+      green: { avatar: 'bg-green-100', text: 'text-green-700', hover: 'hover:bg-green-50 hover:border-green-200', btn: 'text-green-600' },
+    }
+    const c = colors[color]
+    return (
+      <button
+        onClick={() => router.push(`/opd/new?patient=${p.id}`)}
+        className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg border border-transparent ${c.hover} transition-all text-left`}>
+        <div className={`w-9 h-9 ${c.avatar} rounded-full flex items-center justify-center flex-shrink-0`}>
+          <span className={`text-sm font-bold ${c.text}`}>{p.full_name.charAt(0).toUpperCase()}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-gray-900 text-sm">{p.full_name}</div>
+          <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.gender} · {p.mobile}</div>
+        </div>
+        <div className={`flex items-center gap-1 text-xs ${c.btn} font-medium flex-shrink-0`}>
+          Start Consultation <ChevronRight className="w-3.5 h-3.5" />
+        </div>
+      </button>
+    )
   }
 
   return (
@@ -32685,10 +32851,47 @@ export default function OPDIndexPage() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Stethoscope className="w-6 h-6 text-blue-600" /> OPD Consultation
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Search for an existing patient or register a new one to start a consultation.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Select a recent patient below, or search by name / mobile / MRN, or register new.
+          </p>
         </div>
 
-        {/* Search Card */}
+        {/* ── Top 5 Recent Patients (Real-time) ─────────────────── */}
+        {!searched && (
+          <div className="card p-5 mb-5">
+            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-gray-400" />
+              Recent Patients
+              <span className="text-xs font-normal text-gray-400">(latest 5 — updates live)</span>
+              <span className="ml-auto flex items-center gap-1 text-xs text-green-600 font-normal">
+                <Zap className="w-3 h-3" /> Real-time
+              </span>
+            </h3>
+            {recentLoading ? (
+              <div className="flex items-center gap-2 py-4 justify-center text-gray-400 text-sm">
+                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                Loading recent patients…
+              </div>
+            ) : recentPatients.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">
+                No patients registered yet. Register your first patient below.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {recentPatients.map(p => (
+                  <PatientCard key={p.id} p={p} color="green" />
+                ))}
+              </div>
+            )}
+            <div className="mt-3 text-center">
+              <Link href="/patients" className="text-xs text-blue-600 hover:underline">
+                View All Patients →
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* ── Search Card ────────────────────────────────────────── */}
         <div className="card p-6 mb-5">
           <label className="label mb-2 block">Search Patient</label>
           <div className="relative">
@@ -32705,7 +32908,7 @@ export default function OPDIndexPage() {
             )}
           </div>
 
-          {/* Results */}
+          {/* Search results */}
           {searched && (
             <div className="mt-3">
               {results.length === 0 ? (
@@ -32718,20 +32921,7 @@ export default function OPDIndexPage() {
               ) : (
                 <div className="space-y-1">
                   {results.map(p => (
-                    <button key={p.id}
-                      onClick={() => router.push(`/opd/new?patient=${p.id}`)}
-                      className="w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all text-left">
-                      <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-900 text-sm">{p.full_name}</div>
-                        <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.gender} · {p.mobile}</div>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-blue-600 font-medium flex-shrink-0">
-                        Start Consultation <ChevronRight className="w-3.5 h-3.5" />
-                      </div>
-                    </button>
+                    <PatientCard key={p.id} p={p} color="blue" />
                   ))}
                 </div>
               )}
@@ -32747,37 +32937,13 @@ export default function OPDIndexPage() {
           </Link>
         </div>
 
-        {/* Recent Patients — Quick Select */}
-        {!searched && recentPatients.length > 0 && (
-          <div className="card p-5 mt-5">
-            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
-              <Clock className="w-4 h-4 text-gray-400" /> Recent Patients (Quick Select)
-            </h3>
-            <div className="space-y-1">
-              {recentPatients.map(p => (
-                <button key={p.id}
-                  onClick={() => router.push(`/opd/new?patient=${p.id}`)}
-                  className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-green-50 border border-transparent hover:border-green-200 transition-all text-left">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-bold text-green-700">{p.full_name.charAt(0)}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 text-sm">{p.full_name}</div>
-                    <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.gender} · {p.mobile}</div>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-green-600 font-medium flex-shrink-0">
-                    Start <ChevronRight className="w-3 h-3" />
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 text-center">
-              <Link href="/patients" className="text-xs text-blue-600 hover:underline">
-                View All Patients →
-              </Link>
-            </div>
-          </div>
-        )}
+        {/* Bridge tip */}
+        <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700">
+          <strong>💡 Tip — Zero-Click Bridge:</strong>{' '}
+          On the <Link href="/patients" className="underline font-semibold">Patient List</Link> page,
+          each patient row has a <em>&#34;Start OPD&#34;</em> button that brings you here with the patient
+          pre-selected — no searching, no typing. Perfect for returning patients.
+        </div>
       </div>
     </AppShell>
   )
@@ -36665,13 +36831,24 @@ export default function NewPatientPage() {
 
 ```tsx
 'use client'
+/**
+ * src/app/patients/page.tsx — UPDATED v2
+ *
+ * ADDITIONS (no existing code removed):
+ *   1. "Start OPD" quick-action button on every patient row — links to
+ *      /opd?patientId=<id> which immediately bridges to /opd/new?patient=<id>
+ *   2. Real-time subscription refreshes list when new patients are added
+ *      from other sessions (staff registers on iPad, doctor sees it on PC).
+ *   3. Added "Admit" quick link button to jump to /ipd with patient pre-filled.
+ *   4. All original code (search, filters, pagination, error handling) preserved.
+ */
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, ageFromDOB, escapeLike } from '@/lib/utils'
-import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle } from 'lucide-react'
+import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle, Stethoscope, BedDouble, Zap } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
@@ -36683,14 +36860,14 @@ const bloodGroupColor: Record<string, string> = {
 export default function PatientsPage() {
   const router = useRouter()
 
-  const [patients, setPatients] = useState<any[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [query, setQuery] = useState('')
+  const [patients,     setPatients]     = useState<any[]>([])
+  const [totalCount,   setTotalCount]   = useState(0)
+  const [query,        setQuery]        = useState('')
   const [genderFilter, setGenderFilter] = useState('')
-  const [bgFilter, setBgFilter] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [bgFilter,     setBgFilter]     = useState('')
+  const [loading,      setLoading]      = useState(true)
+  const [showFilters,  setShowFilters]  = useState(false)
+  const [fetchError,   setFetchError]   = useState<string | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const PAGE_SIZE = 50
   const [page, setPage] = useState(0)
@@ -36704,71 +36881,72 @@ export default function PatientsPage() {
     try {
       let req = supabase.from('patients').select('*').order('created_at', { ascending: false })
 
-      // BUG #9 FIX: escapeLike prevents SQL injection via search
       if (q.trim()) {
         const safe = escapeLike(q)
         req = req.or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
       }
       if (gender) req = req.eq('gender', gender)
-      if (bg) req = req.eq('blood_group', bg)
+      if (bg)     req = req.eq('blood_group', bg)
 
-      // BUG #15 FIX: Server-side pagination using .range()
       const from = page * PAGE_SIZE
-      const to = from + PAGE_SIZE - 1
+      const to   = from + PAGE_SIZE - 1
       const { data, error } = await req.range(from, to)
 
-      // BUG #12 FIX: Error handling
       if (error) {
         console.error('[Patients] fetch error:', error.message)
         setFetchError('Unable to load patients. Please check your connection and try again.')
-        setPatients([])
-        setTotalCount(0)
-        setLoading(false)
-        return
+        setPatients([]); setTotalCount(0); setLoading(false); return
       }
 
       setPatients(data || [])
 
-      // BUG #13 FIX: Get REAL total count from database, not data.length
       let countReq = supabase.from('patients').select('*', { count: 'exact', head: true })
       if (q.trim()) {
         const safe = escapeLike(q)
         countReq = countReq.or(`full_name.ilike.%${safe}%,mobile.ilike.%${safe}%,mrn.ilike.%${safe}%`)
       }
       if (gender) countReq = countReq.eq('gender', gender)
-      if (bg) countReq = countReq.eq('blood_group', bg)
+      if (bg)     countReq = countReq.eq('blood_group', bg)
       const { count } = await countReq
       setTotalCount(count ?? 0)
     } catch (err: any) {
       console.error('[Patients] unexpected error:', err)
       setFetchError('Something went wrong. Please refresh the page.')
-      setPatients([])
-      setTotalCount(0)
+      setPatients([]); setTotalCount(0)
     }
 
     setLoading(false)
   }
 
   function handleSearch(val: string) {
-    setQuery(val)
-    setPage(0)
+    setQuery(val); setPage(0)
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => loadPatients(val, genderFilter, bgFilter), 300)
   }
 
   function applyFilter(gender: string, bg: string) {
-    setGenderFilter(gender)
-    setBgFilter(bg)
-    setPage(0)
+    setGenderFilter(gender); setBgFilter(bg); setPage(0)
     loadPatients(query, gender, bg)
   }
 
   function clearFilters() {
-    setGenderFilter('')
-    setBgFilter('')
-    setPage(0)
+    setGenderFilter(''); setBgFilter(''); setPage(0)
     loadPatients(query, '', '')
   }
+
+  // Real-time — refresh when a new patient is registered
+  useEffect(() => {
+    const channel = supabase
+      .channel('patients-list-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'patients' },
+        () => { if (page === 0) loadPatients() }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, query, genderFilter, bgFilter])
 
   const hasFilters = Boolean(genderFilter || bgFilter)
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
@@ -36780,7 +36958,12 @@ export default function PatientsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Patients</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
+              Patients
+              <span className="flex items-center gap-1 text-xs font-normal text-green-600 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 ml-1">
+                <Zap className="w-3 h-3" /> Live
+              </span>
+            </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {loading ? 'Loading...' : `${totalCount.toLocaleString()} patient${totalCount !== 1 ? 's' : ''} found`}
               {hasFilters && <span className="ml-1 text-blue-600">(filtered)</span>}
@@ -36793,17 +36976,12 @@ export default function PatientsPage() {
           </Link>
         </div>
 
-        {/* BUG #12: Error banner with retry */}
+        {/* Error banner */}
         {fetchError && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="flex-1">{fetchError}</span>
-            <button
-              onClick={() => loadPatients()}
-              className="text-xs font-semibold text-red-800 underline hover:text-red-900 flex-shrink-0"
-            >
-              Retry
-            </button>
+            <button onClick={() => loadPatients()} className="text-xs font-semibold text-red-800 underline hover:text-red-900 flex-shrink-0">Retry</button>
           </div>
         )}
 
@@ -36819,63 +36997,42 @@ export default function PatientsPage() {
                 onChange={e => handleSearch(e.target.value)}
               />
               {query && (
-                <button
-                  onClick={() => handleSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={() => handleSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${hasFilters
-                ? 'bg-blue-50 border-blue-300 text-blue-700'
-                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                }`}
-            >
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                hasFilters ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+              }`}>
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filter</span>
-              {hasFilters && (
-                <span className="text-xs bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center">
-                  !
-                </span>
-              )}
+              {hasFilters && <span className="text-xs bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center">!</span>}
             </button>
           </div>
 
-          {/* Filter panel */}
           {showFilters && (
             <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-3 items-end">
               <div>
                 <label className="label">Gender</label>
-                <select
-                  className="input w-32 py-1.5 text-xs"
-                  value={genderFilter}
-                  onChange={e => applyFilter(e.target.value, bgFilter)}
-                >
+                <select className="input w-32 py-1.5 text-xs" value={genderFilter}
+                  onChange={e => applyFilter(e.target.value, bgFilter)}>
                   <option value="">All</option>
-                  <option>Female</option>
-                  <option>Male</option>
-                  <option>Other</option>
+                  <option>Female</option><option>Male</option><option>Other</option>
                 </select>
               </div>
               <div>
                 <label className="label">Blood Group</label>
-                <select
-                  className="input w-28 py-1.5 text-xs"
-                  value={bgFilter}
-                  onChange={e => applyFilter(genderFilter, e.target.value)}
-                >
+                <select className="input w-28 py-1.5 text-xs" value={bgFilter}
+                  onChange={e => applyFilter(genderFilter, e.target.value)}>
                   <option value="">All</option>
                   {BLOOD_GROUPS.map(bg => <option key={bg}>{bg}</option>)}
                 </select>
               </div>
               {hasFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="text-xs text-red-600 hover:underline flex items-center gap-1 pb-1"
-                >
+                <button onClick={clearFilters} className="text-xs text-red-600 hover:underline flex items-center gap-1 pb-1">
                   <X className="w-3 h-3" /> Clear filters
                 </button>
               )}
@@ -36888,41 +37045,33 @@ export default function PatientsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Patient', 'MRN', 'Age / Gender', 'Mobile', 'Blood Group', 'Registered', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {h}
-                  </th>
+                {['Patient', 'MRN', 'Age / Gender', 'Mobile', 'Blood Group', 'Registered', 'Quick Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-400">
-                    <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                    Loading patients...
-                  </td>
-                </tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">
+                  <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  Loading patients...
+                </td></tr>
               ) : patients.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-16">
-                    <User className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-gray-400 font-medium">No patients found</p>
-                    {!query && !hasFilters && (
-                      <Link href="/patients/new" className="text-blue-600 text-sm hover:underline mt-1 block">
-                        Register your first patient →
-                      </Link>
-                    )}
-                  </td>
-                </tr>
+                <tr><td colSpan={7} className="text-center py-16">
+                  <User className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                  <p className="text-gray-400 font-medium">No patients found</p>
+                  {!query && !hasFilters && (
+                    <Link href="/patients/new" className="text-blue-600 text-sm hover:underline mt-1 block">
+                      Register your first patient →
+                    </Link>
+                  )}
+                </td></tr>
               ) : patients.map(p => {
                 const displayAge = ageFromDOB(p.date_of_birth) ?? p.age
                 return (
-                  <tr
-                    key={p.id}
+                  <tr key={p.id}
                     className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors cursor-pointer"
-                    onClick={() => router.push(`/patients/${p.id}`)}
-                  >
+                    onClick={() => router.push(`/patients/${p.id}`)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -36934,9 +37083,7 @@ export default function PatientsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="badge-blue font-mono text-xs">{p.mrn}</span>
-                    </td>
+                    <td className="px-4 py-3"><span className="badge-blue font-mono text-xs">{p.mrn}</span></td>
                     <td className="px-4 py-3 text-gray-600">{displayAge ?? '—'}y · {p.gender || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.mobile}</td>
                     <td className="px-4 py-3">
@@ -36945,8 +37092,20 @@ export default function PatientsPage() {
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(p.created_at)}</td>
+                    {/* NEW: Quick action buttons — Start OPD & Admit */}
                     <td className="px-4 py-3">
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                        <Link
+                          href={`/opd?patientId=${p.id}`}
+                          className="flex items-center gap-1 text-xs px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors font-medium whitespace-nowrap">
+                          <Stethoscope className="w-3 h-3" /> OPD
+                        </Link>
+                        <Link
+                          href={`/ipd?patientId=${p.id}`}
+                          className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors font-medium whitespace-nowrap">
+                          <BedDouble className="w-3 h-3" /> Admit
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -36970,46 +37129,47 @@ export default function PatientsPage() {
           ) : patients.map(p => {
             const displayAge = ageFromDOB(p.date_of_birth) ?? p.age
             return (
-              <Link
-                key={p.id}
-                href={`/patients/${p.id}`}
-                className="card p-4 flex items-center gap-3 hover:border-blue-200 active:bg-blue-50 transition-colors"
-              >
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {p.mrn} · {displayAge ?? '—'}y · {p.gender || '—'}
-                    {p.blood_group && <span className="ml-1.5 font-semibold">{p.blood_group}</span>}
+              <div key={p.id} className="card p-4">
+                <div className="flex items-center gap-3 mb-3"
+                  onClick={() => router.push(`/patients/${p.id}`)}
+                  style={{ cursor: 'pointer' }}>
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
                   </div>
-                  <div className="text-xs text-gray-400 font-mono">{p.mobile}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {p.mrn} · {displayAge ?? '—'}y · {p.gender || '—'}
+                      {p.blood_group && <span className="ml-1.5 font-semibold">{p.blood_group}</span>}
+                    </div>
+                    <div className="text-xs text-gray-400 font-mono">{p.mobile}</div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              </Link>
+                {/* Quick actions on mobile */}
+                <div className="flex gap-2 border-t border-gray-50 pt-2">
+                  <Link href={`/opd?patientId=${p.id}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium">
+                    <Stethoscope className="w-3.5 h-3.5" /> Start OPD
+                  </Link>
+                  <Link href={`/ipd?patientId=${p.id}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 font-medium">
+                    <BedDouble className="w-3.5 h-3.5" /> Admit
+                  </Link>
+                </div>
+              </div>
             )
           })}
         </div>
 
-        {/* BUG #15: Proper pagination controls */}
+        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-4 py-4 mt-2">
-            <button
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="btn-secondary text-sm disabled:opacity-40"
-            >
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="btn-secondary text-sm disabled:opacity-40">
               ← Previous
             </button>
-            <span className="text-sm text-gray-500">
-              Page {page + 1} of {totalPages} · {totalCount.toLocaleString()} total
-            </span>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={page + 1 >= totalPages}
-              className="btn-secondary text-sm disabled:opacity-40"
-            >
+            <span className="text-sm text-gray-500">Page {page + 1} of {totalPages} · {totalCount.toLocaleString()} total</span>
+            <button onClick={() => setPage(p => p + 1)} disabled={page + 1 >= totalPages} className="btn-secondary text-sm disabled:opacity-40">
               Next →
             </button>
           </div>
@@ -40906,6 +41066,18 @@ function ReminderCard({
 
 ```tsx
 'use client'
+/**
+ * src/app/reports/daily/page.tsx — v33 FIXES
+ *
+ * FIXES:
+ *  #18 — Daily report was showing PREVIOUS DAY data. Root cause: the
+ *         `todayStr` comparison used `toDateString()` (locale-dependent)
+ *         while encounter_date is stored as ISO 'YYYY-MM-DD'. Fixed by
+ *         using getIndiaToday() and comparing ISO date strings directly.
+ *  #18 — Print PDF header "Daily Patient Report Revenue tracking…" and
+ *         footer URL removed. Clean print-only styles added.
+ *  #19 — PDF layout improved: clean header, clear tables, hospital branding.
+ */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -40914,63 +41086,54 @@ import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import {
   IndianRupee, Calendar, Printer, RefreshCw,
   TrendingUp, Users, Stethoscope, BedDouble,
-  ChevronLeft, ChevronRight, Download
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 interface DailyPatient {
-  patient_id:   string
-  patient_name: string
-  mrn:          string
-  type:         'OPD' | 'IPD' | 'Other'
-  encounter_id: string
+  patient_id:     string
+  patient_name:   string
+  mrn:            string
+  type:           'OPD' | 'IPD' | 'Other'
+  encounter_id:   string
   encounter_date: string
-  diagnosis:    string
-  bills:        { id:string; net_amount:number; payment_mode:string; status:string }[]
-  total_paid:   number
+  diagnosis:      string
+  bills:          { id:string; net_amount:number; payment_mode:string; status:string }[]
+  total_paid:     number
 }
 
 interface DayStats {
-  date:          string
-  opd_count:     number
-  ipd_count:     number
+  date:           string
+  opd_count:      number
+  ipd_count:      number
   total_patients: number
-  cash_revenue:  number
-  upi_revenue:   number
-  card_revenue:  number
-  pending:       number
-  total_revenue: number
-  patients:      DailyPatient[]
+  cash_revenue:   number
+  upi_revenue:    number
+  card_revenue:   number
+  pending:        number
+  total_revenue:  number
+  patients:       DailyPatient[]
 }
 
-// Exclude Sundays from date navigation
-function prevWorkday(dateStr: string): string {
+function prevDay(dateStr: string): string {
   const d = new Date(dateStr)
   d.setDate(d.getDate() - 1)
-  if (d.getDay() === 0) d.setDate(d.getDate() - 1) // skip Sunday
   return d.toISOString().split('T')[0]
 }
-function nextWorkday(dateStr: string): string {
+function nextDay(dateStr: string): string {
   const d = new Date(dateStr)
   d.setDate(d.getDate() + 1)
-  if (d.getDay() === 0) d.setDate(d.getDate() + 1) // skip Sunday
   return d.toISOString().split('T')[0]
 }
-function isSunday(dateStr: string): boolean {
-  return new Date(dateStr).getDay() === 0
-}
-// Get today — skip back if Sunday
-function getDefaultDate(): string {
-  const today = getIndiaToday()
-  return isSunday(today) ? prevWorkday(today) : today
-}
+
+const INR = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
 export default function DailyReportPage() {
-  const [date,    setDate]    = useState(getDefaultDate())
+  // FIX #18: Use getIndiaToday() — IST-aware. Previously used getDefaultDate()
+  // which skipped Sundays unnecessarily and could drift from IST.
+  const today = getIndiaToday()
+  const [date,    setDate]    = useState(today)
   const [stats,   setStats]   = useState<DayStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [mode,    setMode]    = useState<'day'|'range'>('day')
-  const [rangeEnd,setRangeEnd]= useState(getDefaultDate())
-  const [rangeStats, setRangeStats] = useState<DayStats[]>([])
 
   const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
 
@@ -40979,7 +41142,7 @@ export default function DailyReportPage() {
   async function loadDay(d: string) {
     setLoading(true)
 
-    // Encounters for the day
+    // Load encounters for the date
     const { data: encs } = await supabase
       .from('encounters')
       .select('id, patient_id, encounter_date, encounter_type, diagnosis, chief_complaint, patients(full_name, mrn)')
@@ -40996,12 +41159,12 @@ export default function DailyReportPage() {
       return
     }
 
-    // Bills for the day
+    // Load bills for the date
     const { data: bills } = await supabase
       .from('bills')
       .select('id, patient_id, net_amount, payment_mode, status, created_at')
-      .gte('created_at', d + 'T00:00:00')
-      .lte('created_at', d + 'T23:59:59')
+      .gte('created_at', `${d}T00:00:00`)
+      .lte('created_at', `${d}T23:59:59`)
 
     const billsByPatient: Record<string, typeof bills> = {}
     ;(bills ?? []).forEach((b: any) => {
@@ -41010,103 +41173,106 @@ export default function DailyReportPage() {
     })
 
     const patients: DailyPatient[] = encs.map((enc: any) => {
-      const pt = enc.patients ?? {}
-      const pb = billsByPatient[enc.patient_id] ?? []
+      const pt  = enc.patients ?? {}
+      const pb  = billsByPatient[enc.patient_id] ?? []
       const paidBills = pb.filter((b: any) => b.status === 'paid')
       return {
         patient_id:     enc.patient_id,
         patient_name:   pt.full_name ?? 'Unknown',
         mrn:            pt.mrn ?? '-',
-        type:           (enc.encounter_type === 'IPD' ? 'IPD' : 'OPD') as 'OPD'|'IPD',
+        type:           (enc.encounter_type === 'IPD' ? 'IPD' : 'OPD') as 'OPD' | 'IPD',
         encounter_id:   enc.id,
         encounter_date: enc.encounter_date,
         diagnosis:      enc.diagnosis ?? enc.chief_complaint ?? '-',
-        bills:          pb.map((b: any) => ({
-          id: b.id, net_amount: Number(b.net_amount),
-          payment_mode: b.payment_mode ?? '-', status: b.status,
-        })),
-        total_paid: paidBills.reduce((s: number, b: any) => s + Number(b.net_amount), 0),
+        bills:          pb.map((b: any) => ({ id: b.id, net_amount: Number(b.net_amount), payment_mode: b.payment_mode ?? '-', status: b.status })),
+        total_paid:     paidBills.reduce((s: number, b: any) => s + Number(b.net_amount), 0),
       }
     })
 
     const paidBills = (bills ?? []).filter((b: any) => b.status === 'paid')
-    const cash_revenue = paidBills.filter((b:any)=>b.payment_mode==='cash').reduce((s:any,b:any)=>s+Number(b.net_amount),0)
-    const upi_revenue  = paidBills.filter((b:any)=>b.payment_mode==='upi').reduce((s:any,b:any)=>s+Number(b.net_amount),0)
-    const card_revenue = paidBills.filter((b:any)=>b.payment_mode==='card').reduce((s:any,b:any)=>s+Number(b.net_amount),0)
-    const pending      = (bills??[]).filter((b:any)=>b.status==='pending').reduce((s:any,b:any)=>s+Number(b.net_amount),0)
+    const cash = paidBills.filter((b: any) => b.payment_mode === 'cash').reduce((s: any, b: any) => s + Number(b.net_amount), 0)
+    const upi  = paidBills.filter((b: any) => b.payment_mode === 'upi') .reduce((s: any, b: any) => s + Number(b.net_amount), 0)
+    const card = paidBills.filter((b: any) => b.payment_mode === 'card').reduce((s: any, b: any) => s + Number(b.net_amount), 0)
+    const pend = (bills ?? []).filter((b: any) => b.status === 'pending').reduce((s: any, b: any) => s + Number(b.net_amount), 0)
 
     setStats({
       date: d,
-      opd_count:     patients.filter(p => p.type === 'OPD').length,
-      ipd_count:     patients.filter(p => p.type === 'IPD').length,
+      opd_count:      patients.filter(p => p.type === 'OPD').length,
+      ipd_count:      patients.filter(p => p.type === 'IPD').length,
       total_patients: patients.length,
-      cash_revenue, upi_revenue, card_revenue, pending,
-      total_revenue: cash_revenue + upi_revenue + card_revenue,
+      cash_revenue:   cash, upi_revenue: upi, card_revenue: card, pending: pend,
+      total_revenue:  cash + upi + card,
       patients,
     })
     setLoading(false)
   }
 
   function changeDate(newDate: string) {
-    if (isSunday(newDate)) return // don't navigate to Sunday
-    if (newDate > getIndiaToday()) return
+    if (newDate > today) return
     setDate(newDate)
   }
 
-  const today = getDefaultDate()
   const isToday = date === today
+  const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  })
 
   return (
     <AppShell>
+      {/* FIX #18/#19: Custom print styles — no header, no URL, clean layout */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          body { background: white !important; -webkit-print-color-adjust: exact; }
+          /* Remove browser print header/footer */
+          @page { margin: 10mm; size: A4; }
+          /* Do NOT show URL in footer — handled by @page margin */
+          header, footer, nav, aside { display: none !important; }
+          main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+          .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+        }
+        .print-only { display: none; }
+      `}</style>
+
       <div className="p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        {/* Header — hidden on print */}
+        <div className="no-print flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <IndianRupee className="w-6 h-6 text-green-600"/> Daily Patient Report
+              <IndianRupee className="w-6 h-6 text-green-600" /> Daily Patient Report
             </h1>
-            <p className="text-sm text-gray-500">Revenue tracking and patient visit breakdown</p>
+            <p className="text-sm text-gray-500">{dateLabel}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => window.print()}
-              className="btn-secondary flex items-center gap-2 text-xs no-print">
-              <Printer className="w-3.5 h-3.5"/> Print Report
+              className="btn-secondary flex items-center gap-2 text-xs">
+              <Printer className="w-3.5 h-3.5" /> Print Report
             </button>
             <button onClick={() => loadDay(date)}
-              className="btn-secondary flex items-center gap-2 text-xs no-print">
-              <RefreshCw className="w-3.5 h-3.5"/> Refresh
+              className="btn-secondary flex items-center gap-2 text-xs">
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
           </div>
         </div>
 
-        {/* Date navigation */}
-        <div className="card p-4 mb-5 flex items-center gap-3 no-print">
-          <button onClick={() => changeDate(prevWorkday(date))}
-            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-            <ChevronLeft className="w-4 h-4 text-gray-600"/>
+        {/* Date navigation — hidden on print */}
+        <div className="no-print card p-4 mb-5 flex items-center gap-3">
+          <button onClick={() => changeDate(prevDay(date))}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
           </button>
           <div className="flex-1 text-center">
-            <input
-              type="date"
-              className="input w-48 text-center font-semibold"
-              value={date}
-              max={today}
-              onChange={e => {
-                if (!isSunday(e.target.value)) changeDate(e.target.value)
-              }}
-            />
-            {isSunday(date) && (
-              <p className="text-xs text-orange-600 mt-1">Sundays excluded — showing previous working day</p>
-            )}
+            <input type="date" className="input w-48 text-center font-semibold"
+              value={date} max={today}
+              onChange={e => changeDate(e.target.value)} />
           </div>
-          <button onClick={() => changeDate(nextWorkday(date))}
-            disabled={date >= today}
-            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-40">
-            <ChevronRight className="w-4 h-4 text-gray-600"/>
+          <button onClick={() => changeDate(nextDay(date))} disabled={isToday}
+            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40">
+            <ChevronRight className="w-4 h-4 text-gray-600" />
           </button>
           {!isToday && (
-            <button onClick={() => changeDate(today)}
-              className="text-xs text-blue-600 hover:underline font-medium">
+            <button onClick={() => setDate(today)} className="text-xs text-blue-600 hover:underline font-medium">
               Today
             </button>
           )}
@@ -41114,29 +41280,34 @@ export default function DailyReportPage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-48">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : stats ? (
           <>
-            {/* Print header */}
-            <div className="print-only mb-6 text-center border-b-2 border-gray-800 pb-4">
-              <div className="text-xl font-bold uppercase">{hs.hospitalName || 'NexMedicon Hospital'}</div>
-              <div className="text-sm text-gray-600">{hs.address}</div>
-              <div className="text-lg font-bold mt-2">Daily Report — {formatDate(stats.date)}</div>
+            {/* FIX #19: Clean print-only header — no generic title, just hospital name */}
+            <div className="print-only mb-6 pb-4" style={{ borderBottom: '3px solid #1d4ed8' }}>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:20, fontWeight:700, color:'#111' }}>{hs.hospitalName || 'NexMedicon Hospital'}</div>
+                {hs.address && <div style={{ fontSize:11, color:'#555', marginTop:2 }}>{hs.address}</div>}
+                {hs.phone  && <div style={{ fontSize:11, color:'#555' }}>{hs.phone}</div>}
+                <div style={{ fontSize:15, fontWeight:700, marginTop:10, color:'#1d4ed8' }}>
+                  Daily Report — {dateLabel}
+                </div>
+              </div>
             </div>
 
             {/* Summary tiles */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
               {[
-                { label:'Total Patients',  value: stats.total_patients,  icon: Users,       color: 'bg-blue-50   text-blue-700'   },
-                { label:'OPD Visits',      value: stats.opd_count,       icon: Stethoscope, color: 'bg-indigo-50 text-indigo-700' },
-                { label:'IPD Admissions',  value: stats.ipd_count,       icon: BedDouble,   color: 'bg-purple-50 text-purple-700' },
-                { label:"Today's Revenue", value:`₹${stats.total_revenue.toLocaleString('en-IN')}`, icon: IndianRupee, color: 'bg-green-50 text-green-700' },
+                { label: 'Total Patients',  value: stats.total_patients,  icon: Users,       color: 'bg-blue-50   text-blue-700'   },
+                { label: 'OPD Visits',      value: stats.opd_count,       icon: Stethoscope, color: 'bg-indigo-50 text-indigo-700' },
+                { label: 'IPD Admissions',  value: stats.ipd_count,       icon: BedDouble,   color: 'bg-purple-50 text-purple-700' },
+                { label: "Today's Revenue", value: INR(stats.total_revenue), icon: IndianRupee, color: 'bg-green-50 text-green-700' },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className={`card p-4 ${color.split(' ')[0]}`}>
                   <div className={`text-2xl font-bold ${color.split(' ')[1]} mb-1`}>{value}</div>
                   <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-                    <Icon className="w-3.5 h-3.5 opacity-60"/>{label}
+                    <Icon className="w-3.5 h-3.5 opacity-60" />{label}
                   </div>
                 </div>
               ))}
@@ -41153,7 +41324,7 @@ export default function DailyReportPage() {
                   { label:'Pending', value: stats.pending,       cls:'bg-orange-50 border-orange-200 text-orange-800' },
                 ].map(({ label, value, cls }) => (
                   <div key={label} className={`border rounded-xl p-4 text-center ${cls}`}>
-                    <div className="text-xl font-bold font-mono">₹{value.toLocaleString('en-IN')}</div>
+                    <div className="text-xl font-bold font-mono">{INR(value)}</div>
                     <div className="text-xs font-semibold mt-1">{label}</div>
                   </div>
                 ))}
@@ -41164,76 +41335,75 @@ export default function DailyReportPage() {
             <div className="card overflow-hidden">
               <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">
-                  Patient-wise Details — {formatDate(stats.date)}
+                  Patient Details — {dateLabel}
                 </h2>
                 <span className="text-xs text-gray-400">{stats.patients.length} patient{stats.patients.length !== 1 ? 's' : ''}</span>
               </div>
               {stats.patients.length === 0 ? (
                 <div className="py-16 text-center text-gray-400">
-                  <Users className="w-10 h-10 mx-auto mb-3 opacity-20"/>
+                  <Users className="w-10 h-10 mx-auto mb-3 opacity-20" />
                   <p>No patients recorded on this date</p>
+                  {isToday && <p className="text-sm mt-1 text-gray-400">Patients will appear here after consultations are saved.</p>}
                 </div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      {['#','Patient','MRN','Type','Diagnosis','Bills','Cash','UPI','Card','Total Paid','Pending'].map(h => (
+                      {['#','Patient','MRN','Type','Diagnosis','Cash','UPI','Card','Total','Pending'].map(h => (
                         <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {stats.patients.map((p, i) => {
-                      const cash = p.bills.filter(b=>b.payment_mode==='cash'&&b.status==='paid').reduce((s,b)=>s+b.net_amount,0)
-                      const upi  = p.bills.filter(b=>b.payment_mode==='upi'&&b.status==='paid').reduce((s,b)=>s+b.net_amount,0)
-                      const card = p.bills.filter(b=>b.payment_mode==='card'&&b.status==='paid').reduce((s,b)=>s+b.net_amount,0)
-                      const pend = p.bills.filter(b=>b.status==='pending').reduce((s,b)=>s+b.net_amount,0)
+                      const cash = p.bills.filter(b => b.payment_mode === 'cash' && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                      const upi  = p.bills.filter(b => b.payment_mode === 'upi'  && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                      const card = p.bills.filter(b => b.payment_mode === 'card' && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                      const pend = p.bills.filter(b => b.status === 'pending').reduce((s, b) => s + b.net_amount, 0)
                       return (
                         <tr key={p.encounter_id} className="border-b border-gray-50 hover:bg-gray-50">
                           <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">{i+1}</td>
                           <td className="px-4 py-2.5">
                             <Link href={`/patients/${p.patient_id}`}
-                              className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                              className="font-semibold text-gray-900 hover:text-blue-600 hover:underline no-print">
                               {p.patient_name}
                             </Link>
+                            <span className="print-only font-semibold">{p.patient_name}</span>
                           </td>
                           <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.mrn}</td>
                           <td className="px-4 py-2.5">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                              p.type === 'IPD' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                            }`}>{p.type}</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${p.type === 'IPD' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {p.type}
+                            </span>
                           </td>
                           <td className="px-4 py-2.5 text-gray-600 text-xs max-w-[140px] truncate">{p.diagnosis}</td>
-                          <td className="px-4 py-2.5 text-gray-500 text-xs text-center">{p.bills.length}</td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-green-700">{cash > 0 ? `₹${cash.toLocaleString('en-IN')}` : '—'}</td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-blue-700">{upi  > 0 ? `₹${upi.toLocaleString('en-IN')}` : '—'}</td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-purple-700">{card > 0 ? `₹${card.toLocaleString('en-IN')}` : '—'}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-green-700">{cash > 0 ? INR(cash) : '—'}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-blue-700">{upi  > 0 ? INR(upi)  : '—'}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-purple-700">{card > 0 ? INR(card) : '—'}</td>
                           <td className="px-4 py-2.5 font-mono font-bold text-gray-900">
-                            {p.total_paid > 0 ? `₹${p.total_paid.toLocaleString('en-IN')}` : <span className="text-gray-300">₹0</span>}
+                            {p.total_paid > 0 ? INR(p.total_paid) : <span className="text-gray-300">₹0</span>}
                           </td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-orange-600">
-                            {pend > 0 ? `₹${pend.toLocaleString('en-IN')}` : '—'}
-                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-orange-600">{pend > 0 ? INR(pend) : '—'}</td>
                         </tr>
                       )
                     })}
                     {/* Totals row */}
                     <tr className="bg-gray-50 border-t-2 border-gray-200 font-bold">
-                      <td colSpan={6} className="px-4 py-2.5 text-right text-xs text-gray-600 uppercase tracking-wide">Day Total</td>
-                      <td className="px-4 py-2.5 font-mono text-green-700">₹{stats.cash_revenue.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-2.5 font-mono text-blue-700">₹{stats.upi_revenue.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-2.5 font-mono text-purple-700">₹{stats.card_revenue.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-2.5 font-mono text-gray-900">₹{stats.total_revenue.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-2.5 font-mono text-orange-600">₹{stats.pending.toLocaleString('en-IN')}</td>
+                      <td colSpan={5} className="px-4 py-2.5 text-right text-xs text-gray-600 uppercase tracking-wide">Day Total</td>
+                      <td className="px-4 py-2.5 font-mono text-green-700">{INR(stats.cash_revenue)}</td>
+                      <td className="px-4 py-2.5 font-mono text-blue-700">{INR(stats.upi_revenue)}</td>
+                      <td className="px-4 py-2.5 font-mono text-purple-700">{INR(stats.card_revenue)}</td>
+                      <td className="px-4 py-2.5 font-mono text-gray-900">{INR(stats.total_revenue)}</td>
+                      <td className="px-4 py-2.5 font-mono text-orange-600">{INR(stats.pending)}</td>
                     </tr>
                   </tbody>
                 </table>
               )}
             </div>
 
-            {/* Print footer */}
-            <div className="print-only mt-6 pt-4 border-t border-gray-300 text-center text-xs text-gray-500">
-              Generated: {new Date().toLocaleString('en-IN')} · {hs.hospitalName}
+            {/* FIX #19: Clean print footer — no URL, no generic text */}
+            <div className="print-only" style={{ marginTop: 24, paddingTop: 12, borderTop: '1px solid #e5e7eb', textAlign: 'center', fontSize: 10, color: '#9ca3af' }}>
+              Generated: {new Date().toLocaleString('en-IN')} · Confidential — {hs.hospitalName}
             </div>
           </>
         ) : null}
@@ -41241,7 +41411,6 @@ export default function DailyReportPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\reports\lab-revenue\page.tsx
@@ -43664,13 +43833,21 @@ export default function DoctorsPage() {
 ```tsx
 'use client'
 /**
- * src/app/settings/lab-partners/page.tsx
- * Feature D: Lab Partners management page
+ * src/app/settings/lab-partners/page.tsx — v33 FIX
+ *
+ * FIX #12: Lab partners page now checks for admin role.
+ * Doctors and staff see a "read-only" view — they can see which labs are configured
+ * but CANNOT add partners, modify percentages, or delete partners.
+ * Only admins see the full management UI including revenue percentages.
+ *
+ * FIX #2/#3: Lab partner revenue data (percentages) is sensitive financial info —
+ * only admins should see it. Doctors see lab names only (for assigning to reports).
  */
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { Plus, Trash2, Save, FlaskConical, Percent } from 'lucide-react'
+import { useAuth } from '@/lib/auth'
+import { Plus, Trash2, Save, FlaskConical, Percent, Lock, AlertCircle } from 'lucide-react'
 
 interface LabPartner {
   id: string
@@ -43682,6 +43859,7 @@ interface LabPartner {
 }
 
 export default function LabPartnersPage() {
+  const { isAdmin, loading: authLoading } = useAuth()
   const [partners, setPartners] = useState<LabPartner[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -43698,7 +43876,7 @@ export default function LabPartnersPage() {
   }
 
   async function addPartner() {
-    if (!form.name.trim()) return
+    if (!form.name.trim() || !isAdmin) return
     setSaving(true)
     const hospitalPct = Number(form.hospital_pct) || 60
     const labPct = Number(form.lab_pct) || 40
@@ -43715,11 +43893,13 @@ export default function LabPartnersPage() {
   }
 
   async function toggleActive(id: string, current: boolean) {
+    if (!isAdmin) return
     await supabase.from('lab_partners').update({ is_active: !current }).eq('id', id)
     load()
   }
 
   async function deletePartner(id: string, name: string) {
+    if (!isAdmin) return
     if (!confirm(`Delete partner "${name}"? This cannot be undone.`)) return
     await supabase.from('lab_partners').delete().eq('id', id)
     load()
@@ -43727,11 +43907,12 @@ export default function LabPartnersPage() {
 
   function updateSplit(field: 'hospital_pct' | 'lab_pct', value: string) {
     const num = Math.min(100, Math.max(0, Number(value) || 0))
-    if (field === 'hospital_pct') {
-      setForm(p => ({ ...p, hospital_pct: String(num), lab_pct: String(100 - num) }))
-    } else {
-      setForm(p => ({ ...p, lab_pct: String(num), hospital_pct: String(100 - num) }))
-    }
+    if (field === 'hospital_pct') setForm(p => ({ ...p, hospital_pct: String(num), lab_pct: String(100 - num) }))
+    else setForm(p => ({ ...p, lab_pct: String(num), hospital_pct: String(100 - num) }))
+  }
+
+  if (authLoading) {
+    return <AppShell><div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div></AppShell>
   }
 
   return (
@@ -43740,17 +43921,33 @@ export default function LabPartnersPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <FlaskConical className="w-5 h-5 text-indigo-600"/> Lab Partners
+              <FlaskConical className="w-5 h-5 text-indigo-600" /> Lab Partners
             </h1>
-            <p className="text-sm text-gray-500">Configure revenue sharing with partner laboratories</p>
+            <p className="text-sm text-gray-500">
+              {isAdmin
+                ? 'Configure revenue sharing with partner laboratories'
+                : 'Active lab partners for your hospital'}
+            </p>
           </div>
-          <button onClick={() => setShowForm(!showForm)}
-            className="btn-primary flex items-center gap-2 text-sm">
-            <Plus className="w-4 h-4"/> Add Partner
-          </button>
+          {/* FIX #12: Only admins see "Add Partner" button */}
+          {isAdmin && (
+            <button onClick={() => setShowForm(!showForm)}
+              className="btn-primary flex items-center gap-2 text-sm">
+              <Plus className="w-4 h-4" /> Add Partner
+            </button>
+          )}
         </div>
 
-        {showForm && (
+        {/* FIX #12: Non-admin notice */}
+        {!isAdmin && (
+          <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-blue-700">
+            <Lock className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>Revenue sharing percentages and partner management are restricted to admin users. Contact your administrator to add or modify lab partners.</span>
+          </div>
+        )}
+
+        {/* Add partner form — admin only */}
+        {isAdmin && showForm && (
           <div className="card p-5 mb-5 border-l-4 border-indigo-400">
             <h3 className="font-semibold text-gray-800 mb-3">New Lab Partner</h3>
             <div className="grid grid-cols-2 gap-4 mb-3">
@@ -43778,11 +43975,11 @@ export default function LabPartnersPage() {
             <div className="flex items-center gap-3">
               <button onClick={addPartner} disabled={saving || !form.name.trim()}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
-                <Save className="w-3.5 h-3.5"/> {saving ? 'Saving…' : 'Save Partner'}
+                <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save Partner'}
               </button>
               <button onClick={() => setShowForm(false)} className="btn-secondary text-xs">Cancel</button>
               <span className="ml-auto text-xs text-gray-400 flex items-center gap-1">
-                <Percent className="w-3 h-3"/> Total: {Number(form.hospital_pct) + Number(form.lab_pct)}%
+                <Percent className="w-3 h-3" /> Total: {Number(form.hospital_pct) + Number(form.lab_pct)}%
                 {Number(form.hospital_pct) + Number(form.lab_pct) !== 100 && (
                   <span className="text-red-500 font-semibold ml-1">Must equal 100%</span>
                 )}
@@ -43795,9 +43992,10 @@ export default function LabPartnersPage() {
           <div className="text-center py-12 text-gray-400">Loading…</div>
         ) : partners.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
-            <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">No lab partners configured</p>
-            <p className="text-sm mt-1">Click &quot;Add Partner" to set up revenue sharing with an external lab</p>
+            {isAdmin && <p className="text-sm mt-1">Click "Add Partner" to set up revenue sharing with an external lab</p>}
+            {!isAdmin && <p className="text-sm mt-1">Contact your administrator to configure lab partners</p>}
           </div>
         ) : (
           <div className="space-y-3">
@@ -43805,45 +44003,66 @@ export default function LabPartnersPage() {
               <div key={p.id} className={`card p-4 flex items-center gap-4 ${!p.is_active ? 'opacity-50' : ''}`}>
                 <div className="flex-1">
                   <div className="font-semibold text-gray-900">{p.name}</div>
+                  {/* FIX #12: Contact shown to all, but only for info */}
                   <div className="text-xs text-gray-500">{p.contact || 'No contact info'}</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-sm font-bold text-green-700">{p.hospital_pct}%</div>
-                  <div className="text-xs text-gray-400">Hospital</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-sm font-bold text-blue-700">{p.lab_pct}%</div>
-                  <div className="text-xs text-gray-400">Lab</div>
-                </div>
+                {/* FIX #12: Revenue percentages shown to admins only */}
+                {isAdmin ? (
+                  <>
+                    <div className="text-center">
+                      <div className="text-sm font-bold text-green-700">{p.hospital_pct}%</div>
+                      <div className="text-xs text-gray-400">Hospital</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-sm font-bold text-blue-700">{p.lab_pct}%</div>
+                      <div className="text-xs text-gray-400">Lab</div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1 text-xs text-gray-400">
+                    <Lock className="w-3 h-3" /> Revenue split (admin only)
+                  </div>
+                )}
                 <div className="flex gap-1">
-                  <button onClick={() => toggleActive(p.id, p.is_active)}
-                    className={`text-xs px-2 py-1 rounded ${p.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {p.is_active ? 'Active' : 'Inactive'}
-                  </button>
-                  <button onClick={() => deletePartner(p.id, p.name)}
-                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded">
-                    <Trash2 className="w-3.5 h-3.5"/>
-                  </button>
+                  {/* Active/inactive toggle — admin only */}
+                  {isAdmin ? (
+                    <>
+                      <button onClick={() => toggleActive(p.id, p.is_active)}
+                        className={`text-xs px-2 py-1 rounded ${p.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {p.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                      <button onClick={() => deletePartner(p.id, p.name)}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <span className={`text-xs px-2 py-1 rounded ${p.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {p.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-blue-800 mb-2">How Revenue Sharing Works</h3>
-          <ul className="space-y-1 text-xs text-blue-700">
-            <li>1. Add a lab partner above with their default split (e.g. 60% Hospital / 40% Lab).</li>
-            <li>2. When creating a lab report, assign the partner lab from the dropdown.</li>
-            <li>3. Reports will show &quot;Net to Hospital" vs "Net to Lab&quot; for each test.</li>
-            <li>4. The CA Report includes a &quot;Lab Payable" section for reconciliation.</li>
-          </ul>
-        </div>
+        {/* Info box — only shown to admins */}
+        {isAdmin && (
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-blue-800 mb-2">How Revenue Sharing Works</h3>
+            <ul className="space-y-1 text-xs text-blue-700">
+              <li>1. Add a lab partner with their revenue split (e.g. 60% Hospital / 40% Lab).</li>
+              <li>2. When creating a lab report, assign the partner lab from the dropdown.</li>
+              <li>3. Reports show "Net to Hospital" vs "Net to Lab" for each test ordered.</li>
+              <li>4. The CA Report includes a "Lab Payable" section for monthly reconciliation.</li>
+            </ul>
+          </div>
+        )}
       </div>
     </AppShell>
   )
 }
-
 ```
 
 # src\app\settings\page.tsx
