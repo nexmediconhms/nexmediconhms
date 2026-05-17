@@ -175,10 +175,12 @@ export async function GET(req: NextRequest) {
 
   // 2. Follow-up reminders from prescriptions
   try {
+    // FIX: Include overdue follow-ups (up to 14 days past due) AND upcoming (7 days)
+    const fourteenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA', { timeZone: IST }) })()
     const { data: rxs } = await supabase
       .from('prescriptions')
       .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, reminder_sent_at')
-      .gte('follow_up_date', tod)
+      .gte('follow_up_date', fourteenDaysAgo)
       .lte('follow_up_date', in7)
       .order('follow_up_date', { ascending: true })
 
@@ -186,7 +188,8 @@ export async function GET(req: NextRequest) {
       if (!rx.follow_up_date) continue
       const daysAway = daysUntil(rx.follow_up_date)
       let priority: ReminderItem['priority']
-      if (daysAway === 0) priority = 'today'
+      if (daysAway < 0) priority = 'urgent'  // Overdue
+      else if (daysAway === 0) priority = 'today'
       else if (daysAway === 1) priority = 'tomorrow'
       else priority = 'upcoming'
 
@@ -200,7 +203,7 @@ export async function GET(req: NextRequest) {
         mrn: rx.mrn ?? '',
         sourceId: rx.id,
         sourceTable: 'prescriptions',
-        title: 'Follow-up Due',
+        title: daysAway < 0 ? `Follow-up OVERDUE (${Math.abs(daysAway)}d)` : 'Follow-up Due',
         subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
         dueDate: rx.follow_up_date,
         reminderSentAt: rx.reminder_sent_at ?? null,
@@ -208,6 +211,7 @@ export async function GET(req: NextRequest) {
           followUpDate: rx.follow_up_date,
           diagnosis: rx.diagnosis,
           labTests: rx.lab_tests,
+          daysOverdue: daysAway < 0 ? Math.abs(daysAway) : undefined,
         },
       })
     }
