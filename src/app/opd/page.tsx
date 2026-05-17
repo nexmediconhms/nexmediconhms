@@ -1,16 +1,5 @@
 'use client'
-/**
- * src/app/opd/page.tsx — UPDATED v3
- *
- * ENHANCEMENTS:
- *   1. Top 5 latest patients (by registration date) shown immediately.
- *   2. Real-time updates — Supabase Realtime subscription refreshes the list
- *      whenever a new patient is registered anywhere in the app.
- *   3. Bridge from Patient List page: accepts ?patientId= URL param to
- *      immediately navigate to /opd/new without any interaction.
- *   4. All original search logic preserved (debounce, escapeLike).
- *   5. Smooth animations on patient card entry.
- */
+
 import { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -29,11 +18,11 @@ interface PatientRow {
   created_at: string
 }
 
-export default function OPDIndexPage() {
+// 1. THIS IS THE CONTENT LOGIC
+function OPDIndexContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
-  // Bridge: if patientId is passed via URL (from patient list page), jump straight to OPD
   const bridgeId = searchParams.get('patientId') ?? searchParams.get('patient')
 
   const [query,          setQuery]          = useState('')
@@ -45,14 +34,12 @@ export default function OPDIndexPage() {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Bridge: redirect immediately if patientId is in URL ──────
   useEffect(() => {
     if (bridgeId) {
       router.replace(`/opd/new?patient=${bridgeId}`)
     }
   }, [bridgeId, router])
 
-  // ── Load Top 5 recent patients ────────────────────────────────
   async function loadRecent() {
     setRecentLoading(true)
     const { data } = await supabase
@@ -68,7 +55,6 @@ export default function OPDIndexPage() {
     loadRecent()
   }, [])
 
-  // ── Real-time subscription — refreshes list when new patient registered ──
   useEffect(() => {
     const channel = supabase
       .channel('opd-recent-patients')
@@ -76,7 +62,6 @@ export default function OPDIndexPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'patients' },
         (_payload) => {
-          // New patient registered — refresh top 5 immediately
           loadRecent()
         }
       )
@@ -87,7 +72,6 @@ export default function OPDIndexPage() {
     }
   }, [])
 
-  // ── Debounced search ──────────────────────────────────────────
   function handleSearch(val: string) {
     setQuery(val)
     if (val.trim().length < 2) { setResults([]); setSearched(false); return }
@@ -142,7 +126,6 @@ export default function OPDIndexPage() {
           </p>
         </div>
 
-        {/* ── Top 5 Recent Patients (Real-time) ─────────────────── */}
         {!searched && (
           <div className="card p-5 mb-5">
             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
@@ -177,7 +160,6 @@ export default function OPDIndexPage() {
           </div>
         )}
 
-        {/* ── Search Card ────────────────────────────────────────── */}
         <div className="card p-6 mb-5">
           <label className="label mb-2 block">Search Patient</label>
           <div className="relative">
@@ -194,14 +176,13 @@ export default function OPDIndexPage() {
             )}
           </div>
 
-          {/* Search results */}
           {searched && (
             <div className="mt-3">
               {results.length === 0 ? (
                 <div className="text-center py-6 text-gray-400">
-                  <p className="text-sm mb-3">No patient found for &quot;{query}&quot;</p>
-                  <Link href="/patients/new" className="btn-primary inline-flex items-center gap-2 text-xs">
-                    <UserPlus className="w-3.5 h-3.5" /> Register New Patient
+                  <p className="text-sm mb-3">No patient found for "{query}"</p>
+                  <Link href="/patients/new" className="btn btn-primary inline-flex items-center gap-2">
+                    <UserPlus className="w-4 h-4" /> Register New Patient
                   </Link>
                 </div>
               ) : (
@@ -214,23 +195,16 @@ export default function OPDIndexPage() {
             </div>
           )}
         </div>
-
-        {/* Or Register */}
-        <div className="text-center">
-          <p className="text-sm text-gray-400 mb-3">— or —</p>
-          <Link href="/patients/new" className="btn-secondary inline-flex items-center gap-2">
-            <UserPlus className="w-4 h-4" /> Register New Patient First
-          </Link>
-        </div>
-
-        {/* Bridge tip */}
-        <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700">
-          <strong>💡 Tip — Zero-Click Bridge:</strong>{' '}
-          On the <Link href="/patients" className="underline font-semibold">Patient List</Link> page,
-          each patient row has a <em>&#34;Start OPD&#34;</em> button that brings you here with the patient
-          pre-selected — no searching, no typing. Perfect for returning patients.
-        </div>
       </div>
     </AppShell>
+  )
+}
+
+// 2. THIS IS THE EXPORTED PAGE WRAPPER
+export default function OPDIndexPage() {
+  return (
+    <Suspense fallback={null}>
+      <OPDIndexContent />
+    </Suspense>
   )
 }
