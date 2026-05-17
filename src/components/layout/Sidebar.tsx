@@ -23,9 +23,9 @@ import {
   Baby, Settings, Clock, IndianRupee, FlaskConical,
   BookOpen, CalendarDays, TrendingUp, BarChart3,
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
-  BellRing, Pill, Scissors,
+  BellRing, Pill, Scissors, Megaphone,
   BedSingle, PiggyBank, UserCog, ExternalLink,
-} from 'lucide-react'
+} from 'lucide-react' from 'lucide-react'
 
 
 interface NavItemDef {
@@ -110,6 +110,16 @@ export default function Sidebar() {
       ],
     },
     {
+      label: 'Growth',
+      emoji: '🚀',
+      items: [
+        { href: '/revenue-intelligence', icon: TrendingUp,     label: 'Revenue Intel',      permission: 'reports.view'    },
+        { href: '/patient-engagement',   icon: Activity,       label: 'Patient Engage',     permission: 'patients.view'   },
+        { href: '/staff-performance',    icon: UserCog,        label: 'Staff Performance',  permission: 'reports.view'    },
+        { href: '/marketing',            icon: ExternalLink,   label: 'Marketing Tools'                                   },
+      ],
+    },
+    {
       label: 'Tools',
       emoji: '🔧',
       items: [
@@ -122,7 +132,9 @@ export default function Sidebar() {
       emoji: '⚙️',
       items: [
         { href: '/settings/doctors', icon: UserCog,      label: 'Doctor Management', permission: 'settings.edit'    },
+        { href: '/fee-config',       icon: IndianRupee,  label: 'Fee Configuration', permission: 'settings.edit'    },
         { href: '/audit-log',        icon: Shield,       label: 'Audit Log',         permission: 'audit.view'       },
+        { href: '/presentation',     icon: ExternalLink, label: 'Pitch Deck'                                        },
       ],
     },
   ]
