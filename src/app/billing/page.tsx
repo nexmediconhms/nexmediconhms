@@ -14,6 +14,7 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
 import { getIndiaToday } from '@/lib/utils'
+import { getConsultationFee } from '@/lib/consultation-fee'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
@@ -398,6 +399,12 @@ function BillingContent() {
     if (patientId && patientName && mrn && !selPatient) {
       setSelPatient({ id: patientId, full_name: decodeURIComponent(patientName), mrn, age: '', mobile: '' })
       setView('new')
+      // Auto-apply smart consultation fee (new vs existing patient)
+      if (billItems.length === 0 && !searchParams.get('encounterType')) {
+        getConsultationFee(patientId).then(feeResult => {
+          setBillItems(prev => prev.length === 0 ? [{ label: feeResult.feeLabel, amount: feeResult.fee }] : prev)
+        }).catch(() => {})
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
@@ -715,7 +722,16 @@ function BillingContent() {
                 {patientResults.length > 0 && !selPatient && (
                   <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden shadow-lg">
                     {patientResults.map(p => (
-                      <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }}
+                      <button key={p.id} onClick={async () => {
+                        setSelPatient(p); setPatientResults([])
+                        // Auto-apply consultation fee based on new/existing patient
+                        if (billItems.length === 0) {
+                          try {
+                            const feeResult = await getConsultationFee(p.id)
+                            setBillItems([{ label: feeResult.feeLabel, amount: feeResult.fee }])
+                          } catch { /* ignore — user can add manually */ }
+                        }
+                      }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 text-left border-b border-gray-50 last:border-0">
                         <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-bold text-blue-700">{p.full_name.charAt(0)}</span>

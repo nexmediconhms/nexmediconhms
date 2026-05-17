@@ -5,7 +5,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, ageFromDOB, escapeLike } from '@/lib/utils'
-import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle } from 'lucide-react'
+import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle, Stethoscope, BedDouble } from 'lucide-react'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
@@ -30,6 +30,23 @@ export default function PatientsPage() {
   const [page, setPage] = useState(0)
 
   useEffect(() => { loadPatients() }, [page])
+
+  // ── Real-time subscription: auto-refresh when new patient is registered ──
+  useEffect(() => {
+    const channel = supabase
+      .channel('patients-list-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'patients' },
+        () => {
+          // Refresh patient list when a new patient is registered
+          loadPatients()
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   async function loadPatients(q = query, gender = genderFilter, bg = bgFilter) {
     setLoading(true)
@@ -280,7 +297,23 @@ export default function PatientsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(p.created_at)}</td>
                     <td className="px-4 py-3">
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/opd/new?patient=${p.id}`) }}
+                          className="text-xs px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1 transition-colors"
+                          title="Start OPD Consultation"
+                        >
+                          <Stethoscope className="w-3 h-3" /> OPD
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/ipd?admit=${p.id}`) }}
+                          className="text-xs px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 flex items-center gap-1 transition-colors"
+                          title="Admit to IPD"
+                        >
+                          <BedDouble className="w-3 h-3" /> IPD
+                        </button>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </div>
                     </td>
                   </tr>
                 )
@@ -304,24 +337,38 @@ export default function PatientsPage() {
           ) : patients.map(p => {
             const displayAge = ageFromDOB(p.date_of_birth) ?? p.age
             return (
-              <Link
+              <div
                 key={p.id}
-                href={`/patients/${p.id}`}
                 className="card p-4 flex items-center gap-3 hover:border-blue-200 active:bg-blue-50 transition-colors"
               >
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {p.mrn} · {displayAge ?? '—'}y · {p.gender || '—'}
-                    {p.blood_group && <span className="ml-1.5 font-semibold">{p.blood_group}</span>}
+                <Link href={`/patients/${p.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-700">{p.full_name.charAt(0)}</span>
                   </div>
-                  <div className="text-xs text-gray-400 font-mono">{p.mobile}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {p.mrn} · {displayAge ?? '—'}y · {p.gender || '—'}
+                      {p.blood_group && <span className="ml-1.5 font-semibold">{p.blood_group}</span>}
+                    </div>
+                    <div className="text-xs text-gray-400 font-mono">{p.mobile}</div>
+                  </div>
+                </Link>
+                <div className="flex flex-col gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => router.push(`/opd/new?patient=${p.id}`)}
+                    className="text-[10px] px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded flex items-center gap-1"
+                  >
+                    <Stethoscope className="w-2.5 h-2.5" /> OPD
+                  </button>
+                  <button
+                    onClick={() => router.push(`/ipd?admit=${p.id}`)}
+                    className="text-[10px] px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded flex items-center gap-1"
+                  >
+                    <BedDouble className="w-2.5 h-2.5" /> IPD
+                  </button>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              </Link>
+              </div>
             )
           })}
         </div>

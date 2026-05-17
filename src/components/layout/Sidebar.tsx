@@ -115,6 +115,7 @@ export default function Sidebar() {
       items: [
         { href: '/reports', icon: BarChart2,   label: 'Reports',       permission: 'reports.view' },
         { href: '/search',  icon: SearchIcon,  label: 'Global Search'                             },
+        { href: '/export',  icon: BarChart2,   label: 'Data Export',   permission: 'settings.edit' },
       ],
     },
     {
