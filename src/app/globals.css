@@ -143,3 +143,159 @@ button, a, [role="button"] {
     padding-bottom: 80px;
   }
 }
+
+
+/* ── Toast Notification Animation ───────────────────────────── */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out forwards;
+}
+
+/* ── Responsive Grid Utilities ──────────────────────────────── */
+@media (max-width: 640px) {
+  /* Make 2-col and 3-col grids single column on mobile */
+  .grid-cols-2, .grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* Adjust padding for mobile */
+  .p-6 { padding: 1rem !important; }
+  .p-5 { padding: 0.75rem !important; }
+  .px-4 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+  
+  /* Responsive text */
+  .text-2xl { font-size: 1.25rem !important; }
+  .text-3xl { font-size: 1.5rem !important; }
+  
+  /* Stack buttons on mobile */
+  .flex-wrap-mobile {
+    flex-wrap: wrap;
+  }
+  
+  /* Make modals full-width on mobile */
+  .max-w-md, .max-w-lg, .max-w-xl, .max-w-2xl {
+    max-width: 100% !important;
+    margin: 0.5rem !important;
+  }
+  
+  /* Full-width tables scroll horizontally */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Tablet adjustments */
+  .grid-cols-3 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .xl\\:grid-cols-6 {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* ── PDF Print Styles — Clean formatting ────────────────────── */
+@media print {
+  @page {
+    margin: 15mm 10mm;
+    size: A4;
+  }
+  
+  /* Remove URL from links in print */
+  a[href]::after {
+    content: none !important;
+  }
+  
+  /* No header/footer browser defaults */
+  title { display: none; }
+  
+  /* Clean PDF report styling */
+  .pdf-report {
+    font-family: 'Inter', sans-serif;
+    color: #1e293b;
+    padding: 0;
+  }
+  
+  .pdf-report h1 {
+    font-size: 18px;
+    color: #1e293b;
+    margin-bottom: 8px;
+  }
+  
+  .pdf-report table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+  
+  .pdf-report th, .pdf-report td {
+    border: 1px solid #e2e8f0;
+    padding: 6px 10px;
+    text-align: left;
+    font-size: 11px;
+  }
+  
+  .pdf-report th {
+    background-color: #f1f5f9;
+    font-weight: 600;
+  }
+}
+
+/* ── Camera/Document Upload Styles ──────────────────────────── */
+.camera-viewfinder {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #000;
+}
+
+.camera-viewfinder video {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.camera-viewfinder .capture-overlay {
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+/* ── Responsive table for mobile ────────────────────────────── */
+@media (max-width: 640px) {
+  .responsive-table thead {
+    display: none;
+  }
+  .responsive-table tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+  }
+  .responsive-table td {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border: none;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #64748b;
+    font-size: 0.75rem;
+  }
+}

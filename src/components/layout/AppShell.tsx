@@ -36,6 +36,7 @@ import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
+import ActivePatientBanner from '../shared/ActivePatientBanner';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -273,6 +274,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           )}
+
+          {/* Active Patient Banner — shows when a patient is selected globally */}
+          <div className="no-print">
+            <ActivePatientBanner />
+          </div>
 
           {/* Role badge with sign-out — clicking shows a small dropdown */}
           {effectiveUser && (

@@ -72,15 +72,16 @@ export default function ReportsPage() {
 
   async function load() {
     setLoading(true)
+    // FIX: Use IST date consistently to avoid showing previous day data
+    const todayStr  = getIndiaToday()
     const now       = new Date()
-    const todayStr  = now.toISOString().split('T')[0]
-    const weekAgo   = new Date(now.getTime() -  7 * 86400000).toISOString().split('T')[0]
-    const monthAgo  = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0]
+    const weekAgo   = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) })()
+    const monthAgo  = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) })()
 
-    // Load billing revenue
-    const today2   = getIndiaToday()
-    const weekAgo2 = new Date(Date.now() - 7*86400000).toISOString().split('T')[0]
-    const mthAgo2  = new Date(Date.now() - 30*86400000).toISOString().split('T')[0]
+    // Load billing revenue — all use IST dates
+    const today2   = todayStr
+    const weekAgo2 = weekAgo
+    const mthAgo2  = monthAgo
     supabase.from('bills').select('net_amount,created_at').eq('status','paid').then(({data}) => {
       const bills = data || []
       setTodayRevenue(bills.filter((b:any)=>b.created_at>=today2+'T00:00:00').reduce((s:number,b:any)=>s+Number(b.net_amount),0))

@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth'
 import {
   Shield, Plus, X, Search, ArrowLeft, Save, Loader2,
   CheckCircle, Clock, AlertTriangle, IndianRupee,
-  RefreshCw, ChevronRight, FileText,
+  RefreshCw, ChevronRight, FileText, MessageCircle,
 } from 'lucide-react'
 
 interface Claim {
@@ -185,6 +185,46 @@ export default function InsurancePage() {
 
   function inr(n: number) { return `₹${n.toLocaleString('en-IN')}` }
 
+  // Share insurance claims summary with CA via WhatsApp
+  function shareWithCA() {
+    const hs = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('hospital_settings') || '{}') : {}
+    const caWhatsApp = hs.caWhatsApp || ''
+    const hospitalName = hs.hospitalName || 'NexMedicon Hospital'
+    const caName = hs.caName || 'CA'
+
+    const pendingList = pending.slice(0, 10).map(c =>
+      `• ${c.patient_name} — ${inr(c.claim_amount)} (${STATUS_CONFIG[c.status]?.label || c.status})`
+    ).join('\n')
+
+    const settledList = settled.slice(0, 10).map(c =>
+      `• ${c.patient_name} — ${inr(c.approved_amount || 0)} (UTR: ${c.settlement_utr || 'N/A'})`
+    ).join('\n')
+
+    const msg = `*${hospitalName} — Insurance Claims Summary*\n\n` +
+      `*Total Claims:* ${claims.length}\n` +
+      `*Pending:* ${pending.length} (${inr(pendingAmount)})\n` +
+      `*Settled:* ${settled.length} (${inr(settledAmount)})\n\n` +
+      (pending.length > 0 ? `*Pending Claims:*\n${pendingList}\n\n` : '') +
+      (settled.length > 0 ? `*Recently Settled:*\n${settledList}\n\n` : '') +
+      `_Generated: ${new Date().toLocaleDateString('en-IN')}_\n` +
+      `_${hospitalName}_`
+
+    const phone = caWhatsApp ? `91${caWhatsApp.replace(/\D/g, '')}` : ''
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`
+
+    window.open(url, '_blank')
+
+    // Mark claims as shared with CA
+    claims.forEach(c => {
+      supabase.from('insurance_claims')
+        .update({ shared_with_ca: true, ca_shared_at: new Date().toISOString() })
+        .eq('id', c.id)
+        .then(() => {})
+    })
+  }
+
   // ═══ NEW CLAIM ═══
   if (view === 'new') {
     return (
@@ -257,6 +297,9 @@ export default function InsurancePage() {
             <p className="text-sm text-gray-500">{claims.length} claims · {pending.length} pending · {settled.length} settled</p>
           </div>
           <div className="flex gap-2">
+            <button onClick={() => shareWithCA()} className="btn-secondary flex items-center gap-2 text-xs">
+              <MessageCircle className="w-3.5 h-3.5 text-green-600" /> Share with CA
+            </button>
             <button onClick={load} className="btn-secondary flex items-center gap-1 text-xs"><RefreshCw className="w-3.5 h-3.5" /></button>
             <button onClick={() => { resetForm(); setView('new') }} className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4" /> New Claim</button>
           </div>

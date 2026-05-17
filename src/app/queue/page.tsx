@@ -139,6 +139,11 @@ function QueueContent() {
   async function load() {
     setLoading(true)
     try {
+      // Auto-populate from today's appointments (only for today's queue)
+      if (queueDate === today) {
+        await fetch('/api/queue/auto-populate', { method: 'POST' }).catch(() => {})
+      }
+
       const { data, error: e } = await supabase
         .from('opd_queue')
         .select(`
