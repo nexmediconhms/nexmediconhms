@@ -7000,7 +7000,7 @@ This is a binary file of the type: Image
 # public\sw.js
 
 ```js
-if(!self.define){let e,n={};const s=(s,t)=>(s=new URL(s+".js",t).href,n[s]||new Promise(n=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=n,document.head.appendChild(e)}else e=s,importScripts(s),n()}).then(()=>{let e=n[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(t,a)=>{const i=e||("document"in self?document.currentScript.src:"")||location.href;if(n[i])return;let c={};const o=e=>s(e,i),u={module:{uri:i},exports:c,require:o};n[i]=Promise.all(t.map(e=>u[e]||o(e))).then(e=>(a(...e),c))}}define(["./workbox-f52fd911"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"6cb5076cde04e4fc5d8876608d67150a"},{url:"/_next/static/chunks/231-e1bfbe7d86d2ddb9.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/237-35a919b5d10a586d.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/2408-bdd29d23e4b867ad.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/338-4b05799f04cc3d57.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/4072-07528e6ab9c46444.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/44530001-6a81977446ba795b.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/4859-69bb5a7b637afd82.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/5354-fa66000946233284.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/7023-4c6dfae2edb42378.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/7331-96ad1ea327caa47f.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/8405-24fffccc3f389233.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/9811-74a7050c319245aa.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/9955.80b0893e42633de9.js",revision:"80b0893e42633de9"},{url:"/_next/static/chunks/9b0008ae.16b07fc49f14e96d.js",revision:"16b07fc49f14e96d"},{url:"/_next/static/chunks/app/_not-found/page-904aca92d85c933c.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/abdm-setup/page-7a89bd6c135893f2.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/ai-setup/page-7cee95deaf829b33.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/analytics/page-a1e095fbff7b0be4.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/anc/page-bf73b18d1038e426.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/appointments/page-27cf9e3c4551a39c.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/audit-log/page-0471543f8a266869.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/auth/callback/page-6a09f5482d34323f.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/beds/page-42db85e0f57cf653.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/billing/page-b5749717cd08f0dc.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/dashboard/page-bf3137b156339120.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/error-7609dc3c2fee58f3.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/forms/page-7396110f79669512.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/fund/page-8fca79eb154b8d0c.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/intake/page-8edcf6ba713821d1.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/ipd/%5BbedId%5D/page-29c78efa77df0340.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/ipd/page-97c3f6bdfc6e9338.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/labs/page-43e25f331867c40b.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/layout-95064fbf5e5c9745.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/login/page-3756fb301dc3451a.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/not-found-19b1373c721a068c.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/edit/page-6a3bd2685086a99c.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/page-e25ccbac0d14e0a8.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/prescription/page-f8ba7b40a306d5e9.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/opd/new/page-43a5f62d788845f3.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/opd/page-4ad9d8012a837230.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/page-44ccf74b76cf03fc.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/discharge/page-e06e658b5fa0a945.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/edit/page-4e700aa35c0c83a6.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/page-2cb051863bf26edf.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/patients/new/page-e84305fa9b480d89.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/patients/page-9c8923bf80dc8d15.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/portal/dashboard/page-69ebd6ece777c5df.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/portal/layout-55a10076fcd293e2.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/portal/login/page-a9000c69b490b68f.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/portal/page-278976a85d1dc629.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/portal/verify/page-df605a54829d37b1.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/queue/page-42b5dff96abf05fa.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reminders/page-332f46d4fc658112.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reports/daily/page-43f131a51a581f04.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reports/monthly/page-657ad8c2d9abd203.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reports/page-a1542af85e997f22.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reports/payments/page-6b0f10daea7b5d2e.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/reset-password/page-a698041adfd571b7.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/search/page-7083e3cc731b25b8.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/settings/doctors/page-2af2ef1ab3c93e58.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/settings/page-13487ca7cb5d9310.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/setup/page-4d03c0bde2c9bac5.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/status/page-d1a15f197c8680c6.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/app/video/page-010472e46c1b0bc8.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/fd9d1056-560433791d15877f.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/framework-a63c59c368572696.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/main-73a31ef261229540.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/main-app-c8bffe270d67a59a.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/pages/_app-00b74eae5e8dab51.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/pages/_error-c72a1f77a3c0be1b.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js",revision:"79330112775102f91e1010318bae2bd3"},{url:"/_next/static/chunks/webpack-5ecf964564f32a7d.js",revision:"tnRou3lMMRTP-qYnZw9qe"},{url:"/_next/static/css/b66d6c6e4df1455a.css",revision:"b66d6c6e4df1455a"},{url:"/_next/static/tnRou3lMMRTP-qYnZw9qe/_buildManifest.js",revision:"b222cbf4d8e1f47e27a8925222733e53"},{url:"/_next/static/tnRou3lMMRTP-qYnZw9qe/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/forms/consultation-diagnosis.html",revision:"1c5f813a1147ed0ed2dca41d47948e22"},{url:"/forms/gynecology-ob-exam.html",revision:"c99460d28c6320f86ab6292fa70ebbae"},{url:"/forms/patient-registration.html",revision:"ef45cd3d9cdeacb31ef3f20ab12c3200"},{url:"/forms/vitals-complaints.html",revision:"f771cdd55c05f68a341d7f06c62a2074"},{url:"/icons/icon-128.png",revision:"8da873cb25276e79fbf1ee38199c05ed"},{url:"/icons/icon-128x128.png",revision:"1763246ea081e8f49e92ae6fed4fa0c6"},{url:"/icons/icon-144.png",revision:"d3dfade71e94601aff56a9d2508d5fd5"},{url:"/icons/icon-144x144.png",revision:"26fd3b49bebaad2f05690ad29f009bef"},{url:"/icons/icon-152.png",revision:"9f4da179c5060c11695161ead1a0182e"},{url:"/icons/icon-152x152.png",revision:"3803a0717c9bde678bca23f9c065864d"},{url:"/icons/icon-192.png",revision:"31b665081df14ee1eaadad16edb40041"},{url:"/icons/icon-192x192.png",revision:"727b93061828f666821b7adae320593f"},{url:"/icons/icon-384.png",revision:"d122a27820563c2dfa6415e711203928"},{url:"/icons/icon-384x384.png",revision:"8ecae39a4703511c0b24acbf7f024f39"},{url:"/icons/icon-512.png",revision:"59e9629a27cc0a4ed9cb07d78d6559ed"},{url:"/icons/icon-512x512.png",revision:"64df6115301f82fa1f81492234327daa"},{url:"/icons/icon-72.png",revision:"b0b3880f68492a20c5250910de62ca5f"},{url:"/icons/icon-72x72.png",revision:"d7adb093fb7efc538e0abcdc79dca13d"},{url:"/icons/icon-96.png",revision:"4d9f441e937d3f8a7ae93006492f12b2"},{url:"/icons/icon-96x96.png",revision:"bcfd1de2f904bd54bbdcb61346b732d6"},{url:"/manifest.json",revision:"157721c2d06d50a86ac6089a5825ae95"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:n,event:s,state:t})=>n&&"opaqueredirect"===n.type?new Response(n.body,{status:200,statusText:"OK",headers:n.headers}):n}]}),"GET"),e.registerRoute(/^https:\/\/.*\.supabase\.co\/.*/i,new e.NetworkFirst({cacheName:"supabase-cache",plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:300})]}),"GET"),e.registerRoute(/\/_next\/static\/.*/i,new e.CacheFirst({cacheName:"next-static",plugins:[new e.ExpirationPlugin({maxEntries:200,maxAgeSeconds:2592e3})]}),"GET")});
+if(!self.define){let e,i={};const s=(s,a)=>(s=new URL(s+".js",a).href,i[s]||new Promise(i=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=i,document.head.appendChild(e)}else e=s,importScripts(s),i()}).then(()=>{let e=i[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(a,n)=>{const c=e||("document"in self?document.currentScript.src:"")||location.href;if(i[c])return;let t={};const r=e=>s(e,c),h={module:{uri:c},exports:t,require:r};i[c]=Promise.all(a.map(e=>h[e]||r(e))).then(e=>(n(...e),t))}}define(["./workbox-f52fd911"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"aae476d9bb4e0158139d752e0f071be5"},{url:"/_next/static/JjhL72CG5lZk8_xiWqhbV/_buildManifest.js",revision:"3e2d62a10f4d6bf0b92e14aecf7836f4"},{url:"/_next/static/JjhL72CG5lZk8_xiWqhbV/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/_next/static/chunks/231-e6c630ff61013879.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/237-7900201f051e5b70.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/2408-cd8bfb15f0a0afc5.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/3265-946ed9b23b1ae395.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/3640-0654982bc0e2141c.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/3687-9cbb91ca0339d879.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/4072-9f5ee59a29b7c920.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/44530001-46c5625ac47df566.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/5354-5c02503edcf07154.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/7023-8946306e424a87c8.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/8379-edff0d393da60af0.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/9811-9bd28b0f6ab70e08.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/9955.d73d87ed650bca6d.js",revision:"d73d87ed650bca6d"},{url:"/_next/static/chunks/9b0008ae.e209e8f00efb099d.js",revision:"e209e8f00efb099d"},{url:"/_next/static/chunks/app/_not-found/page-70888e225f42d7b6.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/abdm-setup/page-9b5babcd350a53a9.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ai-setup/page-d29cb64e026343d8.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/analytics/page-d7d09d2d79352d67.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/anc/page-1475ac99c40b4cb1.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/appointments/page-23bc4ab12ff23c20.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/audit-log/page-f6660b6ebe169c75.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/auth/callback/page-fcdc7c03a2b6228f.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/beds/page-31962cac0499c18c.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/billing/page-a741a79d9d781ebc.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/dashboard/page-16c5b64f23e10b70.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/doctors/earnings/page-fc23bfd582851cd4.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/error-63ad845e02776e20.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/forms/page-45c80e82dd8e59b4.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/fund/page-3e242e4d16827fea.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/insurance/page-92de9d0a913b9e7f.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/intake/page-72090cc10a4eda51.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ipd/%5BbedId%5D/billing/page-f5267b7bdf607120.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ipd/%5BbedId%5D/page-ef8e25d88e0f9b49.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ipd/beds/page-6debc70061a3b658.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ipd/page-b95aa9bf388e5d91.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/labs/page-f3788745168fc973.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/layout-e9cbc058c561023c.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/login/page-a37fb0a0b2d9d19a.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/not-found-9fad6deca5ba3237.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/edit/page-787e198ed6c70176.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/page-38bb93e9898c8245.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/opd/%5Bid%5D/prescription/page-4332b9efb4194b8a.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/opd/new/page-eb124b10f47bfc6f.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/opd/page-c995dce42d09fb04.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ot-schedule/page-27602d858db3f20f.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/ot-schedule/week/page-855d966f2dc984ce.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/page-eb3e40112928ad69.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/discharge/page-a2594f73d92fe43a.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/edit/page-0b9573279809ef26.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/patients/%5Bid%5D/page-44c039afde9841a4.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/patients/new/page-e456b8f275d0e18b.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/patients/page-1900ce5fed3d46d0.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/pharmacy/import/page-6413ce49e0c2815c.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/pharmacy/page-d2888c183640214c.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/portal/dashboard/page-a4c627f19e4a1e09.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/portal/layout-e0cb259d6ae9c803.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/portal/login/page-67d2e7b7d7e65515.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/portal/page-29d86aea63634b5a.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/portal/verify/page-8c889dfcc83e9c17.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/queue/display/page-beff236515890b76.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/queue/page-3e1bae47e230ff6b.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reminders/page-65cc8be355531a80.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reports/daily/page-280e37e8c8b3d750.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reports/lab-revenue/page-317492cf6198e1ed.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reports/monthly/page-947c345bf5172745.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reports/page-ce9fb981a5ee0be6.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reports/payments/page-7182c7b802970108.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/reset-password/page-ee4e8dd2e61711cb.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/search/page-376ab5e22c51b2dd.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/settings/doctors/page-49d0d61060dd3e0b.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/settings/lab-partners/page-0c00e3025f3bd143.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/settings/page-eb64c7217d542eac.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/setup/page-0101f8e0d10d8762.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/status/page-f46d535d7a9ad84d.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/value-report/page-8e0832fcf784b6d7.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/app/video/page-cb7bce9e800532ed.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/fd9d1056-dd5ae2642bf7cd9f.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/framework-8e0e0f4a6b83a956.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/main-288125c91053124b.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/main-app-94a7e5af0c2fc590.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/pages/_app-f870474a17b7f2fd.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/pages/_error-c66a4e8afc46f17b.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js",revision:"79330112775102f91e1010318bae2bd3"},{url:"/_next/static/chunks/webpack-0b148e17e936ddc7.js",revision:"JjhL72CG5lZk8_xiWqhbV"},{url:"/_next/static/css/4dacf3161dd6fd0b.css",revision:"4dacf3161dd6fd0b"},{url:"/forms/consultation-diagnosis.html",revision:"1c5f813a1147ed0ed2dca41d47948e22"},{url:"/forms/gynecology-ob-exam.html",revision:"c99460d28c6320f86ab6292fa70ebbae"},{url:"/forms/patient-registration.html",revision:"ef45cd3d9cdeacb31ef3f20ab12c3200"},{url:"/forms/vitals-complaints.html",revision:"f771cdd55c05f68a341d7f06c62a2074"},{url:"/icons/icon-128.png",revision:"8da873cb25276e79fbf1ee38199c05ed"},{url:"/icons/icon-128x128.png",revision:"1763246ea081e8f49e92ae6fed4fa0c6"},{url:"/icons/icon-144.png",revision:"d3dfade71e94601aff56a9d2508d5fd5"},{url:"/icons/icon-144x144.png",revision:"26fd3b49bebaad2f05690ad29f009bef"},{url:"/icons/icon-152.png",revision:"9f4da179c5060c11695161ead1a0182e"},{url:"/icons/icon-152x152.png",revision:"3803a0717c9bde678bca23f9c065864d"},{url:"/icons/icon-192.png",revision:"31b665081df14ee1eaadad16edb40041"},{url:"/icons/icon-192x192.png",revision:"727b93061828f666821b7adae320593f"},{url:"/icons/icon-384.png",revision:"d122a27820563c2dfa6415e711203928"},{url:"/icons/icon-384x384.png",revision:"8ecae39a4703511c0b24acbf7f024f39"},{url:"/icons/icon-512.png",revision:"59e9629a27cc0a4ed9cb07d78d6559ed"},{url:"/icons/icon-512x512.png",revision:"64df6115301f82fa1f81492234327daa"},{url:"/icons/icon-72.png",revision:"b0b3880f68492a20c5250910de62ca5f"},{url:"/icons/icon-72x72.png",revision:"d7adb093fb7efc538e0abcdc79dca13d"},{url:"/icons/icon-96.png",revision:"4d9f441e937d3f8a7ae93006492f12b2"},{url:"/icons/icon-96x96.png",revision:"bcfd1de2f904bd54bbdcb61346b732d6"},{url:"/manifest.json",revision:"157721c2d06d50a86ac6089a5825ae95"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:i,event:s,state:a})=>i&&"opaqueredirect"===i.type?new Response(i.body,{status:200,statusText:"OK",headers:i.headers}):i}]}),"GET"),e.registerRoute(/^https:\/\/.*\.supabase\.co\/.*/i,new e.NetworkFirst({cacheName:"supabase-cache",plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:300})]}),"GET"),e.registerRoute(/\/_next\/static\/.*/i,new e.CacheFirst({cacheName:"next-static",plugins:[new e.ExpirationPlugin({maxEntries:200,maxAgeSeconds:2592e3})]}),"GET")});
 
 ```
 
@@ -9911,6 +9911,142 @@ export async function GET(req: NextRequest) {
 }
 ```
 
+# src\app\api\billing\daily-closing\route.ts
+
+```ts
+/**
+ * src/app/api/billing/daily-closing/route.ts
+ *
+ * Daily Closing API — End-of-day revenue summary.
+ *
+ * GET  /api/billing/daily-closing?date=2024-01-15  → fetch closing for date
+ * POST /api/billing/daily-closing                   → generate & save closing
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
+  const date = req.nextUrl.searchParams.get('date')
+  if (!date) {
+    return NextResponse.json({ error: 'date param required (YYYY-MM-DD)' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('daily_closings')
+    .select('*')
+    .eq('closing_date', date)
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ closing: data })
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
+  const body = await req.json()
+  const date = body.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const closedBy = body.closedBy || 'Admin'
+
+  // Gather all bills created on this date
+  const { data: bills } = await supabase
+    .from('bills')
+    .select('*')
+    .gte('created_at', date + 'T00:00:00')
+    .lt('created_at', date + 'T23:59:59.999')
+
+  const allBills = bills || []
+  const paidBills = allBills.filter((b: any) => b.status === 'paid')
+  const pendingBills = allBills.filter((b: any) => b.status === 'pending')
+
+  // Payment mode breakdown
+  let cashCollected = 0
+  let upiCollected = 0
+  let cardCollected = 0
+
+  for (const b of paidBills) {
+    const amt = Number(b.net_amount || 0)
+    switch (b.payment_mode) {
+      case 'cash': cashCollected += amt; break
+      case 'upi':  upiCollected += amt; break
+      case 'card': cardCollected += amt; break
+      default: cashCollected += amt; break
+    }
+  }
+
+  const totalCollected = cashCollected + upiCollected + cardCollected
+  const totalDiscount = allBills.reduce((s: number, b: any) => s + Number(b.discount || 0), 0)
+  const totalPending = pendingBills.reduce((s: number, b: any) => s + Number(b.net_amount || 0), 0)
+
+  // Count OPD encounters for the day
+  const { count: opdCount } = await supabase
+    .from('encounters')
+    .select('id', { count: 'exact', head: true })
+    .eq('encounter_date', date)
+
+  // Count IPD admissions for the day
+  const { count: ipdCount } = await supabase
+    .from('ipd_admissions')
+    .select('id', { count: 'exact', head: true })
+    .eq('admission_date', date)
+
+  // Count refunds
+  const { data: refundTxns } = await supabase
+    .from('payment_transactions')
+    .select('amount')
+    .eq('transaction_type', 'refund')
+    .gte('created_at', date + 'T00:00:00')
+    .lt('created_at', date + 'T23:59:59.999')
+
+  const totalRefunds = (refundTxns || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0)
+
+  const closingData = {
+    closing_date: date,
+    total_opd: opdCount || 0,
+    total_ipd: ipdCount || 0,
+    total_bills: allBills.length,
+    cash_collected: cashCollected,
+    upi_collected: upiCollected,
+    card_collected: cardCollected,
+    total_collected: totalCollected,
+    total_discount: totalDiscount,
+    total_pending: totalPending,
+    total_refunds: totalRefunds,
+    notes: body.notes || null,
+    closed_by: closedBy,
+    closed_at: new Date().toISOString(),
+  }
+
+  // Upsert (update if already exists for this date)
+  const { data: saved, error: saveErr } = await supabase
+    .from('daily_closings')
+    .upsert(closingData, { onConflict: 'closing_date' })
+    .select()
+    .single()
+
+  if (saveErr) {
+    return NextResponse.json({ error: saveErr.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ closing: saved, message: 'Daily closing saved successfully' })
+}
+```
+
 # src\app\api\billing\payment\route.ts
 
 ```ts
@@ -10332,6 +10468,276 @@ export async function GET() {
 
 ```
 
+# src\app\api\cron\followup-escalation\route.ts
+
+```ts
+/**
+ * src/app/api/cron/followup-escalation/route.ts
+ *
+ * Smart Auto-Follow-up Detection & Escalation
+ *
+ * Called by cron (Vercel / Supabase) at 8:00 AM IST daily.
+ * Detects patients who:
+ *   1. Had a prescription with a follow_up_date that is NOW OVERDUE
+ *   2. Have NOT visited (no encounter) since their follow-up date
+ *   3. Have NOT already been reminded today
+ *
+ * Actions taken:
+ *   - Flags overdue follow-ups in the `follow_ups` table (status → 'missed')
+ *   - Generates WhatsApp reminder entries in `reminder_log`
+ *   - Returns list of patients for staff to action
+ *
+ * Auth: Validates CRON_SECRET (same as auto-generate)
+ *
+ * GET  /api/cron/followup-escalation?dryRun=true  → preview without saving
+ * POST /api/cron/followup-escalation              → execute escalation
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+const IST = 'Asia/Kolkata'
+
+function todayIST(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: IST })
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = new Date(from + 'T00:00:00+05:30')
+  const b = new Date(to + 'T00:00:00+05:30')
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// Auth validation (same pattern as auto-generate)
+function validateCronAuth(req: NextRequest): boolean {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) return true // Allow in dev without secret
+
+  const authHeader = req.headers.get('authorization') ?? ''
+  const querySecret = new URL(req.url).searchParams.get('secret') ?? ''
+  const headerToken = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : authHeader.trim()
+
+  return headerToken === cronSecret || querySecret === cronSecret
+}
+
+interface OverdueFollowUp {
+  patientId: string
+  patientName: string
+  mobile: string
+  mrn: string
+  followUpDate: string
+  daysOverdue: number
+  diagnosis: string
+  prescriptionId: string
+  lastVisitDate: string | null
+  escalationLevel: 'mild' | 'moderate' | 'urgent' // 1-3 days, 4-7 days, 7+ days
+}
+
+export async function POST(req: NextRequest) {
+  if (!validateCronAuth(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { searchParams } = new URL(req.url)
+  const dryRun = searchParams.get('dryRun') === 'true'
+
+  const today = todayIST()
+  const overdueList: OverdueFollowUp[] = []
+
+  // ── Step 1: Find prescriptions with overdue follow_up_date ────
+  // Overdue = follow_up_date < today AND status not completed
+  try {
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 30) // Look back 30 days max
+    const lookbackDate = sevenDaysAgo.toLocaleDateString('en-CA', { timeZone: IST })
+
+    const { data: prescriptions } = await supabase
+      .from('prescriptions')
+      .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis')
+      .lt('follow_up_date', today) // follow_up_date is in the past = OVERDUE
+      .gte('follow_up_date', lookbackDate) // Don't look back more than 30 days
+      .not('follow_up_date', 'is', null)
+      .order('follow_up_date', { ascending: true })
+      .limit(200)
+
+    if (!prescriptions || prescriptions.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'No overdue follow-ups found',
+        overdueCount: 0,
+        escalated: [],
+      })
+    }
+
+    // ── Step 2: For each overdue prescription, check if patient visited AFTER the follow-up date ──
+    const patientIds = [new Set(prescriptions.map((p: any) => p.patient_id).filter(Boolean))]
+
+    // Batch-fetch latest encounter date per patient
+    const latestVisitMap = new Map<string, string>()
+    if (patientIds.length > 0) {
+      const { data: encounters } = await supabase
+        .from('encounters')
+        .select('patient_id, encounter_date')
+        .in('patient_id', patientIds)
+        .order('encounter_date', { ascending: false })
+
+      // Keep only the most recent encounter per patient
+      for (const enc of encounters || []) {
+        if (!latestVisitMap.has(enc.patient_id)) {
+          latestVisitMap.set(enc.patient_id, enc.encounter_date)
+        }
+      }
+    }
+
+    // Batch-fetch mobiles for patients without mobile in prescription
+    const mobileMissing = prescriptions.filter((p: any) => !p.mobile).map((p: any) => p.patient_id)
+    const mobileMap = new Map<string, string>()
+    if (mobileMissing.length > 0) {
+      const { data: pats } = await supabase
+        .from('patients')
+        .select('id, mobile')
+        .in('id', mobileMissing)
+      for (const p of pats || []) {
+        if (p.mobile) mobileMap.set(p.id, p.mobile)
+      }
+    }
+
+    // Check already-sent today
+    const startOfDay = today + 'T00:00:00+05:30'
+    const { data: sentToday } = await supabase
+      .from('reminder_log')
+      .select('source_id')
+      .eq('reminder_type', 'follow_up_overdue')
+      .gte('sent_at', startOfDay)
+
+    const sentTodaySet = new Set((sentToday || []).map((s: any) => s.source_id))
+
+    // ── Step 3: Build overdue list ──────────────────────────────
+    for (const rx of prescriptions) {
+      if (!rx.patient_id || !rx.follow_up_date) continue
+      if (sentTodaySet.has(rx.id)) continue // Already reminded today
+
+      const lastVisit = latestVisitMap.get(rx.patient_id)
+
+      // If patient visited AFTER the follow-up date, skip (they came!)
+      if (lastVisit && lastVisit >= rx.follow_up_date) continue
+
+      const daysOverdue = daysBetween(rx.follow_up_date, today)
+      if (daysOverdue <= 0) continue
+
+      const mobile = rx.mobile || mobileMap.get(rx.patient_id) || ''
+      if (!mobile) continue // Can't send reminder without mobile
+
+      const escalationLevel: OverdueFollowUp['escalationLevel'] =
+        daysOverdue > 7 ? 'urgent' : daysOverdue > 3 ? 'moderate' : 'mild'
+
+      overdueList.push({
+        patientId: rx.patient_id,
+        patientName: rx.patient_name || '',
+        mobile,
+        mrn: rx.mrn || '',
+        followUpDate: rx.follow_up_date,
+        daysOverdue,
+        diagnosis: rx.diagnosis || '',
+        prescriptionId: rx.id,
+        lastVisitDate: lastVisit || null,
+        escalationLevel,
+      })
+    }
+  } catch (e: any) {
+    console.error('[followup-escalation] Error:', e)
+    return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 })
+  }
+
+  // ── Step 4: If dry run, return preview ──────────────────────
+  if (dryRun) {
+    return NextResponse.json({
+      ok: true,
+      mode: 'dryRun',
+      overdueCount: overdueList.length,
+      escalated: overdueList,
+      breakdown: {
+        mild: overdueList.filter(o => o.escalationLevel === 'mild').length,
+        moderate: overdueList.filter(o => o.escalationLevel === 'moderate').length,
+        urgent: overdueList.filter(o => o.escalationLevel === 'urgent').length,
+      },
+    })
+  }
+
+  // ── Step 5: Log reminders + update follow_ups status ────────
+  if (overdueList.length > 0) {
+    const batchId = crypto.randomUUID()
+    const now = new Date().toISOString()
+
+    // Insert reminder_log entries
+    const logRows = overdueList.map(o => ({
+      patient_id: o.patientId,
+      patient_name: o.patientName,
+      mobile: o.mobile,
+      reminder_type: 'follow_up_overdue',
+      source_table: 'prescriptions',
+      source_id: o.prescriptionId,
+      message_preview: `Follow-up overdue by ${o.daysOverdue} days. ${o.diagnosis ? 'For: ' + o.diagnosis : ''}`,
+      channel: 'whatsapp',
+      status: 'pending', // Staff will send via WhatsApp
+      sent_at: now,
+      sent_by: 'cron',
+      batch_id: batchId,
+    }))
+
+    const { error: logErr } = await supabase.from('reminder_log').insert(logRows)
+    if (logErr) {
+      console.error('[followup-escalation] Log insert error:', logErr)
+    }
+
+    // Update follow_ups table: mark overdue ones as 'missed'
+    const overduePatientIds = overdueList.map(o => o.patientId)
+    await supabase
+      .from('follow_ups')
+      .update({ status: 'missed', updated_at: now })
+      .in('patient_id', overduePatientIds)
+      .eq('status', 'pending')
+      .lt('recommended_date', today)
+  }
+
+  return NextResponse.json({
+    ok: true,
+    mode: 'live',
+    overdueCount: overdueList.length,
+    escalated: overdueList,
+    breakdown: {
+      mild: overdueList.filter(o => o.escalationLevel === 'mild').length,
+      moderate: overdueList.filter(o => o.escalationLevel === 'moderate').length,
+      urgent: overdueList.filter(o => o.escalationLevel === 'urgent').length,
+    },
+    message: overdueList.length > 0
+      ? `${overdueList.length} overdue follow-ups detected and flagged for WhatsApp reminder.`
+      : 'No overdue follow-ups found.',
+  })
+}
+
+// GET handler — same as POST but defaults to dryRun for safety
+export async function GET(req: NextRequest) {
+  if (!validateCronAuth(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Force dry run for GET requests (safe to preview)
+  const url = new URL(req.url)
+  url.searchParams.set('dryRun', 'true')
+  const modifiedReq = new NextRequest(url, { headers: req.headers })
+  return POST(modifiedReq)
+}
+```
+
 # src\app\api\discharge-ai\route.ts
 
 ```ts
@@ -10395,6 +10801,128 @@ Return ONLY valid JSON. No markdown.`
   } catch (err: any) {
     return NextResponse.json({ error: `AI failed: ${err?.message}` }, { status: 500 })
   }
+}
+```
+
+# src\app\api\discharge\finalize\route.ts
+
+```ts
+/**
+ * src/app/api/discharge/finalize/route.ts
+ *
+ * Discharge Summary Finalization API
+ *
+ * POST /api/discharge/finalize
+ *   { dischargeId, signedBy }
+ *   → Marks a discharge summary as final (locked), sets signedat, signedby
+ *
+ * POST /api/discharge/finalize?action=unfinalize
+ *   { dischargeId, reason, unfinalizedBy }
+ *   → Admin-only: reverts finalization with reason audit trail
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
+  const action = req.nextUrl.searchParams.get('action')
+  const body = await req.json()
+
+  // ── UNFINALIZE (admin only) ─────────────────────────────────
+  if (action === 'unfinalize') {
+    const { dischargeId, reason, unfinalizedBy } = body
+
+    if (!dischargeId || !reason) {
+      return NextResponse.json(
+        { error: 'dischargeId and reason are required for unfinalization' },
+        { status: 400 }
+      )
+    }
+
+    const { error } = await supabase
+      .from('discharge_summaries')
+      .update({
+        is_final: false,
+        unfinalized_reason: reason,
+        unfinalized_by: unfinalizedBy || 'Admin',
+        unfinalized_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', dischargeId)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Discharge summary unfinalized. It can now be edited.',
+    })
+  }
+
+  // ── FINALIZE ────────────────────────────────────────────────
+  const { dischargeId, signedBy } = body
+
+  if (!dischargeId) {
+    return NextResponse.json({ error: 'dischargeId is required' }, { status: 400 })
+  }
+
+  // Check if discharge summary exists
+  const { data: ds, error: fetchErr } = await supabase
+    .from('discharge_summaries')
+    .select('*')
+    .eq('id', dischargeId)
+    .single()
+
+  if (fetchErr || !ds) {
+    return NextResponse.json({ error: 'Discharge summary not found' }, { status: 404 })
+  }
+
+  // Validate required fields before finalizing
+  const missingFields: string[] = []
+  if (!ds.final_diagnosis && !ds.finaldiagnosis) missingFields.push('Final Diagnosis')
+  if (!ds.condition_at_discharge && !ds.conditionatdischarge) missingFields.push('Condition at Discharge')
+  if (!ds.discharge_advice && !ds.dischargeadvice) missingFields.push('Discharge Advice')
+
+  if (missingFields.length > 0) {
+    return NextResponse.json({
+      error: `Cannot finalize — missing required fields: ${missingFields.join(', ')}`,
+      missingFields,
+    }, { status: 400 })
+  }
+
+  // Mark as finalized
+  const { error: updateErr } = await supabase
+    .from('discharge_summaries')
+    .update({
+      is_final: true,
+      signed_by: signedBy || 'Doctor',
+      signed_at: new Date().toISOString(),
+      finalized_at: new Date().toISOString(),
+      version: (ds.version || 1) + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', dischargeId)
+
+  if (updateErr) {
+    return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    ok: true,
+    message: 'Discharge summary finalized and locked.',
+    version: (ds.version || 1) + 1,
+  })
 }
 ```
 
@@ -10647,17 +11175,13 @@ Use YYYY-MM-DD for dates.`
  * GET /api/doctor/earnings?from=2024-01-01&to=2024-01-31
  * GET /api/doctor/earnings?doctorId=xxx&from=...&to=...
  *
- * Uses ACTUAL schema:
- * - encounters.encounter_date  (renamed from 'date' by v30 migration)
- * - encounters.patientid       (lowercase, no underscore)
- * - encounters.doctorid        (lowercase)
- * - clinicusers.share_pct      (added by v30 migration)
- * - ipdadmissions.doctorid     (added by v30 migration)
- *
- * ERROR YOU WERE GETTING:
- * "column e.patientid does not exist" — this was because previous code used
- * JOINs with wrong column names. This version uses Supabase client instead
- * of raw SQL joins, so column names are handled automatically.
+ * FIXED: Uses correct snake_case table/column names matching deployed DB:
+ * - encounters.encounter_date
+ * - encounters.patient_id
+ * - encounters.doctor_name  (text field)
+ * - ipd_admissions (NOT ipdadmissions)
+ * - bills.patient_id, bills.net_amount, bills.status, bills.created_at
+ * - clinic_users.share_pct
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -10685,14 +11209,11 @@ export async function GET(req: NextRequest) {
   const sb = getSupabase()
 
   // ── Fetch OPD encounters in the date range ────────────────
-  // Using encounter_date (renamed from date by v30 migration)
   let encQuery = sb
     .from('encounters')
-    .select('id, patientid, doctorid, doctorname, encounter_date')
+    .select('id, patient_id, doctor_name, encounter_date')
     .gte('encounter_date', from)
     .lte('encounter_date', to)
-
-  if (doctorId) encQuery = encQuery.eq('doctorid', doctorId)
 
   const { data: encounters, error: encErr } = await encQuery
   if (encErr) {
@@ -10700,56 +11221,72 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Fetch IPD admissions in the date range ────────────────
+  // Use ipd_admissions (snake_case) — the actual table in deployed DB
   let ipdQuery = sb
-    .from('ipdadmissions')
-    .select('id, patientid, doctorid, admittingdoctor, admissiondate')
-    .gte('admissiondate', from)
-    .lte('admissiondate', to)
-
-  if (doctorId) ipdQuery = ipdQuery.eq('doctorid', doctorId)
+    .from('ipd_admissions')
+    .select('id, patient_id, admitting_doctor, admission_date')
+    .gte('admission_date', from)
+    .lte('admission_date', to)
 
   const { data: admissions } = await ipdQuery
 
   // ── Fetch bills for encountered patients ──────────────────
-  // Group bills by patientid for later lookup
-  const patientIds = [new Set((encounters || []).map(e => e.patientid).filter(Boolean))]
+  const patientIdSet = new Set<string>(
+    (encounters || []).map((e: any) => e.patient_id).filter(Boolean)
+  )
+  // Also include IPD patient_ids
+  for (const adm of admissions || []) {
+    if (adm.patient_id) patientIdSet.add(adm.patient_id)
+  }
+  const patientIds = Array.from(patientIdSet)
 
   let billsData: any[] = []
   if (patientIds.length > 0) {
     const { data: bills } = await sb
       .from('bills')
-      .select('patientid, total, paid, status, createdat')
-      .in('patientid', patientIds)
-      .gte('createdat', from + 'T00:00:00')
-      .lte('createdat', to + 'T23:59:59')
+      .select('patient_id, net_amount, status, created_at')
+      .in('patient_id', patientIds)
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59')
 
     billsData = bills || []
   }
 
-  // Map patientid → total collected
+  // Map patient_id → total collected
   const paidByPatient = new Map<string, number>()
-  const grossByPatient = new Map<string, number>()
   for (const b of billsData) {
-    const pid = b.patientid
-    paidByPatient.set(pid,  (paidByPatient.get(pid)  || 0) + Number(b.paid  || 0))
-    grossByPatient.set(pid, (grossByPatient.get(pid) || 0) + Number(b.total || 0))
+    if (b.status === 'paid') {
+      const pid = b.patient_id
+      paidByPatient.set(pid, (paidByPatient.get(pid) || 0) + Number(b.net_amount || 0))
+    }
   }
 
   // ── Fetch doctor share percentages ────────────────────────
-  const { data: doctors } = await sb
-    .from('clinicusers')
-    .select('id, fullname, share_pct, earning_model')
-    .eq('role', 'doctor')
+  // Try clinic_users (snake_case) first, fall back to clinicusers
+  let doctors: any[] = []
+  const { data: d1 } = await sb
+    .from('clinic_users')
+    .select('id, full_name, share_pct, earning_model')
+    .in('role', ['admin', 'doctor'])
+
+  if (d1 && d1.length > 0) {
+    doctors = d1
+  } else {
+    const { data: d2 } = await sb
+      .from('clinicusers')
+      .select('id, fullname, share_pct, earning_model')
+      .eq('role', 'doctor')
+    doctors = d2 || []
+  }
 
   const shareByDoctor = new Map<string, number>()
-  for (const d of doctors || []) {
-    shareByDoctor.set(d.id, Number(d.share_pct || 40))
+  for (const d of doctors) {
+    shareByDoctor.set(d.full_name || d.fullname || '', Number(d.share_pct || 40))
   }
 
   // ── Build per-doctor earnings ─────────────────────────────
 
   const doctorMap = new Map<string, {
-    doctorid:    string
     doctorname:  string
     opdCount:    number
     ipdCount:    number
@@ -10761,48 +11298,48 @@ export async function GET(req: NextRequest) {
 
   // OPD encounters
   for (const enc of encounters || []) {
-    const key  = enc.doctorid || 'unknown'
-    const name = enc.doctorname || 'Unknown Doctor'
+    const name = enc.doctor_name || 'Unknown Doctor'
 
-    if (!doctorMap.has(key)) {
-      doctorMap.set(key, {
-        doctorid:   key,
+    if (!doctorMap.has(name)) {
+      doctorMap.set(name, {
         doctorname: name,
         opdCount:   0,
         ipdCount:   0,
         opdRevenue: 0,
         ipdRevenue: 0,
         collected:  0,
-        sharePct:   shareByDoctor.get(key) || 40,
+        sharePct:   shareByDoctor.get(name) || 40,
       })
     }
 
-    const d = doctorMap.get(key)!
+    const d = doctorMap.get(name)!
     d.opdCount++
-    const paid = paidByPatient.get(enc.patientid) || 0
+    const paid = paidByPatient.get(enc.patient_id) || 0
     d.opdRevenue += paid
     d.collected  += paid
   }
 
   // IPD admissions
   for (const adm of admissions || []) {
-    const key  = adm.doctorid || 'unknown'
-    const name = adm.admittingdoctor || 'Unknown Doctor'
+    const name = adm.admitting_doctor || 'Unknown Doctor'
 
-    if (!doctorMap.has(key)) {
-      doctorMap.set(key, {
-        doctorid:   key,
+    if (!doctorMap.has(name)) {
+      doctorMap.set(name, {
         doctorname: name,
         opdCount:   0,
         ipdCount:   0,
         opdRevenue: 0,
         ipdRevenue: 0,
         collected:  0,
-        sharePct:   shareByDoctor.get(key) || 40,
+        sharePct:   shareByDoctor.get(name) || 40,
       })
     }
 
-    doctorMap.get(key)!.ipdCount++
+    const d = doctorMap.get(name)!
+    d.ipdCount++
+    const paid = paidByPatient.get(adm.patient_id) || 0
+    d.ipdRevenue += paid
+    d.collected  += paid
   }
 
   // Calculate earnings for each doctor
@@ -11907,6 +12444,262 @@ export async function GET(
       'Cache-Control': 'no-store',
     },
   })
+}
+```
+
+# src\app\api\labs\import-email\route.ts
+
+```ts
+/**
+ * src/app/api/labs/import-email/route.ts
+ *
+ * Lab Report Auto-Import Webhook
+ *
+ * This endpoint receives incoming lab report data from:
+ *   1. Email parsing service (SendGrid Inbound Parse / Mailgun Routes)
+ *   2. Lab partner API integration (direct POST)
+ *   3. Manual upload from staff via the Labs page
+ *
+ * Flow:
+ *   Lab sends email with PDF → Email service forwards to this webhook →
+ *   Parse patient info (MRN/name from subject) → Attach to patient →
+ *   Notify doctor via Supabase Realtime
+ *
+ * POST /api/labs/import-email
+ * Body (multipart/form-data from email parser OR JSON from lab API):
+ *   - from: sender email
+ *   - subject: email subject (contains patient MRN or name)
+ *   - text: email body text
+ *   - attachments: PDF files (base64 or multipart)
+ *   - patientId: (optional) direct patient UUID
+ *   - reportName: (optional) report name override
+ *
+ * Auth: API_SECRET header for email webhooks, or standard auth for staff
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// Validate webhook secret (for email parser integrations)
+function validateWebhookAuth(req: NextRequest): boolean {
+  const secret = process.env.LAB_IMPORT_SECRET || process.env.CRON_SECRET
+  if (!secret) return true // Allow in dev
+
+  const authHeader = req.headers.get('x-webhook-secret') ||
+    req.headers.get('authorization')?.replace('Bearer ', '') || ''
+  return authHeader === secret
+}
+
+// Extract patient MRN or name from email subject
+// Common patterns: "Report for P-042", "Lab Results - Priya Sharma (P-042)"
+function extractPatientInfo(subject: string): { mrn?: string; name?: string } {
+  // Try MRN pattern: P-001, P-042, etc.
+  const mrnMatch = subject.match(/P-(\d{3,})/i)
+  if (mrnMatch) return { mrn: `P-${mrnMatch[1]}` }
+
+  // Try "for <name>" pattern
+  const forMatch = subject.match(/(?:for|patient|report)\s*[-:]\s*(.+?)(?:\s*\(|$)/i)
+  if (forMatch) return { name: forMatch[1].trim() }
+
+  // Try just a name at the end
+  const nameMatch = subject.match(/[-–]\s*(.+?)(?:\s*\(|$)/)
+  if (nameMatch) return { name: nameMatch[1].trim() }
+
+  return {}
+}
+
+// Extract report name from subject
+function extractReportName(subject: string): string {
+  // Common patterns: "CBC Report for...", "Blood Sugar - P-042"
+  const patterns = [
+    /^(.+?)\s+(?:report|result|test)/i,
+    /^(?:report|result|test)\s*[-:]\s*(.+?)(?:\s+for|\s+patient|\s*[-–])/i,
+  ]
+  for (const pat of patterns) {
+    const match = subject.match(pat)
+    if (match) return match[1].trim()
+  }
+  return subject.slice(0, 100) // Fallback: use subject as report name
+}
+
+interface ImportResult {
+  success: boolean
+  reportId?: string
+  patientId?: string
+  patientName?: string
+  reportName?: string
+  error?: string
+}
+
+export async function POST(req: NextRequest) {
+  // Validate auth
+  if (!validateWebhookAuth(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    let body: any
+
+    // Handle both JSON and form-data
+    const contentType = req.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      body = await req.json()
+    } else if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData()
+      body = {
+        from: formData.get('from')?.toString() || '',
+        subject: formData.get('subject')?.toString() || '',
+        text: formData.get('text')?.toString() || '',
+        patientId: formData.get('patientId')?.toString() || '',
+        reportName: formData.get('reportName')?.toString() || '',
+        attachmentData: formData.get('attachment')?.toString() || '', // base64
+        attachmentName: formData.get('attachmentName')?.toString() || 'report.pdf',
+      }
+    } else {
+      body = await req.json().catch(() => ({}))
+    }
+
+    const {
+      from = '',
+      subject = '',
+      text = '',
+      patientId: directPatientId,
+      reportName: directReportName,
+      attachmentData,
+      attachmentName = 'report.pdf',
+      labPartnerName,
+    } = body
+
+    // ── Step 1: Identify the patient ──────────────────────────
+    let patientId = directPatientId || ''
+    let patientName = ''
+
+    if (!patientId && subject) {
+      const { mrn, name } = extractPatientInfo(subject)
+
+      if (mrn) {
+        const { data: patient } = await supabase
+          .from('patients')
+          .select('id, full_name')
+          .eq('mrn', mrn)
+          .maybeSingle()
+
+        if (patient) {
+          patientId = patient.id
+          patientName = patient.full_name
+        }
+      }
+
+      if (!patientId && name) {
+        const { data: patients } = await supabase
+          .from('patients')
+          .select('id, full_name')
+          .ilike('full_name', `%${name}%`)
+          .limit(1)
+
+        if (patients && patients.length > 0) {
+          patientId = patients[0].id
+          patientName = patients[0].full_name
+        }
+      }
+    }
+
+    if (!patientId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Could not identify patient. Include MRN (e.g., P-042) in subject line or provide patientId.',
+        hint: 'Email subject should be like: "CBC Report for P-042" or "Lab Results - Patient Name (P-042)"',
+      }, { status: 400 })
+    }
+
+    // ── Step 2: Determine report name ─────────────────────────
+    const reportName = directReportName || extractReportName(subject) || 'Lab Report'
+
+    // ── Step 3: Store attachment (if provided) ────────────────
+    let attachmentUrl: string | null = null
+
+    if (attachmentData) {
+      // Try uploading to Supabase Storage
+      try {
+        const fileName = `lab-reports/${Date.now()}_${attachmentName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        const buffer = Buffer.from(attachmentData, 'base64')
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('consultation-files')
+          .upload(fileName, buffer, {
+            contentType: 'application/pdf',
+            upsert: false,
+          })
+
+        if (!uploadErr && uploadData) {
+          const { data: urlData } = supabase.storage
+            .from('consultation-files')
+            .getPublicUrl(fileName)
+          attachmentUrl = urlData?.publicUrl || null
+        }
+      } catch (e) {
+        console.warn('[lab-import] Storage upload failed, saving without attachment URL')
+      }
+    }
+
+    // ── Step 4: Create lab report record ──────────────────────
+    const { data: report, error: insertErr } = await supabase
+      .from('lab_reports')
+      .insert({
+        patient_id: patientId,
+        report_name: reportName,
+        report_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+        status: 'completed',
+        notes: text ? text.slice(0, 500) : `Imported from ${from || labPartnerName || 'lab partner'}`,
+        attachment_url: attachmentUrl,
+        source: 'auto_import',
+        lab_partner_name: labPartnerName || from || null,
+      })
+      .select('id')
+      .single()
+
+    if (insertErr) {
+      return NextResponse.json({
+        success: false,
+        error: `Failed to save report: ${insertErr.message}`,
+      }, { status: 500 })
+    }
+
+    // ── Step 5: Log the import ────────────────────────────────
+    await supabase.from('audit_log').insert({
+      action: 'lab_report_imported',
+      entity_type: 'lab_report',
+      entity_id: report.id,
+      entity_label: `${reportName} for ${patientName || patientId}`,
+      changes: JSON.stringify({ from, subject, labPartnerName }),
+      user_id: 'system',
+      user_email: 'auto-import',
+      user_role: 'system',
+    });
+    
+    const result: ImportResult = {
+      success: true,
+      reportId: report.id,
+      patientId,
+      patientName,
+      reportName,
+    }
+
+    return NextResponse.json(result)
+
+  } catch (err: any) {
+    console.error('[lab-import] Error:', err)
+    return NextResponse.json({
+      success: false,
+      error: err.message || 'Internal error',
+    }, { status: 500 })
+  }
 }
 ```
 
@@ -15480,11 +16273,11 @@ export async function GET(req: NextRequest) {
     // src/app/api/reminders/route.ts — FIXED query
     const { data: encs } = await supabase
       .from('encounters')
-      // Use 'date' not 'encounter_date' — matches the actual DB schema
-      .select('id, patient_id, date, ob_data, patients(fullname, mrn, mobile, dob)')
+      // Use 'encounter_date' — matches the actual DB schema (supabase_setup.sql)
+      .select('id, patient_id, encounter_date, ob_data, patients!inner(full_name, mrn, mobile, date_of_birth)')
       .not('ob_data', 'is', null)
-      .gte('date', ancFrom)           // ← was: .gte('encounter_date', ancFrom)
-      .order('date', { ascending: false }) // ← was: .order('encounter_date', ...)
+      .gte('encounter_date', ancFrom)
+      .order('encounter_date', { ascending: false })
       .limit(500)
 
     // Keep only the most recent encounter per patient
@@ -15521,7 +16314,7 @@ export async function GET(req: NextRequest) {
             type: 'anc',
             priority,
             patientId: enc.patient_id,
-            patientName: pat.full_name ?? '',
+            patientName: pat.full_name ?? pat.fullname ?? '',
             mobile: pat.mobile ?? '',
             mrn: pat.mrn ?? '',
             sourceId: enc.id,
@@ -15548,7 +16341,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: dsList } = await supabase
       .from('discharge_summaries')
-      .select('id, patient_id, delivery_date, reminder_sent_at, patients(full_name, mrn, mobile)')
+      .select('id, patient_id, delivery_date, reminder_sent_at, patients!inner(full_name, mrn, mobile)')
       .not('delivery_date', 'is', null)
       .order('delivery_date', { ascending: false })
       .limit(100)
@@ -15596,7 +16389,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: dsList } = await supabase
       .from('discharge_summaries')
-      .select('id, patient_id, delivery_date, baby_sex, reminder_sent_at, patients(full_name, mrn, mobile)')
+      .select('id, patient_id, delivery_date, baby_sex, reminder_sent_at, patients!inner(full_name, mrn, mobile)')
       .not('delivery_date', 'is', null)
       .order('delivery_date', { ascending: false })
       .limit(100)
@@ -15656,7 +16449,7 @@ export async function GET(req: NextRequest) {
       .limit(50)
 
     // Batch-fetch mobiles to avoid N+1
-    const patientIds = Array.from(new Set((bills || []).map(b => b.patient_id).filter(Boolean)))
+    const patientIds = Array.from(new Set((bills || []).map((b: any) => b.patient_id).filter(Boolean)))
     const mobileMap = new Map<string, string>()
     if (patientIds.length > 0) {
       const { data: pats } = await supabase
@@ -15704,7 +16497,7 @@ export async function GET(req: NextRequest) {
     return (a.dueDate ?? '').localeCompare(b.dueDate ?? '')
   })
 
-  return NextResponse.json({ reminders, total: reminders.length })
+  return NextResponse.json({ reminders, total: reminders.length, generatedAt: new Date().toISOString() })
 }
 
 // ── PATCH — log a reminder as sent ──────────────────────────
@@ -18022,7 +18815,21 @@ export default function BedsPage() {
                             </Link>
                           </div>
                         ) : (
-                          <div className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</div>
+                          <div>
+                            <div className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</div>
+                            {/* Reserve / Unreserve buttons */}
+                            {(bed.status === 'available' || bed.status === 'reserved') && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleReserve(bed) }}
+                                className={`mt-1.5 text-xs px-2 py-1 rounded-md font-medium transition-colors ${
+                                  bed.status === 'reserved'
+                                    ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200'
+                                }`}>
+                                {bed.status === 'reserved' ? '✓ Unreserve' : '⊕ Reserve'}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </button>
                     )
@@ -18135,7 +18942,6 @@ export default function BedsPage() {
     </AppShell>
   )
 }
-
 ```
 
 # src\app\billing\page.tsx
@@ -18741,7 +19547,7 @@ function BillingContent() {
   }
 
   // ── CA Report generation ─────────────────────────────────────
-  function generateCAReport() {
+  async function generateCAReport() {
     setCALoading(true)
     const { from, to, label } = getPeriodDates(period, customFrom, customTo)
 
@@ -18767,7 +19573,16 @@ function BillingContent() {
       }
     }
 
-    const report = computeCAReport(bills, from, to, label)
+    // FIX: Fetch bills fresh for the selected period instead of using stale 30-day cache
+    const { data: periodBills } = await supabase
+      .from('bills')
+      .select('*')
+      .gte('created_at', from + 'T00:00:00')
+      .lte('created_at', to + 'T23:59:59.999')
+      .order('created_at', { ascending: false })
+      .limit(2000)
+
+    const report = computeCAReport((periodBills || []) as Bill[], from, to, label)
     setCAReport(report)
     setCALoading(false)
   }
@@ -19549,7 +20364,6 @@ export default function BillingPage() {
     </Suspense>
   )
 }
-
 ```
 
 # src\app\dashboard\page.tsx
@@ -20432,6 +21246,559 @@ export default function Error({
   )
 }
 
+```
+
+# src\app\forecasting\page.tsx
+
+```tsx
+'use client'
+/**
+ * src/app/forecasting/page.tsx
+ *
+ * Revenue Forecasting Dashboard
+ *
+ * Uses last 6 months of billing data to predict:
+ *   - This month's projected revenue (linear regression)
+ *   - Busiest days of the week
+ *   - Peak revenue hours
+ *   - Growth trend & rate
+ *   - Expected patient volume
+ *
+ * Algorithm: Simple linear regression on daily revenue data points.
+ * No external ML libraries needed — pure JS math.
+ */
+
+import { useEffect, useState } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import {
+  TrendingUp, Calendar, Clock, IndianRupee, Target,
+  BarChart3, RefreshCw, Zap, ArrowUp, ArrowDown,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────
+interface DailyRevenue {
+  date: string
+  amount: number
+  count: number
+}
+
+interface DayOfWeekStats {
+  day: string
+  avgRevenue: number
+  avgPatients: number
+  dayIndex: number
+}
+
+interface HourStats {
+  hour: number
+  label: string
+  totalRevenue: number
+  billCount: number
+}
+
+interface ForecastResult {
+  predictedMonthly: number
+  predictedDaily: number
+  growthRate: number        // % monthly growth
+  confidenceLevel: string  // 'high' | 'medium' | 'low'
+  trendDirection: 'up' | 'down' | 'flat'
+  busiestDay: string
+  peakHour: string
+  avgDailyRevenue: number
+  avgDailyPatients: number
+  daysRemaining: number
+  earnedSoFar: number
+  projectedRemaining: number
+}
+
+// ── Linear Regression ─────────────────────────────────────────
+// y = mx + b where x = day index, y = revenue
+function linearRegression(points: { x: number; y: number }[]): { slope: number; intercept: number; r2: number } {
+  const n = points.length
+  if (n < 2) return { slope: 0, intercept: 0, r2: 0 }
+
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0
+  for (const p of points) {
+    sumX += p.x
+    sumY += p.y
+    sumXY += p.x * p.y
+    sumX2 += p.x * p.x
+    sumY2 += p.y * p.y
+  }
+
+  const denom = n * sumX2 - sumX * sumX
+  if (denom === 0) return { slope: 0, intercept: sumY / n, r2: 0 }
+
+  const slope = (n * sumXY - sumX * sumY) / denom
+  const intercept = (sumY - slope * sumX) / n
+
+  // R-squared (coefficient of determination)
+  const meanY = sumY / n
+  let ssRes = 0, ssTot = 0
+  for (const p of points) {
+    const predicted = slope * p.x + intercept
+    ssRes += (p.y - predicted) ** 2
+    ssTot += (p.y - meanY) ** 2
+  }
+  const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0
+
+  return { slope, intercept, r2 }
+}
+
+// ── Bar Chart Component ───────────────────────────────────────
+function BarChart({ data, color = '#3b82f6', formatValue, height = 140 }: {
+  data: { label: string; value: number }[]
+  color?: string
+  formatValue?: (v: number) => string
+  height?: number
+}) {
+  const max = Math.max(...data.map(d => d.value), 1)
+  return (
+    <div className="flex items-end gap-1.5" style={{ height }}>
+      {data.map((d, i) => {
+        const pct = Math.max((d.value / max) * 100, 3)
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+            <span className="text-[9px] text-gray-500 font-mono tabular-nums">
+              {formatValue ? formatValue(d.value) : d.value.toLocaleString('en-IN')}
+            </span>
+            <div
+              className="w-full rounded-t-md transition-all duration-500 min-w-[12px]"
+              style={{ height: `${pct}%`, background: color, opacity: 0.85 }}
+            />
+            <span className="text-[9px] text-gray-400 text-center leading-tight font-medium">
+              {d.label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Forecast Card ─────────────────────────────────────────────
+function ForecastCard({ label, value, sub, icon: Icon, color, trend }: {
+  label: string; value: string; sub: string; icon: any; color: string
+  trend?: 'up' | 'down' | 'flat'
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold text-gray-900">{value}</span>
+            {trend === 'up' && <ArrowUp className="w-4 h-4 text-green-500" />}
+            {trend === 'down' && <ArrowDown className="w-4 h-4 text-red-400" />}
+          </div>
+          <div className="text-xs font-semibold text-gray-700">{label}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────
+export default function ForecastingPage() {
+  const [loading, setLoading] = useState(true)
+  const [forecast, setForecast] = useState<ForecastResult | null>(null)
+  const [dailyData, setDailyData] = useState<DailyRevenue[]>([])
+  const [dayOfWeekStats, setDayOfWeekStats] = useState<DayOfWeekStats[]>([])
+  const [hourStats, setHourStats] = useState<HourStats[]>([])
+  const [monthlyTrend, setMonthlyTrend] = useState<{ label: string; value: number }[]>([])
+
+  useEffect(() => { loadForecast() }, [])
+
+  async function loadForecast() {
+    setLoading(true)
+
+    // Fetch last 6 months of paid bills
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    const startDate = sixMonthsAgo.toISOString()
+
+    const { data: bills } = await supabase
+      .from('bills')
+      .select('net_amount, created_at, payment_mode')
+      .eq('status', 'paid')
+      .gte('created_at', startDate)
+      .order('created_at', { ascending: true })
+
+    const allBills = bills || []
+
+    if (allBills.length < 5) {
+      setLoading(false)
+      return
+    }
+
+    // ── Group by date ──────────────────────────────────────────
+    const dailyMap = new Map<string, { amount: number; count: number }>()
+    const hourMap = new Map<number, { revenue: number; count: number }>()
+    const dowMap = new Map<number, { revenue: number; count: number; days: Set<string> }>()
+
+    for (const bill of allBills) {
+      const d = new Date(bill.created_at)
+      const dateKey = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      const hour = d.getHours()
+      const dow = d.getDay() // 0=Sun, 1=Mon...
+
+      const amt = Number(bill.net_amount || 0)
+
+      // Daily
+      const daily = dailyMap.get(dateKey) || { amount: 0, count: 0 }
+      daily.amount += amt
+      daily.count += 1
+      dailyMap.set(dateKey, daily)
+
+      // Hourly
+      const hourEntry = hourMap.get(hour) || { revenue: 0, count: 0 }
+      hourEntry.revenue += amt
+      hourEntry.count += 1
+      hourMap.set(hour, hourEntry)
+
+      // Day of week
+      const dowEntry = dowMap.get(dow) || { revenue: 0, count: 0, days: new Set() }
+      dowEntry.revenue += amt
+      dowEntry.count += 1
+      dowEntry.days.add(dateKey)
+      dowMap.set(dow, dowEntry)
+    }
+
+    // Convert to array
+    const dailyArray: DailyRevenue[] = Array.from(dailyMap.entries())
+      .map(([date, { amount, count }]) => ({ date, amount, count }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    setDailyData(dailyArray)
+
+    // ── Linear Regression on daily data ────────────────────────
+    const points = dailyArray.map((d, i) => ({ x: i, y: d.amount }))
+    const { slope, intercept, r2 } = linearRegression(points)
+
+    // Predict next 30 days
+    const lastIndex = points.length - 1
+    let predictedMonthly = 0
+    for (let i = 1; i <= 30; i++) {
+      const predicted = Math.max(0, slope * (lastIndex + i) + intercept)
+      predictedMonthly += predicted
+    }
+
+    // Current month stats
+    const now = new Date()
+    const currentMonth = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 7)
+    const currentMonthBills = dailyArray.filter(d => d.date.startsWith(currentMonth))
+    const earnedSoFar = currentMonthBills.reduce((s, d) => s + d.amount, 0)
+    const dayOfMonth = now.getDate()
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const daysRemaining = daysInMonth - dayOfMonth
+
+    // Average daily from recent 30 days
+    const last30 = dailyArray.slice(-30)
+    const avgDaily = last30.length > 0 ? last30.reduce((s, d) => s + d.amount, 0) / last30.length : 0
+    const avgDailyPatients = last30.length > 0 ? last30.reduce((s, d) => s + d.count, 0) / last30.length : 0
+
+    // Growth rate: compare last 30 days to previous 30 days
+    const prev30 = dailyArray.slice(-60, -30)
+    const prevAvg = prev30.length > 0 ? prev30.reduce((s, d) => s + d.amount, 0) / prev30.length : 0
+    const growthRate = prevAvg > 0 ? ((avgDaily - prevAvg) / prevAvg) * 100 : 0
+
+    // Confidence based on R² and data volume
+    const confidenceLevel = r2 > 0.5 && dailyArray.length > 60 ? 'high'
+      : r2 > 0.2 && dailyArray.length > 30 ? 'medium' : 'low'
+
+    // ── Day of Week stats ──────────────────────────────────────
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const dowStats: DayOfWeekStats[] = dayNames.map((day, i) => {
+      const entry = dowMap.get(i)
+      if (!entry || entry.days.size === 0) return { day, avgRevenue: 0, avgPatients: 0, dayIndex: i }
+      return {
+        day,
+        avgRevenue: Math.round(entry.revenue / entry.days.size),
+        avgPatients: Math.round(entry.count / entry.days.size),
+        dayIndex: i,
+      }
+    })
+    setDayOfWeekStats(dowStats)
+
+    const busiestDay = dowStats.reduce((max, d) => d.avgRevenue > max.avgRevenue ? d : max, dowStats[0])
+
+    // ── Hour stats ─────────────────────────────────────────────
+    const hourArray: HourStats[] = []
+    for (let h = 7; h <= 21; h++) {
+      const entry = hourMap.get(h)
+      const ampm = h >= 12 ? 'PM' : 'AM'
+      const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h
+      hourArray.push({
+        hour: h,
+        label: `${h12}${ampm}`,
+        totalRevenue: entry?.revenue || 0,
+        billCount: entry?.count || 0,
+      })
+    }
+    setHourStats(hourArray)
+
+    const peakHourEntry = hourArray.reduce((max, h) => h.totalRevenue > max.totalRevenue ? h : max, hourArray[0])
+
+    // ── Monthly trend (last 6 months) ──────────────────────────
+    const monthMap = new Map<string, number>()
+    for (const d of dailyArray) {
+      const monthKey = d.date.slice(0, 7) // YYYY-MM
+      monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + d.amount)
+    }
+    const monthTrend = Array.from(monthMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, value]) => {
+        const [y, m] = key.split('-')
+        const label = new Date(Number(y), Number(m) - 1).toLocaleDateString('en-IN', { month: 'short' })
+        return { label, value }
+      })
+    setMonthlyTrend(monthTrend)
+
+    // ── Set forecast ───────────────────────────────────────────
+    setForecast({
+      predictedMonthly: Math.round(earnedSoFar + (avgDaily * daysRemaining)),
+      predictedDaily: Math.round(avgDaily),
+      growthRate: Math.round(growthRate * 10) / 10,
+      confidenceLevel,
+      trendDirection: growthRate > 2 ? 'up' : growthRate < -2 ? 'down' : 'flat',
+      busiestDay: busiestDay.day,
+      peakHour: peakHourEntry.label,
+      avgDailyRevenue: Math.round(avgDaily),
+      avgDailyPatients: Math.round(avgDailyPatients),
+      daysRemaining,
+      earnedSoFar: Math.round(earnedSoFar),
+      projectedRemaining: Math.round(avgDaily * daysRemaining),
+    })
+
+    setLoading(false)
+  }
+
+  const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
+
+  return (
+    <AppShell>
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-blue-100 rounded-xl flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Revenue Forecast</h1>
+              <p className="text-sm text-gray-500">AI-predicted revenue based on last 6 months data</p>
+            </div>
+          </div>
+          <button onClick={loadForecast} disabled={loading}
+            className="btn-secondary flex items-center gap-2 text-xs">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
+
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-gray-500">Analyzing 6 months of data...</p>
+            </div>
+          </div>
+        )}
+
+        {!loading && !forecast && (
+          <div className="card p-12 text-center text-gray-400">
+            <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">Not enough data for forecasting</p>
+            <p className="text-sm mt-1">Need at least 5 paid bills in the last 6 months</p>
+          </div>
+        )}
+
+        {!loading && forecast && (
+          <div className="space-y-6">
+
+            {/* ── Main Prediction Cards ─────────────────────────── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <ForecastCard
+                label="Predicted This Month"
+                value={inr(forecast.predictedMonthly)}
+                sub={`Earned ${inr(forecast.earnedSoFar)} + projected ${inr(forecast.projectedRemaining)}`}
+                icon={Target}
+                color="bg-purple-100 text-purple-600"
+                trend={forecast.trendDirection}
+              />
+              <ForecastCard
+                label="Avg Daily Revenue"
+                value={inr(forecast.predictedDaily)}
+                sub={`~${forecast.avgDailyPatients} patients/day`}
+                icon={IndianRupee}
+                color="bg-green-100 text-green-600"
+              />
+              <ForecastCard
+                label="Growth Rate"
+                value={`${forecast.growthRate > 0 ? '+' : ''}${forecast.growthRate}%`}
+                sub={`vs previous month · Confidence: ${forecast.confidenceLevel}`}
+                icon={TrendingUp}
+                color={forecast.growthRate >= 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}
+                trend={forecast.trendDirection}
+              />
+              <ForecastCard
+                label="Busiest Day"
+                value={forecast.busiestDay}
+                sub={`Peak hour: ${forecast.peakHour}`}
+                icon={Calendar}
+                color="bg-amber-100 text-amber-600"
+              />
+            </div>
+
+            {/* ── This Month Progress ──────────────────────────── */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-purple-500" />
+                  This Month Progress
+                </h2>
+                <span className="text-xs text-gray-400">{forecast.daysRemaining} days remaining</span>
+              </div>
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Earned: {inr(forecast.earnedSoFar)}</span>
+                  <span>Target: {inr(forecast.predictedMonthly)}</span>
+                </div>
+                <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(100, (forecast.earnedSoFar / forecast.predictedMonthly) * 100)}%` }}
+                  />
+                </div>
+                <div className="text-xs text-gray-400 mt-1 text-center">
+                  {Math.round((forecast.earnedSoFar / forecast.predictedMonthly) * 100)}% achieved
+                </div>
+              </div>
+            </div>
+
+            {/* ── Two-column: Monthly Trend + Day of Week ──────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+              {/* Monthly Revenue Trend */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-4 h-4 text-blue-600" />
+                  Monthly Revenue Trend
+                </h2>
+                {monthlyTrend.length > 0 ? (
+                  <BarChart
+                    data={monthlyTrend}
+                    color="#8b5cf6"
+                    formatValue={v => v >= 100000 ? `${(v / 100000).toFixed(1)}L` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+                    height={160}
+                  />
+                ) : (
+                  <div className="text-center py-8 text-sm text-gray-400">No data</div>
+                )}
+              </div>
+
+              {/* Day of Week */}
+              <div className="card p-5">
+                <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <Calendar className="w-4 h-4 text-amber-600" />
+                  Revenue by Day of Week
+                </h2>
+                <BarChart
+                  data={dayOfWeekStats.map(d => ({ label: d.day, value: d.avgRevenue }))}
+                  color="#f59e0b"
+                  formatValue={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+                  height={140}
+                />
+                <div className="mt-2 text-xs text-gray-500 text-center">
+                  Average revenue per {dayOfWeekStats.find(d => d.day === forecast.busiestDay)?.day || 'day'}:
+                  <strong className="text-amber-700 ml-1">
+                    {inr(dayOfWeekStats.find(d => d.day === forecast.busiestDay)?.avgRevenue || 0)}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Peak Hours ───────────────────────────────────── */}
+            <div className="card p-5">
+              <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <Clock className="w-4 h-4 text-green-600" />
+                Revenue by Hour (When patients pay)
+              </h2>
+              <BarChart
+                data={hourStats.map(h => ({ label: h.label, value: h.totalRevenue }))}
+                color="#10b981"
+                formatValue={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+                height={140}
+              />
+              <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                <div className="bg-green-50 rounded-lg p-2.5 text-center">
+                  <div className="font-bold text-green-700">{forecast.peakHour}</div>
+                  <div className="text-gray-500">Peak Hour</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-2.5 text-center">
+                  <div className="font-bold text-blue-700">{forecast.avgDailyPatients}</div>
+                  <div className="text-gray-500">Avg Patients/Day</div>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-2.5 text-center">
+                  <div className="font-bold text-purple-700">{forecast.confidenceLevel}</div>
+                  <div className="text-gray-500">Confidence</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Actionable Insights ─────────────────────────── */}
+            <div className="card p-5 bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-100">
+              <h2 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                💡 AI Insights & Recommendations
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-indigo-800">
+                {forecast.trendDirection === 'up' && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>📈 Revenue Growing:</strong> Your clinic is growing at {forecast.growthRate}% per month.
+                    At this rate, you&apos;ll earn {inr(Math.round(forecast.predictedMonthly * (1 + forecast.growthRate / 100)))} next month.
+                  </div>
+                )}
+                {forecast.trendDirection === 'down' && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>📉 Revenue Declining:</strong> Revenue dropped {Math.abs(forecast.growthRate)}% vs last month.
+                    Focus on follow-up reminders and patient retention.
+                  </div>
+                )}
+                <div className="bg-white/60 rounded-lg p-3">
+                  <strong>📅 Best Day:</strong> {forecast.busiestDay} generates the most revenue.
+                  Consider keeping extra staff and scheduling complex procedures on this day.
+                </div>
+                <div className="bg-white/60 rounded-lg p-3">
+                  <strong>⏰ Peak Hour:</strong> {forecast.peakHour} is your busiest billing time.
+                  Avoid scheduling meetings or breaks during this hour.
+                </div>
+                {forecast.avgDailyPatients > 0 && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>👥 Patient Volume:</strong> You see ~{forecast.avgDailyPatients} patients/day.
+                    {forecast.avgDailyPatients < 20
+                      ? ' Focus on appointment reminders to increase walk-ins.'
+                      : ' Great volume! Consider hiring support staff.'}
+                  </div>
+                )}
+                {dayOfWeekStats.some(d => d.day === 'Sun' && d.avgRevenue === 0) && (
+                  <div className="bg-white/60 rounded-lg p-3">
+                    <strong>🏖️ Closed Sundays:</strong> No revenue on Sundays detected.
+                    Consider emergency/half-day OPD for urgent cases.
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </AppShell>
+  )
+}
 ```
 
 # src\app\forms\page.tsx
@@ -31262,13 +32629,13 @@ function VitalCard({
 
 ```tsx
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike } from '@/lib/utils'
-import { Search, Stethoscope, UserPlus, ChevronRight } from 'lucide-react'
+import { Search, Stethoscope, UserPlus, ChevronRight, Clock } from 'lucide-react'
 
 export default function OPDIndexPage() {
   const router = useRouter()
@@ -31276,8 +32643,22 @@ export default function OPDIndexPage() {
   const [results, setResults] = useState<any[]>([])
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [recentPatients, setRecentPatients] = useState<any[]>([])
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load top 5 latest registered patients on mount
+  useEffect(() => {
+    async function loadRecent() {
+      const { data } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name, age, gender, mobile, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5)
+      setRecentPatients(data || [])
+    }
+    loadRecent()
+  }, [])
 
   function handleSearch(val: string) {
     setQuery(val)
@@ -31365,6 +32746,38 @@ export default function OPDIndexPage() {
             <UserPlus className="w-4 h-4" /> Register New Patient First
           </Link>
         </div>
+
+        {/* Recent Patients — Quick Select */}
+        {!searched && recentPatients.length > 0 && (
+          <div className="card p-5 mt-5">
+            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-gray-400" /> Recent Patients (Quick Select)
+            </h3>
+            <div className="space-y-1">
+              {recentPatients.map(p => (
+                <button key={p.id}
+                  onClick={() => router.push(`/opd/new?patient=${p.id}`)}
+                  className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-green-50 border border-transparent hover:border-green-200 transition-all text-left">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold text-green-700">{p.full_name.charAt(0)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm">{p.full_name}</div>
+                    <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.gender} · {p.mobile}</div>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-green-600 font-medium flex-shrink-0">
+                    Start <ChevronRight className="w-3 h-3" />
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 text-center">
+              <Link href="/patients" className="text-xs text-blue-600 hover:underline">
+                View All Patients →
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   )
@@ -38146,9 +39559,10 @@ function QueueContent() {
   }
 
   const today = new Date().toISOString().slice(0, 10)
+  const [queueDate, setQueueDate] = useState(today)  // ← Date filter state
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Load queue for today ──────────────────────────────────
+  // ── Load queue for selected date ──────────────────────────
   async function load() {
     setLoading(true)
     try {
@@ -38160,7 +39574,7 @@ function QueueContent() {
           patient_id, encounter_id,
           patients!inner ( full_name, mrn )
         `)
-        .eq('queue_date', today)
+        .eq('queue_date', queueDate)
         .order('token_number', { ascending: true })
 
       if (e) throw e
@@ -38216,7 +39630,7 @@ function QueueContent() {
       channel.unsubscribe()
       channelRef.current = null
     }
-  }, [today])
+  }, [queueDate])
 
   // ── Status update ─────────────────────────────────────────
   async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
@@ -38238,7 +39652,7 @@ function QueueContent() {
     const { data } = await supabase
       .from('opd_queue')
       .select('token_number')
-      .eq('queue_date', today)
+      .eq('queue_date', queueDate)
       .order('token_number', { ascending: false })
       .limit(1)
     return ((data?.[0]?.token_number ?? 0) as number) + 1
@@ -38256,7 +39670,7 @@ function QueueContent() {
         .insert({
           patient_id: addPatientId,
           encounter_id: addEncounter || null,
-          queue_date: today,
+          queue_date: queueDate,
           token_number: token,
           status: 'waiting',
           priority: addPriority,
@@ -38300,14 +39714,50 @@ function QueueContent() {
               </span>
             </h1>
             <p className="text-sm text-gray-500">
-              Today — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
+              {queueDate === today ? 'Today' : queueDate} — {new Date(queueDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
               {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
             </p>
           </div>
-          <button onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-            <Plus className="w-4 h-4" /> Add to Queue
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Date Filter */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const d = new Date(queueDate)
+                  d.setDate(d.getDate() - 1)
+                  setQueueDate(d.toISOString().slice(0, 10))
+                }}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 text-xs">
+                ←
+              </button>
+              <input
+                type="date"
+                value={queueDate}
+                onChange={e => setQueueDate(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              />
+              <button
+                onClick={() => {
+                  const d = new Date(queueDate)
+                  d.setDate(d.getDate() + 1)
+                  setQueueDate(d.toISOString().slice(0, 10))
+                }}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 text-xs">
+                →
+              </button>
+              {queueDate !== today && (
+                <button
+                  onClick={() => setQueueDate(today)}
+                  className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200 font-medium">
+                  Today
+                </button>
+              )}
+            </div>
+            <button onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+              <Plus className="w-4 h-4" /> Add to Queue
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -38537,7 +39987,6 @@ export default function QueuePage() {
     </Suspense>
   )
 }
-
 ```
 
 # src\app\reminders\page.tsx
@@ -59995,33 +61444,42 @@ export async function uploadFile(
   const mimeType = getCorrectMimeType(file)
 
   // ── Try Supabase Storage first ────────────────────────────
-  try {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(path, file, {
-        contentType: mimeType,  // ← CRITICAL: explicit mime type
-        upsert:      false,
-        cacheControl: '3600',
-      })
+  // Try both bucket names: 'consultation-files' first, then 'consultation-attachments'
+  const bucketsToTry = [bucket, 'consultation-attachments']
+  
+  for (const tryBucket of bucketsToTry) {
+    try {
+      const { data, error } = await supabase.storage
+        .from(tryBucket)
+        .upload(path, file, {
+          contentType: mimeType,  // ← CRITICAL: explicit mime type
+          upsert:      false,
+          cacheControl: '3600',
+        })
 
-    if (!error && data) {
-      // Storage upload succeeded
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(path)
+      if (!error && data) {
+        // Storage upload succeeded
+        const { data: urlData } = supabase.storage
+          .from(tryBucket)
+          .getPublicUrl(path)
 
-      return {
-        source:     'storage',
-        storageKey: path,
-        publicUrl:  urlData?.publicUrl,
+        return {
+          source:     'storage',
+          storageKey: path,
+          publicUrl:  urlData?.publicUrl,
+        }
       }
+
+      // If error is about bucket not found, try next bucket
+      if (error?.message?.includes('not found') || error?.message?.includes('Bucket')) {
+        continue
+      }
+
+      // Other storage errors — log and fall through to DB fallback
+      console.warn(`[storage-upload] Storage upload failed for "${file.name}" in bucket "${tryBucket}":`, error?.message)
+    } catch (storageErr: any) {
+      console.warn(`[storage-upload] Storage exception for "${file.name}" in bucket "${tryBucket}":`, storageErr?.message)
     }
-
-    // Storage failed — log why and fall through to DB fallback
-    console.warn(`[storage-upload] Storage upload failed for "${file.name}":`, error?.message)
-
-  } catch (storageErr: any) {
-    console.warn(`[storage-upload] Storage exception for "${file.name}":`, storageErr?.message)
   }
 
   // ── Fallback: store as base64 in database ─────────────────
@@ -60091,7 +61549,10 @@ export function getFileUrl(
 export async function isStorageAvailable(bucket = 'consultation-files'): Promise<boolean> {
   try {
     const { error } = await supabase.storage.getBucket(bucket)
-    return !error
+    if (!error) return true
+    // Try fallback bucket name
+    const { error: err2 } = await supabase.storage.getBucket('consultation-attachments')
+    return !err2
   } catch {
     return false
   }
@@ -66723,6 +68184,437 @@ END $$;
 -- Done
 -- ============================================================
 SELECT 'v21 migration complete — dischargesummaries + ABHA columns ready' AS result;
+
+```
+
+# v30-fix-all-issues.sql
+
+```sql
+-- ============================================================
+-- NexMedicon HMS — v30 FIX ALL ISSUES
+-- 
+-- Run this in Supabase → SQL Editor → New Query
+-- Safe to run multiple times (IF NOT EXISTS / DO $$ blocks)
+--
+-- FIXES:
+--   1. "relation ipdadmissions does not exist" — creates alias view
+--   2. Storage bucket mime type fix — adds text/plain + more types
+--   3. Adds missing columns for partial payments, refunds, daily closing
+--   4. Adds doctor earnings columns (share_pct, earning_model)
+--   5. Adds reminder_log table if missing
+--   6. Adds follow_ups table if missing
+--   7. Adds billing_packages table if missing
+--   8. Adds daily_closing table for end-of-day reports
+--   9. Adds payment_transactions table for partial/refund tracking
+-- ============================================================
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #1: "relation ipdadmissions does not exist"
+--
+-- Your DB has the table as `ipd_admissions` (snake_case, created by
+-- supabase_v11_features.sql). But some code references `ipdadmissions`.
+-- Solution: Create a VIEW alias so both names work.
+-- ═══════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  -- Only create the view if ipd_admissions exists but ipdadmissions doesn't
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipd_admissions')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.views WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
+  THEN
+    EXECUTE '
+      CREATE VIEW ipdadmissions AS
+      SELECT
+        id,
+        patient_id AS patientid,
+        bed_id AS bedid,
+        admission_date AS admissiondate,
+        admitting_doctor AS admittingdoctor,
+        status,
+        created_at AS createdat,
+        updated_at AS updatedat
+      FROM ipd_admissions
+    ';
+    RAISE NOTICE 'Created ipdadmissions view alias for ipd_admissions table';
+  END IF;
+
+  -- If neither exists, create ipd_admissions from scratch
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipd_admissions')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
+  THEN
+    EXECUTE '
+      CREATE TABLE ipd_admissions (
+        id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        patient_id              UUID REFERENCES patients(id) ON DELETE SET NULL,
+        patient_name            TEXT NOT NULL DEFAULT '''',
+        mrn                     TEXT NOT NULL DEFAULT '''',
+        mobile                  TEXT,
+        age                     INTEGER,
+        gender                  TEXT,
+        bed_id                  UUID REFERENCES beds(id) ON DELETE SET NULL,
+        bed_number              TEXT,
+        ward                    TEXT,
+        admission_date          DATE NOT NULL DEFAULT CURRENT_DATE,
+        admission_time          TEXT DEFAULT ''00:00'',
+        admitting_doctor        TEXT NOT NULL DEFAULT '''',
+        consulting_doctors      JSONB DEFAULT ''[]''::jsonb,
+        diagnosis_on_admission  TEXT,
+        chief_complaint         TEXT,
+        diet_type               TEXT DEFAULT ''Normal'',
+        allergies               TEXT,
+        comorbidities           TEXT,
+        insurance_details       TEXT,
+        relative_name           TEXT,
+        relative_contact        TEXT,
+        relative_relation       TEXT,
+        discharge_date          TIMESTAMPTZ,
+        total_charges           NUMERIC(10,2) DEFAULT 0,
+        discount                NUMERIC(10,2) DEFAULT 0,
+        net_bill                NUMERIC(10,2) DEFAULT 0,
+        bill_status             TEXT DEFAULT ''pending'',
+        payment_mode            TEXT,
+        status                  TEXT NOT NULL DEFAULT ''active''
+                                  CHECK (status IN (''active'', ''discharged'', ''transferred'')),
+        created_at              TIMESTAMPTZ DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ DEFAULT NOW()
+      )
+    ';
+    EXECUTE 'ALTER TABLE ipd_admissions ENABLE ROW LEVEL SECURITY';
+    EXECUTE '
+      CREATE POLICY allow_auth_ipd_admissions ON ipd_admissions
+        FOR ALL TO authenticated USING (true) WITH CHECK (true)
+    ';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_patient ON ipd_admissions(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_status ON ipd_admissions(status)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_bed ON ipd_admissions(bed_id)';
+    RAISE NOTICE 'Created ipd_admissions table from scratch';
+  END IF;
+END $$;
+
+-- Add doctorid column to ipd_admissions for earnings queries
+ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS doctorid UUID;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #2: Storage bucket — add more allowed mime types
+-- ═══════════════════════════════════════════════════════════════
+
+-- Update the consultation-attachments bucket
+UPDATE storage.buckets
+SET allowed_mime_types = ARRAY[
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+  'application/octet-stream'
+],
+file_size_limit = 52428800
+WHERE id = 'consultation-attachments';
+
+-- Also create/update the consultation-files bucket (used in code)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'consultation-files',
+  'consultation-files',
+  false,
+  52428800,
+  ARRAY[
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/bmp',
+    'image/heic',
+    'image/heif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'text/csv',
+    'application/octet-stream'
+  ]
+)
+ON CONFLICT (id) DO UPDATE SET
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- RLS policies for consultation-files bucket
+DROP POLICY IF EXISTS "auth can upload consultation-files" ON storage.objects;
+DROP POLICY IF EXISTS "auth can read consultation-files" ON storage.objects;
+DROP POLICY IF EXISTS "auth can delete consultation-files" ON storage.objects;
+DROP POLICY IF EXISTS "auth can update consultation-files" ON storage.objects;
+
+CREATE POLICY "auth can upload consultation-files"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'consultation-files');
+
+CREATE POLICY "auth can read consultation-files"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'consultation-files');
+
+CREATE POLICY "auth can delete consultation-files"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'consultation-files');
+
+CREATE POLICY "auth can update consultation-files"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'consultation-files');
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #3: Missing tables for appointments & reminders
+-- ═══════════════════════════════════════════════════════════════
+
+-- follow_ups table
+CREATE TABLE IF NOT EXISTS follow_ups (
+  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id              UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  created_from_visit_id   UUID REFERENCES encounters(id) ON DELETE SET NULL,
+  recommended_date        DATE NOT NULL,
+  status                  TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'fulfilled', 'cancelled', 'missed')),
+  linked_appointment_id   UUID,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE follow_ups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_follow_ups ON follow_ups;
+CREATE POLICY allow_auth_follow_ups ON follow_ups
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_follow_ups_patient ON follow_ups(patient_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_date ON follow_ups(recommended_date);
+
+-- reminder_log table
+CREATE TABLE IF NOT EXISTS reminder_log (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name    TEXT,
+  mobile          TEXT,
+  reminder_type   TEXT NOT NULL,
+  source_table    TEXT,
+  source_id       TEXT,
+  message_preview TEXT,
+  channel         TEXT DEFAULT 'whatsapp',
+  status          TEXT DEFAULT 'sent',
+  sent_at         TIMESTAMPTZ DEFAULT NOW(),
+  sent_by         TEXT,
+  batch_id        TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE reminder_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_reminder_log ON reminder_log;
+CREATE POLICY allow_auth_reminder_log ON reminder_log
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_reminder_log_patient ON reminder_log(patient_id);
+CREATE INDEX IF NOT EXISTS idx_reminder_log_sent ON reminder_log(sent_at);
+
+-- Add missing columns to appointments
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS follow_up_id UUID;
+
+-- Add missing columns to prescriptions for reminder tracking
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS patient_name TEXT;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS mrn TEXT;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS mobile TEXT;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS follow_up_date DATE;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS diagnosis TEXT;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS lab_tests TEXT;
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #4: Doctor earnings — add share_pct + earning_model
+-- ═══════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clinic_users') THEN
+    EXECUTE 'ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS share_pct NUMERIC(5,2) DEFAULT 40';
+    EXECUTE 'ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS earning_model TEXT DEFAULT ''percentage''';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clinicusers') THEN
+    EXECUTE 'ALTER TABLE clinicusers ADD COLUMN IF NOT EXISTS share_pct NUMERIC(5,2) DEFAULT 40';
+    EXECUTE 'ALTER TABLE clinicusers ADD COLUMN IF NOT EXISTS earning_model TEXT DEFAULT ''percentage''';
+  END IF;
+END $$;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #5: Daily Closing table
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS daily_closings (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  closing_date    DATE NOT NULL UNIQUE,
+  total_opd       INTEGER DEFAULT 0,
+  total_ipd       INTEGER DEFAULT 0,
+  total_bills     INTEGER DEFAULT 0,
+  cash_collected  NUMERIC(10,2) DEFAULT 0,
+  upi_collected   NUMERIC(10,2) DEFAULT 0,
+  card_collected  NUMERIC(10,2) DEFAULT 0,
+  total_collected NUMERIC(10,2) DEFAULT 0,
+  total_discount  NUMERIC(10,2) DEFAULT 0,
+  total_pending   NUMERIC(10,2) DEFAULT 0,
+  total_refunds   NUMERIC(10,2) DEFAULT 0,
+  notes           TEXT,
+  closed_by       TEXT,
+  closed_at       TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE daily_closings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_daily_closings ON daily_closings;
+CREATE POLICY allow_auth_daily_closings ON daily_closings
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #6: Payment Transactions (partial payments + refunds)
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  bill_id         UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
+  amount          NUMERIC(10,2) NOT NULL,
+  payment_mode    TEXT NOT NULL CHECK (payment_mode IN ('cash', 'upi', 'card', 'cheque', 'insurance', 'advance', 'other')),
+  transaction_type TEXT NOT NULL DEFAULT 'payment' CHECK (transaction_type IN ('payment', 'refund', 'advance', 'adjustment')),
+  reference_no    TEXT,
+  notes           TEXT,
+  recorded_by     TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_payment_transactions ON payment_transactions;
+CREATE POLICY allow_auth_payment_transactions ON payment_transactions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_payment_txn_bill ON payment_transactions(bill_id);
+CREATE INDEX IF NOT EXISTS idx_payment_txn_patient ON payment_transactions(patient_id);
+CREATE INDEX IF NOT EXISTS idx_payment_txn_date ON payment_transactions(created_at);
+
+-- Add refund tracking columns to bills
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS refund_reason TEXT;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS refunded_by TEXT;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #7: Billing packages table
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS billing_packages (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT,
+  items       JSONB NOT NULL DEFAULT '[]',
+  total       NUMERIC(10,2) DEFAULT 0,
+  category    TEXT DEFAULT 'general',
+  is_active   BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE billing_packages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_billing_packages ON billing_packages;
+CREATE POLICY allow_auth_billing_packages ON billing_packages
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #8: OPD Queue — add date index for date filter
+-- ═══════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'opd_queue') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opd_queue_date ON opd_queue(queue_date)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opd_queue_status ON opd_queue(status)';
+  END IF;
+END $$;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #9: IPD Nursing table (if missing)
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS ipd_nursing (
+  id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  ipd_admission_id    UUID REFERENCES ipd_admissions(id) ON DELETE CASCADE,
+  patient_id          UUID REFERENCES patients(id) ON DELETE CASCADE,
+  entry_type          TEXT NOT NULL DEFAULT 'vital',
+  recorded_time       TEXT,
+  pulse               TEXT,
+  bp_systolic         TEXT,
+  bp_diastolic        TEXT,
+  temperature         TEXT,
+  spo2                TEXT,
+  weight              TEXT,
+  rr                  TEXT,
+  vital_note          TEXT,
+  io_type             TEXT,
+  io_label            TEXT,
+  io_amount_ml        INTEGER,
+  medication_name     TEXT,
+  medication_dose     TEXT,
+  medication_route    TEXT,
+  medication_given_by TEXT,
+  nurse_name          TEXT,
+  note_text           TEXT,
+  created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE ipd_nursing ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_ipd_nursing ON ipd_nursing;
+CREATE POLICY allow_auth_ipd_nursing ON ipd_nursing
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_ipd_nursing_adm ON ipd_nursing(ipd_admission_id);
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- FIX #10: Clinic settings table (both names)
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS clinic_settings (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_auth_clinic_settings ON clinic_settings;
+CREATE POLICY allow_auth_clinic_settings ON clinic_settings
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- Done!
+-- ═══════════════════════════════════════════════════════════════
+SELECT 'v30 migration complete — all issues fixed' AS result;
 
 ```
 

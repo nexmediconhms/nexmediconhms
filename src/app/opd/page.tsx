@@ -1,11 +1,11 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike } from '@/lib/utils'
-import { Search, Stethoscope, UserPlus, ChevronRight } from 'lucide-react'
+import { Search, Stethoscope, UserPlus, ChevronRight, Clock } from 'lucide-react'
 
 export default function OPDIndexPage() {
   const router = useRouter()
@@ -13,8 +13,22 @@ export default function OPDIndexPage() {
   const [results, setResults] = useState<any[]>([])
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [recentPatients, setRecentPatients] = useState<any[]>([])
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load top 5 latest registered patients on mount
+  useEffect(() => {
+    async function loadRecent() {
+      const { data } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name, age, gender, mobile, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5)
+      setRecentPatients(data || [])
+    }
+    loadRecent()
+  }, [])
 
   function handleSearch(val: string) {
     setQuery(val)
@@ -102,6 +116,38 @@ export default function OPDIndexPage() {
             <UserPlus className="w-4 h-4" /> Register New Patient First
           </Link>
         </div>
+
+        {/* Recent Patients — Quick Select */}
+        {!searched && recentPatients.length > 0 && (
+          <div className="card p-5 mt-5">
+            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-gray-400" /> Recent Patients (Quick Select)
+            </h3>
+            <div className="space-y-1">
+              {recentPatients.map(p => (
+                <button key={p.id}
+                  onClick={() => router.push(`/opd/new?patient=${p.id}`)}
+                  className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-green-50 border border-transparent hover:border-green-200 transition-all text-left">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold text-green-700">{p.full_name.charAt(0)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm">{p.full_name}</div>
+                    <div className="text-xs text-gray-400">{p.mrn} · {p.age}y · {p.gender} · {p.mobile}</div>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-green-600 font-medium flex-shrink-0">
+                    Start <ChevronRight className="w-3 h-3" />
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 text-center">
+              <Link href="/patients" className="text-xs text-blue-600 hover:underline">
+                View All Patients →
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   )
