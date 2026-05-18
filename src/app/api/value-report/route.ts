@@ -13,19 +13,24 @@
  *
  * Uses ACTUAL schema:
  * - encounters.encounter_date  (renamed from 'date' by v30 migration)
+ *
+ * ─── HARDENING (May 2026) ────────────────────────────────────────────
+ *  - Auth: financial / operational metrics — admins and doctors only.
+ *  - Service-role client now comes from `getSupabaseAdmin()`.
+ *  - `month` param is validated against the `YYYY-MM` regex; invalid
+ *    inputs return 400 instead of producing nonsensical aggregates.
+ *  - Response shape and counters are unchanged.
+ * ─────────────────────────────────────────────────────────────────────
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireRole }                from '@/lib/api-auth'
+import { getSupabaseAdmin }           from '@/lib/supabase-admin'
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-      || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false } }
-  )
-}
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+const ALLOWED_ROLES = ['admin', 'doctor'] as const
 
 // Configuration constants — adjust these based on your clinic's averages
 const AVG_CONSULTATION_FEE     = 500   // ₹ per patient
@@ -33,10 +38,37 @@ const MINUTES_SAVED_PER_RX     = 5    // vs writing by hand
 const MINUTES_SAVED_PER_BILL   = 3    // vs manual bill
 const MINUTES_SAVED_PER_REMIND = 2    // per automated reminder
 
+function safeErrorLog(scope: string, err: unknown) {
+  const code = (err as { code?: string })?.code ?? 'unknown'
+  const msg  = (err as { message?: string })?.message ?? String(err)
+  // eslint-disable-next-line no-console
+  console.error(`[value-report][${scope}] code=${code} msg=${msg}`)
+}
+
 export async function GET(req: NextRequest) {
-  const sb    = getSupabase()
-  const month = req.nextUrl.searchParams.get('month')
-               || new Date().toISOString().slice(0, 7)  // default: current month
+  const auth = await requireRole(req, ALLOWED_ROLES as unknown as string[])
+  if (auth instanceof Response) return auth
+
+  let sb
+  try {
+    sb = getSupabaseAdmin()
+  } catch (err) {
+    safeErrorLog('getAdmin', err)
+    return NextResponse.json(
+      { error: 'Server is misconfigured.' },
+      { status: 500 }
+    )
+  }
+
+  const monthRaw = req.nextUrl.searchParams.get('month') ?? ''
+  const month = monthRaw || new Date().toISOString().slice(0, 7) // default: current month
+
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return NextResponse.json(
+      { error: 'month must be in YYYY-MM format' },
+      { status: 400 }
+    )
+  }
 
   // Month date range
   const from = month + '-01'
@@ -123,7 +155,7 @@ export async function GET(req: NextRequest) {
   const totalValue = noshowsValue + recallValue + unbilledValue
 
   // ── Cache the report ──────────────────────────────────────
-  await sb.from('value_reports').upsert({
+  const { error: upsertErr } = await sb.from('value_reports').upsert({
     report_month:      from,
     noshows_prevented: noshowsPrevented,
     noshows_value:     noshowsValue,
@@ -134,6 +166,10 @@ export async function GET(req: NextRequest) {
     hours_saved:       hoursSaved,
     total_value:       totalValue,
   }, { onConflict: 'report_month' })
+
+  // The cache is best-effort; if the table doesn't exist we still
+  // serve the live computed report.
+  if (upsertErr) safeErrorLog('value_reports.upsert', upsertErr)
 
   return NextResponse.json({
     month,

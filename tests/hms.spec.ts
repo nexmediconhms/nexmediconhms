@@ -1,4 +1,4 @@
-import { test, expect, Page, Response } from '@playwright/test'
+import { test, expect, Page, Response, APIResponse } from '@playwright/test'
 
 /**
  * NexMedicon HMS — End-to-End Test Suite
@@ -10,7 +10,7 @@ import { test, expect, Page, Response } from '@playwright/test'
  *      E2E_LOGIN_MFA_SECRET=...      (optional — base32 TOTP secret for MFA enrolled accounts)
  *      E2E_BASE_URL=http://localhost:3000  (defaults to playwright config)
  * 2. Make sure the app is running:    npm run dev
- * 3. Run:                              npx playwright test
+ * 3. Run:                             npx playwright test
  *
  * Tests cover:
  *   1–12  Original happy-path workflows (kept stable for CI dashboards)
@@ -659,7 +659,7 @@ test('26. Audit log page loads (admin)', async ({ page }) => {
 // ════════════════════════════════════════════════════════════════════
 
 async function expectUnauthenticated(
-  res: Response | null,
+  res: APIResponse | null,
   routeForMessage: string
 ) {
   expect(res, `No response from ${routeForMessage}`).not.toBeNull()

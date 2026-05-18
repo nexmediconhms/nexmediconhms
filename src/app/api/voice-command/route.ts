@@ -1,44 +1,35 @@
 /**
- * src/app/api/voice-command/route.ts — FIXED
+ * src/app/api/voice-command/route.ts
  *
- * Errors fixed:
+ * Resolves a raw voice transcript into a known intent.  Used by
+ * `src/components/voice/VoiceAssistant.tsx`, which now passes the
+ * Supabase session access_token as a Bearer header (it already does
+ * this in the current source — see the FIX comment in that file).
  *
- * ERROR: `import { VOICE_COMMANDS, matchCommandOffline } from '@/lib/voice-commands'`
- *
- * This fails for two related reasons:
- *
- * 1. The original voice-commands.ts file was placed under src/lib/ but the
- *    route is a Next.js Server Component/Route Handler. If voice-commands.ts
- *    contains any browser-only APIs (even indirectly via imports), the server
- *    bundle will fail. Solution: voice-commands.ts must NOT have 'use client'
- *    at the top — it is pure data/logic so it is safe for both client and server.
- *    Confirm: voice-commands.ts has no 'use client' directive → the import works.
- *
- * 2. The SYSTEM_PROMPT was a module-level `const` that called VOICE_COMMANDS.map()
- *    at import time. If the import of voice-commands fails for any reason, the
- *    entire route module fails to load. Fix: move SYSTEM_PROMPT construction
- *    into a function called lazily inside the POST handler so the route itself
- *    still loads even if voice-commands has an issue.
- *
- * 3. `matchCommandOffline` is still imported and used in the offline fallback
- *    path — this is correct and required.
- *
- * Additionally: the `requireAuth` guard is preserved. The auth token must be
- * passed from the client. VoiceAssistant calls this endpoint with credentials
- * from the active Supabase session (fetch with the session token header).
- * If you see 401 errors, make sure VoiceAssistant passes the auth header:
- *
- *   const { data: { session } } = await supabase.auth.getSession()
- *   headers: { Authorization: `Bearer ${session?.access_token}` }
- *
- * The current implementation calls /api/voice-command without an auth header.
- * Since the endpoint itself is low-risk (no data read/write, just text matching),
- * we downgrade from requireAuth to a soft check that still works without a token.
+ * ─── HARDENING (May 2026) ────────────────────────────────────────────
+ *  - PHI / clinical concern: voice transcripts can contain patient
+ *    names, complaints and prescription names.  Sending them to an
+ *    AI provider is fine when the user is authenticated, but allowing
+ *    anonymous internet callers to pipe arbitrary text into our AI
+ *    quota is not — the previous "soft auth" path is removed.
+ *  - All callers MUST pass `Authorization: Bearer <session.access_token>`.
+ *    `requireAuth` returns 401 otherwise.
+ *  - SYSTEM_PROMPT is still built lazily inside the handler so that an
+ *    import-time issue with `voice-commands.ts` cannot crash the
+ *    entire module.
+ *  - The AI fallback to keyword matching is preserved.
+ *  - Errors no longer leak `err.message`; we log structured details
+ *    server-side and return a neutral 500.
+ * ─────────────────────────────────────────────────────────────────────
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { generateText, hasAnyAIKey } from '@/lib/ai-client'
+import { requireAuth }                from '@/lib/api-auth'
+import { generateText, hasAnyAIKey }  from '@/lib/ai-client'
 import { VOICE_COMMANDS, matchCommandOffline } from '@/lib/voice-commands'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 // Build the system prompt lazily (inside the handler) so that any import-time
 // issues with voice-commands.ts don't crash the entire route module.
@@ -72,10 +63,9 @@ Return ONLY this JSON (no other text):
 }
 
 export async function POST(req: NextRequest) {
-  // Soft auth: try to validate, but don't block if the token is absent.
-  // VoiceAssistant currently calls this without passing the session token.
-  // If you want strict auth, replace with requireAuth and update the fetch call
-  // in VoiceAssistant to pass `Authorization: Bearer <session.access_token>`.
+  // Strict auth — voice transcripts can contain PHI.
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
 
   let body: { transcript?: string; currentPage?: string; currentTab?: string }
   try {
@@ -84,9 +74,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const transcript  = (body.transcript  ?? '').trim()
-  const currentPage = (body.currentPage ?? '').trim()
-  const currentTab  = (body.currentTab  ?? '').trim()
+  const transcript  = (body.transcript  ?? '').trim().slice(0, 1000) // hard cap
+  const currentPage = (body.currentPage ?? '').trim().slice(0, 200)
+  const currentTab  = (body.currentTab  ?? '').trim().slice(0, 60)
 
   if (!transcript) {
     return NextResponse.json({
@@ -137,8 +127,10 @@ export async function POST(req: NextRequest) {
         reasoning:  parsed.reasoning  ?? '',
         fallback:   false,
       })
-    } catch {
-      // AI failed — fall through to keyword matching
+    } catch (err) {
+      // AI failed — log and fall through to keyword matching.
+      // eslint-disable-next-line no-console
+      console.error('[voice-command] AI resolution failed:', (err as { message?: string })?.message ?? err)
     }
   }
 

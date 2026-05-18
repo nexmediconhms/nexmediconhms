@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { loadABDMConfig, saveABDMConfig, type ABDMConfig } from '@/lib/abdm'
+import { supabase } from '@/lib/supabase'
 import {
   Shield, CheckCircle, AlertCircle, ExternalLink, Info,
   Key, Globe, Server, ArrowLeft, Save, Loader2,
@@ -37,19 +38,31 @@ export default function ABDMSetupPage() {
     setTestStatus('testing')
     setTestMsg('')
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setTestStatus('error')
+        setTestMsg('Your session has expired. Please log in again.')
+        return
+      }
       const res = await fetch('/api/abdm/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           clientId:     config.clientId,
           clientSecret: config.clientSecret,
           environment:  config.environment,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as { accessToken?: string; error?: string }))
       if (res.ok && data.accessToken) {
         setTestStatus('success')
         setTestMsg('Connection successful! ABDM gateway authenticated.')
+      } else if (res.status === 403) {
+        setTestStatus('error')
+        setTestMsg('Only an administrator can test ABDM connections from the browser. In production, configure ABDM_CLIENT_ID / ABDM_CLIENT_SECRET as server environment variables.')
       } else {
         setTestStatus('error')
         setTestMsg(data.error || 'Connection failed. Check your credentials.')

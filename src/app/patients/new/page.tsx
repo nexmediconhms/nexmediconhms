@@ -269,9 +269,20 @@ export default function NewPatientPage() {
     setPayLinkLoading(true)
     const fallbackMsg = `Hello ${name},\n\nYour registration is complete. Please visit reception to complete payment before your consultation.\n\nThank you!`
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        // Session expired — fall back to manual reception message rather
+        // than silently failing or hard-erroring the registration flow.
+        setPayLink({ type: 'manual', whatsappText: fallbackMsg })
+        setPayLinkLoading(false)
+        return
+      }
       const res = await fetch('/api/payment-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           patientName: name, mobile,
           amount: 50000, description: 'OPD Registration Fee',

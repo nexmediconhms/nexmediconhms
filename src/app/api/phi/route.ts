@@ -87,9 +87,25 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Status check: does not require auth (used by setup wizard) ──
+    // ── Status check ─────────────────────────────────────────────
+    //
+    // FIX (May 2026): the previous version returned a detailed
+    // breakdown of why encryption was not working (env-var missing
+    // vs malformed key length) without authentication.  An attacker
+    // can use that to fingerprint a target deployment.  We now
+    // return ONLY a boolean to anonymous callers; full diagnostic
+    // detail requires authentication.
     if (action === 'status') {
       const status = getEncryptionStatus()
+      const configured = status === 'configured'
+
+      // Anonymous callers get a yes/no.
+      const user = await authenticateRequest(req)
+      if (!user) {
+        return NextResponse.json({ success: true, configured })
+      }
+
+      // Authenticated users get the diagnostic detail.
       const messages: Record<string, string> = {
         configured: 'PHI encryption is active and properly configured.',
         not_configured: 'HOSPITAL_ENCRYPTION_KEY is not set. Patient Aadhaar data CANNOT be saved securely.',
@@ -97,7 +113,7 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({
         success: true,
-        configured: status === 'configured',
+        configured,
         status,
         message: messages[status],
       })
@@ -220,8 +236,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Unknown error
-    console.error('[PHI API] Unexpected error:', err)
+    // Unknown error — log a structured server-side line WITHOUT the
+    // raw request body (which can contain PHI).  Only the error
+    // class / message string is logged; never the value being
+    // encrypted/decrypted.
+    const eMsg = (err as { message?: string })?.message ?? String(err)
+    console.error(`[PHI API] Unexpected error: ${eMsg}`)
     return NextResponse.json(
       { success: false, error: 'Internal server error during PHI operation.' },
       { status: 500 }

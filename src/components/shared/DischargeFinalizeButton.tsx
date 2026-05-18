@@ -34,6 +34,17 @@
 import { useState } from 'react'
 import { CheckCircle, Lock, Unlock, AlertTriangle, Loader2 } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+
+// Helper: fetch the current Supabase access token. Returns null if the
+// session has expired so callers can show a clear "log in again" message
+// instead of letting the request fall through with no Authorization header
+// (which the new auth-guarded discharge API now rejects with 401).
+async function getAuthHeader(): Promise<Record<string, string> | null> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) return null
+  return { Authorization: `Bearer ${session.access_token}` }
+}
 
 interface DischargeFinalizeButtonProps {
   dischargeSummaryId: string | null
@@ -75,18 +86,28 @@ export default function DischargeFinalizeButton({
     setLoading(true)
     setError(null)
     try {
+      const authHeader = await getAuthHeader()
+      if (!authHeader) {
+        setError('Your session has expired. Please log in again.')
+        return
+      }
       const res = await fetch('/api/discharge/finalize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dischargeSummaryId, patientId, version }),
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ dischargeId: dischargeSummaryId, patientId, version }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as Record<string, unknown>))
 
       if (!res.ok) {
+        const errMsg = (data as { error?: string }).error || 'Failed to finalize.'
         if (res.status === 409) {
-          setError(data.error + ' Please refresh the page.')
+          setError(`${errMsg} Please refresh the page.`)
+        } else if (res.status === 401) {
+          setError('Your session has expired. Please log in again.')
+        } else if (res.status === 403) {
+          setError('You do not have permission to finalize discharge summaries.')
         } else {
-          setError(data.error || 'Failed to finalize.')
+          setError(errMsg)
         }
         return
       }
@@ -107,15 +128,27 @@ export default function DischargeFinalizeButton({
     setUnfinalizeLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/discharge/unfinalize', {
+      const authHeader = await getAuthHeader()
+      if (!authHeader) {
+        setError('Your session has expired. Please log in again.')
+        return
+      }
+      const res = await fetch('/api/discharge/finalize?action=unfinalize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dischargeSummaryId, patientId, reason: unfinalizeReason.trim() }),
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ dischargeId: dischargeSummaryId, patientId, reason: unfinalizeReason.trim() }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as Record<string, unknown>))
 
       if (!res.ok) {
-        setError(data.error || 'Failed to unfinalize.')
+        const errMsg = (data as { error?: string }).error || 'Failed to unfinalize.'
+        if (res.status === 401) {
+          setError('Your session has expired. Please log in again.')
+        } else if (res.status === 403) {
+          setError('Only an administrator can revert a finalized discharge summary.')
+        } else {
+          setError(errMsg)
+        }
         return
       }
       setShowUnfinalizeModal(false)

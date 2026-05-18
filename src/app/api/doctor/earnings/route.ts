@@ -6,41 +6,85 @@
  * GET /api/doctor/earnings?from=2024-01-01&to=2024-01-31
  * GET /api/doctor/earnings?doctorId=xxx&from=...&to=...
  *
- * FIXED: Uses correct snake_case table/column names matching deployed DB:
+ * Uses correct snake_case table/column names matching deployed DB:
  * - encounters.encounter_date
  * - encounters.patient_id
  * - encounters.doctor_name  (text field)
  * - ipd_admissions (NOT ipdadmissions)
  * - bills.patient_id, bills.net_amount, bills.status, bills.created_at
  * - clinic_users.share_pct
+ *
+ * ─── HARDENING (May 2026) ────────────────────────────────────────────
+ *  - Auth: financial roll-up across the whole clinic — admins and
+ *    doctors only.  Receptionists / staff cannot view this endpoint.
+ *  - Service-role client now comes from `getSupabaseAdmin()` so the
+ *    route does not crash `next build` when env vars are absent at
+ *    static-page-data collection.
+ *  - Errors are logged structurally server-side; clients see neutral
+ *    messages so we don't leak DB column names / migration state.
+ *  - Aggregation logic is unchanged — same response shape, same
+ *    sharing math, same field names.
+ * ─────────────────────────────────────────────────────────────────────
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireRole }                from '@/lib/api-auth'
+import { getSupabaseAdmin }           from '@/lib/supabase-admin'
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-      || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false } }
-  )
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+const ALLOWED_ROLES = ['admin', 'doctor'] as const
+
+function safeErrorLog(scope: string, err: unknown) {
+  const code = (err as { code?: string })?.code ?? 'unknown'
+  const msg  = (err as { message?: string })?.message ?? String(err)
+  // eslint-disable-next-line no-console
+  console.error(`[doctor-earnings][${scope}] code=${code} msg=${msg}`)
 }
 
 export async function GET(req: NextRequest) {
+  // Auth
+  const auth = await requireRole(req, ALLOWED_ROLES as unknown as string[])
+  if (auth instanceof Response) return auth
+
+  // Validate inputs
   const params   = req.nextUrl.searchParams
   const doctorId = params.get('doctorId')
   const from     = params.get('from')
   const to       = params.get('to')
 
   if (!from || !to) {
-    return NextResponse.json({ error: 'from and to date params are required (YYYY-MM-DD)' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'from and to date params are required (YYYY-MM-DD)' },
+      { status: 400 }
+    )
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return NextResponse.json(
+      { error: 'from and to must be YYYY-MM-DD' },
+      { status: 400 }
+    )
   }
 
-  const sb = getSupabase()
+  // doctorId is currently informational; the main aggregation groups
+  // by encounter.doctor_name regardless.  Keep it in the API surface
+  // so a future iteration can filter without changing the contract.
+  void doctorId
+
+  let sb
+  try {
+    sb = getSupabaseAdmin()
+  } catch (err) {
+    safeErrorLog('getAdmin', err)
+    return NextResponse.json(
+      { error: 'Server is misconfigured.' },
+      { status: 500 }
+    )
+  }
 
   // ── Fetch OPD encounters in the date range ────────────────
-  let encQuery = sb
+  const encQuery = sb
     .from('encounters')
     .select('id, patient_id, doctor_name, encounter_date')
     .gte('encounter_date', from)
@@ -48,18 +92,23 @@ export async function GET(req: NextRequest) {
 
   const { data: encounters, error: encErr } = await encQuery
   if (encErr) {
-    return NextResponse.json({ error: `Encounters query failed: ${encErr.message}` }, { status: 500 })
+    safeErrorLog('encounters', encErr)
+    return NextResponse.json(
+      { error: 'Failed to fetch OPD encounters.' },
+      { status: 500 }
+    )
   }
 
   // ── Fetch IPD admissions in the date range ────────────────
   // Use ipd_admissions (snake_case) — the actual table in deployed DB
-  let ipdQuery = sb
+  const ipdQuery = sb
     .from('ipd_admissions')
     .select('id, patient_id, admitting_doctor, admission_date')
     .gte('admission_date', from)
     .lte('admission_date', to)
 
-  const { data: admissions } = await ipdQuery
+  const { data: admissions, error: ipdErr } = await ipdQuery
+  if (ipdErr) safeErrorLog('ipd_admissions', ipdErr)
 
   // ── Fetch bills for encountered patients ──────────────────
   const patientIdSet = new Set<string>(
@@ -73,13 +122,14 @@ export async function GET(req: NextRequest) {
 
   let billsData: any[] = []
   if (patientIds.length > 0) {
-    const { data: bills } = await sb
+    const { data: bills, error: billsErr } = await sb
       .from('bills')
       .select('patient_id, net_amount, status, created_at')
       .in('patient_id', patientIds)
       .gte('created_at', from + 'T00:00:00')
       .lte('created_at', to + 'T23:59:59')
 
+    if (billsErr) safeErrorLog('bills', billsErr)
     billsData = bills || []
   }
 
@@ -95,18 +145,21 @@ export async function GET(req: NextRequest) {
   // ── Fetch doctor share percentages ────────────────────────
   // Try clinic_users (snake_case) first, fall back to clinicusers
   let doctors: any[] = []
-  const { data: d1 } = await sb
+  const { data: d1, error: d1Err } = await sb
     .from('clinic_users')
     .select('id, full_name, share_pct, earning_model')
     .in('role', ['admin', 'doctor'])
 
+  if (d1Err) safeErrorLog('clinic_users', d1Err)
+
   if (d1 && d1.length > 0) {
     doctors = d1
   } else {
-    const { data: d2 } = await sb
+    const { data: d2, error: d2Err } = await sb
       .from('clinicusers')
       .select('id, fullname, share_pct, earning_model')
       .eq('role', 'doctor')
+    if (d2Err) safeErrorLog('clinicusers', d2Err)
     doctors = d2 || []
   }
 

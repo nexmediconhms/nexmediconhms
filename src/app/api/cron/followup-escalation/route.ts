@@ -42,9 +42,23 @@ function daysBetween(from: string, to: string): number {
 }
 
 // Auth validation (same pattern as auto-generate)
+//
+// FIX (May 2026): the previous implementation returned `true` whenever
+// CRON_SECRET was unset, which was useful in local dev but meant that
+// a forgotten env var in production left the endpoint completely open
+// — anyone could trigger bulk WhatsApp escalation runs.  Now we
+// fail-CLOSED in production: if CRON_SECRET is missing, the request is
+// rejected.  Local dev is unaffected (NODE_ENV !== 'production').
 function validateCronAuth(req: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) return true // Allow in dev without secret
+  if (!cronSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[followup-escalation] CRON_SECRET not configured in production — request denied')
+      return false
+    }
+    console.warn('[followup-escalation] CRON_SECRET not set (allowed in non-production)')
+    return true
+  }
 
   const authHeader = req.headers.get('authorization') ?? ''
   const querySecret = new URL(req.url).searchParams.get('secret') ?? ''
@@ -105,7 +119,17 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 2: For each overdue prescription, check if patient visited AFTER the follow-up date ──
-    const patientIds = [new Set(prescriptions.map((p: any) => p.patient_id).filter(Boolean))]
+    //
+    // FIX (May 2026): the previous expression
+    //   const patientIds = [new Set(prescriptions.map(...))]
+    // wrapped a Set inside a 1-element array, which made the next
+    // `.in('patient_id', patientIds)` query compare a UUID column to a
+    // single Set object — Postgres returned no rows and the entire
+    // escalation feature silently did nothing.  Use Array.from(...) to
+    // materialise the Set into a real string[] of UUIDs.
+    const patientIds = Array.from(
+      new Set((prescriptions as any[]).map((p: any) => p.patient_id).filter(Boolean))
+    ) as string[]
 
     // Batch-fetch latest encounter date per patient
     const latestVisitMap = new Map<string, string>()

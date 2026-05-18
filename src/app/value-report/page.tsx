@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/business-logic'
 import { RefreshCw, AlertCircle, Clock, Users, Bell, FileText, Receipt } from 'lucide-react'
 
@@ -38,9 +39,15 @@ export default function ValueReportPage() {
   async function loadReport(m: string) {
     setLoading(true); setError('')
     try {
-      const res  = await fetch(`/api/value-report?month=${m}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      // /api/value-report is now auth-gated (admin/doctor only).
+      // Pass the Supabase session access token as a Bearer header.
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {}
+      const res  = await fetch(`/api/value-report?month=${m}`, { headers })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Failed to load (HTTP ${res.status})`)
       setReport(data)
     } catch (e: any) { setError(e.message) }
     setLoading(false)

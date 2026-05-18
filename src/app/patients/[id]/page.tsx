@@ -345,7 +345,25 @@ export default function PatientDetailPage() {
                             setMenuOpen(false)
                             setFhirExporting(true)
                             try {
-                              const res = await fetch(`/api/fhir/patient/${patient.id}`)
+                              const { data: { session } } = await supabase.auth.getSession()
+                              if (!session?.access_token) {
+                                alert('Your session has expired. Please log in again.')
+                                return
+                              }
+                              const res = await fetch(`/api/fhir/patient/${patient.id}`, {
+                                headers: { Authorization: `Bearer ${session.access_token}` },
+                                cache: 'no-store',
+                              })
+                              if (!res.ok) {
+                                let msg = `FHIR export failed (${res.status}).`
+                                try {
+                                  const body = await res.json()
+                                  if (body?.issue?.[0]?.diagnostics) msg = body.issue[0].diagnostics
+                                  else if (body?.error)               msg = body.error
+                                } catch { /* ignore parse error */ }
+                                alert(msg)
+                                return
+                              }
                               const bundle = await res.json()
                               const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json' })
                               const url = URL.createObjectURL(blob)
@@ -354,7 +372,10 @@ export default function PatientDetailPage() {
                               a.download = `${patient.mrn}_FHIR_Bundle.json`
                               a.click()
                               URL.revokeObjectURL(url)
-                            } catch { } finally { setFhirExporting(false) }
+                            } catch (err) {
+                              console.error('[FHIR export]', err)
+                              alert('Network error while exporting FHIR bundle.')
+                            } finally { setFhirExporting(false) }
                           }}
                           disabled={fhirExporting}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -1216,7 +1237,41 @@ export default function PatientDetailPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={() => window.open(bundleUrl, '_blank')}
+                      onClick={async () => {
+                        // The /api/insurance-bundle endpoint is now auth-gated
+                        // (it returns full PHI). A plain window.open() does NOT
+                        // carry an Authorization header, so we fetch the HTML
+                        // with the current session's access_token and open
+                        // the result via a same-origin Blob URL.
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession()
+                          if (!session) {
+                            alert('Your session has expired. Please log in again to open the insurance bundle.')
+                            return
+                          }
+                          const res = await fetch(bundleUrl, {
+                            method: 'GET',
+                            headers: { Authorization: `Bearer ${session.access_token}` },
+                            credentials: 'same-origin',
+                          })
+                          if (!res.ok) {
+                            const errText = await res.text().catch(() => '')
+                            alert(`Could not open insurance bundle (HTTP ${res.status}). ${errText.slice(0, 200)}`)
+                            return
+                          }
+                          const html = await res.text()
+                          const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+                          const blobUrl = URL.createObjectURL(blob)
+                          const win = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+                          if (!win) {
+                            alert('Pop-up was blocked by the browser. Please allow pop-ups for this site and try again.')
+                          }
+                          // Revoke after a generous delay so the new tab has time to load.
+                          setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+                        } catch (err: any) {
+                          alert(`Failed to open insurance bundle: ${err?.message || err}`)
+                        }
+                      }}
                       className="flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors">
                       <ExternalLink className="w-4 h-4" />
                       Open &amp; Print Bundle

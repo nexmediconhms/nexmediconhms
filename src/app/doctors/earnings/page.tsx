@@ -167,10 +167,17 @@ export default function DoctorEarningsPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/doctor/earnings?from=${from}&to=${to}`)
+      // /api/doctor/earnings is now auth-gated (admin/doctor only).
+      // Pass the Supabase session access token as a Bearer header.
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {}
+
+      const res = await fetch(`/api/doctor/earnings?from=${from}&to=${to}`, { headers })
       if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error || 'Failed to load')
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || `Failed to load (HTTP ${res.status})`)
       }
       const data = await res.json()
       setEarnings(data.earnings || [])

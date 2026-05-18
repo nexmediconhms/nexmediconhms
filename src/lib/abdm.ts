@@ -241,14 +241,28 @@ export function calculateAgeFromProfile(profile: ABHAProfile): number {
  */
 
 // ── Get ABDM session token (via our API) ─────────────────────
+//
+// /api/abdm/auth now requires a Bearer token from a clinic user. We
+// lazy-import the supabase browser client to keep this file usable in
+// any environment where supabase auth is set up.
 export async function getABDMSessionToken(): Promise<{ token?: string; error?: string }> {
   try {
-    const res = await fetch('/api/abdm/auth', { method: 'POST' })
-    const data = await res.json()
+    // Lazy import so that any non-browser caller doesn't drag in the
+    // browser supabase client unnecessarily.
+    const { supabase } = await import('@/lib/supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      return { error: 'Not signed in. Please log in again.' }
+    }
+    const res = await fetch('/api/abdm/auth', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    const data = await res.json().catch(() => ({} as { accessToken?: string; error?: string }))
     if (!res.ok) return { error: data.error || 'Auth failed' }
     return { token: data.accessToken }
   } catch (err: any) {
-    return { error: err.message }
+    return { error: err?.message || 'Network error' }
   }
 }
 

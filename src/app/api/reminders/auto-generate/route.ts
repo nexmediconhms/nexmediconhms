@@ -191,9 +191,20 @@ export async function POST(req: NextRequest) {
       )
     }
   } else {
-    // CRON_SECRET not configured — warn loudly in logs but don't block
-    // (allows local dev without the secret set).
-    console.warn('[auto-gen] WARNING: CRON_SECRET env var is not set. Endpoint is unprotected!')
+    // CRON_SECRET not configured.
+    //
+    // FIX (May 2026): in production this is a critical mis-configuration
+    // — the endpoint can spam patients with reminders if left open.
+    // Fail closed in production; log a warning in non-production so
+    // local dev still works without the secret set.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[auto-gen] CRON_SECRET not configured in production — request denied')
+      return NextResponse.json(
+        { error: 'Server misconfigured: CRON_SECRET is required in production.' },
+        { status: 401 }
+      )
+    }
+    console.warn('[auto-gen] WARNING: CRON_SECRET env var is not set. Endpoint is unprotected (non-production only)!')
   }
   // ─────────────────────────────────────────────────────────────
 

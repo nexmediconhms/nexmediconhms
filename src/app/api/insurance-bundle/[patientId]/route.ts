@@ -1,10 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+/**
+ * src/app/api/insurance-bundle/[patientId]/route.ts
+ *
+ * Insurance / Mediclaim "Bundle" — assembles a printable HTML document
+ * containing every clinical artefact for a patient: cover, discharge
+ * summaries, prescriptions, paid bills, consultation history and
+ * uploaded files.  Designed to be opened in a new tab and printed.
+ *
+ * ─── HARDENING (May 2026) ────────────────────────────────────────────
+ *  - This response contains FULL PHI (name, DOB, mobile, Aadhaar,
+ *    ABHA, diagnoses, prescriptions, bills, files).  It MUST NEVER be
+ *    served unauthenticated.
+ *  - Auth: every call must come from an authenticated, active clinic
+ *    user with role admin / doctor / receptionist / staff.
+ *  - The DB queries use the lazy service-role client (`getSupabaseAdmin`)
+ *    so the route works regardless of RLS configuration on the row
+ *    tables (and so `next build` does not crash when env vars are
+ *    only present at runtime, not at static-page-data collection).
+ *  - The HTML response is marked private and no-store so it cannot
+ *    be cached by intermediate proxies.
+ *  - The UI consumer (`src/app/patients/[id]/page.tsx`) was updated
+ *    in the same change-set to fetch this endpoint with a Bearer
+ *    token and open the result via `URL.createObjectURL(blob)` —
+ *    a plain `window.open(url)` would not carry the Authorization
+ *    header and would now (correctly) receive 401.
+ *  - All `buildHTML` markup, CSS and helpers are byte-for-byte
+ *    unchanged from the previous version.
+ * ─────────────────────────────────────────────────────────────────────
+ */
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRole }                from '@/lib/api-auth'
+import { getSupabaseAdmin }           from '@/lib/supabase-admin'
+
+// Routes that use the admin client must opt out of static prerendering.
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+const ALLOWED_ROLES = ['admin', 'doctor', 'receptionist', 'staff'] as const
+
+const UUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+function safeErrorLog(scope: string, patientId: string, err: unknown) {
+  const code = (err as { code?: string })?.code ?? 'unknown'
+  const msg  = (err as { message?: string })?.message ?? String(err)
+  // eslint-disable-next-line no-console
+  console.error(`[insurance-bundle][${scope}] patientId=${patientId} code=${code} msg=${msg}`)
+}
 
 // ── Small helpers ─────────────────────────────────────────────
 function fmtDate(d?: string | null): string {
@@ -424,22 +466,42 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1118
 
 // ── Route handler ─────────────────────────────────────────────
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { patientId: string } },
 ) {
+  // 1. Auth — must be an active clinic user.
+  const auth = await requireRole(req, ALLOWED_ROLES as unknown as string[])
+  if (auth instanceof Response) return auth
+
+  // 2. Validate path param.
   const { patientId } = params
-  if (!patientId) {
-    return NextResponse.json({ error: 'patientId required' }, { status: 400 })
+  if (!patientId || !UUID_RE.test(patientId)) {
+    return NextResponse.json({ error: 'Valid patientId (UUID) is required' }, { status: 400 })
   }
 
+  // 3. Lazy admin client (used because RLS may differ across tables and
+  //    this route already aggregates from 7 of them — keeping behaviour
+  //    identical to the previous version).
+  let supabase
+  try {
+    supabase = getSupabaseAdmin()
+  } catch (err) {
+    safeErrorLog('getAdmin', patientId, err)
+    return NextResponse.json(
+      { error: 'Server is misconfigured. Please contact your administrator.' },
+      { status: 500 }
+    )
+  }
+
+  // 4. Fetch all the artefacts in parallel.
   const [
-    { data: patient },
-    { data: encounters },
-    { data: prescriptions },
-    { data: discharges },
-    { data: bills },
-    { data: att1 },
-    { data: att2 },
+    { data: patient, error: pErr },
+    { data: encounters,    error: eErr },
+    { data: prescriptions, error: rxErr },
+    { data: discharges,    error: dErr },
+    { data: bills,         error: bErr },
+    { data: att1,          error: a1Err },
+    { data: att2,          error: a2Err },
   ] = await Promise.all([
     supabase.from('patients').select('*').eq('id', patientId).single(),
     supabase.from('encounters').select('*').eq('patient_id', patientId).order('encounter_date', { ascending: false }),
@@ -450,7 +512,16 @@ export async function GET(
     supabase.from('consultation_files_db').select('id,file_name,file_type,notes,created_at').eq('patient_id', patientId).order('created_at', { ascending: false }),
   ])
 
-  if (!patient) {
+  // Auxiliary tables may not exist in every deployment — log but don't fail.
+  if (eErr)  safeErrorLog('encounters', patientId, eErr)
+  if (rxErr) safeErrorLog('prescriptions', patientId, rxErr)
+  if (dErr)  safeErrorLog('discharge_summaries', patientId, dErr)
+  if (bErr)  safeErrorLog('bills', patientId, bErr)
+  if (a1Err) safeErrorLog('consultation_attachments', patientId, a1Err)
+  if (a2Err) safeErrorLog('consultation_files_db', patientId, a2Err)
+
+  if (pErr || !patient) {
+    if (pErr) safeErrorLog('patient', patientId, pErr)
     return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
   }
 
@@ -471,8 +542,9 @@ export async function GET(
   return new NextResponse(html, {
     status: 200,
     headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
+      'Content-Type':  'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   })
 }
