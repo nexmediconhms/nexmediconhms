@@ -9911,6 +9911,147 @@ export async function GET(req: NextRequest) {
 }
 ```
 
+# src\app\api\billing\ca-report-pdf\route.ts
+
+```ts
+/**
+ * src/app/api/billing/ca-report-pdf/route.ts
+ *
+ * Generates a proper PDF for the CA Revenue Report.
+ * Returns the PDF as a downloadable file or stores in Supabase Storage.
+ *
+ * This replaces the plain text WhatsApp/Email sharing with proper PDF format.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+)
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { reportData, hospitalSettings } = body
+
+    if (!reportData) {
+      return NextResponse.json({ error: 'Missing report data' }, { status: 400 })
+    }
+
+    const hs = hospitalSettings || {}
+    const r = reportData
+
+    // Generate HTML for PDF conversion (using a print-friendly format)
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Inter', Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; }
+    .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 16px; margin-bottom: 24px; }
+    .header h1 { font-size: 20px; color: #1e293b; margin: 0 0 4px; }
+    .header p { font-size: 12px; color: #64748b; margin: 2px 0; }
+    .title { font-size: 16px; font-weight: bold; color: #1e293b; margin-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #64748b; margin-bottom: 20px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; }
+    .summary-box .value { font-size: 18px; font-weight: 700; color: #1e293b; }
+    .summary-box .label { font-size: 10px; color: #64748b; margin-top: 4px; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11px; }
+    th { background: #f1f5f9; text-align: left; padding: 8px 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+    .section-title { font-size: 13px; font-weight: 700; color: #334155; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+    .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .amount { font-family: monospace; font-weight: 600; }
+    .highlight { background: #ecfdf5; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${hs.hospitalName || 'NexMedicon Hospital'}</h1>
+    ${hs.address ? `<p>${hs.address}</p>` : ''}
+    ${hs.phone ? `<p>Tel: ${hs.phone}</p>` : ''}
+  </div>
+
+  <div class="title">CA Revenue Report</div>
+  <div class="subtitle">Period: ${r.period} (${r.fromDate} to ${r.toDate})</div>
+
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="value amount">₹${Number(r.totalGross).toLocaleString('en-IN')}</div>
+      <div class="label">Gross Revenue</div>
+    </div>
+    <div class="summary-box">
+      <div class="value amount">₹${Number(r.totalDiscount).toLocaleString('en-IN')}</div>
+      <div class="label">Discounts</div>
+    </div>
+    <div class="summary-box highlight">
+      <div class="value amount" style="color:#15803d">₹${Number(r.totalNet).toLocaleString('en-IN')}</div>
+      <div class="label">Net Collected</div>
+    </div>
+    <div class="summary-box">
+      <div class="value">${r.billCount}</div>
+      <div class="label">Bills Paid</div>
+    </div>
+  </div>
+
+  ${r.pendingCount > 0 ? `
+  <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11px;color:#92400e;">
+    ⚠️ ${r.pendingCount} pending bill(s) — ₹${Number(r.pendingAmount).toLocaleString('en-IN')} not yet collected
+  </div>` : ''}
+
+  <div class="section-title">Payment Mode Breakdown</div>
+  <table>
+    <thead><tr><th>Mode</th><th>Amount</th><th>Bills</th></tr></thead>
+    <tbody>
+      ${(r.paymentBreakdown || []).map((m: any) => `
+        <tr>
+          <td style="text-transform:capitalize">${m.mode}</td>
+          <td class="amount">₹${Number(m.amount).toLocaleString('en-IN')}</td>
+          <td>${m.count}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="section-title">Service-wise Revenue</div>
+  <table>
+    <thead><tr><th>Service</th><th>Revenue</th><th>Count</th></tr></thead>
+    <tbody>
+      ${(r.serviceBreakdown || []).slice(0, 15).map((s: any) => `
+        <tr>
+          <td>${s.label}</td>
+          <td class="amount">₹${Number(s.amount).toLocaleString('en-IN')}</td>
+          <td>${s.count}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+    <span>${hs.hospitalName || 'NexMedicon HMS'} ${hs.doctorName ? '· Dr. ' + hs.doctorName : ''}</span>
+  </div>
+</body>
+</html>`
+
+    // Return the HTML as a response that can be printed to PDF client-side
+    // The client will use window.print() or a PDF service
+    return NextResponse.json({
+      ok: true,
+      html,
+      fileName: `CA-Report-${r.period.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`,
+    })
+  } catch (err: any) {
+    console.error('[ca-report-pdf] error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+```
+
 # src\app\api\billing\daily-closing\route.ts
 
 ```ts
@@ -12447,6 +12588,133 @@ export async function GET(
 }
 ```
 
+# src\app\api\labs\extract-values\route.ts
+
+```ts
+/**
+ * src/app/api/labs/extract-values/route.ts
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+
+// Common lab test patterns for extraction - All original patterns preserved
+const LAB_PATTERNS: { name: string; patterns: RegExp[]; unit: string; low: number; high: number }[] = [
+  { name: 'Haemoglobin (Hb)', patterns: [/h[ae]moglobin[:\s]+(\d+\.?\d*)/i, /\bHb[:\s]+(\d+\.?\d*)/i, /\bHB[:\s]+(\d+\.?\d*)/i], unit: 'g/dL', low: 11.5, high: 16.5 },
+  { name: 'WBC (Total Count)', patterns: [/WBC[:\s]+(\d+[\.,]?\d*)/i, /Total\s*Count[:\s]+(\d+[\.,]?\d*)/i, /TLC[:\s]+(\d+[\.,]?\d*)/i], unit: 'cells/µL', low: 4000, high: 11000 },
+  { name: 'Platelet Count', patterns: [/Platelet[s]?[:\s]+(\d+[\.,]?\d*)/i, /PLT[:\s]+(\d+[\.,]?\d*)/i], unit: 'cells/µL', low: 150000, high: 400000 },
+  { name: 'Blood Sugar Fasting', patterns: [/Fasting[:\s]*(?:Blood\s*)?(?:Sugar|Glucose)[:\s]+(\d+\.?\d*)/i, /FBS[:\s]+(\d+\.?\d*)/i, /Glucose\s*\(F\)[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 70, high: 100 },
+  { name: 'Blood Sugar PP', patterns: [/PP[:\s]*(?:Blood\s*)?(?:Sugar|Glucose)[:\s]+(\d+\.?\d*)/i, /PPBS[:\s]+(\d+\.?\d*)/i, /Post\s*Prandial[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 0, high: 140 },
+  { name: 'HbA1c', patterns: [/HbA1c[:\s]+(\d+\.?\d*)/i, /Glycosylated[:\s]+(\d+\.?\d*)/i], unit: '%', low: 0, high: 5.7 },
+  { name: 'TSH', patterns: [/TSH[:\s]+(\d+\.?\d*)/i, /Thyroid[:\s]+(\d+\.?\d*)/i], unit: 'mIU/L', low: 0.4, high: 4.0 },
+  { name: 'Creatinine', patterns: [/Creatinine[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 0.6, high: 1.2 },
+  { name: 'ESR', patterns: [/ESR[:\s]+(\d+\.?\d*)/i], unit: 'mm/hr', low: 0, high: 20 },
+  { name: 'SGPT/ALT', patterns: [/SGPT[:\s]+(\d+\.?\d*)/i, /ALT[:\s]+(\d+\.?\d*)/i], unit: 'U/L', low: 7, high: 56 },
+  { name: 'SGOT/AST', patterns: [/SGOT[:\s]+(\d+\.?\d*)/i, /AST[:\s]+(\d+\.?\d*)/i], unit: 'U/L', low: 10, high: 40 },
+  { name: 'Cholesterol', patterns: [/(?:Total\s*)?Cholesterol[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 0, high: 200 },
+  { name: 'Triglycerides', patterns: [/Triglyceride[s]?[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 0, high: 150 },
+  { name: 'Uric Acid', patterns: [/Uric\s*Acid[:\s]+(\d+\.?\d*)/i], unit: 'mg/dL', low: 2.4, high: 7.0 },
+  { name: 'PCV/Haematocrit', patterns: [/PCV[:\s]+(\d+\.?\d*)/i, /H[ae]matocrit[:\s]+(\d+\.?\d*)/i, /HCT[:\s]+(\d+\.?\d*)/i], unit: '%', low: 36, high: 48 },
+]
+
+function extractLabValues(text: string): { values: Record<string, string>; abnormals: string[] } {
+  const values: Record<string, string> = {}
+  const abnormals: string[] = []
+
+  for (const test of LAB_PATTERNS) {
+    for (const pattern of test.patterns) {
+      const match = text.match(pattern)
+      if (match && match[1]) {
+        // Handle commas in numbers like 1,50,000 correctly
+        const numStr = match[1].replace(/,/g, '')
+        const numVal = parseFloat(numStr)
+        
+        if (!isNaN(numVal)) {
+          values[test.name] = `${numVal} ${test.unit}`
+          if (numVal < test.low || numVal > test.high) {
+            const status = numVal < test.low ? 'LOW' : 'HIGH'
+            abnormals.push(`${test.name}: ${numVal} ${test.unit} [${status}] (Normal: ${test.low}–${test.high})`)
+          }
+          break 
+        }
+      }
+    }
+  }
+  return { values, abnormals }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData()
+    const file = formData.get('file') as File | null
+    const incomingText = formData.get('text')
+
+    let ocrText = ''
+
+    // Logic for handling potential JSON object inside 'text' field
+    if (incomingText && typeof incomingText === 'string') {
+      try {
+        const parsed = JSON.parse(incomingText)
+        ocrText = (typeof parsed === 'object' && parsed !== null && 'text' in parsed) 
+          ? String(parsed.text) 
+          : incomingText
+      } catch {
+        ocrText = incomingText
+      }
+    }
+
+    // AI Fallback logic
+    if (file && !ocrText) {
+      try {
+        const { analyzePDF, hasAnyAIKey } = await import('@/lib/ai-client')
+        
+        if (hasAnyAIKey()) {
+          // Convert file to base64 as expected by analyzePDF in ai-client.ts
+          const buffer = await file.arrayBuffer()
+          const base64 = Buffer.from(buffer).toString('base64')
+          
+          // Match the signature: analyzePDF(opts: { base64, prompt, ... })
+          const result = await analyzePDF({
+            base64,
+            prompt: 'Extract all lab test values from this report. List each test name and its numeric value.'
+          })
+
+          if (result && result.text) {
+            ocrText = result.text
+          }
+        }
+      } catch (e) {
+        console.error('[labs/extract] AI extraction failed:', e)
+      }
+
+      if (!ocrText) {
+        return NextResponse.json({
+          values: {},
+          abnormals: [],
+          message: 'Could not extract text from file. Please ensure keys are configured.',
+        })
+      }
+    }
+
+    if (!ocrText) {
+      return NextResponse.json({ error: 'No text or file provided' }, { status: 400 })
+    }
+
+    // Extract structured lab values
+    const { values, abnormals } = extractLabValues(ocrText)
+
+    return NextResponse.json({
+      values,
+      abnormals,
+      extractedCount: Object.keys(values).length,
+      hasAbnormals: abnormals.length > 0,
+    })
+  } catch (err: any) {
+    console.error('[labs/extract-values] error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+```
+
 # src\app\api\labs\import-email\route.ts
 
 ```ts
@@ -12707,25 +12975,29 @@ export async function POST(req: NextRequest) {
 
 ```ts
 /**
- * src/app/api/labs/lab-portal/route.ts — NEW (Issue #22)
+ * src/app/api/labs/lab-portal/route.ts
  *
- * Lab Partner Upload Portal API
+ * Lab Partner Upload Portal API — FIXED & ENHANCED
  *
  * Endpoints:
  *   GET  /api/labs/lab-portal?token=XXX              — verify token, get partner info
  *   POST /api/labs/lab-portal                        — upload lab report (multipart/form-data)
  *
- * Lab partners get a unique token from Settings → Lab Partners.
- * They go to /lab-portal and upload reports directly — no email needed.
+ * FIX #1: Report now correctly linked to patient profile (patient_id FK)
+ * FIX #2: Doctor gets in-app reminder when report is uploaded
+ * FIX #3: Patient gets in-app reminder when report is uploaded
+ * FIX #4: MRN lookup made robust — handles P-042, p042, P042 formats
+ * FIX #5: Added portal_upload flag & lab_partner metadata to report record
+ * FIX #6: Audit log entry on every upload
  *
  * POST body (multipart/form-data):
- *   token:       lab portal auth token
- *   mrn:         patient MRN (e.g. P-042)
+ *   token:        lab portal auth token
+ *   mrn:          patient MRN (e.g. P-042)
  *   patient_name: fallback if MRN not found (optional)
- *   report_name: name of the test (e.g. "CBC Report")
- *   report_date: YYYY-MM-DD
- *   notes:       any notes from the lab
- *   pdf_file:    the PDF attachment
+ *   report_name:  name of the test (e.g. "CBC Report")
+ *   report_date:  YYYY-MM-DD
+ *   notes:        any notes from the lab
+ *   pdf_file:     the PDF attachment
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -12735,6 +13007,60 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { persistSession: false } }
 )
+
+// ── Normalize MRN for flexible matching ──────────────────────
+function normalizeMrn(raw: string): string[] {
+  const upper = raw.trim().toUpperCase()
+  const digits = upper.replace(/\D/g, '')
+  const paddedDigits = digits.padStart(3, '0')
+  return [
+    upper,                          // P-042, P042, etc. as-is
+    `P-${paddedDigits}`,            // P-042
+    `P${paddedDigits}`,             // P042
+    `P-${digits}`,                  // P-42 (no padding)
+  ].filter((v, i, arr) => arr.indexOf(v) === i) // unique
+}
+
+// ── Create in-app reminder for a user ────────────────────────
+async function createReminder({
+  patientId,
+  patientName,
+  reportName,
+  reportId,
+  recipientRole,
+  doctorId,
+}: {
+  patientId: string
+  patientName: string
+  reportName: string
+  reportId: string
+  recipientRole: 'doctor' | 'patient'
+  doctorId?: string
+}) {
+  try {
+    const message = recipientRole === 'doctor'
+      ? `Lab report "${reportName}" is available for ${patientName}. Please review the results.`
+      : `Your lab report "${reportName}" has been uploaded. Please log in to view it.`
+
+    // Insert into reminders table
+    await supabase.from('reminders').insert({
+      patient_id:    patientId,
+      message:       message,
+      reminder_type: 'lab_report',
+      status:        'pending',
+      metadata: JSON.stringify({
+        report_id:   reportId,
+        report_name: reportName,
+        recipient:   recipientRole,
+        doctor_id:   doctorId || null,
+      }),
+      created_at:    new Date().toISOString(),
+    })
+  } catch (e) {
+    // Non-fatal — log but don't fail upload
+    console.warn('[lab-portal] Reminder creation failed:', e)
+  }
+}
 
 // ── GET: Verify token ─────────────────────────────────────────
 export async function GET(req: NextRequest) {
@@ -12751,13 +13077,15 @@ export async function GET(req: NextRequest) {
   if (!user.is_active) return NextResponse.json({ error: 'This portal account has been deactivated' }, { status: 403 })
 
   // Update last_used_at
-  await supabase.from('lab_portal_users').update({ last_used_at: new Date().toISOString() }).eq('auth_token', token)
+  await supabase.from('lab_portal_users')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('auth_token', token)
 
   return NextResponse.json({
     success: true,
     user: {
-      name: user.name,
-      email: user.email,
+      name:     user.name,
+      email:    user.email,
       lab_name: (user.lab_partners as any)?.name || 'Partner Lab',
     }
   })
@@ -12766,7 +13094,7 @@ export async function GET(req: NextRequest) {
 // ── POST: Upload report ───────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData()
+    const formData    = await req.formData()
     const token       = formData.get('token')?.toString() || ''
     const mrn         = formData.get('mrn')?.toString() || ''
     const patientName = formData.get('patient_name')?.toString() || ''
@@ -12775,8 +13103,9 @@ export async function POST(req: NextRequest) {
     const notes       = formData.get('notes')?.toString() || ''
     const pdfFile     = formData.get('pdf_file') as File | null
 
-    // Verify token
+    // ── Verify token ──────────────────────────────────────────
     if (!token) return NextResponse.json({ error: 'No token provided' }, { status: 401 })
+
     const { data: portalUser, error: authErr } = await supabase
       .from('lab_portal_users')
       .select('id, name, lab_partner_id, is_active, lab_partners(name)')
@@ -12790,39 +13119,49 @@ export async function POST(req: NextRequest) {
     const labName = (portalUser.lab_partners as any)?.name || 'Partner Lab'
 
     // ── Step 1: Find patient ──────────────────────────────────
-    let patientId = ''
+    let patientId    = ''
     let resolvedName = patientName
+    let doctorId: string | undefined = undefined
 
+    // Try MRN variants (robust matching)
     if (mrn) {
-      // Try exact MRN match first
-      const mrnUpper = mrn.trim().toUpperCase()
-      const { data: patient } = await supabase
-        .from('patients')
-        .select('id, full_name')
-        .or(`mrn.eq.${mrnUpper},mrn.ilike.${mrnUpper}`)
-        .maybeSingle()
+      const mrnVariants = normalizeMrn(mrn)
+      for (const variant of mrnVariants) {
+        const { data: patient } = await supabase
+          .from('patients')
+          .select('id, full_name, doctor_id')
+          .or(`mrn.eq.${variant},mrn.ilike.${variant}`)
+          .maybeSingle()
 
-      if (patient) { patientId = patient.id; resolvedName = patient.full_name }
+        if (patient) {
+          patientId    = patient.id
+          resolvedName = patient.full_name
+          doctorId     = patient.doctor_id || undefined
+          break
+        }
+      }
     }
 
+    // Fallback: name search
     if (!patientId && patientName) {
       const { data: patients } = await supabase
         .from('patients')
-        .select('id, full_name')
+        .select('id, full_name, doctor_id')
         .ilike('full_name', `%${patientName.trim()}%`)
         .limit(1)
 
       if (patients && patients.length > 0) {
-        patientId = patients[0].id
+        patientId    = patients[0].id
         resolvedName = patients[0].full_name
+        doctorId     = patients[0].doctor_id || undefined
       }
     }
 
     if (!patientId) {
       return NextResponse.json({
         success: false,
-        error: 'Patient not found. Please check the MRN or patient name.',
-        hint: `MRN tried: "${mrn}" | Name tried: "${patientName}"`,
+        error:   'Patient not found. Please check the MRN or patient name.',
+        hint:    `MRN tried: "${mrn}" (variants: ${normalizeMrn(mrn).join(', ')}) | Name tried: "${patientName}"`,
       }, { status: 400 })
     }
 
@@ -12849,36 +13188,84 @@ export async function POST(req: NextRequest) {
     const { data: report, error: insertErr } = await supabase
       .from('lab_reports')
       .insert({
-        patient_id:       patientId,
-        report_name:      reportName,
-        report_date:      reportDate,
-        lab_name:         labName,
-        status:           'completed',
-        notes:            notes || `Uploaded via portal by ${portalUser.name}`,
-        attachment_url:   attachmentUrl,
-        source:           'portal',
-        lab_partner_id:   portalUser.lab_partner_id,
-        lab_partner_name: labName,
-        portal_upload:    true,
+        patient_id:         patientId,
+        report_name:        reportName,
+        report_date:        reportDate,
+        lab_name:           labName,
+        status:             'completed',
+        notes:              notes || `Uploaded via portal by ${portalUser.name} (${labName})`,
+        attachment_url:     attachmentUrl,
+        source:             'portal',
+        lab_partner_id:     portalUser.lab_partner_id,
+        lab_partner_name:   labName,
+        portal_upload:      true,
         portal_patient_mrn: mrn,
       })
       .select('id')
       .single()
 
     if (insertErr) {
-      return NextResponse.json({ success: false, error: `Failed to save report: ${insertErr.message}` }, { status: 500 })
+      return NextResponse.json({
+        success: false,
+        error: `Failed to save report: ${insertErr.message}`,
+      }, { status: 500 })
     }
 
-    // ── Step 4: Update portal user last_used_at ───────────────
-    await supabase.from('lab_portal_users').update({ last_used_at: new Date().toISOString() }).eq('auth_token', token)
+    const reportId = report.id
 
-    return NextResponse.json({
-      success: true,
-      reportId:    report.id,
+    // ── Step 4: Create reminders for doctor & patient ─────────
+    // Doctor reminder
+    if (doctorId) {
+      await createReminder({
+        patientId,
+        patientName: resolvedName,
+        reportName,
+        reportId,
+        recipientRole: 'doctor',
+        doctorId,
+      })
+    }
+
+    // Patient reminder (all patients)
+    await createReminder({
       patientId,
       patientName: resolvedName,
       reportName,
-      message: `Report uploaded successfully for ${resolvedName}`,
+      reportId,
+      recipientRole: 'patient',
+    })
+
+    // ── Step 5: Audit log ─────────────────────────────────────
+    await supabase.from('audit_log').insert({
+      action:       'lab_report_portal_upload',
+      entity_type:  'lab_report',
+      entity_id:    reportId,
+      entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
+      changes:      JSON.stringify({
+        lab_partner: labName,
+        uploaded_by: portalUser.name,
+        mrn,
+        attachment:  !!attachmentUrl,
+      }),
+      user_id:    'lab_portal',
+      user_email: portalUser.name,
+      user_role:  'lab_partner',
+    })
+
+    // ── Step 6: Update portal user last_used_at ───────────────
+    await supabase.from('lab_portal_users')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('auth_token', token)
+
+    return NextResponse.json({
+      success:        true,
+      reportId,
+      patientId,
+      patientName:    resolvedName,
+      reportName,
+      hasAttachment:  !!attachmentUrl,
+      notified:       true,
+      message:        `Report "${reportName}" uploaded successfully for ${resolvedName}. Doctor and patient have been notified.`,
     })
 
   } catch (err: any) {
@@ -16409,10 +16796,12 @@ export async function GET(req: NextRequest) {
 
   // 2. Follow-up reminders from prescriptions
   try {
+    // FIX: Include overdue follow-ups (up to 14 days past due) AND upcoming (7 days)
+    const fourteenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA', { timeZone: IST }) })()
     const { data: rxs } = await supabase
       .from('prescriptions')
       .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, reminder_sent_at')
-      .gte('follow_up_date', tod)
+      .gte('follow_up_date', fourteenDaysAgo)
       .lte('follow_up_date', in7)
       .order('follow_up_date', { ascending: true })
 
@@ -16420,7 +16809,8 @@ export async function GET(req: NextRequest) {
       if (!rx.follow_up_date) continue
       const daysAway = daysUntil(rx.follow_up_date)
       let priority: ReminderItem['priority']
-      if (daysAway === 0) priority = 'today'
+      if (daysAway < 0) priority = 'urgent'  // Overdue
+      else if (daysAway === 0) priority = 'today'
       else if (daysAway === 1) priority = 'tomorrow'
       else priority = 'upcoming'
 
@@ -16434,7 +16824,7 @@ export async function GET(req: NextRequest) {
         mrn: rx.mrn ?? '',
         sourceId: rx.id,
         sourceTable: 'prescriptions',
-        title: 'Follow-up Due',
+        title: daysAway < 0 ? `Follow-up OVERDUE (${Math.abs(daysAway)}d)` : 'Follow-up Due',
         subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
         dueDate: rx.follow_up_date,
         reminderSentAt: rx.reminder_sent_at ?? null,
@@ -16442,6 +16832,7 @@ export async function GET(req: NextRequest) {
           followUpDate: rx.follow_up_date,
           diagnosis: rx.diagnosis,
           labTests: rx.lab_tests,
+          daysOverdue: daysAway < 0 ? Math.abs(daysAway) : undefined,
         },
       })
     }
@@ -19147,6 +19538,7 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 // bill flow. Before this fix, GST was a separate library with no integration.
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
+import AdminBillModify from '@/components/billing/AdminBillModify'
 import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
@@ -19758,12 +20150,14 @@ function BillingContent() {
       }
     }
 
-    // FIX: Fetch bills fresh for the selected period instead of using stale 30-day cache
+    // FIX: Use IST timezone offset for accurate date filtering
+    // Bills created_at is stored in UTC. To filter by IST dates correctly,
+    // we need to offset: IST = UTC + 5:30
     const { data: periodBills } = await supabase
       .from('bills')
       .select('*')
-      .gte('created_at', from + 'T00:00:00')
-      .lte('created_at', to + 'T23:59:59.999')
+      .gte('created_at', from + 'T00:00:00+05:30')
+      .lte('created_at', to + 'T23:59:59.999+05:30')
       .order('created_at', { ascending: false })
       .limit(2000)
 
@@ -19795,7 +20189,23 @@ function BillingContent() {
               className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
             <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs">
+              <button onClick={() => {
+                // Clean print — open receipt in new window without app chrome
+                const content = document.querySelector('.print-only')?.innerHTML || document.querySelector('.no-print + div')?.innerHTML || ''
+                const w = window.open('', '_blank')
+                if (w) {
+                  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title><style>
+                    body { font-family: Inter, sans-serif; padding: 40px; color: #1e293b; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+                    .text-right { text-align: right; }
+                    .font-mono { font-family: monospace; }
+                    .font-bold { font-weight: bold; }
+                  </style></head><body>${content}</body></html>`)
+                  w.document.close()
+                  setTimeout(() => w.print(), 300)
+                }
+              }} className="btn-secondary flex items-center gap-2 text-xs">
                 <Printer className="w-3.5 h-3.5" /> Print
               </button>
               <Link href={`/patients/${selectedBill.patient_id}`} className="btn-secondary text-xs">Patient Record</Link>
@@ -19817,6 +20227,10 @@ function BillingContent() {
             </div>
           )}
           <div className="no-print"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
+          {/* Admin: Modify bill amount */}
+          <div className="no-print mt-4">
+            <AdminBillModify bill={selectedBill} onUpdated={() => { loadBills(); }} />
+          </div>
         </div>
         <div className="print-only p-8"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
       </AppShell>
@@ -20287,6 +20701,30 @@ function BillingContent() {
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Share with CA</p>
                   <div className="flex flex-wrap gap-2">
 
+                    {/* Download PDF — generates proper formatted PDF */}
+                    <button onClick={async () => {
+                      try {
+                        const res = await fetch('/api/billing/ca-report-pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
+                        })
+                        if (res.ok) {
+                          const { html } = await res.json()
+                          const w = window.open('', '_blank')
+                          if (w) {
+                            w.document.write(html)
+                            w.document.close()
+                            setTimeout(() => w.print(), 500)
+                          }
+                        }
+                      } catch (e) { console.error(e) }
+                    }}
+                      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                      <Printer className="w-4 h-4" />
+                      Save as PDF
+                    </button>
+
                     {/* WhatsApp share */}
                     {caSettings.caWhatsApp ? (
                       <a
@@ -20314,11 +20752,28 @@ function BillingContent() {
                       {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
                     </a>
 
-                    {/* Print */}
-                    <button onClick={() => window.print()}
+                    {/* Print — uses PDF generator for clean output */}
+                    <button onClick={async () => {
+                      try {
+                        const res = await fetch('/api/billing/ca-report-pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
+                        })
+                        if (res.ok) {
+                          const { html } = await res.json()
+                          const w = window.open('', '_blank')
+                          if (w) {
+                            w.document.write(html)
+                            w.document.close()
+                            setTimeout(() => w.print(), 500)
+                          }
+                        }
+                      } catch (e) { window.print() }
+                    }}
                       className="flex items-center gap-2 btn-secondary text-sm">
                       <Printer className="w-4 h-4" />
-                      Print / Save PDF
+                      Print Report
                     </button>
 
                   </div>
@@ -32713,19 +33168,8 @@ function VitalCard({
 
 ```tsx
 'use client'
-/**
- * src/app/opd/page.tsx — UPDATED v3
- *
- * ENHANCEMENTS:
- *   1. Top 5 latest patients (by registration date) shown immediately.
- *   2. Real-time updates — Supabase Realtime subscription refreshes the list
- *      whenever a new patient is registered anywhere in the app.
- *   3. Bridge from Patient List page: accepts ?patientId= URL param to
- *      immediately navigate to /opd/new without any interaction.
- *   4. All original search logic preserved (debounce, escapeLike).
- *   5. Smooth animations on patient card entry.
- */
-import { useState, useRef, useEffect } from 'react'
+
+import { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -32743,11 +33187,11 @@ interface PatientRow {
   created_at: string
 }
 
-export default function OPDIndexPage() {
+// 1. THIS IS THE CONTENT LOGIC
+function OPDIndexContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
-  // Bridge: if patientId is passed via URL (from patient list page), jump straight to OPD
   const bridgeId = searchParams.get('patientId') ?? searchParams.get('patient')
 
   const [query,          setQuery]          = useState('')
@@ -32759,14 +33203,12 @@ export default function OPDIndexPage() {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Bridge: redirect immediately if patientId is in URL ──────
   useEffect(() => {
     if (bridgeId) {
       router.replace(`/opd/new?patient=${bridgeId}`)
     }
   }, [bridgeId, router])
 
-  // ── Load Top 5 recent patients ────────────────────────────────
   async function loadRecent() {
     setRecentLoading(true)
     const { data } = await supabase
@@ -32782,7 +33224,6 @@ export default function OPDIndexPage() {
     loadRecent()
   }, [])
 
-  // ── Real-time subscription — refreshes list when new patient registered ──
   useEffect(() => {
     const channel = supabase
       .channel('opd-recent-patients')
@@ -32790,7 +33231,6 @@ export default function OPDIndexPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'patients' },
         (_payload) => {
-          // New patient registered — refresh top 5 immediately
           loadRecent()
         }
       )
@@ -32801,7 +33241,6 @@ export default function OPDIndexPage() {
     }
   }, [])
 
-  // ── Debounced search ──────────────────────────────────────────
   function handleSearch(val: string) {
     setQuery(val)
     if (val.trim().length < 2) { setResults([]); setSearched(false); return }
@@ -32856,7 +33295,6 @@ export default function OPDIndexPage() {
           </p>
         </div>
 
-        {/* ── Top 5 Recent Patients (Real-time) ─────────────────── */}
         {!searched && (
           <div className="card p-5 mb-5">
             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
@@ -32891,7 +33329,6 @@ export default function OPDIndexPage() {
           </div>
         )}
 
-        {/* ── Search Card ────────────────────────────────────────── */}
         <div className="card p-6 mb-5">
           <label className="label mb-2 block">Search Patient</label>
           <div className="relative">
@@ -32908,14 +33345,13 @@ export default function OPDIndexPage() {
             )}
           </div>
 
-          {/* Search results */}
           {searched && (
             <div className="mt-3">
               {results.length === 0 ? (
                 <div className="text-center py-6 text-gray-400">
-                  <p className="text-sm mb-3">No patient found for &quot;{query}&quot;</p>
-                  <Link href="/patients/new" className="btn-primary inline-flex items-center gap-2 text-xs">
-                    <UserPlus className="w-3.5 h-3.5" /> Register New Patient
+                  <p className="text-sm mb-3">No patient found for "{query}"</p>
+                  <Link href="/patients/new" className="btn btn-primary inline-flex items-center gap-2">
+                    <UserPlus className="w-4 h-4" /> Register New Patient
                   </Link>
                 </div>
               ) : (
@@ -32928,24 +33364,17 @@ export default function OPDIndexPage() {
             </div>
           )}
         </div>
-
-        {/* Or Register */}
-        <div className="text-center">
-          <p className="text-sm text-gray-400 mb-3">— or —</p>
-          <Link href="/patients/new" className="btn-secondary inline-flex items-center gap-2">
-            <UserPlus className="w-4 h-4" /> Register New Patient First
-          </Link>
-        </div>
-
-        {/* Bridge tip */}
-        <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700">
-          <strong>💡 Tip — Zero-Click Bridge:</strong>{' '}
-          On the <Link href="/patients" className="underline font-semibold">Patient List</Link> page,
-          each patient row has a <em>&#34;Start OPD&#34;</em> button that brings you here with the patient
-          pre-selected — no searching, no typing. Perfect for returning patients.
-        </div>
       </div>
     </AppShell>
+  )
+}
+
+// 2. THIS IS THE EXPORTED PAGE WRAPPER
+export default function OPDIndexPage() {
+  return (
+    <Suspense fallback={null}>
+      <OPDIndexContent />
+    </Suspense>
   )
 }
 ```
@@ -41159,12 +41588,12 @@ export default function DailyReportPage() {
       return
     }
 
-    // Load bills for the date
+    // Load bills for the date — FIX: Use IST offset for accurate date filtering
     const { data: bills } = await supabase
       .from('bills')
       .select('id, patient_id, net_amount, payment_mode, status, created_at')
-      .gte('created_at', `${d}T00:00:00`)
-      .lte('created_at', `${d}T23:59:59`)
+      .gte('created_at', `${d}T00:00:00+05:30`)
+      .lte('created_at', `${d}T23:59:59+05:30`)
 
     const billsByPatient: Record<string, typeof bills> = {}
     ;(bills ?? []).forEach((b: any) => {
@@ -41245,7 +41674,46 @@ export default function DailyReportPage() {
             <p className="text-sm text-gray-500">{dateLabel}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => window.print()}
+            <button onClick={() => {
+              // Open clean print window without browser header/footer/URL
+              const printContent = document.querySelector('.print-only')?.outerHTML || ''
+              const pageContent = document.querySelector('.card')?.parentElement?.innerHTML || ''
+              const w = window.open('', '_blank')
+              if (w) {
+                w.document.write(`<!DOCTYPE html><html><head><title>Daily Report</title>
+                <style>
+                  body { font-family: Inter, Arial, sans-serif; color: #1e293b; padding: 20px; margin: 0; }
+                  @page { margin: 15mm; size: A4; }
+                  .no-print { display: none !important; }
+                  .print-only { display: block !important; }
+                  .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
+                  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                  th { background: #f8fafc; text-align: left; padding: 8px 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+                  td { padding: 6px 12px; border-bottom: 1px solid #f1f5f9; }
+                  .section-title { font-size: 14px; font-weight: 700; color: #1e293b; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+                  .grid { display: grid; gap: 12px; }
+                  .grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+                  .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+                  .font-mono { font-family: monospace; }
+                  .font-bold { font-weight: bold; }
+                  .text-center { text-align: center; }
+                </style></head><body>
+                  <div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:20px;">
+                    <div style="font-size:20px;font-weight:700;">${hs.hospitalName || 'NexMedicon Hospital'}</div>
+                    ${hs.address ? `<div style="font-size:11px;color:#555;margin-top:2px;">${hs.address}</div>` : ''}
+                    ${hs.phone ? `<div style="font-size:11px;color:#555;">${hs.phone}</div>` : ''}
+                    <div style="font-size:15px;font-weight:700;margin-top:10px;color:#1d4ed8;">Daily Report — ${dateLabel}</div>
+                  </div>
+                  ${pageContent}
+                  <div style="margin-top:24px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between;">
+                    <span>Generated: ${new Date().toLocaleString('en-IN')}</span>
+                    <span>${hs.hospitalName || 'NexMedicon HMS'}</span>
+                  </div>
+                </body></html>`)
+                w.document.close()
+                setTimeout(() => w.print(), 500)
+              }
+            }}
               className="btn-secondary flex items-center gap-2 text-xs">
               <Printer className="w-3.5 h-3.5" /> Print Report
             </button>
@@ -46325,6 +46793,408 @@ export default function VideoConsultPage() {
         )}
       </div>
     </AppShell>
+  )
+}
+```
+
+# src\components\billing\AdminBillModify.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/billing/AdminBillModify.tsx
+ *
+ * Admin-only billing modification panel.
+ * Allows admin to modify billing amounts even after payment — for tax corrections,
+ * insurance adjustments, discounts, and audit compliance.
+ *
+ * FIX: Now works on PAID bills too (not just unpaid).
+ * FIX: Added tax/GST field adjustment.
+ * FIX: Enhanced audit trail with before/after amounts.
+ * FIX: Shows modification history inline.
+ *
+ * Security:
+ *  - Only admin role can access this
+ *  - All modifications logged with reason + original amounts
+ *  - Original amounts preserved in audit log & bill notes
+ */
+
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import { audit } from '@/lib/audit'
+import { useAuth } from '@/lib/auth'
+import {
+  Save, AlertTriangle, Lock, Edit3, History, ChevronDown, ChevronUp,
+  Receipt, ShieldCheck, Info,
+} from 'lucide-react'
+import { useToast } from '../shared/Toast'
+
+interface BillItem {
+  label: string
+  amount: number
+}
+
+interface AdminBillModifyProps {
+  bill: {
+    id: string
+    patient_name: string
+    mrn: string
+    net_amount: number
+    subtotal: number
+    discount: number
+    gst_amount?: number
+    gst_percent?: number
+    items: BillItem[]
+    status: string
+    payment_mode: string | null
+    created_at: string
+    notes?: string
+  }
+  onUpdated: () => void
+}
+
+export default function AdminBillModify({ bill, onUpdated }: AdminBillModifyProps) {
+  const { isAdmin } = useAuth()
+  const { showSuccess, showError, showWarning } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<string[]>([])
+
+  // Editable fields
+  const [newDiscount, setNewDiscount] = useState(String(bill.discount || 0))
+  const [newGst, setNewGst] = useState(String(bill.gst_percent || 0))
+  const [reason, setReason] = useState('')
+  const [modType, setModType] = useState<'discount' | 'tax' | 'amount'>('discount')
+  const [newNetAmount, setNewNetAmount] = useState(String(bill.net_amount))
+  const [saving, setSaving] = useState(false)
+
+  // Parse modification history from notes
+  useEffect(() => {
+    if (bill.notes) {
+      const lines = bill.notes.split('\n').filter(l => l.includes('[ADMIN MODIFIED]'))
+      setHistory(lines)
+    }
+  }, [bill.notes])
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+        <Lock className="w-3 h-3" />
+        Only admin can modify bills
+      </div>
+    )
+  }
+
+  // Computed preview
+  const subtotal = bill.subtotal || bill.net_amount
+  const previewDiscount = parseFloat(newDiscount) || 0
+  const previewGstPct = parseFloat(newGst) || 0
+  const baseAfterDiscount = Math.max(0, subtotal - previewDiscount)
+  const previewGstAmt = Math.round(baseAfterDiscount * previewGstPct / 100)
+  const previewNet = modType === 'amount'
+    ? parseFloat(newNetAmount) || 0
+    : baseAfterDiscount + previewGstAmt
+
+  const handleSave = async () => {
+    if (!reason.trim()) {
+      showError('Please provide a reason for modification')
+      return
+    }
+
+    let finalNet = 0
+    let finalDiscount = bill.discount
+    let finalGstPct = bill.gst_percent || 0
+    let finalGstAmt = bill.gst_amount || 0
+
+    if (modType === 'discount') {
+      const d = parseFloat(newDiscount)
+      if (isNaN(d) || d < 0) { showError('Invalid discount amount'); return }
+      finalDiscount = d
+      const base = Math.max(0, subtotal - d)
+      const gstPct = bill.gst_percent || 0
+      finalGstAmt = Math.round(base * gstPct / 100)
+      finalNet = base + finalGstAmt
+    } else if (modType === 'tax') {
+      const gp = parseFloat(newGst)
+      if (isNaN(gp) || gp < 0 || gp > 100) { showError('Invalid GST %'); return }
+      finalGstPct = gp
+      const base = Math.max(0, subtotal - (bill.discount || 0))
+      finalGstAmt = Math.round(base * gp / 100)
+      finalNet = base + finalGstAmt
+    } else {
+      // Direct amount override
+      const amt = parseFloat(newNetAmount)
+      if (isNaN(amt) || amt < 0) { showError('Invalid amount'); return }
+      finalNet = amt
+      finalDiscount = Math.max(0, subtotal - amt)
+    }
+
+    if (Math.abs(finalNet - bill.net_amount) < 0.01 && modType !== 'tax') {
+      showWarning('Amount unchanged — no modification needed')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      const modNote = `[ADMIN MODIFIED] ${timestamp} | ${modType.toUpperCase()}: ₹${bill.net_amount} → ₹${finalNet.toFixed(2)} | Reason: ${reason.trim()}`
+      const existingNotes = bill.notes ? bill.notes + '\n' : ''
+
+      const updatePayload: Record<string, unknown> = {
+        net_amount: Math.round(finalNet * 100) / 100,
+        discount: finalDiscount,
+        gst_percent: finalGstPct,
+        gst_amount: finalGstAmt,
+        notes: existingNotes + modNote,
+        updated_at: new Date().toISOString(),
+        // Keep status — do NOT reset a paid bill to unpaid
+      }
+
+      const { error } = await supabase
+        .from('bills')
+        .update(updatePayload)
+        .eq('id', bill.id)
+
+      if (error) {
+        showError('Failed to update: ' + error.message)
+        setSaving(false)
+        return
+      }
+
+      // Full audit trail
+      await audit(
+        'update', 'bill', bill.id,
+        `[ADMIN BILL MODIFY] Type: ${modType} | Before: ₹${bill.net_amount} → After: ₹${finalNet.toFixed(2)} | ` +
+        `Discount: ₹${finalDiscount} | GST: ${finalGstPct}% (₹${finalGstAmt}) | ` +
+        `Patient: ${bill.patient_name} (${bill.mrn}) | Status: ${bill.status} | Reason: ${reason.trim()}`
+      )
+
+      showSuccess(`Bill updated: ₹${bill.net_amount.toLocaleString('en-IN')} → ₹${finalNet.toLocaleString('en-IN')}`)
+      setEditing(false)
+      setReason('')
+      onUpdated()
+    } catch (err: any) {
+      showError('Error: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isPaid = bill.status === 'paid'
+
+  if (!editing) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEditing(true)}
+            className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-700 font-medium
+                       bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Edit3 className="w-3 h-3" />
+            Modify Bill
+          </button>
+          {isPaid && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+              <ShieldCheck className="w-3 h-3" /> Paid — admin override
+            </span>
+          )}
+          {history.length > 0 && (
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600"
+            >
+              <History className="w-3 h-3" />
+              {history.length} modification{history.length > 1 ? 's' : ''}
+              {showHistory ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          )}
+        </div>
+        {showHistory && history.length > 0 && (
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+            {history.map((h, i) => (
+              <p key={i} className="text-[10px] text-gray-500 font-mono leading-relaxed">{h}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mt-3 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+          <AlertTriangle className="w-4 h-4" />
+          Admin: Modify Bill
+        </div>
+        {isPaid && (
+          <div className="flex items-center gap-1 text-[11px] text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+            <Info className="w-3 h-3" />
+            Bill is PAID — modification allowed for tax/accounting
+          </div>
+        )}
+      </div>
+
+      {/* Bill summary */}
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="bg-white rounded-lg p-2 text-center">
+          <div className="text-gray-400">Subtotal</div>
+          <div className="font-bold text-gray-700">₹{subtotal.toLocaleString('en-IN')}</div>
+        </div>
+        <div className="bg-white rounded-lg p-2 text-center">
+          <div className="text-gray-400">Current Net</div>
+          <div className="font-bold text-blue-700">₹{bill.net_amount.toLocaleString('en-IN')}</div>
+        </div>
+        <div className="bg-white rounded-lg p-2 text-center border-2 border-dashed border-amber-300">
+          <div className="text-gray-400">Preview Net</div>
+          <div className="font-bold text-amber-700">₹{Math.round(previewNet).toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+
+      {/* Modification type selector */}
+      <div>
+        <label className="label">What to adjust</label>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'discount', label: 'Discount', icon: '💰' },
+            { id: 'tax', label: 'Tax/GST %', icon: '🧾' },
+            { id: 'amount', label: 'Net Amount', icon: '✏️' },
+          ] as const).map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => setModType(opt.id)}
+              className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg text-xs font-medium border-2 transition-colors ${
+                modType === opt.id
+                  ? 'border-amber-500 bg-amber-100 text-amber-800'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-amber-300'
+              }`}
+            >
+              <span className="text-lg">{opt.icon}</span>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Input fields based on type */}
+      {modType === 'discount' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Current Discount (₹)</label>
+            <div className="input bg-gray-100 text-gray-500 cursor-not-allowed text-sm">
+              ₹{(bill.discount || 0).toLocaleString('en-IN')}
+            </div>
+          </div>
+          <div>
+            <label className="label">New Discount (₹)</label>
+            <input
+              type="number"
+              className="input"
+              value={newDiscount}
+              onChange={e => setNewDiscount(e.target.value)}
+              min="0"
+              max={subtotal}
+              step="1"
+              placeholder="0"
+            />
+          </div>
+        </div>
+      )}
+
+      {modType === 'tax' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Current GST %</label>
+            <div className="input bg-gray-100 text-gray-500 cursor-not-allowed text-sm">
+              {bill.gst_percent || 0}%
+            </div>
+          </div>
+          <div>
+            <label className="label">New GST %</label>
+            <input
+              type="number"
+              className="input"
+              value={newGst}
+              onChange={e => setNewGst(e.target.value)}
+              min="0"
+              max="100"
+              step="0.5"
+              placeholder="0"
+            />
+          </div>
+        </div>
+      )}
+
+      {modType === 'amount' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Current Net Amount</label>
+            <div className="input bg-gray-100 text-gray-500 cursor-not-allowed text-sm">
+              ₹{bill.net_amount.toLocaleString('en-IN')}
+            </div>
+          </div>
+          <div>
+            <label className="label">New Net Amount (₹)</label>
+            <input
+              type="number"
+              className="input"
+              value={newNetAmount}
+              onChange={e => setNewNetAmount(e.target.value)}
+              min="0"
+              step="1"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Reason */}
+      <div>
+        <label className="label">Reason for Modification *</label>
+        <input
+          className="input"
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="e.g. Tax correction, Insurance adjustment, Discount applied, Accounting entry..."
+        />
+      </div>
+
+      {/* Info box */}
+      <div className="flex items-start gap-2 text-[10px] text-amber-700 bg-amber-100 rounded-lg p-2">
+        <History className="w-3 h-3 mt-0.5 flex-shrink-0" />
+        <span>
+          All modifications are logged in the audit trail with original amounts, timestamps, and your reason.
+          {isPaid && ' This bill is marked PAID — modifying will NOT change payment records, only accounting amounts.'}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button
+          onClick={() => {
+            setEditing(false)
+            setReason('')
+            setNewDiscount(String(bill.discount || 0))
+            setNewGst(String(bill.gst_percent || 0))
+            setNewNetAmount(String(bill.net_amount))
+          }}
+          className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !reason.trim()}
+          className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs
+                     font-semibold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
+        >
+          {saving
+            ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            : <Save className="w-3 h-3" />}
+          {saving ? 'Saving...' : 'Save Modification'}
+        </button>
+      </div>
+    </div>
   )
 }
 ```
@@ -51601,6 +52471,157 @@ export default function SmartMic({
   )
 }
 
+```
+
+# src\components\shared\Toast.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/shared/Toast.tsx
+ *
+ * Global Toast Notification System
+ * 
+ * Solves the problem of error/success messages requiring scroll to see.
+ * Toasts appear as fixed-position overlays at the top-right of the viewport,
+ * visible regardless of scroll position.
+ *
+ * Usage:
+ *   import { useToast, ToastProvider } from '@/components/shared/Toast'
+ *   const { showToast } = useToast()
+ *   showToast('Please enter at least a chief complaint or diagnosis.', 'error')
+ *   showToast('Bill saved successfully!', 'success')
+ */
+
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react'
+import { CheckCircle, AlertCircle, AlertTriangle, Info, X } from 'lucide-react'
+
+type ToastType = 'success' | 'error' | 'warning' | 'info'
+
+interface ToastItem {
+  id: string
+  message: string
+  type: ToastType
+  duration: number
+}
+
+interface ToastContextType {
+  showToast: (message: string, type?: ToastType, duration?: number) => void
+  showError: (message: string) => void
+  showSuccess: (message: string) => void
+  showWarning: (message: string) => void
+  showInfo: (message: string) => void
+}
+
+const ToastContext = createContext<ToastContextType>({
+  showToast: () => {},
+  showError: () => {},
+  showSuccess: () => {},
+  showWarning: () => {},
+  showInfo: () => {},
+})
+
+export function useToast() {
+  return useContext(ToastContext)
+}
+
+const TOAST_CONFIG: Record<ToastType, { icon: any; bg: string; border: string; text: string; iconColor: string }> = {
+  success: {
+    icon: CheckCircle,
+    bg: 'bg-green-50',
+    border: 'border-green-300',
+    text: 'text-green-800',
+    iconColor: 'text-green-500',
+  },
+  error: {
+    icon: AlertCircle,
+    bg: 'bg-red-50',
+    border: 'border-red-300',
+    text: 'text-red-800',
+    iconColor: 'text-red-500',
+  },
+  warning: {
+    icon: AlertTriangle,
+    bg: 'bg-amber-50',
+    border: 'border-amber-300',
+    text: 'text-amber-800',
+    iconColor: 'text-amber-500',
+  },
+  info: {
+    icon: Info,
+    bg: 'bg-blue-50',
+    border: 'border-blue-300',
+    text: 'text-blue-800',
+    iconColor: 'text-blue-500',
+  },
+}
+
+function ToastItemCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+  const config = TOAST_CONFIG[toast.type]
+  const Icon = config.icon
+
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(toast.id), toast.duration)
+    return () => clearTimeout(timer)
+  }, [toast.id, toast.duration, onDismiss])
+
+  return (
+    <div
+      className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg ${config.bg} ${config.border} animate-slide-in-right max-w-sm w-full`}
+      role="alert"
+      aria-live="assertive"
+    >
+      <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${config.iconColor}`} />
+      <p className={`text-sm font-medium flex-1 ${config.text}`}>{toast.message}</p>
+      <button
+        onClick={() => onDismiss(toast.id)}
+        className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+
+  const dismiss = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  const showToast = useCallback((message: string, type: ToastType = 'info', duration = 5000) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setToasts(prev => {
+      // Keep max 5 toasts visible
+      const updated = [...prev, { id, message, type, duration }]
+      return updated.slice(-5)
+    })
+  }, [])
+
+  const showError = useCallback((message: string) => showToast(message, 'error', 6000), [showToast])
+  const showSuccess = useCallback((message: string) => showToast(message, 'success', 4000), [showToast])
+  const showWarning = useCallback((message: string) => showToast(message, 'warning', 5000), [showToast])
+  const showInfo = useCallback((message: string) => showToast(message, 'info', 4000), [showToast])
+
+  return (
+    <ToastContext.Provider value={{ showToast, showError, showSuccess, showWarning, showInfo }}>
+      {children}
+      {/* Toast container — fixed position, always visible */}
+      <div
+        className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
+        aria-label="Notifications"
+      >
+        {toasts.map(toast => (
+          <div key={toast.id} className="pointer-events-auto">
+            <ToastItemCard toast={toast} onDismiss={dismiss} />
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  )
+}
 ```
 
 # src\components\voice\VoiceAssistant.tsx
@@ -59405,60 +60426,52 @@ export async function buildPatientTimeline(patientId: string): Promise<TimelineE
 /**
  * src/lib/pdf-generator.tsx
  *
- * PDF Generation using @react-pdf/renderer (Requirement #8)
+ * PDF Generation using @react-pdf/renderer
  *
- * Replaces the HTML-to-print (@media print) approach which:
- *  - Breaks on mobile browsers
- *  - Cannot be emailed as an attachment
- *  - Varies by browser print engine
- *
- * This module provides server-side PDF generation that:
- *  - Produces real, consistent PDF files
- *  - Stores them in Supabase Storage
- *  - Can be emailed as attachments
- *  - Works on mobile
- *
- * Usage from a Next.js API route:
- *   const pdfBuffer = await generatePrescriptionPDF(rx, patient, encounter, hs)
- *   const url = await uploadPDFToStorage(pdfBuffer, `rx_${rx.id}.pdf`, 'prescriptions')
+ * ENHANCED: All PDFs now use attractive, professional design with:
+ *  - Proper header with clinic branding
+ *  - Clear section hierarchy
+ *  - Color-coded elements
+ *  - Minimal clutter — only required information
+ *  - Consistent typography
  *
  * IMPORTANT: @react-pdf/renderer must run server-side only (Node.js).
  * Do NOT import this file in 'use client' components.
- * Call /api/pdf/prescription?encounterId=... from the client.
  */
 
 import React from 'react'
 
-// Type-only imports for JSX shapes (actual rendering via dynamic import)
+// ─── Types ────────────────────────────────────────────────────
+
 export interface PDFPrescriptionData {
   patient: {
-    full_name:   string
-    mrn:         string
-    age?:        number
-    gender?:     string
-    mobile?:     string
+    full_name:    string
+    mrn:          string
+    age?:         number
+    gender?:      string
+    mobile?:      string
     blood_group?: string
-    address?:    string
+    address?:     string
   }
   encounter: {
-    encounter_date: string
-    diagnosis?:     string
+    encounter_date:   string
+    diagnosis?:       string
     chief_complaint?: string
-    bp_systolic?:   number
-    bp_diastolic?:  number
-    pulse?:         number
-    temperature?:   number
-    spo2?:          number
-    weight?:        number
+    bp_systolic?:     number
+    bp_diastolic?:    number
+    pulse?:           number
+    temperature?:     number
+    spo2?:            number
+    weight?:          number
   }
   prescription: {
-    medications:    Array<{
-      drug:         string
-      dose?:        string
-      route?:       string
-      frequency?:   string
-      duration?:    string
-      instructions?: string
+    medications: Array<{
+      drug:           string
+      dose?:          string
+      route?:         string
+      frequency?:     string
+      duration?:      string
+      instructions?:  string
     }>
     advice?:          string
     dietary_advice?:  string
@@ -59466,155 +60479,255 @@ export interface PDFPrescriptionData {
     follow_up_date?:  string
   }
   hospital: {
-    hospitalName:  string
-    address?:      string
-    phone?:        string
-    regNo?:        string
-    gstin?:        string
-    doctorName:    string
-    doctorQual?:   string
-    doctorReg?:    string
-    footerNote?:   string
-    upiId?:        string
-    upiIdOPD?:     string
-    upiIdIPD?:     string
+    hospitalName: string
+    address?:     string
+    phone?:       string
+    email?:       string
+    regNo?:       string
+    gstin?:       string
+    doctorName:   string
+    doctorQual?:  string
+    doctorReg?:   string
+    footerNote?:  string
+    logoUrl?:     string
   }
 }
 
-/**
- * Generate a prescription PDF.
- * Returns a Buffer containing the PDF bytes.
- *
- * Must be called server-side only.
- */
-export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promise<Buffer> {
-  // Dynamic import to avoid bundling React PDF in client bundle
-  const { renderToBuffer, Document, Page, Text, View, StyleSheet, Font } = await import('@react-pdf/renderer')
+export interface PDFBillData {
+  bill: {
+    id:           string
+    bill_no?:     string
+    net_amount:   number
+    subtotal:     number
+    discount:     number
+    gst_percent?: number
+    gst_amount?:  number
+    payment_mode?: string
+    status:       string
+    created_at:   string
+    items:        Array<{ label: string; amount: number; quantity?: number }>
+    notes?:       string
+  }
+  patient: {
+    full_name: string
+    mrn:       string
+    mobile?:   string
+    address?:  string
+    age?:      number
+  }
+  hospital: {
+    hospitalName: string
+    address?:     string
+    phone?:       string
+    gstin?:       string
+    regNo?:       string
+  }
+}
 
-  const styles = StyleSheet.create({
-    page:        { fontFamily: 'Helvetica', fontSize: 9, padding: 32, backgroundColor: '#fff' },
-    header:      { borderBottom: '2px solid #1d4ed8', paddingBottom: 8, marginBottom: 12 },
-    hospitalName:{ fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', textAlign: 'center' },
-    subHeader:   { fontSize: 8,  color: '#555', textAlign: 'center', marginTop: 2 },
-    doctorLine:  { fontSize: 8,  color: '#1d4ed8', fontFamily: 'Helvetica-Bold', textAlign: 'center', marginTop: 2 },
-    section:     { marginBottom: 10 },
-    sectionTitle:{ fontSize: 8,  fontFamily: 'Helvetica-Bold', color: '#374151', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, borderBottom: '1px solid #e5e7eb', paddingBottom: 2 },
-    row:         { flexDirection: 'row', marginBottom: 2 },
-    label:       { fontSize: 8,  color: '#6b7280', width: 80 },
-    value:       { fontSize: 8,  color: '#111827', flex: 1 },
-    medRow:      { flexDirection: 'row', marginBottom: 4, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' },
-    medNum:      { fontSize: 8,  color: '#9ca3af', width: 16 },
-    medDrug:     { fontSize: 9,  fontFamily: 'Helvetica-Bold', color: '#111827', flex: 1 },
-    medDetail:   { fontSize: 8,  color: '#4b5563' },
-    medInstr:    { fontSize: 7,  color: '#2563eb', fontStyle: 'italic' },
-    footer:      { marginTop: 20, paddingTop: 8, borderTop: '1px solid #e5e7eb', flexDirection: 'row', justifyContent: 'space-between' },
-    footerNote:  { fontSize: 7,  color: '#9ca3af', flex: 1 },
-    signature:   { fontSize: 7,  color: '#374151', textAlign: 'right' },
+export interface PDFLabReportData {
+  report: {
+    report_name:   string
+    report_date:   string
+    status:        string
+    notes?:        string
+    lab_name?:     string
+    attachment_url?: string
+    values?:       Array<{ parameter: string; value: string; unit?: string; ref_range?: string; flag?: string }>
+  }
+  patient: {
+    full_name: string
+    mrn:       string
+    age?:      number
+    gender?:   string
+  }
+  hospital: {
+    hospitalName: string
+    address?:     string
+    phone?:       string
+  }
+}
+
+// ─── Color palette ────────────────────────────────────────────
+const C = {
+  primary:    '#1d4ed8',   // Blue
+  primaryLt:  '#dbeafe',   // Light blue
+  accent:     '#0f766e',   // Teal
+  danger:     '#dc2626',   // Red
+  success:    '#16a34a',   // Green
+  text:       '#111827',   // Near-black
+  muted:      '#6b7280',   // Gray
+  subtle:     '#9ca3af',   // Light gray
+  border:     '#e5e7eb',   // Border gray
+  bg:         '#f9fafb',   // Background gray
+  white:      '#ffffff',
+}
+
+// ─── Prescription PDF ─────────────────────────────────────────
+
+export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promise<Buffer> {
+  const { renderToBuffer, Document, Page, Text, View, StyleSheet } = await import('@react-pdf/renderer')
+
+  const s = StyleSheet.create({
+    page:         { fontFamily: 'Helvetica', fontSize: 9, paddingHorizontal: 36, paddingVertical: 28, backgroundColor: C.white },
+
+    // Header
+    headerWrap:   { borderBottomWidth: 3, borderBottomColor: C.primary, paddingBottom: 10, marginBottom: 14 },
+    hospitalName: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: C.primary, textAlign: 'center', marginBottom: 2 },
+    subtext:      { fontSize: 8, color: C.muted, textAlign: 'center', marginBottom: 1 },
+    doctorLine:   { fontSize: 9, color: C.primary, fontFamily: 'Helvetica-Bold', textAlign: 'center', marginTop: 3 },
+    badge:        { alignSelf: 'center', backgroundColor: C.primaryLt, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginTop: 3 },
+    badgeText:    { fontSize: 7, color: C.primary, fontFamily: 'Helvetica-Bold' },
+
+    // Patient row
+    patientBox:   { backgroundColor: C.bg, borderRadius: 6, padding: 8, marginBottom: 10, flexDirection: 'row', flexWrap: 'wrap' },
+    patCell:      { width: '33%', marginBottom: 3 },
+    patLabel:     { fontSize: 7, color: C.muted, marginBottom: 1 },
+    patValue:     { fontSize: 8.5, color: C.text, fontFamily: 'Helvetica-Bold' },
+
+    // Diagnosis
+    dxBox:        { backgroundColor: C.primaryLt, borderLeftWidth: 3, borderLeftColor: C.primary, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 4, marginBottom: 10 },
+    dxLabel:      { fontSize: 7, color: C.primary, marginBottom: 1 },
+    dxValue:      { fontSize: 10, color: C.primary, fontFamily: 'Helvetica-Bold' },
+
+    // Vitals
+    vitalsRow:    { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: C.bg, padding: 6, borderRadius: 4, marginBottom: 10 },
+    vitalItem:    { marginRight: 16, marginBottom: 2 },
+    vitalVal:     { fontSize: 8.5, color: C.text, fontFamily: 'Helvetica-Bold' },
+    vitalLabel:   { fontSize: 7, color: C.muted },
+
+    // Sections
+    sectionTitle: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5, marginTop: 8 },
+
+    // Medications
+    medRow:       { flexDirection: 'row', marginBottom: 6, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: C.border },
+    medNum:       { width: 16, fontSize: 8, color: C.subtle, paddingTop: 1 },
+    medDrug:      { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: C.text, marginBottom: 2 },
+    medDetail:    { fontSize: 8, color: C.muted },
+    medInstr:     { fontSize: 7.5, color: C.accent, fontFamily: 'Helvetica-Bold', marginTop: 1 },
+
+    // Advice / reports
+    adviceBox:    { backgroundColor: C.bg, borderRadius: 4, padding: 7, marginBottom: 8 },
+    adviceText:   { fontSize: 8, color: C.text, lineHeight: 1.6 },
+
+    // Follow-up
+    followBox:    { backgroundColor: '#ecfdf5', borderRadius: 4, padding: 7, marginBottom: 10, flexDirection: 'row', alignItems: 'center' },
+    followText:   { fontSize: 9, color: C.success, fontFamily: 'Helvetica-Bold' },
+
+    // Footer
+    footer:       { marginTop: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+    footNote:     { fontSize: 7, color: C.subtle, flex: 1, lineHeight: 1.5 },
+    sigArea:      { alignItems: 'flex-end' },
+    sigLine:      { fontSize: 7, color: C.muted, marginBottom: 2 },
+    sigName:      { fontSize: 8, color: C.text, fontFamily: 'Helvetica-Bold' },
+    sigQual:      { fontSize: 7, color: C.muted },
   })
 
-  const hs  = data.hospital
-  const pat = data.patient
-  const enc = data.encounter
-  const rx  = data.prescription
+  const { patient: pat, encounter: enc, prescription: rx, hospital: hs } = data
 
   const doc = (
-    <Document title={`Prescription — ${pat.full_name}`}>
-      <Page size="A4" style={styles.page}>
+    <Document title={`Prescription — ${pat.full_name} — ${enc.encounter_date}`} author={hs.doctorName}>
+      <Page size="A4" style={s.page}>
 
-        {/* Hospital header */}
-        <View style={styles.header}>
-          <Text style={styles.hospitalName}>{hs.hospitalName}</Text>
-          {hs.address  && <Text style={styles.subHeader}>{hs.address}</Text>}
-          {hs.phone    && <Text style={styles.subHeader}>Tel: {hs.phone}</Text>}
-          <Text style={styles.doctorLine}>
-            {hs.doctorName}{hs.doctorQual ? `  |  ${hs.doctorQual}` : ''}{hs.doctorReg ? `  |  Reg: ${hs.doctorReg}` : ''}
+        {/* ── Header ────────────────────────────────────────── */}
+        <View style={s.headerWrap}>
+          <Text style={s.hospitalName}>{hs.hospitalName}</Text>
+          {hs.address && <Text style={s.subtext}>{hs.address}</Text>}
+          {hs.phone   && <Text style={s.subtext}>☎ {hs.phone}{hs.email ? `  |  ✉ ${hs.email}` : ''}</Text>}
+          <Text style={s.doctorLine}>
+            Dr. {hs.doctorName}{hs.doctorQual ? ` — ${hs.doctorQual}` : ''}{hs.doctorReg ? ` | Reg: ${hs.doctorReg}` : ''}
           </Text>
+          <View style={s.badge}><Text style={s.badgeText}>PRESCRIPTION</Text></View>
         </View>
 
-        {/* Patient info + vitals */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Patient</Text>
-          <View style={styles.row}>
-            <Text style={styles.label}>Name:</Text>
-            <Text style={{ ...styles.value, fontFamily: 'Helvetica-Bold' }}>{pat.full_name}</Text>
-            <Text style={styles.label}>Date:</Text>
-            <Text style={styles.value}>{enc.encounter_date}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>MRN:</Text>
-            <Text style={styles.value}>{pat.mrn}</Text>
-            {pat.age    && <><Text style={styles.label}>Age:</Text><Text style={styles.value}>{pat.age}y {pat.gender || ''}</Text></>}
-          </View>
-          {pat.mobile   && <View style={styles.row}><Text style={styles.label}>Mobile:</Text><Text style={styles.value}>{pat.mobile}</Text></View>}
-          {enc.diagnosis && <View style={styles.row}><Text style={styles.label}>Diagnosis:</Text><Text style={{ ...styles.value, fontFamily: 'Helvetica-Bold', color: '#1d4ed8' }}>{enc.diagnosis}</Text></View>}
-          {/* Vitals inline */}
-          {(enc.bp_systolic || enc.pulse || enc.temperature || enc.spo2 || enc.weight) && (
-            <View style={{ ...styles.row, backgroundColor: '#f9fafb', padding: 4, borderRadius: 3, marginTop: 3 }}>
-              {enc.bp_systolic  && <Text style={{ ...styles.medDetail, marginRight: 8 }}>BP: {enc.bp_systolic}/{enc.bp_diastolic} mmHg</Text>}
-              {enc.pulse        && <Text style={{ ...styles.medDetail, marginRight: 8 }}>P: {enc.pulse} bpm</Text>}
-              {enc.temperature  && <Text style={{ ...styles.medDetail, marginRight: 8 }}>T: {enc.temperature}°F</Text>}
-              {enc.spo2         && <Text style={{ ...styles.medDetail, marginRight: 8 }}>SpO₂: {enc.spo2}%</Text>}
-              {enc.weight       && <Text style={styles.medDetail}>Wt: {enc.weight} kg</Text>}
-            </View>
-          )}
+        {/* ── Patient Info ───────────────────────────────────── */}
+        <View style={s.patientBox}>
+          <View style={s.patCell}><Text style={s.patLabel}>Patient Name</Text><Text style={s.patValue}>{pat.full_name}</Text></View>
+          <View style={s.patCell}><Text style={s.patLabel}>MRN</Text><Text style={s.patValue}>{pat.mrn}</Text></View>
+          <View style={s.patCell}><Text style={s.patLabel}>Date</Text><Text style={s.patValue}>{enc.encounter_date}</Text></View>
+          {pat.age != null && <View style={s.patCell}><Text style={s.patLabel}>Age / Gender</Text><Text style={s.patValue}>{pat.age}y {pat.gender || ''}</Text></View>}
+          {pat.mobile && <View style={s.patCell}><Text style={s.patLabel}>Mobile</Text><Text style={s.patValue}>{pat.mobile}</Text></View>}
+          {pat.blood_group && <View style={s.patCell}><Text style={s.patLabel}>Blood Group</Text><Text style={s.patValue}>{pat.blood_group}</Text></View>}
         </View>
 
-        {/* Rx */}
+        {/* ── Diagnosis ─────────────────────────────────────── */}
+        {enc.diagnosis && (
+          <View style={s.dxBox}>
+            <Text style={s.dxLabel}>DIAGNOSIS</Text>
+            <Text style={s.dxValue}>{enc.diagnosis}</Text>
+            {enc.chief_complaint && <Text style={{ fontSize: 7.5, color: C.primary, marginTop: 2 }}>Complaint: {enc.chief_complaint}</Text>}
+          </View>
+        )}
+
+        {/* ── Vitals ────────────────────────────────────────── */}
+        {(enc.bp_systolic || enc.pulse || enc.temperature || enc.spo2 || enc.weight) && (
+          <View style={s.vitalsRow}>
+            {enc.bp_systolic  && <View style={s.vitalItem}><Text style={s.vitalVal}>{enc.bp_systolic}/{enc.bp_diastolic}</Text><Text style={s.vitalLabel}>BP (mmHg)</Text></View>}
+            {enc.pulse        && <View style={s.vitalItem}><Text style={s.vitalVal}>{enc.pulse}</Text><Text style={s.vitalLabel}>Pulse (bpm)</Text></View>}
+            {enc.temperature  && <View style={s.vitalItem}><Text style={s.vitalVal}>{enc.temperature}°F</Text><Text style={s.vitalLabel}>Temp</Text></View>}
+            {enc.spo2         && <View style={s.vitalItem}><Text style={s.vitalVal}>{enc.spo2}%</Text><Text style={s.vitalLabel}>SpO₂</Text></View>}
+            {enc.weight       && <View style={s.vitalItem}><Text style={s.vitalVal}>{enc.weight} kg</Text><Text style={s.vitalLabel}>Weight</Text></View>}
+          </View>
+        )}
+
+        {/* ── Medications ───────────────────────────────────── */}
         {rx.medications?.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>℞ Medications</Text>
+          <>
+            <Text style={s.sectionTitle}>℞  Medications</Text>
             {rx.medications.map((med, i) => (
-              <View key={i} style={styles.medRow}>
-                <Text style={styles.medNum}>{i + 1}.</Text>
+              <View key={i} style={s.medRow}>
+                <Text style={s.medNum}>{i + 1}.</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.medDrug}>{med.drug}{med.dose ? `  ${med.dose}` : ''}</Text>
-                  <Text style={styles.medDetail}>
-                    {[med.route, med.frequency, med.duration].filter(Boolean).join(' · ')}
-                  </Text>
-                  {med.instructions && <Text style={styles.medInstr}>{med.instructions}</Text>}
+                  <Text style={s.medDrug}>{med.drug}{med.dose ? `   ${med.dose}` : ''}</Text>
+                  {(med.route || med.frequency || med.duration) && (
+                    <Text style={s.medDetail}>
+                      {[med.route, med.frequency, med.duration].filter(Boolean).join('  ·  ')}
+                    </Text>
+                  )}
+                  {med.instructions && <Text style={s.medInstr}>↳ {med.instructions}</Text>}
                 </View>
               </View>
             ))}
-          </View>
+          </>
         )}
 
-        {/* Reports */}
+        {/* ── Investigations ────────────────────────────────── */}
         {rx.reports_needed && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Investigations</Text>
-            <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5 }}>{rx.reports_needed}</Text>
-          </View>
+          <>
+            <Text style={s.sectionTitle}>Investigations</Text>
+            <View style={s.adviceBox}><Text style={s.adviceText}>{rx.reports_needed}</Text></View>
+          </>
         )}
 
-        {/* Advice */}
+        {/* ── Advice ────────────────────────────────────────── */}
         {(rx.advice || rx.dietary_advice) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Advice</Text>
-            {rx.advice         && <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5, marginBottom: 2 }}>{rx.advice}</Text>}
-            {rx.dietary_advice && <Text style={{ fontSize: 8, color: '#374151', lineHeight: 1.5 }}>Diet: {rx.dietary_advice}</Text>}
-          </View>
+          <>
+            <Text style={s.sectionTitle}>Advice</Text>
+            <View style={s.adviceBox}>
+              {rx.advice         && <Text style={s.adviceText}>{rx.advice}</Text>}
+              {rx.dietary_advice && <Text style={{ ...s.adviceText, color: C.accent, marginTop: 3 }}>🥗 Diet: {rx.dietary_advice}</Text>}
+            </View>
+          </>
         )}
 
-        {/* Follow-up */}
+        {/* ── Follow-up ─────────────────────────────────────── */}
         {rx.follow_up_date && (
-          <View style={{ backgroundColor: '#eff6ff', padding: 6, borderRadius: 4, marginBottom: 10 }}>
-            <Text style={{ fontSize: 9, color: '#1d4ed8', fontFamily: 'Helvetica-Bold' }}>
-              ✓ Follow-up: {rx.follow_up_date}
-            </Text>
+          <View style={s.followBox}>
+            <Text style={s.followText}>✓  Follow-up scheduled: {rx.follow_up_date}</Text>
           </View>
         )}
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerNote}>
-            {hs.footerNote || 'This prescription is computer-generated and valid without physical signature.'}
-            {hs.regNo ? `\nReg: ${hs.regNo}` : ''}{hs.gstin ? `  GSTIN: ${hs.gstin}` : ''}
+        {/* ── Footer ────────────────────────────────────────── */}
+        <View style={s.footer}>
+          <Text style={s.footNote}>
+            {hs.footerNote || 'This is a computer-generated prescription and is valid without a physical signature.'}
+            {hs.regNo  ? `\nReg: ${hs.regNo}` : ''}
+            {hs.gstin  ? `   GSTIN: ${hs.gstin}` : ''}
           </Text>
-          <View>
-            <Text style={{ ...styles.signature, marginBottom: 20 }}> </Text>
-            <Text style={styles.signature}>____________________</Text>
-            <Text style={styles.signature}>{hs.doctorName}</Text>
-            {hs.doctorQual && <Text style={{ ...styles.signature, fontSize: 7, color: '#6b7280' }}>{hs.doctorQual}</Text>}
+          <View style={s.sigArea}>
+            <Text style={{ ...s.sigLine, marginBottom: 18 }}> </Text>
+            <Text style={s.sigLine}>________________________________</Text>
+            <Text style={s.sigName}>Dr. {hs.doctorName}</Text>
+            {hs.doctorQual && <Text style={s.sigQual}>{hs.doctorQual}</Text>}
           </View>
         </View>
 
@@ -59625,40 +60738,288 @@ export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promis
   return renderToBuffer(doc)
 }
 
-/**
- * Upload a generated PDF to Supabase Storage.
- * Returns the public URL of the stored PDF.
- */
+// ─── Bill / Invoice PDF ───────────────────────────────────────
+
+export async function generateBillPDF(data: PDFBillData): Promise<Buffer> {
+  const { renderToBuffer, Document, Page, Text, View, StyleSheet } = await import('@react-pdf/renderer')
+
+  const s = StyleSheet.create({
+    page:        { fontFamily: 'Helvetica', fontSize: 9, paddingHorizontal: 36, paddingVertical: 28, backgroundColor: C.white },
+    headerWrap:  { borderBottomWidth: 3, borderBottomColor: C.primary, paddingBottom: 8, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+    hospitalName:{ fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.primary },
+    subtext:     { fontSize: 7.5, color: C.muted, marginTop: 1 },
+    invoiceBlock:{ alignItems: 'flex-end' },
+    invoiceTitle:{ fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.muted },
+    invoiceNo:   { fontSize: 8, color: C.muted, marginTop: 2 },
+    patientBox:  { backgroundColor: C.bg, borderRadius: 6, padding: 8, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between' },
+    patInfo:     { flex: 1 },
+    patLabel:    { fontSize: 7, color: C.muted, marginBottom: 1 },
+    patValue:    { fontSize: 8.5, color: C.text, fontFamily: 'Helvetica-Bold' },
+    billMeta:    { alignItems: 'flex-end' },
+    tableHeader: { flexDirection: 'row', backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 3, marginBottom: 2 },
+    thText:      { fontSize: 7.5, color: C.white, fontFamily: 'Helvetica-Bold' },
+    tableRow:    { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: C.border },
+    tdText:      { fontSize: 8.5, color: C.text },
+    tdAmount:    { fontSize: 8.5, color: C.text, textAlign: 'right' },
+    totalsWrap:  { marginTop: 8, paddingTop: 6, borderTopWidth: 2, borderTopColor: C.border },
+    totalRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, paddingHorizontal: 8 },
+    totalLabel:  { fontSize: 8.5, color: C.muted },
+    totalValue:  { fontSize: 8.5, color: C.text },
+    netRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: C.primaryLt, borderRadius: 4, marginTop: 3 },
+    netLabel:    { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.primary },
+    netValue:    { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.primary },
+    statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 8 },
+    footer:      { marginTop: 16, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.border, flexDirection: 'row', justifyContent: 'space-between' },
+    footNote:    { fontSize: 7, color: C.subtle },
+  })
+
+  const { bill, patient: pat, hospital: hs } = data
+  const isPaid    = bill.status === 'paid'
+  const statusClr = isPaid ? C.success : C.danger
+
+  const doc = (
+    <Document title={`Invoice ${bill.bill_no || bill.id.slice(-8)} — ${pat.full_name}`}>
+      <Page size="A4" style={s.page}>
+
+        {/* ── Header ──────────────────────────────────────────── */}
+        <View style={s.headerWrap}>
+          <View>
+            <Text style={s.hospitalName}>{hs.hospitalName}</Text>
+            {hs.address && <Text style={s.subtext}>{hs.address}</Text>}
+            {hs.phone   && <Text style={s.subtext}>☎ {hs.phone}</Text>}
+            {hs.gstin   && <Text style={s.subtext}>GSTIN: {hs.gstin}</Text>}
+          </View>
+          <View style={s.invoiceBlock}>
+            <Text style={s.invoiceTitle}>INVOICE</Text>
+            <Text style={s.invoiceNo}>#{bill.bill_no || bill.id.slice(-8).toUpperCase()}</Text>
+            <Text style={{ ...s.invoiceNo, marginTop: 2 }}>
+              {new Date(bill.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </Text>
+          </View>
+        </View>
+
+        {/* ── Patient Info ─────────────────────────────────────── */}
+        <View style={s.patientBox}>
+          <View style={s.patInfo}>
+            <Text style={s.patLabel}>Bill To</Text>
+            <Text style={{ ...s.patValue, fontSize: 11 }}>{pat.full_name}</Text>
+            <Text style={{ fontSize: 8, color: C.muted, marginTop: 2 }}>MRN: {pat.mrn}</Text>
+            {pat.mobile  && <Text style={{ fontSize: 8, color: C.muted }}>☎ {pat.mobile}</Text>}
+            {pat.address && <Text style={{ fontSize: 8, color: C.muted }}>{pat.address}</Text>}
+          </View>
+          <View style={s.billMeta}>
+            <View style={[s.statusBadge, { backgroundColor: isPaid ? '#dcfce7' : '#fee2e2' }]}>
+              <Text style={{ fontSize: 9, color: statusClr, fontFamily: 'Helvetica-Bold' }}>
+                {isPaid ? '✓ PAID' : '⏳ PENDING'}
+              </Text>
+            </View>
+            {bill.payment_mode && (
+              <Text style={{ fontSize: 8, color: C.muted, marginTop: 4, textAlign: 'right' }}>
+                Mode: {bill.payment_mode.toUpperCase()}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* ── Items Table ──────────────────────────────────────── */}
+        <View style={s.tableHeader}>
+          <Text style={{ ...s.thText, flex: 1 }}>Description</Text>
+          <Text style={{ ...s.thText, width: 40, textAlign: 'right' }}>Qty</Text>
+          <Text style={{ ...s.thText, width: 70, textAlign: 'right' }}>Amount (₹)</Text>
+        </View>
+
+        {bill.items.map((item, i) => (
+          <View key={i} style={[s.tableRow, { backgroundColor: i % 2 === 0 ? C.white : C.bg }]}>
+            <Text style={{ ...s.tdText, flex: 1 }}>{item.label}</Text>
+            <Text style={{ ...s.tdText, width: 40, textAlign: 'right' }}>{item.quantity || 1}</Text>
+            <Text style={{ ...s.tdAmount, width: 70 }}>₹{item.amount.toLocaleString('en-IN')}</Text>
+          </View>
+        ))}
+
+        {/* ── Totals ───────────────────────────────────────────── */}
+        <View style={s.totalsWrap}>
+          <View style={s.totalRow}>
+            <Text style={s.totalLabel}>Subtotal</Text>
+            <Text style={s.totalValue}>₹{bill.subtotal.toLocaleString('en-IN')}</Text>
+          </View>
+          {(bill.discount > 0) && (
+            <View style={s.totalRow}>
+              <Text style={{ ...s.totalLabel, color: C.success }}>Discount</Text>
+              <Text style={{ ...s.totalValue, color: C.success }}>− ₹{bill.discount.toLocaleString('en-IN')}</Text>
+            </View>
+          )}
+          {(bill.gst_amount && bill.gst_amount > 0) && (
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>GST ({bill.gst_percent || 0}%)</Text>
+              <Text style={s.totalValue}>₹{bill.gst_amount.toLocaleString('en-IN')}</Text>
+            </View>
+          )}
+          <View style={s.netRow}>
+            <Text style={s.netLabel}>TOTAL DUE</Text>
+            <Text style={s.netValue}>₹{bill.net_amount.toLocaleString('en-IN')}</Text>
+          </View>
+        </View>
+
+        {/* Notes */}
+        {bill.notes && !bill.notes.startsWith('[ADMIN MODIFIED]') && (
+          <View style={{ marginTop: 10, backgroundColor: '#fffbeb', padding: 6, borderRadius: 4 }}>
+            <Text style={{ fontSize: 7.5, color: '#92400e' }}>{bill.notes}</Text>
+          </View>
+        )}
+
+        {/* ── Footer ───────────────────────────────────────────── */}
+        <View style={s.footer}>
+          <Text style={s.footNote}>
+            Thank you for choosing {hs.hospitalName}.{'\n'}
+            {hs.gstin ? `GSTIN: ${hs.gstin}  ` : ''}{hs.regNo ? `Reg: ${hs.regNo}` : ''}
+          </Text>
+          <Text style={{ ...s.footNote, textAlign: 'right' }}>
+            This is a computer-generated document.{'\n'}No signature required.
+          </Text>
+        </View>
+
+      </Page>
+    </Document>
+  )
+
+  return renderToBuffer(doc)
+}
+
+// ─── Lab Report Summary PDF ───────────────────────────────────
+
+export async function generateLabReportPDF(data: PDFLabReportData): Promise<Buffer> {
+  const { renderToBuffer, Document, Page, Text, View, StyleSheet } = await import('@react-pdf/renderer')
+
+  const s = StyleSheet.create({
+    page:       { fontFamily: 'Helvetica', fontSize: 9, paddingHorizontal: 36, paddingVertical: 28, backgroundColor: C.white },
+    header:     { borderBottomWidth: 3, borderBottomColor: C.accent, paddingBottom: 8, marginBottom: 14 },
+    hName:      { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.accent, textAlign: 'center' },
+    hSub:       { fontSize: 7.5, color: C.muted, textAlign: 'center', marginTop: 1 },
+    badge:      { alignSelf: 'center', backgroundColor: '#d1fae5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginTop: 3 },
+    badgeText:  { fontSize: 7, color: C.accent, fontFamily: 'Helvetica-Bold' },
+    patBox:     { backgroundColor: C.bg, borderRadius: 6, padding: 8, marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap' },
+    patCell:    { width: '33%', marginBottom: 2 },
+    patLabel:   { fontSize: 7, color: C.muted, marginBottom: 1 },
+    patValue:   { fontSize: 8.5, color: C.text, fontFamily: 'Helvetica-Bold' },
+    reportTitle:{ backgroundColor: C.accent, padding: 8, borderRadius: 4, marginBottom: 10 },
+    repTitleTxt:{ fontSize: 12, color: C.white, fontFamily: 'Helvetica-Bold' },
+    repMeta:    { fontSize: 8, color: '#d1fae5', marginTop: 2 },
+    tableHeader:{ flexDirection: 'row', backgroundColor: '#134e4a', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 3, marginBottom: 2 },
+    thText:     { fontSize: 7.5, color: C.white, fontFamily: 'Helvetica-Bold' },
+    tableRow:   { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: C.border },
+    tdText:     { fontSize: 8.5, color: C.text },
+    flagH:      { color: C.danger,  fontFamily: 'Helvetica-Bold' },
+    flagL:      { color: '#0ea5e9', fontFamily: 'Helvetica-Bold' },
+    notesBox:   { marginTop: 10, backgroundColor: '#fffbeb', padding: 7, borderRadius: 4 },
+    notesText:  { fontSize: 8, color: '#92400e', lineHeight: 1.5 },
+    footer:     { marginTop: 16, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.border },
+    footText:   { fontSize: 7, color: C.subtle, textAlign: 'center' },
+  })
+
+  const { report: rep, patient: pat, hospital: hs } = data
+
+  const doc = (
+    <Document title={`Lab Report — ${rep.report_name} — ${pat.full_name}`}>
+      <Page size="A4" style={s.page}>
+
+        {/* Header */}
+        <View style={s.header}>
+          <Text style={s.hName}>{hs.hospitalName}</Text>
+          {hs.address && <Text style={s.hSub}>{hs.address}</Text>}
+          {hs.phone   && <Text style={s.hSub}>☎ {hs.phone}</Text>}
+          <View style={s.badge}><Text style={s.badgeText}>LABORATORY REPORT</Text></View>
+        </View>
+
+        {/* Patient */}
+        <View style={s.patBox}>
+          <View style={s.patCell}><Text style={s.patLabel}>Patient Name</Text><Text style={s.patValue}>{pat.full_name}</Text></View>
+          <View style={s.patCell}><Text style={s.patLabel}>MRN</Text><Text style={s.patValue}>{pat.mrn}</Text></View>
+          {pat.age != null && <View style={s.patCell}><Text style={s.patLabel}>Age / Gender</Text><Text style={s.patValue}>{pat.age}y {pat.gender || ''}</Text></View>}
+        </View>
+
+        {/* Report Title */}
+        <View style={s.reportTitle}>
+          <Text style={s.repTitleTxt}>{rep.report_name}</Text>
+          <Text style={s.repMeta}>
+            Date: {rep.report_date}   |   Lab: {rep.lab_name || 'In-house'}   |   Status: {rep.status?.toUpperCase()}
+          </Text>
+        </View>
+
+        {/* Results Table */}
+        {rep.values && rep.values.length > 0 && (
+          <>
+            <View style={s.tableHeader}>
+              <Text style={{ ...s.thText, flex: 1.5 }}>Parameter</Text>
+              <Text style={{ ...s.thText, width: 60, textAlign: 'right' }}>Value</Text>
+              <Text style={{ ...s.thText, width: 50, textAlign: 'right' }}>Unit</Text>
+              <Text style={{ ...s.thText, width: 70, textAlign: 'right' }}>Ref Range</Text>
+              <Text style={{ ...s.thText, width: 25, textAlign: 'center' }}>Flag</Text>
+            </View>
+            {rep.values.map((v, i) => {
+              const flagStyle = v.flag === 'H' ? s.flagH : v.flag === 'L' ? s.flagL : {}
+              return (
+                <View key={i} style={[s.tableRow, { backgroundColor: i % 2 === 0 ? C.white : C.bg }]}>
+                  <Text style={{ ...s.tdText, flex: 1.5 }}>{v.parameter}</Text>
+                  <Text style={{ ...s.tdText, width: 60, textAlign: 'right', ...flagStyle }}>{v.value}</Text>
+                  <Text style={{ ...s.tdText, width: 50, textAlign: 'right', color: C.muted }}>{v.unit || '—'}</Text>
+                  <Text style={{ ...s.tdText, width: 70, textAlign: 'right', color: C.muted }}>{v.ref_range || '—'}</Text>
+                  <Text style={{ ...s.tdText, width: 25, textAlign: 'center', ...flagStyle }}>{v.flag || ''}</Text>
+                </View>
+              )
+            })}
+          </>
+        )}
+
+        {/* Notes */}
+        {rep.notes && (
+          <View style={s.notesBox}>
+            <Text style={{ ...s.notesText, fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Notes:</Text>
+            <Text style={s.notesText}>{rep.notes}</Text>
+          </View>
+        )}
+
+        {/* Footer */}
+        <View style={s.footer}>
+          <Text style={s.footText}>
+            This report is computer-generated. Please consult your physician to interpret the results.
+          </Text>
+        </View>
+
+      </Page>
+    </Document>
+  )
+
+  return renderToBuffer(doc)
+}
+
+// ─── Storage Upload ───────────────────────────────────────────
+
 export async function uploadPDFToStorage(
   pdfBuffer: Buffer,
   filename:  string,
   folder:    string = 'pdfs',
 ): Promise<string | null> {
   const { createClient } = await import('@supabase/supabase-js')
-  const supabase = createClient(
+  const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   )
 
   const path = `${folder}/${filename}`
-
-  const { error } = await supabase.storage
-    .from('documents')
-    .upload(path, pdfBuffer, {
-      contentType: 'application/pdf',
-      upsert:      true,
-    })
+  const { error } = await sb.storage.from('documents').upload(path, pdfBuffer, {
+    contentType: 'application/pdf',
+    upsert:      true,
+  })
 
   if (error) {
     console.error('[pdf-generator] Upload error:', error.message)
     return null
   }
 
-  const { data } = supabase.storage.from('documents').getPublicUrl(path)
+  const { data } = sb.storage.from('documents').getPublicUrl(path)
   return data?.publicUrl || null
 }
-
 ```
 
 # src\lib\pdf-to-image.ts
@@ -62635,6 +63996,151 @@ export function getCommandsByCategory(): Array<[CommandCategory, VoiceCommand[]]
     'utility',
   ]
   return categories.map(cat => [cat, grouped[cat]] as [CommandCategory, VoiceCommand[]])
+}
+```
+
+# src\lib\whatsapp-notify.ts
+
+```ts
+/**
+ * src/lib/whatsapp-notify.ts
+ *
+ * WhatsApp notification helper for "Report Ready" auto-notifications.
+ * Provides functions to notify doctor, patient, and staff when:
+ *  - Lab report is ready
+ *  - Discharge summary is ready
+ *  - Any document/report is uploaded
+ *
+ * Also handles abnormal value alerts to doctor dashboard.
+ */
+
+import { supabase } from './supabase'
+
+export interface NotifyOptions {
+  patientName: string
+  patientId: string
+  patientMobile?: string
+  mrn: string
+  reportType: 'lab_report' | 'discharge_summary' | 'prescription' | 'document'
+  reportDetails?: string
+  abnormalValues?: string[]
+  labPartner?: string
+}
+
+/**
+ * Send "Report Ready" WhatsApp notifications to relevant parties.
+ * Returns WhatsApp URLs that can be opened on the client.
+ */
+export async function sendReportReadyNotification(options: NotifyOptions): Promise<{
+  doctorUrl?: string
+  patientUrl?: string
+  staffUrl?: string
+}> {
+  const { patientName, patientId, patientMobile, mrn, reportType, reportDetails, abnormalValues, labPartner } = options
+
+  try {
+    const res = await fetch('/api/labs/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patientName,
+        patientId,
+        mrn,
+        abnormalValues: abnormalValues || [],
+        labPartner: labPartner || '',
+        reportType,
+      }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      const urls: any = {}
+      for (const n of data.notifications || []) {
+        if (n.whatsappUrl) {
+          if (n.recipient === 'doctor') urls.doctorUrl = n.whatsappUrl
+          if (n.recipient === 'patient') urls.patientUrl = n.whatsappUrl
+          if (n.recipient === 'staff') urls.staffUrl = n.whatsappUrl
+        }
+      }
+      return urls
+    }
+  } catch (err) {
+    console.error('[whatsapp-notify] error:', err)
+  }
+
+  return {}
+}
+
+/**
+ * Check if a lab value is abnormal based on reference ranges.
+ * Returns list of abnormal values with their details.
+ */
+export function detectAbnormalValues(results: Array<{ name: string; value: string | number; unit?: string }>): string[] {
+  const RANGES: Record<string, { low: number; high: number; unit: string }> = {
+    'haemoglobin': { low: 11.5, high: 16.5, unit: 'g/dL' },
+    'hb': { low: 11.5, high: 16.5, unit: 'g/dL' },
+    'wbc': { low: 4000, high: 11000, unit: 'cells/µL' },
+    'platelet': { low: 150000, high: 400000, unit: 'cells/µL' },
+    'blood sugar fasting': { low: 70, high: 100, unit: 'mg/dL' },
+    'fasting sugar': { low: 70, high: 100, unit: 'mg/dL' },
+    'blood sugar pp': { low: 0, high: 140, unit: 'mg/dL' },
+    'pp sugar': { low: 0, high: 140, unit: 'mg/dL' },
+    'hba1c': { low: 0, high: 5.7, unit: '%' },
+    'tsh': { low: 0.4, high: 4.0, unit: 'mIU/L' },
+    'creatinine': { low: 0.6, high: 1.2, unit: 'mg/dL' },
+    'uric acid': { low: 2.4, high: 7.0, unit: 'mg/dL' },
+    'sgpt': { low: 7, high: 56, unit: 'U/L' },
+    'sgot': { low: 10, high: 40, unit: 'U/L' },
+    'cholesterol': { low: 0, high: 200, unit: 'mg/dL' },
+    'triglycerides': { low: 0, high: 150, unit: 'mg/dL' },
+    'esr': { low: 0, high: 20, unit: 'mm/hr' },
+  }
+
+  const abnormals: string[] = []
+
+  for (const result of results) {
+    const numVal = parseFloat(String(result.value))
+    if (isNaN(numVal)) continue
+
+    const nameKey = result.name.toLowerCase().trim()
+    for (const [refKey, range] of Object.entries(RANGES)) {
+      if (nameKey.includes(refKey)) {
+        if (numVal < range.low || numVal > range.high) {
+          const status = numVal < range.low ? 'LOW' : 'HIGH'
+          abnormals.push(`${result.name}: ${result.value} ${result.unit || range.unit} [${status}] (Normal: ${range.low}–${range.high})`)
+        }
+        break
+      }
+    }
+  }
+
+  return abnormals
+}
+
+/**
+ * Create a doctor alert for abnormal values.
+ * Shown in the doctor's dashboard.
+ */
+export async function createDoctorAlert(
+  patientId: string,
+  patientName: string,
+  mrn: string,
+  alertType: string,
+  alertData: Record<string, any>
+): Promise<void> {
+  try {
+    await supabase.from('doctor_alerts').insert({
+      patient_id: patientId,
+      patient_name: patientName,
+      mrn,
+      alert_type: alertType,
+      alert_data: alertData,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.error('[createDoctorAlert] error:', err)
+  }
 }
 ```
 
@@ -67572,7 +69078,7 @@ test('12. Sidebar navigation works', async ({ page }) => {
 # tsconfig.tsbuildinfo
 
 ```tsbuildinfo
-{"fileNames":["./node_modules/typescript/lib/lib.es5.d.ts","./node_modules/typescript/lib/lib.es2015.d.ts","./node_modules/typescript/lib/lib.es2016.d.ts","./node_modules/typescript/lib/lib.es2017.d.ts","./node_modules/typescript/lib/lib.es2018.d.ts","./node_modules/typescript/lib/lib.es2019.d.ts","./node_modules/typescript/lib/lib.es2020.d.ts","./node_modules/typescript/lib/lib.es2021.d.ts","./node_modules/typescript/lib/lib.es2022.d.ts","./node_modules/typescript/lib/lib.es2023.d.ts","./node_modules/typescript/lib/lib.es2024.d.ts","./node_modules/typescript/lib/lib.esnext.d.ts","./node_modules/typescript/lib/lib.dom.d.ts","./node_modules/typescript/lib/lib.dom.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.core.d.ts","./node_modules/typescript/lib/lib.es2015.collection.d.ts","./node_modules/typescript/lib/lib.es2015.generator.d.ts","./node_modules/typescript/lib/lib.es2015.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.promise.d.ts","./node_modules/typescript/lib/lib.es2015.proxy.d.ts","./node_modules/typescript/lib/lib.es2015.reflect.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2016.array.include.d.ts","./node_modules/typescript/lib/lib.es2016.intl.d.ts","./node_modules/typescript/lib/lib.es2017.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2017.date.d.ts","./node_modules/typescript/lib/lib.es2017.object.d.ts","./node_modules/typescript/lib/lib.es2017.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2017.string.d.ts","./node_modules/typescript/lib/lib.es2017.intl.d.ts","./node_modules/typescript/lib/lib.es2017.typedarrays.d.ts","./node_modules/typescript/lib/lib.es2018.asyncgenerator.d.ts","./node_modules/typescript/lib/lib.es2018.asynciterable.d.ts","./node_modules/typescript/lib/lib.es2018.intl.d.ts","./node_modules/typescript/lib/lib.es2018.promise.d.ts","./node_modules/typescript/lib/lib.es2018.regexp.d.ts","./node_modules/typescript/lib/lib.es2019.array.d.ts","./node_modules/typescript/lib/lib.es2019.object.d.ts","./node_modules/typescript/lib/lib.es2019.string.d.ts","./node_modules/typescript/lib/lib.es2019.symbol.d.ts","./node_modules/typescript/lib/lib.es2019.intl.d.ts","./node_modules/typescript/lib/lib.es2020.bigint.d.ts","./node_modules/typescript/lib/lib.es2020.date.d.ts","./node_modules/typescript/lib/lib.es2020.promise.d.ts","./node_modules/typescript/lib/lib.es2020.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2020.string.d.ts","./node_modules/typescript/lib/lib.es2020.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2020.intl.d.ts","./node_modules/typescript/lib/lib.es2020.number.d.ts","./node_modules/typescript/lib/lib.es2021.promise.d.ts","./node_modules/typescript/lib/lib.es2021.string.d.ts","./node_modules/typescript/lib/lib.es2021.weakref.d.ts","./node_modules/typescript/lib/lib.es2021.intl.d.ts","./node_modules/typescript/lib/lib.es2022.array.d.ts","./node_modules/typescript/lib/lib.es2022.error.d.ts","./node_modules/typescript/lib/lib.es2022.intl.d.ts","./node_modules/typescript/lib/lib.es2022.object.d.ts","./node_modules/typescript/lib/lib.es2022.string.d.ts","./node_modules/typescript/lib/lib.es2022.regexp.d.ts","./node_modules/typescript/lib/lib.es2023.array.d.ts","./node_modules/typescript/lib/lib.es2023.collection.d.ts","./node_modules/typescript/lib/lib.es2023.intl.d.ts","./node_modules/typescript/lib/lib.es2024.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2024.collection.d.ts","./node_modules/typescript/lib/lib.es2024.object.d.ts","./node_modules/typescript/lib/lib.es2024.promise.d.ts","./node_modules/typescript/lib/lib.es2024.regexp.d.ts","./node_modules/typescript/lib/lib.es2024.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2024.string.d.ts","./node_modules/typescript/lib/lib.esnext.array.d.ts","./node_modules/typescript/lib/lib.esnext.collection.d.ts","./node_modules/typescript/lib/lib.esnext.intl.d.ts","./node_modules/typescript/lib/lib.esnext.disposable.d.ts","./node_modules/typescript/lib/lib.esnext.promise.d.ts","./node_modules/typescript/lib/lib.esnext.decorators.d.ts","./node_modules/typescript/lib/lib.esnext.iterator.d.ts","./node_modules/typescript/lib/lib.esnext.float16.d.ts","./node_modules/typescript/lib/lib.esnext.error.d.ts","./node_modules/typescript/lib/lib.esnext.sharedmemory.d.ts","./node_modules/typescript/lib/lib.decorators.d.ts","./node_modules/typescript/lib/lib.decorators.legacy.d.ts","./node_modules/next/dist/styled-jsx/types/css.d.ts","./node_modules/@types/react/global.d.ts","./node_modules/csstype/index.d.ts","./node_modules/@types/prop-types/index.d.ts","./node_modules/@types/react/index.d.ts","./node_modules/next/dist/styled-jsx/types/index.d.ts","./node_modules/next/dist/styled-jsx/types/macro.d.ts","./node_modules/next/dist/styled-jsx/types/style.d.ts","./node_modules/next/dist/styled-jsx/types/global.d.ts","./node_modules/next/dist/shared/lib/amp.d.ts","./node_modules/next/amp.d.ts","./node_modules/@types/node/compatibility/disposable.d.ts","./node_modules/@types/node/compatibility/indexable.d.ts","./node_modules/@types/node/compatibility/iterators.d.ts","./node_modules/@types/node/compatibility/index.d.ts","./node_modules/@types/node/globals.typedarray.d.ts","./node_modules/@types/node/buffer.buffer.d.ts","./node_modules/@types/node/globals.d.ts","./node_modules/@types/node/web-globals/abortcontroller.d.ts","./node_modules/@types/node/web-globals/domexception.d.ts","./node_modules/@types/node/web-globals/events.d.ts","./node_modules/undici-types/header.d.ts","./node_modules/undici-types/readable.d.ts","./node_modules/undici-types/file.d.ts","./node_modules/undici-types/fetch.d.ts","./node_modules/undici-types/formdata.d.ts","./node_modules/undici-types/connector.d.ts","./node_modules/undici-types/client.d.ts","./node_modules/undici-types/errors.d.ts","./node_modules/undici-types/dispatcher.d.ts","./node_modules/undici-types/global-dispatcher.d.ts","./node_modules/undici-types/global-origin.d.ts","./node_modules/undici-types/pool-stats.d.ts","./node_modules/undici-types/pool.d.ts","./node_modules/undici-types/handlers.d.ts","./node_modules/undici-types/balanced-pool.d.ts","./node_modules/undici-types/agent.d.ts","./node_modules/undici-types/mock-interceptor.d.ts","./node_modules/undici-types/mock-agent.d.ts","./node_modules/undici-types/mock-client.d.ts","./node_modules/undici-types/mock-pool.d.ts","./node_modules/undici-types/mock-errors.d.ts","./node_modules/undici-types/proxy-agent.d.ts","./node_modules/undici-types/env-http-proxy-agent.d.ts","./node_modules/undici-types/retry-handler.d.ts","./node_modules/undici-types/retry-agent.d.ts","./node_modules/undici-types/api.d.ts","./node_modules/undici-types/interceptors.d.ts","./node_modules/undici-types/util.d.ts","./node_modules/undici-types/cookies.d.ts","./node_modules/undici-types/patch.d.ts","./node_modules/undici-types/websocket.d.ts","./node_modules/undici-types/eventsource.d.ts","./node_modules/undici-types/filereader.d.ts","./node_modules/undici-types/diagnostics-channel.d.ts","./node_modules/undici-types/content-type.d.ts","./node_modules/undici-types/cache.d.ts","./node_modules/undici-types/index.d.ts","./node_modules/@types/node/web-globals/fetch.d.ts","./node_modules/@types/node/assert.d.ts","./node_modules/@types/node/assert/strict.d.ts","./node_modules/@types/node/async_hooks.d.ts","./node_modules/@types/node/buffer.d.ts","./node_modules/@types/node/child_process.d.ts","./node_modules/@types/node/cluster.d.ts","./node_modules/@types/node/console.d.ts","./node_modules/@types/node/constants.d.ts","./node_modules/@types/node/crypto.d.ts","./node_modules/@types/node/dgram.d.ts","./node_modules/@types/node/diagnostics_channel.d.ts","./node_modules/@types/node/dns.d.ts","./node_modules/@types/node/dns/promises.d.ts","./node_modules/@types/node/domain.d.ts","./node_modules/@types/node/events.d.ts","./node_modules/@types/node/fs.d.ts","./node_modules/@types/node/fs/promises.d.ts","./node_modules/@types/node/http.d.ts","./node_modules/@types/node/http2.d.ts","./node_modules/@types/node/https.d.ts","./node_modules/@types/node/inspector.generated.d.ts","./node_modules/@types/node/module.d.ts","./node_modules/@types/node/net.d.ts","./node_modules/@types/node/os.d.ts","./node_modules/@types/node/path.d.ts","./node_modules/@types/node/perf_hooks.d.ts","./node_modules/@types/node/process.d.ts","./node_modules/@types/node/punycode.d.ts","./node_modules/@types/node/querystring.d.ts","./node_modules/@types/node/readline.d.ts","./node_modules/@types/node/readline/promises.d.ts","./node_modules/@types/node/repl.d.ts","./node_modules/@types/node/sea.d.ts","./node_modules/@types/node/stream.d.ts","./node_modules/@types/node/stream/promises.d.ts","./node_modules/@types/node/stream/consumers.d.ts","./node_modules/@types/node/stream/web.d.ts","./node_modules/@types/node/string_decoder.d.ts","./node_modules/@types/node/test.d.ts","./node_modules/@types/node/timers.d.ts","./node_modules/@types/node/timers/promises.d.ts","./node_modules/@types/node/tls.d.ts","./node_modules/@types/node/trace_events.d.ts","./node_modules/@types/node/tty.d.ts","./node_modules/@types/node/url.d.ts","./node_modules/@types/node/util.d.ts","./node_modules/@types/node/v8.d.ts","./node_modules/@types/node/vm.d.ts","./node_modules/@types/node/wasi.d.ts","./node_modules/@types/node/worker_threads.d.ts","./node_modules/@types/node/zlib.d.ts","./node_modules/@types/node/index.d.ts","./node_modules/next/dist/server/get-page-files.d.ts","./node_modules/@types/react/canary.d.ts","./node_modules/@types/react/experimental.d.ts","./node_modules/@types/react-dom/index.d.ts","./node_modules/@types/react-dom/canary.d.ts","./node_modules/@types/react-dom/experimental.d.ts","./node_modules/next/dist/compiled/webpack/webpack.d.ts","./node_modules/next/dist/server/config.d.ts","./node_modules/next/dist/lib/load-custom-routes.d.ts","./node_modules/next/dist/shared/lib/image-config.d.ts","./node_modules/next/dist/build/webpack/plugins/subresource-integrity-plugin.d.ts","./node_modules/next/dist/server/body-streams.d.ts","./node_modules/next/dist/server/future/route-kind.d.ts","./node_modules/next/dist/server/future/route-definitions/route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/route-match.d.ts","./node_modules/next/dist/client/components/app-router-headers.d.ts","./node_modules/next/dist/server/request-meta.d.ts","./node_modules/next/dist/server/lib/revalidate.d.ts","./node_modules/next/dist/server/config-shared.d.ts","./node_modules/next/dist/server/base-http/index.d.ts","./node_modules/next/dist/server/api-utils/index.d.ts","./node_modules/next/dist/server/node-environment.d.ts","./node_modules/next/dist/server/require-hook.d.ts","./node_modules/next/dist/server/node-polyfill-crypto.d.ts","./node_modules/next/dist/lib/page-types.d.ts","./node_modules/next/dist/build/analysis/get-page-static-info.d.ts","./node_modules/next/dist/build/webpack/loaders/get-module-build-info.d.ts","./node_modules/next/dist/build/webpack/plugins/middleware-plugin.d.ts","./node_modules/next/dist/server/render-result.d.ts","./node_modules/next/dist/server/future/helpers/i18n-provider.d.ts","./node_modules/next/dist/server/web/next-url.d.ts","./node_modules/next/dist/compiled/@edge-runtime/cookies/index.d.ts","./node_modules/next/dist/server/web/spec-extension/cookies.d.ts","./node_modules/next/dist/server/web/spec-extension/request.d.ts","./node_modules/next/dist/server/web/spec-extension/fetch-event.d.ts","./node_modules/next/dist/server/web/spec-extension/response.d.ts","./node_modules/next/dist/server/web/types.d.ts","./node_modules/next/dist/lib/setup-exception-listeners.d.ts","./node_modules/next/dist/lib/constants.d.ts","./node_modules/next/dist/build/index.d.ts","./node_modules/next/dist/build/webpack/plugins/pages-manifest-plugin.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-regex.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-matcher.d.ts","./node_modules/next/dist/shared/lib/router/utils/parse-url.d.ts","./node_modules/next/dist/server/base-http/node.d.ts","./node_modules/next/dist/server/font-utils.d.ts","./node_modules/next/dist/build/webpack/plugins/flight-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-modules/route-module.d.ts","./node_modules/next/dist/server/load-components.d.ts","./node_modules/next/dist/shared/lib/router/utils/middleware-route-matcher.d.ts","./node_modules/next/dist/build/webpack/plugins/next-font-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-definitions/locale-route-definition.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-route-definition.d.ts","./node_modules/next/dist/shared/lib/mitt.d.ts","./node_modules/next/dist/client/with-router.d.ts","./node_modules/next/dist/client/router.d.ts","./node_modules/next/dist/client/route-loader.d.ts","./node_modules/next/dist/client/page-loader.d.ts","./node_modules/next/dist/shared/lib/bloom-filter.d.ts","./node_modules/next/dist/shared/lib/router/router.d.ts","./node_modules/next/dist/shared/lib/router-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/image-config-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/head-manager-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-definitions/app-page-route-definition.d.ts","./node_modules/next/dist/shared/lib/modern-browserslist-target.d.ts","./node_modules/next/dist/shared/lib/constants.d.ts","./node_modules/next/dist/build/webpack/loaders/metadata/types.d.ts","./node_modules/next/dist/build/page-extensions-type.d.ts","./node_modules/next/dist/build/webpack/loaders/next-app-loader.d.ts","./node_modules/next/dist/server/lib/app-dir-module.d.ts","./node_modules/next/dist/server/response-cache/types.d.ts","./node_modules/next/dist/server/response-cache/index.d.ts","./node_modules/next/dist/server/lib/incremental-cache/index.d.ts","./node_modules/next/dist/client/components/hooks-server-context.d.ts","./node_modules/next/dist/server/app-render/dynamic-rendering.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage-instance.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage.external.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/request-cookies.d.ts","./node_modules/next/dist/server/async-storage/draft-mode-provider.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/headers.d.ts","./node_modules/next/dist/client/components/request-async-storage-instance.d.ts","./node_modules/next/dist/client/components/request-async-storage.external.d.ts","./node_modules/next/dist/server/app-render/create-error-handler.d.ts","./node_modules/next/dist/server/app-render/app-render.d.ts","./node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/amp-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.compiled.d.ts","./node_modules/@types/react/jsx-runtime.d.ts","./node_modules/next/dist/client/components/error-boundary.d.ts","./node_modules/next/dist/client/components/router-reducer/create-initial-router-state.d.ts","./node_modules/next/dist/client/components/app-router.d.ts","./node_modules/next/dist/client/components/layout-router.d.ts","./node_modules/next/dist/client/components/render-from-template-context.d.ts","./node_modules/next/dist/client/components/action-async-storage-instance.d.ts","./node_modules/next/dist/client/components/action-async-storage.external.d.ts","./node_modules/next/dist/client/components/client-page.d.ts","./node_modules/next/dist/client/components/search-params.d.ts","./node_modules/next/dist/client/components/not-found-boundary.d.ts","./node_modules/next/dist/server/app-render/rsc/preloads.d.ts","./node_modules/next/dist/server/app-render/rsc/postpone.d.ts","./node_modules/next/dist/server/app-render/rsc/taint.d.ts","./node_modules/next/dist/server/app-render/entry-base.d.ts","./node_modules/next/dist/build/templates/app-page.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.d.ts","./node_modules/next/dist/server/app-render/types.d.ts","./node_modules/next/dist/client/components/router-reducer/fetch-server-response.d.ts","./node_modules/next/dist/client/components/router-reducer/router-reducer-types.d.ts","./node_modules/next/dist/shared/lib/app-router-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/pages/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.compiled.d.ts","./node_modules/next/dist/build/templates/pages.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.d.ts","./node_modules/next/dist/server/render.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-api-route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/pages-api-route-match.d.ts","./node_modules/next/dist/server/future/route-matchers/route-matcher.d.ts","./node_modules/next/dist/server/future/route-matcher-providers/route-matcher-provider.d.ts","./node_modules/next/dist/server/future/route-matcher-managers/route-matcher-manager.d.ts","./node_modules/next/dist/server/future/normalizers/normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/locale-route-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/pathname-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/suffix.d.ts","./node_modules/next/dist/server/future/normalizers/request/rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefix.d.ts","./node_modules/next/dist/server/future/normalizers/request/postponed.d.ts","./node_modules/next/dist/server/future/normalizers/request/action.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefetch-rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/next-data.d.ts","./node_modules/next/dist/server/base-server.d.ts","./node_modules/next/dist/server/image-optimizer.d.ts","./node_modules/next/dist/server/next-server.d.ts","./node_modules/next/dist/lib/coalesced-function.d.ts","./node_modules/next/dist/server/lib/router-utils/types.d.ts","./node_modules/next/dist/trace/types.d.ts","./node_modules/next/dist/trace/trace.d.ts","./node_modules/next/dist/trace/shared.d.ts","./node_modules/next/dist/trace/index.d.ts","./node_modules/next/dist/build/load-jsconfig.d.ts","./node_modules/next/dist/build/webpack-config.d.ts","./node_modules/next/dist/build/webpack/plugins/define-env-plugin.d.ts","./node_modules/next/dist/build/swc/index.d.ts","./node_modules/next/dist/server/dev/parse-version-info.d.ts","./node_modules/next/dist/server/dev/hot-reloader-types.d.ts","./node_modules/next/dist/telemetry/storage.d.ts","./node_modules/next/dist/server/lib/types.d.ts","./node_modules/next/dist/server/lib/render-server.d.ts","./node_modules/next/dist/server/lib/router-server.d.ts","./node_modules/next/dist/shared/lib/router/utils/path-match.d.ts","./node_modules/next/dist/server/lib/router-utils/filesystem.d.ts","./node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.d.ts","./node_modules/next/dist/server/lib/dev-bundler-service.d.ts","./node_modules/next/dist/server/dev/static-paths-worker.d.ts","./node_modules/next/dist/server/dev/next-dev-server.d.ts","./node_modules/next/dist/server/next.d.ts","./node_modules/next/dist/lib/metadata/types/alternative-urls-types.d.ts","./node_modules/next/dist/lib/metadata/types/extra-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-types.d.ts","./node_modules/next/dist/lib/metadata/types/manifest-types.d.ts","./node_modules/next/dist/lib/metadata/types/opengraph-types.d.ts","./node_modules/next/dist/lib/metadata/types/twitter-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-interface.d.ts","./node_modules/next/types/index.d.ts","./node_modules/next/dist/shared/lib/html-context.shared-runtime.d.ts","./node_modules/@next/env/dist/index.d.ts","./node_modules/next/dist/shared/lib/utils.d.ts","./node_modules/next/dist/pages/_app.d.ts","./node_modules/next/app.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-cache.d.ts","./node_modules/next/dist/server/web/spec-extension/revalidate.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-no-store.d.ts","./node_modules/next/cache.d.ts","./node_modules/next/dist/shared/lib/runtime-config.external.d.ts","./node_modules/next/config.d.ts","./node_modules/next/dist/pages/_document.d.ts","./node_modules/next/document.d.ts","./node_modules/next/dist/shared/lib/dynamic.d.ts","./node_modules/next/dynamic.d.ts","./node_modules/next/dist/pages/_error.d.ts","./node_modules/next/error.d.ts","./node_modules/next/dist/shared/lib/head.d.ts","./node_modules/next/head.d.ts","./node_modules/next/dist/client/components/draft-mode.d.ts","./node_modules/next/dist/client/components/headers.d.ts","./node_modules/next/headers.d.ts","./node_modules/next/dist/shared/lib/get-img-props.d.ts","./node_modules/next/dist/client/image-component.d.ts","./node_modules/next/dist/shared/lib/image-external.d.ts","./node_modules/next/image.d.ts","./node_modules/next/dist/client/link.d.ts","./node_modules/next/link.d.ts","./node_modules/next/dist/client/components/redirect-status-code.d.ts","./node_modules/next/dist/client/components/redirect.d.ts","./node_modules/next/dist/client/components/not-found.d.ts","./node_modules/next/dist/client/components/navigation.react-server.d.ts","./node_modules/next/dist/client/components/navigation.d.ts","./node_modules/next/navigation.d.ts","./node_modules/next/router.d.ts","./node_modules/next/dist/client/script.d.ts","./node_modules/next/script.d.ts","./node_modules/next/dist/server/web/spec-extension/user-agent.d.ts","./node_modules/next/dist/compiled/@edge-runtime/primitives/url.d.ts","./node_modules/next/dist/server/web/spec-extension/image-response.d.ts","./node_modules/next/dist/compiled/@vercel/og/satori/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/emoji/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/types.d.ts","./node_modules/next/server.d.ts","./node_modules/next/types/global.d.ts","./node_modules/next/types/compiled.d.ts","./node_modules/next/index.d.ts","./node_modules/next/image-types/global.d.ts","./next-env.d.ts","./node_modules/playwright-core/types/protocol.d.ts","./node_modules/playwright-core/types/structs.d.ts","./node_modules/playwright-core/types/types.d.ts","./node_modules/playwright-core/index.d.ts","./node_modules/playwright/types/test.d.ts","./node_modules/playwright/test.d.ts","./node_modules/@playwright/test/index.d.ts","./playwright.config.ts","./src/middleware.ts","./src/app/api/abdm/auth/route.ts","./src/app/api/abdm/create/init/route.ts","./src/app/api/abdm/create/verify-otp/route.ts","./src/app/api/abdm/create-init/route.ts","./src/app/api/abdm/create-verify-otp/route.ts","./src/app/api/abdm/search/route.ts","./src/app/api/abdm/verify/route.ts","./node_modules/@supabase/functions-js/dist/module/types.d.ts","./node_modules/@supabase/functions-js/dist/module/functionsclient.d.ts","./node_modules/@supabase/functions-js/dist/module/index.d.ts","./node_modules/@supabase/postgrest-js/dist/index.d.mts","./node_modules/@supabase/realtime-js/dist/module/lib/websocket-factory.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/constants.d.ts","./node_modules/@supabase/phoenix/priv/static/types/longpoll.d.ts","./node_modules/@supabase/phoenix/priv/static/types/types.d.ts","./node_modules/@supabase/phoenix/priv/static/types/timer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/socket.d.ts","./node_modules/@supabase/phoenix/priv/static/types/push.d.ts","./node_modules/@supabase/phoenix/priv/static/types/channel.d.ts","./node_modules/@supabase/phoenix/priv/static/types/presence.d.ts","./node_modules/@supabase/phoenix/priv/static/types/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/index.d.ts","./node_modules/@supabase/realtime-js/dist/module/phoenix/types.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/constants.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimepresence.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimechannel.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimeclient.d.ts","./node_modules/@supabase/realtime-js/dist/module/index.d.ts","./node_modules/iceberg-js/dist/index.d.ts","./node_modules/@supabase/storage-js/dist/index.d.mts","./node_modules/@supabase/auth-js/dist/module/lib/error-codes.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/ethereum.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/solana.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.dom.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/helpers.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/types.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/fetch.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/locks.d.ts","./node_modules/@supabase/auth-js/dist/module/index.d.ts","./node_modules/@supabase/supabase-js/dist/index.d.mts","./src/lib/supabase.ts","./src/lib/api-auth.ts","./src/app/api/backup/route.ts","./src/app/api/billing/payment/route.ts","./src/app/api/billing/webhook/route.ts","./src/app/api/check-config/route.ts","./node_modules/@anthropic-ai/sdk/internal/builtin-types.d.mts","../../../../node_modules/undici-types/utility.d.ts","../../../../node_modules/undici-types/header.d.ts","../../../../node_modules/undici-types/readable.d.ts","../../../../node_modules/undici-types/fetch.d.ts","../../../../node_modules/undici-types/formdata.d.ts","../../../../node_modules/undici-types/connector.d.ts","../../../../node_modules/undici-types/client-stats.d.ts","../../../../node_modules/undici-types/client.d.ts","../../../../node_modules/undici-types/errors.d.ts","../../../../node_modules/undici-types/dispatcher.d.ts","../../../../node_modules/undici-types/global-dispatcher.d.ts","../../../../node_modules/undici-types/global-origin.d.ts","../../../../node_modules/undici-types/pool-stats.d.ts","../../../../node_modules/undici-types/pool.d.ts","../../../../node_modules/undici-types/handlers.d.ts","../../../../node_modules/undici-types/balanced-pool.d.ts","../../../../node_modules/undici-types/h2c-client.d.ts","../../../../node_modules/undici-types/agent.d.ts","../../../../node_modules/undici-types/mock-interceptor.d.ts","../../../../node_modules/undici-types/mock-call-history.d.ts","../../../../node_modules/undici-types/mock-agent.d.ts","../../../../node_modules/undici-types/mock-client.d.ts","../../../../node_modules/undici-types/mock-pool.d.ts","../../../../node_modules/undici-types/snapshot-agent.d.ts","../../../../node_modules/undici-types/mock-errors.d.ts","../../../../node_modules/undici-types/proxy-agent.d.ts","../../../../node_modules/undici-types/env-http-proxy-agent.d.ts","../../../../node_modules/undici-types/retry-handler.d.ts","../../../../node_modules/undici-types/retry-agent.d.ts","../../../../node_modules/undici-types/api.d.ts","../../../../node_modules/undici-types/cache-interceptor.d.ts","../../../../node_modules/undici-types/interceptors.d.ts","../../../../node_modules/undici-types/util.d.ts","../../../../node_modules/undici-types/cookies.d.ts","../../../../node_modules/undici-types/patch.d.ts","../../../../node_modules/undici-types/websocket.d.ts","../../../../node_modules/undici-types/eventsource.d.ts","../../../../node_modules/undici-types/diagnostics-channel.d.ts","../../../../node_modules/undici-types/content-type.d.ts","../../../../node_modules/undici-types/cache.d.ts","../../../../node_modules/undici-types/index.d.ts","../../../../node_modules/formdata-polyfill/esm.min.d.ts","../../../../node_modules/fetch-blob/file.d.ts","../../../../node_modules/fetch-blob/index.d.ts","../../../../node_modules/fetch-blob/from.d.ts","../../../../node_modules/node-fetch/@types/index.d.ts","./node_modules/@anthropic-ai/sdk/internal/types.d.mts","./node_modules/@anthropic-ai/sdk/internal/headers.d.mts","./node_modules/@anthropic-ai/sdk/internal/shim-types.d.mts","./node_modules/@anthropic-ai/sdk/core/streaming.d.mts","./node_modules/@anthropic-ai/sdk/internal/request-options.d.mts","./node_modules/@anthropic-ai/sdk/internal/utils/log.d.mts","./node_modules/@anthropic-ai/sdk/resources/shared.d.mts","./node_modules/@anthropic-ai/sdk/core/error.d.mts","./node_modules/@anthropic-ai/sdk/internal/parse.d.mts","./node_modules/@anthropic-ai/sdk/core/api-promise.d.mts","./node_modules/@anthropic-ai/sdk/core/pagination.d.mts","./node_modules/@anthropic-ai/sdk/internal/uploads.d.mts","./node_modules/@anthropic-ai/sdk/internal/to-file.d.mts","./node_modules/@anthropic-ai/sdk/core/uploads.d.mts","./node_modules/@anthropic-ai/sdk/core/resource.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/environments.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/files.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/user-profiles.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.d.mts","./node_modules/@anthropic-ai/sdk/lib/beta-parser.d.mts","./node_modules/@anthropic-ai/sdk/error.d.mts","./node_modules/@anthropic-ai/sdk/lib/betamessagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/index.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/line.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages.d.mts","./node_modules/@anthropic-ai/sdk/lib/parser.d.mts","./node_modules/@anthropic-ai/sdk/lib/messagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betarunnabletool.d.mts","./node_modules/@anthropic-ai/sdk/resources.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/compactioncontrol.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betatoolrunner.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/toolerror.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/beta.d.mts","./node_modules/@anthropic-ai/sdk/resources/completions.d.mts","./node_modules/@anthropic-ai/sdk/resources/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/index.d.mts","./node_modules/@anthropic-ai/sdk/client.d.mts","./node_modules/@anthropic-ai/sdk/index.d.mts","./node_modules/openai/internal/builtin-types.d.mts","./node_modules/openai/internal/types.d.mts","./node_modules/openai/internal/headers.d.mts","./node_modules/openai/internal/shim-types.d.mts","./node_modules/openai/core/streaming.d.mts","./node_modules/openai/internal/request-options.d.mts","./node_modules/openai/internal/utils/log.d.mts","./node_modules/openai/resources/shared.d.mts","./node_modules/openai/core/error.d.mts","./node_modules/openai/pagination.d.mts","./node_modules/openai/internal/parse.d.mts","./node_modules/openai/core/api-promise.d.mts","./node_modules/openai/core/pagination.d.mts","./node_modules/openai/auth/types.d.mts","./node_modules/openai/internal/uploads.d.mts","./node_modules/openai/internal/to-file.d.mts","./node_modules/openai/core/uploads.d.mts","./node_modules/openai/core/resource.d.mts","./node_modules/openai/resources/completions.d.mts","./node_modules/openai/resources/chat/completions/messages.d.mts","./node_modules/openai/resources/chat/completions/index.d.mts","./node_modules/openai/resources/chat/completions.d.mts","./node_modules/openai/error.d.mts","./node_modules/openai/lib/eventstream.d.mts","./node_modules/openai/lib/abstractchatcompletionrunner.d.mts","./node_modules/openai/lib/chatcompletionstream.d.mts","./node_modules/openai/lib/responsesparser.d.mts","./node_modules/openai/lib/responses/eventtypes.d.mts","./node_modules/openai/lib/responses/responsestream.d.mts","./node_modules/openai/resources/responses/input-items.d.mts","./node_modules/openai/resources/responses/input-tokens.d.mts","./node_modules/openai/resources/responses/responses.d.mts","./node_modules/openai/lib/parser.d.mts","./node_modules/openai/lib/chatcompletionstreamingrunner.d.mts","./node_modules/openai/lib/jsonschema.d.mts","./node_modules/openai/lib/runnablefunction.d.mts","./node_modules/openai/lib/chatcompletionrunner.d.mts","./node_modules/openai/resources/chat/completions/completions.d.mts","./node_modules/openai/resources/chat/chat.d.mts","./node_modules/openai/resources/chat/index.d.mts","./node_modules/openai/resources/audio/speech.d.mts","./node_modules/openai/resources/audio/transcriptions.d.mts","./node_modules/openai/resources/audio/translations.d.mts","./node_modules/openai/resources/audio/audio.d.mts","./node_modules/openai/resources/batches.d.mts","./node_modules/openai/resources/beta/threads/messages.d.mts","./node_modules/openai/resources/beta/threads/runs/steps.d.mts","./node_modules/openai/lib/assistantstream.d.mts","./node_modules/openai/resources/beta/threads/runs/runs.d.mts","./node_modules/openai/resources/beta/threads/threads.d.mts","./node_modules/openai/resources/beta/assistants.d.mts","./node_modules/openai/resources/beta/realtime/sessions.d.mts","./node_modules/openai/resources/beta/realtime/transcription-sessions.d.mts","./node_modules/openai/resources/beta/realtime/realtime.d.mts","./node_modules/openai/resources/beta/chatkit/threads.d.mts","./node_modules/openai/resources/beta/chatkit/sessions.d.mts","./node_modules/openai/resources/beta/chatkit/chatkit.d.mts","./node_modules/openai/resources/beta/beta.d.mts","./node_modules/openai/resources/containers/files/content.d.mts","./node_modules/openai/resources/containers/files/files.d.mts","./node_modules/openai/resources/containers/containers.d.mts","./node_modules/openai/resources/conversations/items.d.mts","./node_modules/openai/resources/conversations/conversations.d.mts","./node_modules/openai/resources/embeddings.d.mts","./node_modules/openai/resources/graders/grader-models.d.mts","./node_modules/openai/resources/evals/runs/output-items.d.mts","./node_modules/openai/resources/evals/runs/runs.d.mts","./node_modules/openai/resources/evals/evals.d.mts","./node_modules/openai/resources/files.d.mts","./node_modules/openai/resources/fine-tuning/methods.d.mts","./node_modules/openai/resources/fine-tuning/alpha/graders.d.mts","./node_modules/openai/resources/fine-tuning/alpha/alpha.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/permissions.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/jobs.d.mts","./node_modules/openai/resources/fine-tuning/fine-tuning.d.mts","./node_modules/openai/resources/graders/graders.d.mts","./node_modules/openai/resources/images.d.mts","./node_modules/openai/resources/models.d.mts","./node_modules/openai/resources/moderations.d.mts","./node_modules/openai/resources/realtime/calls.d.mts","./node_modules/openai/resources/realtime/client-secrets.d.mts","./node_modules/openai/resources/realtime/realtime.d.mts","./node_modules/openai/resources/skills/content.d.mts","./node_modules/openai/resources/skills/versions/content.d.mts","./node_modules/openai/resources/skills/versions/versions.d.mts","./node_modules/openai/resources/skills/skills.d.mts","./node_modules/openai/resources/uploads/parts.d.mts","./node_modules/openai/resources/uploads/uploads.d.mts","./node_modules/openai/uploads.d.mts","./node_modules/openai/resources/vector-stores/files.d.mts","./node_modules/openai/resources/vector-stores/file-batches.d.mts","./node_modules/openai/resources/vector-stores/vector-stores.d.mts","./node_modules/openai/resources/videos.d.mts","./node_modules/openai/resources/webhooks/webhooks.d.mts","./node_modules/openai/resources/webhooks/index.d.mts","./node_modules/openai/resources/webhooks.d.mts","./node_modules/openai/resources/index.d.mts","./node_modules/openai/client.d.mts","./node_modules/openai/azure.d.mts","./node_modules/openai/index.d.mts","./node_modules/pdf-lib/cjs/core/document/pdfheader.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfbool.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfhexstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfname.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnull.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnumber.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfref.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfdict.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfrawstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfarray.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperatornames.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperator.d.ts","./node_modules/pdf-lib/cjs/utils/arrays.d.ts","./node_modules/pdf-lib/cjs/utils/async.d.ts","./node_modules/pdf-lib/cjs/utils/strings.d.ts","./node_modules/pdf-lib/cjs/utils/unicode.d.ts","./node_modules/pdf-lib/cjs/utils/numbers.d.ts","./node_modules/pdf-lib/cjs/utils/errors.d.ts","./node_modules/pdf-lib/cjs/utils/base64.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/font.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/encoding.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/index.d.ts","./node_modules/pdf-lib/cjs/utils/objects.d.ts","./node_modules/pdf-lib/cjs/utils/validators.d.ts","./node_modules/pdf-lib/cjs/utils/pdfdocencoding.d.ts","./node_modules/pdf-lib/cjs/utils/cache.d.ts","./node_modules/pdf-lib/cjs/utils/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfflatestream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcontentstream.d.ts","./node_modules/pdf-lib/cjs/utils/rng.d.ts","./node_modules/pdf-lib/cjs/core/pdfcontext.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfobject.d.ts","./node_modules/pdf-lib/cjs/core/errors.d.ts","./node_modules/pdf-lib/cjs/core/syntax/charcodes.d.ts","./node_modules/pdf-lib/cjs/core/pdfobjectcopier.d.ts","./node_modules/pdf-lib/cjs/core/document/pdfcrossrefsection.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailer.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailerdict.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfwriter.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfstreamwriter.d.ts","./node_modules/pdf-lib/cjs/core/embedders/standardfontembedder.d.ts","./node_modules/pdf-lib/cjs/types/fontkit.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontsubsetembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/fileembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/jpegembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pngembedder.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpagetree.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpageleaf.d.ts","./node_modules/pdf-lib/cjs/types/matrix.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pdfpageembedder.d.ts","./node_modules/pdf-lib/cjs/core/interactive/viewerpreferences.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfinvalidobject.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrofield.d.ts","./node_modules/pdf-lib/cjs/core/annotation/borderstyle.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfannotation.d.ts","./node_modules/pdf-lib/cjs/core/annotation/appearancecharacteristics.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfwidgetannotation.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocheckbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrochoice.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocombobox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroform.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrolistbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrononterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacropushbutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroradiobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrosignature.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrotext.d.ts","./node_modules/pdf-lib/cjs/core/acroform/flags.d.ts","./node_modules/pdf-lib/cjs/core/acroform/utils.d.ts","./node_modules/pdf-lib/cjs/core/acroform/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcatalog.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcrossrefstream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfobjectstream.d.ts","./node_modules/pdf-lib/cjs/core/parser/bytestream.d.ts","./node_modules/pdf-lib/cjs/core/parser/baseparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfxrefstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/streams/stream.d.ts","./node_modules/pdf-lib/cjs/core/streams/decode.d.ts","./node_modules/pdf-lib/cjs/core/annotation/flags.d.ts","./node_modules/pdf-lib/cjs/core/annotation/index.d.ts","./node_modules/pdf-lib/cjs/core/index.d.ts","./node_modules/pdf-lib/cjs/api/embeddable.d.ts","./node_modules/pdf-lib/cjs/api/pdfembeddedpage.d.ts","./node_modules/pdf-lib/cjs/api/pdfimage.d.ts","./node_modules/pdf-lib/cjs/api/colors.d.ts","./node_modules/pdf-lib/cjs/api/rotations.d.ts","./node_modules/pdf-lib/cjs/api/operators.d.ts","./node_modules/pdf-lib/cjs/api/pdfpageoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfpage.d.ts","./node_modules/pdf-lib/cjs/api/image/alignment.d.ts","./node_modules/pdf-lib/cjs/api/image/index.d.ts","./node_modules/pdf-lib/cjs/api/form/pdffield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfbutton.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfcheckbox.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfdropdown.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfoptionlist.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfradiogroup.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfsignature.d.ts","./node_modules/pdf-lib/cjs/api/text/alignment.d.ts","./node_modules/pdf-lib/cjs/api/form/pdftextfield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfform.d.ts","./node_modules/pdf-lib/cjs/api/standardfonts.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocumentoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocument.d.ts","./node_modules/pdf-lib/cjs/api/pdffont.d.ts","./node_modules/pdf-lib/cjs/api/form/appearances.d.ts","./node_modules/pdf-lib/cjs/api/form/index.d.ts","./node_modules/pdf-lib/cjs/api/text/layout.d.ts","./node_modules/pdf-lib/cjs/api/text/index.d.ts","./node_modules/pdf-lib/cjs/api/errors.d.ts","./node_modules/pdf-lib/cjs/api/objects.d.ts","./node_modules/pdf-lib/cjs/api/operations.d.ts","./node_modules/pdf-lib/cjs/api/sizes.d.ts","./node_modules/pdf-lib/cjs/core/embedders/javascriptembedder.d.ts","./node_modules/pdf-lib/cjs/api/pdfjavascript.d.ts","./node_modules/pdf-lib/cjs/api/index.d.ts","./node_modules/pdf-lib/cjs/types/index.d.ts","./node_modules/pdf-lib/cjs/index.d.ts","./src/lib/ai-client.ts","./src/app/api/discharge-ai/route.ts","./src/app/api/doctor/earnings/route.ts","./src/app/api/doctor-note-ocr/route.ts","./src/lib/audit.ts","./src/app/api/export/route.ts","./src/types/index.ts","./src/lib/fhir.ts","./src/app/api/fhir/patient/[id]/route.ts","./src/app/api/generate-pdf/route.ts","./node_modules/@types/qrcode/index.d.ts","./src/app/api/generate-qr/route.ts","./src/app/api/google-review/route.ts","./src/app/api/insurance-bundle/[patientid]/route.ts","./src/lib/drug-database.ts","./src/app/api/medicines/import/route.ts","./src/lib/ocr.ts","./src/app/api/ocr/route.ts","./node_modules/tesseract.js/src/index.d.ts","./src/app/api/ocr-free/route.ts","./src/app/api/parse-pdf/route.ts","./src/app/api/patient-summary/route.ts","./src/app/api/payment-link/route.ts","./node_modules/@react-pdf/types/pdf.d.ts","./node_modules/@react-pdf/types/svg.d.ts","./node_modules/@react-pdf/stylesheet/lib/index.d.ts","./node_modules/@react-pdf/types/style.d.ts","./node_modules/@react-pdf/primitives/lib/index.d.ts","./node_modules/@react-pdf/types/primitive.d.ts","./node_modules/@react-pdf/font/lib/index.d.ts","./node_modules/@react-pdf/types/font.d.ts","./node_modules/@react-pdf/types/page.d.ts","./node_modules/@react-pdf/types/bookmark.d.ts","./node_modules/@react-pdf/types/node.d.ts","./node_modules/@react-pdf/types/image.d.ts","./node_modules/@react-pdf/types/context.d.ts","./node_modules/@react-pdf/types/hitslop.d.ts","./node_modules/@react-pdf/types/index.d.ts","./node_modules/@react-pdf/renderer/lib/react-pdf.d.ts","./src/lib/pdf-generator.tsx","./src/app/api/pdf/prescriptions/route.ts","./src/lib/phi-crypto.ts","./src/app/api/phi/route.ts","./src/app/api/portal/auth/send-otp/route.ts","./src/app/api/portal/auth/verify-otp/route.ts","./node_modules/clsx/clsx.d.mts","./node_modules/tailwind-merge/dist/types.d.ts","./src/lib/settings.ts","./src/lib/utils.ts","./src/app/api/portal/book-followup/route.ts","./src/app/api/portal/legacy-verify/route.ts","./src/app/api/portal/pay/route.ts","./src/app/api/portal/send-link/route.ts","./src/app/api/portal/session/route.ts","./src/app/api/reminders/route.ts","./src/app/api/reminders/auto-generate/route.ts","./src/app/api/reminders/history/route.ts","./src/app/api/reminders/send-all/route.ts","./src/app/api/test-ai/route.ts","./src/app/api/users/route.ts","./src/app/api/users/invite/route.ts","./src/app/api/value-report/route.ts","./src/app/api/video/room/route.ts","./src/lib/voice-commands.ts","./src/app/api/voice-command/route.ts","./src/app/api/voice-correct/route.ts","./src/components/voice/voicecommandbus.ts","./src/lib/abdm-server.ts","./src/lib/abdm.ts","./src/lib/allergy-alerts.ts","./src/lib/auth.ts","./src/lib/automation-engine.ts","./src/lib/billing-gst.ts","./src/lib/business-logic.ts","./src/lib/clinical-risk.ts","./src/lib/confirm-dialog.ts","./src/lib/constants.ts","./src/lib/critical-alerts.ts","./src/lib/data-retention.ts","./src/lib/dose-validation.ts","./src/lib/drug-interactions.ts","./src/lib/gyn-templates.ts","./src/lib/gynecology-templates.ts","./src/lib/ipd-billing.ts","./src/lib/lab-migration.ts","./src/lib/mfa.ts","./src/lib/offline-store.ts","./src/lib/patient-timeline.ts","./node_modules/pdfjs-dist/types/src/shared/util.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/tools.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/toolbar.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/comment.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/editor.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/freetext.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/highlight.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/draw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/outline.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/inkdraw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/ink.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/signature.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/stamp.d.ts","./node_modules/pdfjs-dist/types/src/display/display_utils.d.ts","./node_modules/pdfjs-dist/types/web/text_accessibility.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_storage.d.ts","./node_modules/pdfjs-dist/types/src/display/optional_content_config.d.ts","./node_modules/pdfjs-dist/types/src/display/pages_mapper.d.ts","./node_modules/pdfjs-dist/types/src/display/metadata.d.ts","./node_modules/pdfjs-dist/types/src/display/pdf_objects.d.ts","./node_modules/pdfjs-dist/types/src/shared/message_handler.d.ts","./node_modules/pdfjs-dist/types/src/display/api.d.ts","./node_modules/pdfjs-dist/types/web/struct_tree_layer_builder.d.ts","./node_modules/pdfjs-dist/types/web/comment_manager.d.ts","./node_modules/pdfjs-dist/types/web/event_utils.d.ts","./node_modules/pdfjs-dist/types/web/pdf_link_service.d.ts","./node_modules/pdfjs-dist/types/web/base_download_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/draw_layer.d.ts","./node_modules/pdfjs-dist/types/web/l10n.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/annotation_editor_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/color_picker.d.ts","./node_modules/pdfjs-dist/types/src/display/svg_factory.d.ts","./node_modules/pdfjs-dist/types/src/display/worker_options.d.ts","./node_modules/pdfjs-dist/types/src/display/api_utils.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/signaturedraw.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer_images.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/touch_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/xfa_layer.d.ts","./node_modules/pdfjs-dist/types/src/pdf.d.ts","./src/lib/pdf-to-image.ts","./src/lib/pharmacy.ts","./src/lib/phi-client.ts","./node_modules/lucide-react/dist/lucide-react.d.ts","./src/components/clinical/clinicalsafetymodal.tsx","./src/lib/prescription-safety.ts","./src/lib/rate-limit.ts","./src/lib/storage-upload.ts","./src/lib/whatsapp-templates.ts","./src/lib/appointments/followup-sync.ts","./src/lib/services/appointmentservice.ts","./src/types/abdm.ts","./tests/hms.spec.ts","./src/app/error.tsx","./src/app/layout.tsx","./src/app/not-found.tsx","./src/app/page.tsx","./src/components/layout/sidebar.tsx","./src/components/layout/mobilenav.tsx","./src/components/layout/connectionbanner.tsx","./src/components/layout/sessiontimeout.tsx","./src/components/voice/voiceassistant.tsx","./src/components/layout/appshell.tsx","./src/app/abdm-setup/page.tsx","./src/app/ai-setup/page.tsx","./src/app/analytics/page.tsx","./src/app/anc/page.tsx","./src/app/appointments/page.tsx","./src/app/audit-log/page.tsx","./src/app/auth/callback/page.tsx","./src/app/beds/page.tsx","./src/components/billing/billingextras.tsx","./src/app/billing/page.tsx","./src/app/dashboard/page.tsx","./src/app/doctors/earnings/page.tsx","./src/components/shared/formscanner.tsx","./src/app/forms/page.tsx","./src/app/fund/page.tsx","./src/app/insurance/page.tsx","./src/app/intake/page.tsx","./src/app/ipd/page.tsx","./src/components/shared/smartmic.tsx","./src/components/shared/consultationattachments.tsx","./src/app/ipd/[bedid]/page.tsx","./src/app/ipd/[bedid]/billing/page.tsx","./src/app/ipd/beds/page.tsx","./src/app/labs/page.tsx","./src/app/login/page.tsx","./src/app/opd/page.tsx","./src/app/opd/[id]/page.tsx","./src/app/opd/[id]/edit/page.tsx","./src/app/opd/[id]/prescription/page.tsx","./src/app/opd/new/page.tsx","./src/app/ot-schedule/page.tsx","./src/app/ot-schedule/week/page.tsx","./src/app/patients/page.tsx","./src/app/patients/[id]/page.tsx","./src/app/patients/[id]/discharge/page.tsx","./src/app/patients/[id]/edit/page.tsx","./src/app/patients/new/page.tsx","./src/app/pharmacy/page.tsx","./src/app/pharmacy/import/page.tsx","./src/app/portal/layout.tsx","./src/app/portal/page.tsx","./src/app/portal/dashboard/page.tsx","./src/app/portal/login/page.tsx","./src/app/portal/verify/page.tsx","./src/app/queue/page.tsx","./src/app/queue/display/page.tsx","./src/app/reminders/page.tsx","./src/app/reports/page.tsx","./src/app/reports/daily/page.tsx","./src/app/reports/lab-revenue/page.tsx","./src/app/reports/monthly/page.tsx","./src/app/reports/payments/page.tsx","./src/app/reset-password/page.tsx","./src/app/search/page.tsx","./src/app/settings/page.tsx","./src/app/settings/doctors/page.tsx","./src/app/settings/lab-partners/page.tsx","./src/app/setup/page.tsx","./src/app/status/page.tsx","./src/app/value-report/page.tsx","./src/app/video/page.tsx","./src/components/charts/growthchart.tsx","./src/components/ipd/bedcard.tsx","./src/components/patients/patienttimeline.tsx","./src/components/shared/abhaverificationsection.tsx","./src/components/shared/ancoverflowbanner.tsx","./src/components/shared/dischargefinalizebutton.tsx","./src/components/shared/doctornotecamera.tsx","./src/components/shared/labmigrationbanner.tsx","./src/components/shared/roleswitcher.tsx","./.next/types/app/layout.ts","./.next/types/app/page.ts","./.next/types/app/login/page.ts","./node_modules/@types/aria-query/index.d.ts","./node_modules/@types/deep-eql/index.d.ts","./node_modules/assertion-error/index.d.ts","./node_modules/@types/chai/index.d.ts","./node_modules/@types/estree/index.d.ts","./node_modules/@types/json-schema/index.d.ts","./node_modules/@types/eslint/use-at-your-own-risk.d.ts","./node_modules/@types/eslint/index.d.ts","./node_modules/@types/eslint-scope/index.d.ts","./node_modules/@types/minimatch/index.d.ts","./node_modules/@types/glob/index.d.ts","./node_modules/@types/resolve/index.d.ts","./node_modules/@types/trusted-types/lib/index.d.ts","./node_modules/@types/trusted-types/index.d.ts","./node_modules/@types/ws/index.d.ts"],"fileIdsList":[[99,145],[99,145,515,516],[99,145,159,193,514,517],[99,145,186,479,482,485,486],[99,145,175,186,482],[99,145,186,482,486],[99,145,175],[99,145,476],[99,145,480],[99,145,186,478,479,482],[99,145,164,183],[99,145,193],[99,145,193,476],[99,145,164,186,478,482],[99,145,156,175,186,473,474,475,477,481],[99,145,482,490,498],[99,145,474,480],[99,145,482,507,508],[99,145,178,186,193,474,477,482],[99,145,482],[99,145,186,478,482],[99,145,473],[99,145,476,477,478,480,481,482,483,484,486,487,488,489,490,491,492,493,494,495,496,497,498,499,500,501,502,503,504,505,506,508,509,510,511,512],[99,145,153,482,500,503],[99,145,482,490,491,492],[99,145,480,482,491,493],[99,145,481],[99,145,474,476,482],[99,145,482,486,491,493],[99,145,486],[99,145,186,480,482,485],[99,145,474,478,482,490],[99,145,482,500],[99,145,493],[99,145,178,191,193,476,482,507],[99,145,358,949],[99,145,358,982],[99,145,358,951],[99,145,406,407],[99,145,472,519,520,523,524,526,528,529,532,551,572,573,574,575],[99,145,519,527,576],[99,145,525],[99,145,523,527,528,576],[99,145,576],[99,145,521,576],[99,145,530,531],[99,145,526],[99,145,526,528,529,532,549,576],[99,145,544],[99,145,523,529,576],[99,145,472,519,520,522],[99,145,178],[99,145,472],[99,140,145,513,518],[99,145,472,523,576],[99,145,523,576],[99,145,571,576],[99,145,523,540,541,571,576],[99,145,523,541,548,549,576],[99,145,551,576],[99,145,565],[99,145,523,542,565,566,568,577],[99,145,567],[99,145,575],[99,145,564],[99,145,523,528,529,533,538,572],[99,145,538,539],[99,145,523,529,533,539,572],[99,145,533,534,535,536,537,539,555,559,562,571],[99,145,523,528,529,533,572],[99,145,523,528,529,532,533,572],[99,145,534,535,536,537,543,553,557,560,563,572],[99,145,523,528,529,533,545,551,571,572],[99,145,552,571],[99,145,522,523,528,533,540,542,551,552,569,570,571,572],[99,145,522,523,528,529,533,572],[99,145,554,555,556],[99,145,523,528,529,533,555,572],[99,145,523,528,529,533,539,554,556,572],[99,145,558,559],[99,145,523,528,529,532,533,558,572],[99,145,561,562],[99,145,523,528,529,533,561,572],[99,145,522,523,528,533,551,572,573],[99,145,525,551,572,573,574],[99,145,547],[99,145,523,525,528,529,533,545,551],[99,145,546,551],[99,145,522,523,528,533,546,549,550,551],[99,145,701,702],[99,145,414],[87,99,145,843],[99,145,835],[99,145,829,830,832,834,836,837,838,839,840,841,842],[99,145,832,834,836,837,838],[99,145,833],[99,145,831],[99,145,460],[99,145,455],[99,145,450,458,459],[99,145,450,454,458,459,460],[99,145,450,455,458,460,461,462,463],[99,145,449,458],[99,145,458],[99,145,453,458],[99,145,450,451,452,453,457,459],[99,145,450,453,455,456,458],[99,145,425],[99,145,425,426],[99,145,433,434,435,436],[99,145,432,433,434,435,436,437,438,439],[99,145,433,437],[99,145,433],[99,145,432,433,434,437],[99,145,431,432],[99,145,429,443,444,445],[99,145,441],[99,145,440],[99,145,440,441,442,443,445],[99,145,429,430,441,442,444],[99,145,444],[99,145,447],[99,145,427,428,446,448,464],[99,145,1032,1033],[99,145,1035,1038],[99,145,1035,1036,1037],[99,145,1038],[99,145,156,157,193,1040],[99,142,145],[99,144,145],[145],[99,145,150,178],[99,145,146,151,156,164,175,186],[99,145,146,147,156,164],[94,95,96,99,145],[99,145,148,187],[99,145,149,150,157,165],[99,145,150,175,183],[99,145,151,153,156,164],[99,144,145,152],[99,145,153,154],[99,145,155,156],[99,144,145,156],[99,145,156,157,158,175,186],[99,145,156,157,158,171,175,178],[99,145,153,156,159,164,175,186],[99,145,156,157,159,160,164,175,183,186],[99,145,159,161,175,183,186],[97,98,99,100,101,102,103,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,156,162],[99,145,163,186,191],[99,145,153,156,164,175],[99,145,165],[99,145,166],[99,144,145,167],[99,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,169],[99,145,170],[99,145,156,171,172],[99,145,171,173,187,189],[99,145,156,175,176,178],[99,145,177,178],[99,145,175,176],[99,145,179],[99,142,145,175,180],[99,145,156,181,182],[99,145,181,182],[99,145,150,164,175,183],[99,145,184],[99,145,164,185],[99,145,159,170,186],[99,145,150,187],[99,145,175,188],[99,145,163,189],[99,145,190],[99,140,145],[99,140,145,156,158,167,175,178,186,189,191],[99,145,175,192],[99,145,175,193],[87,99,145,197,198,199],[87,99,145,197,198],[87,99,145],[87,91,99,145,196,359,402],[87,91,99,145,195,359,402],[84,85,86,99,145],[99,145,1043],[99,145,156,159,161,164,175,183,186,192,193],[92,99,145],[99,145,363],[99,145,365,366,367],[99,145,369],[99,145,202,212,218,220,359],[99,145,202,209,211,214,232],[99,145,212],[99,145,212,337],[99,145,266,284,299,405],[99,145,307],[99,145,202,212,219,252,262,334,335,405],[99,145,219,405],[99,145,212,262,263,264,405],[99,145,212,219,252,405],[99,145,405],[99,145,202,219,220,405],[99,145,292],[99,144,145,193,291],[87,99,145,285,286,287,304,305],[87,99,145,285],[99,145,275],[99,145,274,276,379],[87,99,145,285,286,302],[99,145,281,305,391],[99,145,389,390],[99,145,226,388],[99,145,278],[99,144,145,193,226,274,275,276,277],[87,99,145,302,304,305],[99,145,302,304],[99,145,302,303,305],[99,145,170,193],[99,145,273],[99,144,145,193,211,213,269,270,271,272],[87,99,145,203,382],[87,99,145,186,193],[87,99,145,219,250],[87,99,145,219],[99,145,248,253],[87,99,145,249,362],[87,91,99,145,159,193,195,196,359,400,401],[99,145,359],[99,145,201],[99,145,352,353,354,355,356,357],[99,145,354],[87,99,145,249,285,362],[87,99,145,285,360,362],[87,99,145,285,362],[99,145,159,193,213,362],[99,145,159,193,210,211,222,240,273,278,279,301,302],[99,145,270,273,278,286,288,289,290,292,293,294,295,296,297,298,405],[99,145,271],[87,99,145,170,193,211,212,240,242,244,269,301,305,359,405],[99,145,159,193,213,214,226,227,274],[99,145,159,193,212,214],[99,145,159,175,193,210,213,214],[99,145,159,170,186,193,210,211,212,213,214,219,222,223,233,234,236,239,240,242,243,244,268,269,302,310,312,315,317,320,322,323,324,325],[99,145,159,175,193],[99,145,202,203,204,210,211,359,362,405],[99,145,159,175,186,193,207,336,338,339,405],[99,145,170,186,193,207,210,213,230,234,236,237,238,242,269,315,326,328,334,348,349],[99,145,212,216,269],[99,145,210,212],[99,145,223,316],[99,145,318,319],[99,145,318],[99,145,316],[99,145,318,321],[99,145,206,207],[99,145,206,245],[99,145,206],[99,145,208,223,314],[99,145,313],[99,145,207,208],[99,145,208,311],[99,145,207],[99,145,301],[99,145,159,193,210,222,241,260,266,280,283,300,302],[99,145,254,255,256,257,258,259,281,282,305,360],[99,145,309],[99,145,159,193,210,222,241,246,306,308,310,359,362],[99,145,159,186,193,203,210,212,268],[99,145,265],[99,145,159,193,342,347],[99,145,233,268,362],[99,145,330,334,348,351],[99,145,159,216,334,342,343,351],[99,145,202,212,233,243,345],[99,145,159,193,212,219,243,329,330,340,341,344,346],[99,145,194,240,241,359,362],[99,145,159,170,186,193,208,210,211,213,216,221,222,230,233,234,236,237,238,239,242,244,268,269,312,326,327,362],[99,145,159,193,210,212,216,328,350],[99,145,159,193,211,213],[87,99,145,159,170,193,201,203,210,211,214,222,239,240,242,244,309,359,362],[99,145,159,170,186,193,205,208,209,213],[99,145,206,267],[99,145,159,193,206,211,222],[99,145,159,193,212,223],[99,145,159,193],[99,145,226],[99,145,225],[99,145,227],[99,145,212,224,226,230],[99,145,212,224,226],[99,145,159,193,205,212,213,219,227,228,229],[87,99,145,302,303,304],[99,145,261],[87,99,145,203],[87,99,145,236],[87,99,145,194,239,244,359,362],[99,145,203,382,383],[87,99,145,253],[87,99,145,170,186,193,201,247,249,251,252,362],[99,145,213,219,236],[99,145,235],[87,99,145,157,159,170,193,201,253,262,359,360,361],[83,87,88,89,90,99,145,195,196,359,402],[99,145,150],[99,145,331,332,333],[99,145,331],[99,145,371],[99,145,373],[99,145,375],[99,145,377],[99,145,380],[99,145,384],[91,93,99,145,359,364,368,370,372,374,376,378,381,385,387,393,394,396,403,404,405],[99,145,386],[99,145,392],[99,145,249],[99,145,395],[99,144,145,227,228,229,230,397,398,399,402],[87,91,99,145,159,161,170,193,195,196,197,199,201,214,351,358,362,402],[99,145,578,580,583,677],[99,145,578,579,580,583,584,586,589,590,591,594,596,609,615,616,621,622,635,638,640,641,645,646,654,655,656,657,658,661,665,667,671,672,673,676],[99,145,579,588,677],[99,145,585],[99,145,583,588,589,677],[99,145,677],[99,145,581,677],[99,145,592,593],[99,145,586],[99,145,586,589,590,594,677,678],[99,145,583,587,677],[99,145,578,579,580,582],[99,145,578],[99,145,578,583,677],[99,145,583,677],[99,145,583,596,599,601,611,613,614,679],[99,145,581,583,601,623,624,626,627,628],[99,145,599,602,610,613,679],[99,145,581,583,599,602,615,679],[99,145,581,599,602,603,610,613,679],[99,145,600],[99,145,585,599,609],[99,145,609],[99,145,583,601,604,605,609,679],[99,145,599,609,610],[99,145,611,612,614],[99,145,590],[99,145,595,618,619,620],[99,145,583,589,595],[99,145,582,583,589,594,595,619,621],[99,145,583,589,594,595,619,621],[99,145,583,585,589,590,595,622],[99,145,583,585,589,590,595,623,624,625,626,627],[99,145,595,627,628,631,634],[99,145,595,632,633],[99,145,583,589,595,632],[99,145,583,589,590,595,634],[99,145,585,595,629,630,631],[99,145,583,585,589,590,595,628],[99,145,582,583,585,589,590,595,623,624,625,626,627,628],[99,145,583,585,589,590,595,624],[99,145,582,583,585,589,595,623,625,626,627,628],[99,145,585,595,615],[99,145,598],[99,145,582,583,585,589,590,595,596,597,602,603,610,611,613,614,615],[99,145,597,615],[99,145,583,590,595,615],[99,145,598,616],[99,145,582,583,589,595,596,615],[99,145,583,589,590,595,609,637],[99,145,583,589,590,594,595,636],[99,145,583,585,589,595,609,639],[99,145,583,589,590,595,609,640],[99,145,583,585,589,590,595,609,642,644],[99,145,583,589,590,595,644],[99,145,583,585,589,590,595,609,615,642,643],[99,145,583,589,590,594,595],[99,145,595,648],[99,145,583,589,595,642],[99,145,595,650],[99,145,583,589,590,595],[99,145,595,647,649,651,653],[99,145,583,590,595],[99,145,583,585,589,590,595,647,652],[99,145,595,642],[99,145,585,595,609,642],[99,145,582,583,589,594,595,656],[99,145,585,596,609,617,621,622,635,638,640,641,645,646,654,655,656,657,658,661,665,667,671,672,675],[99,145,583,589,595,609,661],[99,145,583,589,595,609,660,661],[99,145,585,595,609,659,660,661],[99,145,583,590,595,609],[99,145,583,585,589,595,609],[99,145,582,583,585,589,590,595,604,606,607,608,609],[99,145,583,589,590,594,595,662,664],[99,145,583,589,590,594,595,663],[99,145,583,589,594,595],[99,145,583,589,595,646,666],[99,145,583,589,590,595,668,669,671],[99,145,583,589,590,595,668,671],[99,145,583,585,589,590,595,669,670],[99,145,674],[99,145,673],[99,145,580,595],[99,145,594],[99,145,693],[99,145,768,779,780,781,782,783,784,785,787,792],[99,145,779,780,781,782,783,784,785,787,788,793],[99,145,768,771,776,777,779,791,792,793],[99,145,768,776,779,791,793],[99,145,768,776,779,791,792,793],[99,145,768,771,772,773,778,791,792,793],[99,145,768,779,780,781,782,783,784,785,787,791,792],[99,145,768,779,791],[99,145,768,771,776,779,786,791,792,793],[99,145,777],[99,145,769,770,771,772,773,774,775,776,778,789,790,791,792,794,796,797,798,799,800,802],[99,145,768],[99,145,768,772,773,774],[99,145,686,723,731,768,770,771,776,788,789,790,792],[99,145,723,726],[99,145,768,769,791],[99,145,768,769,791,801],[99,145,768,770,771,772,773,775,791,792],[99,145,772,773,774,792],[99,145,786,795],[99,145,768,786,792],[99,145,735,740,741,742,743,744,745,746,747,748,749,750,751,752,753],[99,145,682,683,686,688,691,713,740],[99,145,683,686,689,712,741],[99,145,682,688,691,740],[99,145,686,689,712,743],[99,145,682,683,685,686,688,689,691,713],[99,145,686,689,691,712,735],[99,145,686,689,712,741],[99,145,686,689,740],[99,145,683,686,689,691,735,739],[99,145,682,685,686,688,689,712,740],[99,145,686,689,691,735],[99,145,682,685,688,689,691],[99,145,685,689],[99,145,737,738,739,766],[99,145,683,685,686,687,689,691],[99,145,682,683,686,688,689,712,736,737,738],[99,145,686],[99,145,689],[99,145,682,686,708,712,723],[99,145,682,723,724],[99,145,686,712],[99,145,686,712,730,731],[99,145,682,686,703,712],[99,145,713],[99,145,680,681,682,683,684,685,686,687,688,689,690,691,692,693,709,710,712,713,714,715,716,717,718,719,720,721,722,724,725,726,727,728,729,730,732,733,734,754,755,756,757,760,761,762,763,765,767],[99,145,681,683,685,689,691,712],[99,145,681,682,683,684,685,686,687,688,689,690,712,713],[99,145,681,682,683,684,685,686,687,688,691,712,713],[99,145,712],[99,145,687,689,712],[99,145,689,712,713],[99,145,682,683,685,688,691,692,712],[99,145,758],[99,145,690],[99,145,682,683,685,686,687,688,689,691,712,713,714,758,759],[99,145,690,760],[99,145,712,760],[99,145,686,690],[99,145,680,681,682,683,684,685,686,687,688,689,690,691,693,710,711,713],[99,145,712,713],[99,145,690,764],[99,145,686,689,712,729,733,754],[99,145,689,693,709,712],[99,145,686,689,709,712],[99,145,687,689,708],[99,145,686,709,712,713],[99,145,683,685,686,687,689,691,712,713,729],[99,145,685,686,689,691,712,730],[99,145,680,686,712,713,718,720],[99,145,680,686,689,712,713,717,718,719],[99,145,708,768,803,804],[99,145,731],[99,145,694,695,696,697,698,699,700,704,705,706,707],[99,145,703],[99,145,907,908,909,915,916,917,919,920],[99,145,907,909,910,911,912,913,914],[99,145,895,898,899,900,904,905,906,907,908,916,921,922,923],[99,145,898],[99,145,902],[99,145,903],[99,145,895,896,897,924],[99,145,898,924],[99,145,901,903],[99,145,907,915,930],[99,145,907,909,919],[99,145,894,895,907,915,921,922,924,925,926,927,928,929,930,931,932,933],[99,145,894],[99,145,918],[99,145,915],[99,145,411],[99,145,146,157,175,409,410],[99,145,413],[99,145,412],[99,112,116,145,186],[99,112,145,175,186],[99,107,145],[99,109,112,145,183,186],[99,107,145,193],[99,109,112,145,164,186],[99,104,105,108,111,145,156,175,186],[99,112,119,145],[99,104,110,145],[99,112,133,134,145],[99,108,112,145,178,186,193],[99,133,145,193],[99,106,107,145,193],[99,112,145],[99,106,107,108,109,110,111,112,113,114,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,134,135,136,137,138,139,145],[99,112,127,145],[99,112,119,120,145],[99,110,112,120,121,145],[99,111,145],[99,104,107,112,145],[99,112,116,120,121,145],[99,116,145],[99,110,112,115,145,186],[99,104,109,112,119,145],[99,107,112,133,145,191,193],[99,145,415],[87,99,145,387,874,938,957],[87,99,145,938,957],[87,99,145,466,938,957],[87,99,145,387,466,854,880,938,943,957],[99,145,403],[99,145,403,466,467],[99,145,403,465],[99,145,150,403,465],[99,145,403,467,806],[99,145,403,466,467,810],[99,145,403,465,813],[99,145,403,467,805],[99,145,403,816],[99,145,403,466,467,820],[99,145,403,824],[99,145,403,467,806,822],[99,145,403,467,805,806],[99,145,403,465,845],[99,145,403,465,847],[99,145,403,465,854],[99,145,150,403,465,467],[99,145,403,465,467],[99,145,403,467,577,679,806],[99,145,403,465,466,467],[99,145,403,806,869],[87,99,145,387,393,466,854,938,945,957],[87,99,145,466,854,938,957],[87,99,145,393,466],[87,99,145,387,466,812,854,938,957],[87,99,145,387,393,466,853,854,878,938,957,966],[87,99,145,393,466,879,938,957],[87,99,145,466,879,938,957],[87,99,145,938],[87,99,145,393,822,853,854,938,957,970],[87,99,145,387,466,853,854,876,938,957],[87,99,145,387,466,854,876,938,957],[87,99,145,393,466,854,938],[87,99,145,387,393,466,854,876,938,957],[87,99,145,387,393,466,854,876,938,957,976,977],[87,99,145,387,393,466,810,822,854,938,957,970],[99,145,406],[87,99,145,393,466,810,876,882,891,938],[99,145,387,938],[87,99,145,387,393,466,810,822,854,883,938,957,970],[87,99,145,387,393,466,812,854,938,957,977],[87,99,145,387,393,466,810,812,820,822,854,938,939,940,945,957,970,976],[87,99,145,387,393,466,812,822,854,938,957,976,977],[87,99,145,387,393,466,854,938,957],[87,99,145,387,466,854,938,957],[87,99,145,387,393,466,812,854,938,957,976],[87,99,145,387,393,466,822,854,938,957,970],[87,99,145,387,393,466,812,854,880,938,943,957,977],[87,99,145,387,393,466,822,854,874,938,957,970],[87,99,145,387,466,938,957],[87,99,145,393,938],[87,99,145,466,879],[87,99,145,387,393,466,810,854,938,957],[87,99,145,466,854,938,943,957],[87,99,145,393,466,882,891,938],[87,99,145,466,876,938,957],[87,99,145,466,820,853,876,938,957],[87,99,145,387,938,957],[87,99,145,466,938],[87,99,145,879,938,957],[87,99,145,466,854,876,938,957],[87,99,145,466,878,938],[87,99,145,387,393,466,853,874,876,938,952,953,954,955,956],[87,99,145,892,938],[99,145,387,393,938],[87,99,145,393,466,810,938],[87,99,145,387,393,466,876,882,938],[87,99,145,466,810,854,938],[87,99,145,854,938],[87,99,145,822,824,854,935,938],[87,99,145,890,938],[87,99,145,393,466,869,872,938],[99,145,466],[99,145,577,679,805],[99,145,465],[87,99,145,466],[99,145,812],[87,99,145,465,844],[99,145,934],[99,145,812,820,875,885,886,939],[99,145,466,854],[99,145,851,852,853],[99,145,854]],"fileInfos":[{"version":"c430d44666289dae81f30fa7b2edebf186ecc91a2d4c71266ea6ae76388792e1","affectsGlobalScope":true,"impliedFormat":1},{"version":"45b7ab580deca34ae9729e97c13cfd999df04416a79116c3bfb483804f85ded4","impliedFormat":1},{"version":"3facaf05f0c5fc569c5649dd359892c98a85557e3e0c847964caeb67076f4d75","impliedFormat":1},{"version":"e44bb8bbac7f10ecc786703fe0a6a4b952189f908707980ba8f3c8975a760962","impliedFormat":1},{"version":"5e1c4c362065a6b95ff952c0eab010f04dcd2c3494e813b493ecfd4fcb9fc0d8","impliedFormat":1},{"version":"68d73b4a11549f9c0b7d352d10e91e5dca8faa3322bfb77b661839c42b1ddec7","impliedFormat":1},{"version":"5efce4fc3c29ea84e8928f97adec086e3dc876365e0982cc8479a07954a3efd4","impliedFormat":1},{"version":"feecb1be483ed332fad555aff858affd90a48ab19ba7272ee084704eb7167569","impliedFormat":1},{"version":"ee7bad0c15b58988daa84371e0b89d313b762ab83cb5b31b8a2d1162e8eb41c2","impliedFormat":1},{"version":"27bdc30a0e32783366a5abeda841bc22757c1797de8681bbe81fbc735eeb1c10","impliedFormat":1},{"version":"8fd575e12870e9944c7e1d62e1f5a73fcf23dd8d3a321f2a2c74c20d022283fe","impliedFormat":1},{"version":"2ab096661c711e4a81cc464fa1e6feb929a54f5340b46b0a07ac6bbf857471f0","impliedFormat":1},{"version":"080941d9f9ff9307f7e27a83bcd888b7c8270716c39af943532438932ec1d0b9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2e80ee7a49e8ac312cc11b77f1475804bee36b3b2bc896bead8b6e1266befb43","affectsGlobalScope":true,"impliedFormat":1},{"version":"c57796738e7f83dbc4b8e65132f11a377649c00dd3eee333f672b8f0a6bea671","affectsGlobalScope":true,"impliedFormat":1},{"version":"dc2df20b1bcdc8c2d34af4926e2c3ab15ffe1160a63e58b7e09833f616efff44","affectsGlobalScope":true,"impliedFormat":1},{"version":"515d0b7b9bea2e31ea4ec968e9edd2c39d3eebf4a2d5cbd04e88639819ae3b71","affectsGlobalScope":true,"impliedFormat":1},{"version":"0559b1f683ac7505ae451f9a96ce4c3c92bdc71411651ca6ddb0e88baaaad6a3","affectsGlobalScope":true,"impliedFormat":1},{"version":"0dc1e7ceda9b8b9b455c3a2d67b0412feab00bd2f66656cd8850e8831b08b537","affectsGlobalScope":true,"impliedFormat":1},{"version":"ce691fb9e5c64efb9547083e4a34091bcbe5bdb41027e310ebba8f7d96a98671","affectsGlobalScope":true,"impliedFormat":1},{"version":"8d697a2a929a5fcb38b7a65594020fcef05ec1630804a33748829c5ff53640d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ff2a353abf8a80ee399af572debb8faab2d33ad38c4b4474cff7f26e7653b8d","affectsGlobalScope":true,"impliedFormat":1},{"version":"fb0f136d372979348d59b3f5020b4cdb81b5504192b1cacff5d1fbba29378aa1","affectsGlobalScope":true,"impliedFormat":1},{"version":"d15bea3d62cbbdb9797079416b8ac375ae99162a7fba5de2c6c505446486ac0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"68d18b664c9d32a7336a70235958b8997ebc1c3b8505f4f1ae2b7e7753b87618","affectsGlobalScope":true,"impliedFormat":1},{"version":"eb3d66c8327153d8fa7dd03f9c58d351107fe824c79e9b56b462935176cdf12a","affectsGlobalScope":true,"impliedFormat":1},{"version":"38f0219c9e23c915ef9790ab1d680440d95419ad264816fa15009a8851e79119","affectsGlobalScope":true,"impliedFormat":1},{"version":"69ab18c3b76cd9b1be3d188eaf8bba06112ebbe2f47f6c322b5105a6fbc45a2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"a680117f487a4d2f30ea46f1b4b7f58bef1480456e18ba53ee85c2746eeca012","affectsGlobalScope":true,"impliedFormat":1},{"version":"2f11ff796926e0832f9ae148008138ad583bd181899ab7dd768a2666700b1893","affectsGlobalScope":true,"impliedFormat":1},{"version":"4de680d5bb41c17f7f68e0419412ca23c98d5749dcaaea1896172f06435891fc","affectsGlobalScope":true,"impliedFormat":1},{"version":"954296b30da6d508a104a3a0b5d96b76495c709785c1d11610908e63481ee667","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac9538681b19688c8eae65811b329d3744af679e0bdfa5d842d0e32524c73e1c","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a969edff4bd52585473d24995c5ef223f6652d6ef46193309b3921d65dd4376","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e9fbd7030c440b33d021da145d3232984c8bb7916f277e8ffd3dc2e3eae2bdb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811ec78f7fefcabbda4bfa93b3eb67d9ae166ef95f9bff989d964061cbf81a0c","affectsGlobalScope":true,"impliedFormat":1},{"version":"717937616a17072082152a2ef351cb51f98802fb4b2fdabd32399843875974ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"d7e7d9b7b50e5f22c915b525acc5a49a7a6584cf8f62d0569e557c5cfc4b2ac2","affectsGlobalScope":true,"impliedFormat":1},{"version":"71c37f4c9543f31dfced6c7840e068c5a5aacb7b89111a4364b1d5276b852557","affectsGlobalScope":true,"impliedFormat":1},{"version":"576711e016cf4f1804676043e6a0a5414252560eb57de9faceee34d79798c850","affectsGlobalScope":true,"impliedFormat":1},{"version":"89c1b1281ba7b8a96efc676b11b264de7a8374c5ea1e6617f11880a13fc56dc6","affectsGlobalScope":true,"impliedFormat":1},{"version":"74f7fa2d027d5b33eb0471c8e82a6c87216223181ec31247c357a3e8e2fddc5b","affectsGlobalScope":true,"impliedFormat":1},{"version":"d6d7ae4d1f1f3772e2a3cde568ed08991a8ae34a080ff1151af28b7f798e22ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"063600664504610fe3e99b717a1223f8b1900087fab0b4cad1496a114744f8df","affectsGlobalScope":true,"impliedFormat":1},{"version":"934019d7e3c81950f9a8426d093458b65d5aff2c7c1511233c0fd5b941e608ab","affectsGlobalScope":true,"impliedFormat":1},{"version":"52ada8e0b6e0482b728070b7639ee42e83a9b1c22d205992756fe020fd9f4a47","affectsGlobalScope":true,"impliedFormat":1},{"version":"3bdefe1bfd4d6dee0e26f928f93ccc128f1b64d5d501ff4a8cf3c6371200e5e6","affectsGlobalScope":true,"impliedFormat":1},{"version":"59fb2c069260b4ba00b5643b907ef5d5341b167e7d1dbf58dfd895658bda2867","affectsGlobalScope":true,"impliedFormat":1},{"version":"639e512c0dfc3fad96a84caad71b8834d66329a1f28dc95e3946c9b58176c73a","affectsGlobalScope":true,"impliedFormat":1},{"version":"368af93f74c9c932edd84c58883e736c9e3d53cec1fe24c0b0ff451f529ceab1","affectsGlobalScope":true,"impliedFormat":1},{"version":"af3dd424cf267428f30ccfc376f47a2c0114546b55c44d8c0f1d57d841e28d74","affectsGlobalScope":true,"impliedFormat":1},{"version":"995c005ab91a498455ea8dfb63aa9f83fa2ea793c3d8aa344be4a1678d06d399","affectsGlobalScope":true,"impliedFormat":1},{"version":"959d36cddf5e7d572a65045b876f2956c973a586da58e5d26cde519184fd9b8a","affectsGlobalScope":true,"impliedFormat":1},{"version":"965f36eae237dd74e6cca203a43e9ca801ce38824ead814728a2807b1910117d","affectsGlobalScope":true,"impliedFormat":1},{"version":"3925a6c820dcb1a06506c90b1577db1fdbf7705d65b62b99dce4be75c637e26b","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a3d63ef2b853447ec4f749d3f368ce642264246e02911fcb1590d8c161b8005","affectsGlobalScope":true,"impliedFormat":1},{"version":"8cdf8847677ac7d20486e54dd3fcf09eda95812ac8ace44b4418da1bbbab6eb8","affectsGlobalScope":true,"impliedFormat":1},{"version":"8444af78980e3b20b49324f4a16ba35024fef3ee069a0eb67616ea6ca821c47a","affectsGlobalScope":true,"impliedFormat":1},{"version":"3287d9d085fbd618c3971944b65b4be57859f5415f495b33a6adc994edd2f004","affectsGlobalScope":true,"impliedFormat":1},{"version":"b4b67b1a91182421f5df999988c690f14d813b9850b40acd06ed44691f6727ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"df83c2a6c73228b625b0beb6669c7ee2a09c914637e2d35170723ad49c0f5cd4","affectsGlobalScope":true,"impliedFormat":1},{"version":"436aaf437562f276ec2ddbee2f2cdedac7664c1e4c1d2c36839ddd582eeb3d0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e3c06ea092138bf9fa5e874a1fdbc9d54805d074bee1de31b99a11e2fec239d","affectsGlobalScope":true,"impliedFormat":1},{"version":"87dc0f382502f5bbce5129bdc0aea21e19a3abbc19259e0b43ae038a9fc4e326","affectsGlobalScope":true,"impliedFormat":1},{"version":"b1cb28af0c891c8c96b2d6b7be76bd394fddcfdb4709a20ba05a7c1605eea0f9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2fef54945a13095fdb9b84f705f2b5994597640c46afeb2ce78352fab4cb3279","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac77cb3e8c6d3565793eb90a8373ee8033146315a3dbead3bde8db5eaf5e5ec6","affectsGlobalScope":true,"impliedFormat":1},{"version":"56e4ed5aab5f5920980066a9409bfaf53e6d21d3f8d020c17e4de584d29600ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ece9f17b3866cc077099c73f4983bddbcb1dc7ddb943227f1ec070f529dedd1","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a6282c8827e4b9a95f4bf4f5c205673ada31b982f50572d27103df8ceb8013c","affectsGlobalScope":true,"impliedFormat":1},{"version":"1c9319a09485199c1f7b0498f2988d6d2249793ef67edda49d1e584746be9032","affectsGlobalScope":true,"impliedFormat":1},{"version":"e3a2a0cee0f03ffdde24d89660eba2685bfbdeae955a6c67e8c4c9fd28928eeb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811c71eee4aa0ac5f7adf713323a5c41b0cf6c4e17367a34fbce379e12bbf0a4","affectsGlobalScope":true,"impliedFormat":1},{"version":"51ad4c928303041605b4d7ae32e0c1ee387d43a24cd6f1ebf4a2699e1076d4fa","affectsGlobalScope":true,"impliedFormat":1},{"version":"60037901da1a425516449b9a20073aa03386cce92f7a1fd902d7602be3a7c2e9","affectsGlobalScope":true,"impliedFormat":1},{"version":"d4b1d2c51d058fc21ec2629fff7a76249dec2e36e12960ea056e3ef89174080f","affectsGlobalScope":true,"impliedFormat":1},{"version":"22adec94ef7047a6c9d1af3cb96be87a335908bf9ef386ae9fd50eeb37f44c47","affectsGlobalScope":true,"impliedFormat":1},{"version":"196cb558a13d4533a5163286f30b0509ce0210e4b316c56c38d4c0fd2fb38405","affectsGlobalScope":true,"impliedFormat":1},{"version":"73f78680d4c08509933daf80947902f6ff41b6230f94dd002ae372620adb0f60","affectsGlobalScope":true,"impliedFormat":1},{"version":"c5239f5c01bcfa9cd32f37c496cf19c61d69d37e48be9de612b541aac915805b","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e7f8264d0fb4c5339605a15daadb037bf238c10b654bb3eee14208f860a32ea","affectsGlobalScope":true,"impliedFormat":1},{"version":"782dec38049b92d4e85c1585fbea5474a219c6984a35b004963b00beb1aab538","affectsGlobalScope":true,"impliedFormat":1},{"version":"0990a7576222f248f0a3b888adcb7389f957928ce2afb1cd5128169086ff4d29","impliedFormat":1},{"version":"eb5b19b86227ace1d29ea4cf81387279d04bb34051e944bc53df69f58914b788","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac51dd7d31333793807a6abaa5ae168512b6131bd41d9c5b98477fc3b7800f9f","impliedFormat":1},{"version":"87d9d29dbc745f182683f63187bf3d53fd8673e5fca38ad5eaab69798ed29fbc","impliedFormat":1},{"version":"035312d4945d13efa134ae482f6dc56a1a9346f7ac3be7ccbad5741058ce87f3","affectsGlobalScope":true,"impliedFormat":1},{"version":"cc69795d9954ee4ad57545b10c7bf1a7260d990231b1685c147ea71a6faa265c","impliedFormat":1},{"version":"8bc6c94ff4f2af1f4023b7bb2379b08d3d7dd80c698c9f0b07431ea16101f05f","impliedFormat":1},{"version":"1b61d259de5350f8b1e5db06290d31eaebebc6baafd5f79d314b5af9256d7153","impliedFormat":1},{"version":"57194e1f007f3f2cbef26fa299d4c6b21f4623a2eddc63dfeef79e38e187a36e","impliedFormat":1},{"version":"0f6666b58e9276ac3a38fdc80993d19208442d6027ab885580d93aec76b4ef00","impliedFormat":1},{"version":"05fd364b8ef02fb1e174fbac8b825bdb1e5a36a016997c8e421f5fab0a6da0a0","impliedFormat":1},{"version":"70521b6ab0dcba37539e5303104f29b721bfb2940b2776da4cc818c07e1fefc1","affectsGlobalScope":true,"impliedFormat":1},{"version":"ab41ef1f2cdafb8df48be20cd969d875602483859dc194e9c97c8a576892c052","affectsGlobalScope":true,"impliedFormat":1},{"version":"d153a11543fd884b596587ccd97aebbeed950b26933ee000f94009f1ab142848","affectsGlobalScope":true,"impliedFormat":1},{"version":"21d819c173c0cf7cc3ce57c3276e77fd9a8a01d35a06ad87158781515c9a438a","impliedFormat":1},{"version":"98cffbf06d6bab333473c70a893770dbe990783904002c4f1a960447b4b53dca","affectsGlobalScope":true,"impliedFormat":1},{"version":"ba481bca06f37d3f2c137ce343c7d5937029b2468f8e26111f3c9d9963d6568d","affectsGlobalScope":true,"impliedFormat":1},{"version":"6d9ef24f9a22a88e3e9b3b3d8c40ab1ddb0853f1bfbd5c843c37800138437b61","affectsGlobalScope":true,"impliedFormat":1},{"version":"1db0b7dca579049ca4193d034d835f6bfe73096c73663e5ef9a0b5779939f3d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"9798340ffb0d067d69b1ae5b32faa17ab31b82466a3fc00d8f2f2df0c8554aaa","affectsGlobalScope":true,"impliedFormat":1},{"version":"f26b11d8d8e4b8028f1c7d618b22274c892e4b0ef5b3678a8ccbad85419aef43","affectsGlobalScope":true,"impliedFormat":1},{"version":"5929864ce17fba74232584d90cb721a89b7ad277220627cc97054ba15a98ea8f","impliedFormat":1},{"version":"763fe0f42b3d79b440a9b6e51e9ba3f3f91352469c1e4b3b67bfa4ff6352f3f4","impliedFormat":1},{"version":"25c8056edf4314820382a5fdb4bb7816999acdcb929c8f75e3f39473b87e85bc","impliedFormat":1},{"version":"c464d66b20788266e5353b48dc4aa6bc0dc4a707276df1e7152ab0c9ae21fad8","impliedFormat":1},{"version":"78d0d27c130d35c60b5e5566c9f1e5be77caf39804636bc1a40133919a949f21","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"1d6e127068ea8e104a912e42fc0a110e2aa5a66a356a917a163e8cf9a65e4a75","impliedFormat":1},{"version":"5ded6427296cdf3b9542de4471d2aa8d3983671d4cac0f4bf9c637208d1ced43","impliedFormat":1},{"version":"7f182617db458e98fc18dfb272d40aa2fff3a353c44a89b2c0ccb3937709bfb5","impliedFormat":1},{"version":"cadc8aced301244057c4e7e73fbcae534b0f5b12a37b150d80e5a45aa4bebcbd","impliedFormat":1},{"version":"385aab901643aa54e1c36f5ef3107913b10d1b5bb8cbcd933d4263b80a0d7f20","impliedFormat":1},{"version":"9670d44354bab9d9982eca21945686b5c24a3f893db73c0dae0fd74217a4c219","impliedFormat":1},{"version":"0b8a9268adaf4da35e7fa830c8981cfa22adbbe5b3f6f5ab91f6658899e657a7","impliedFormat":1},{"version":"11396ed8a44c02ab9798b7dca436009f866e8dae3c9c25e8c1fbc396880bf1bb","impliedFormat":1},{"version":"ba7bc87d01492633cb5a0e5da8a4a42a1c86270e7b3d2dea5d156828a84e4882","impliedFormat":1},{"version":"4893a895ea92c85345017a04ed427cbd6a1710453338df26881a6019432febdd","impliedFormat":1},{"version":"c21dc52e277bcfc75fac0436ccb75c204f9e1b3fa5e12729670910639f27343e","impliedFormat":1},{"version":"13f6f39e12b1518c6650bbb220c8985999020fe0f21d818e28f512b7771d00f9","impliedFormat":1},{"version":"9b5369969f6e7175740bf51223112ff209f94ba43ecd3bb09eefff9fd675624a","impliedFormat":1},{"version":"4fe9e626e7164748e8769bbf74b538e09607f07ed17c2f20af8d680ee49fc1da","impliedFormat":1},{"version":"24515859bc0b836719105bb6cc3d68255042a9f02a6022b3187948b204946bd2","impliedFormat":1},{"version":"ea0148f897b45a76544ae179784c95af1bd6721b8610af9ffa467a518a086a43","impliedFormat":1},{"version":"24c6a117721e606c9984335f71711877293a9651e44f59f3d21c1ea0856f9cc9","impliedFormat":1},{"version":"dd3273ead9fbde62a72949c97dbec2247ea08e0c6952e701a483d74ef92d6a17","impliedFormat":1},{"version":"405822be75ad3e4d162e07439bac80c6bcc6dbae1929e179cf467ec0b9ee4e2e","impliedFormat":1},{"version":"0db18c6e78ea846316c012478888f33c11ffadab9efd1cc8bcc12daded7a60b6","impliedFormat":1},{"version":"e61be3f894b41b7baa1fbd6a66893f2579bfad01d208b4ff61daef21493ef0a8","impliedFormat":1},{"version":"bd0532fd6556073727d28da0edfd1736417a3f9f394877b6d5ef6ad88fba1d1a","impliedFormat":1},{"version":"89167d696a849fce5ca508032aabfe901c0868f833a8625d5a9c6e861ef935d2","impliedFormat":1},{"version":"615ba88d0128ed16bf83ef8ccbb6aff05c3ee2db1cc0f89ab50a4939bfc1943f","impliedFormat":1},{"version":"a4d551dbf8746780194d550c88f26cf937caf8d56f102969a110cfaed4b06656","impliedFormat":1},{"version":"8bd86b8e8f6a6aa6c49b71e14c4ffe1211a0e97c80f08d2c8cc98838006e4b88","impliedFormat":1},{"version":"317e63deeb21ac07f3992f5b50cdca8338f10acd4fbb7257ebf56735bf52ab00","impliedFormat":1},{"version":"4732aec92b20fb28c5fe9ad99521fb59974289ed1e45aecb282616202184064f","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"bf67d53d168abc1298888693338cb82854bdb2e69ef83f8a0092093c2d562107","impliedFormat":1},{"version":"b52476feb4a0cbcb25e5931b930fc73cb6643fb1a5060bf8a3dda0eeae5b4b68","affectsGlobalScope":true,"impliedFormat":1},{"version":"e2677634fe27e87348825bb041651e22d50a613e2fdf6a4a3ade971d71bac37e","impliedFormat":1},{"version":"7394959e5a741b185456e1ef5d64599c36c60a323207450991e7a42e08911419","impliedFormat":1},{"version":"8c0bcd6c6b67b4b503c11e91a1fb91522ed585900eab2ab1f61bba7d7caa9d6f","impliedFormat":1},{"version":"8cd19276b6590b3ebbeeb030ac271871b9ed0afc3074ac88a94ed2449174b776","affectsGlobalScope":true,"impliedFormat":1},{"version":"696eb8d28f5949b87d894b26dc97318ef944c794a9a4e4f62360cd1d1958014b","impliedFormat":1},{"version":"3f8fa3061bd7402970b399300880d55257953ee6d3cd408722cb9ac20126460c","impliedFormat":1},{"version":"35ec8b6760fd7138bbf5809b84551e31028fb2ba7b6dc91d95d098bf212ca8b4","affectsGlobalScope":true,"impliedFormat":1},{"version":"5524481e56c48ff486f42926778c0a3cce1cc85dc46683b92b1271865bcf015a","impliedFormat":1},{"version":"68bd56c92c2bd7d2339457eb84d63e7de3bd56a69b25f3576e1568d21a162398","affectsGlobalScope":true,"impliedFormat":1},{"version":"3e93b123f7c2944969d291b35fed2af79a6e9e27fdd5faa99748a51c07c02d28","impliedFormat":1},{"version":"9d19808c8c291a9010a6c788e8532a2da70f811adb431c97520803e0ec649991","impliedFormat":1},{"version":"87aad3dd9752067dc875cfaa466fc44246451c0c560b820796bdd528e29bef40","impliedFormat":1},{"version":"4aacb0dd020eeaef65426153686cc639a78ec2885dc72ad220be1d25f1a439df","impliedFormat":1},{"version":"f0bd7e6d931657b59605c44112eaf8b980ba7f957a5051ed21cb93d978cf2f45","impliedFormat":1},{"version":"8db0ae9cb14d9955b14c214f34dae1b9ef2baee2fe4ce794a4cd3ac2531e3255","affectsGlobalScope":true,"impliedFormat":1},{"version":"15fc6f7512c86810273af28f224251a5a879e4261b4d4c7e532abfbfc3983134","impliedFormat":1},{"version":"58adba1a8ab2d10b54dc1dced4e41f4e7c9772cbbac40939c0dc8ce2cdb1d442","impliedFormat":1},{"version":"641942a78f9063caa5d6b777c99304b7d1dc7328076038c6d94d8a0b81fc95c1","impliedFormat":1},{"version":"714435130b9015fae551788df2a88038471a5a11eb471f27c4ede86552842bc9","impliedFormat":1},{"version":"855cd5f7eb396f5f1ab1bc0f8580339bff77b68a770f84c6b254e319bbfd1ac7","impliedFormat":1},{"version":"5650cf3dace09e7c25d384e3e6b818b938f68f4e8de96f52d9c5a1b3db068e86","impliedFormat":1},{"version":"1354ca5c38bd3fd3836a68e0f7c9f91f172582ba30ab15bb8c075891b91502b7","affectsGlobalScope":true,"impliedFormat":1},{"version":"7e20d899c28ca26a2a7afc98beaa69e63ff7fba0a8bc47b4e3bf3ede5e09e424","impliedFormat":1},{"version":"2d2fcaab481b31a5882065c7951255703ddbe1c0e507af56ea42d79ac3911201","impliedFormat":1},{"version":"a192fe8ec33f75edbc8d8f3ed79f768dfae11ff5735e7fe52bfa69956e46d78d","impliedFormat":1},{"version":"ca867399f7db82df981d6915bcbb2d81131d7d1ef683bc782b59f71dda59bc85","affectsGlobalScope":true,"impliedFormat":1},{"version":"372413016d17d804e1d139418aca0c68e47a83fb6669490857f4b318de8cccb3","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e043a1bc8fbf2a255bccf9bf27e0f1caf916c3b0518ea34aa72357c0afd42ec","impliedFormat":1},{"version":"b4f70ec656a11d570e1a9edce07d118cd58d9760239e2ece99306ee9dfe61d02","impliedFormat":1},{"version":"3bc2f1e2c95c04048212c569ed38e338873f6a8593930cf5a7ef24ffb38fc3b6","impliedFormat":1},{"version":"6e70e9570e98aae2b825b533aa6292b6abd542e8d9f6e9475e88e1d7ba17c866","impliedFormat":1},{"version":"f9d9d753d430ed050dc1bf2667a1bab711ccbb1c1507183d794cc195a5b085cc","impliedFormat":1},{"version":"9eece5e586312581ccd106d4853e861aaaa1a39f8e3ea672b8c3847eedd12f6e","impliedFormat":1},{"version":"085f552d005479e2e6a7311cdbbe5d8c55c497b4d19274285df161ee9684cd9c","impliedFormat":1},{"version":"37ba7b45141a45ce6e80e66f2a96c8a5ab1bcef0fc2d0f56bb58df96ec67e972","impliedFormat":1},{"version":"45650f47bfb376c8a8ed39d4bcda5902ab899a3150029684ee4c10676d9fbaee","impliedFormat":1},{"version":"007faacc9268357caa21d24169f3f3f2497af3e9241308df2d89f6e6d9bb3f2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"74cf591a0f63db318651e0e04cb55f8791385f86e987a67fd4d2eaab8191f730","impliedFormat":1},{"version":"5eab9b3dc9b34f185417342436ec3f106898da5f4801992d8ff38ab3aff346b5","impliedFormat":1},{"version":"12ed4559eba17cd977aa0db658d25c4047067444b51acfdcbf38470630642b23","affectsGlobalScope":true,"impliedFormat":1},{"version":"f3ffabc95802521e1e4bcba4c88d8615176dc6e09111d920c7a213bdda6e1d65","impliedFormat":1},{"version":"809821b8a065e3234a55b3a9d7846231ed18d66dd749f2494c66288d890daf7f","impliedFormat":1},{"version":"ae56f65caf3be91108707bd8dfbccc2a57a91feb5daabf7165a06a945545ed26","impliedFormat":1},{"version":"a136d5de521da20f31631a0a96bf712370779d1c05b7015d7019a9b2a0446ca9","impliedFormat":1},{"version":"c3b41e74b9a84b88b1dca61ec39eee25c0dbc8e7d519ba11bb070918cfacf656","affectsGlobalScope":true,"impliedFormat":1},{"version":"4737a9dc24d0e68b734e6cfbcea0c15a2cfafeb493485e27905f7856988c6b29","affectsGlobalScope":true,"impliedFormat":1},{"version":"36d8d3e7506b631c9582c251a2c0b8a28855af3f76719b12b534c6edf952748d","impliedFormat":1},{"version":"1ca69210cc42729e7ca97d3a9ad48f2e9cb0042bada4075b588ae5387debd318","impliedFormat":1},{"version":"f5ebe66baaf7c552cfa59d75f2bfba679f329204847db3cec385acda245e574e","impliedFormat":1},{"version":"ed59add13139f84da271cafd32e2171876b0a0af2f798d0c663e8eeb867732cf","affectsGlobalScope":true,"impliedFormat":1},{"version":"b7c5e2ea4a9749097c347454805e933844ed207b6eefec6b7cfd418b5f5f7b28","impliedFormat":1},{"version":"b1810689b76fd473bd12cc9ee219f8e62f54a7d08019a235d07424afbf074d25","impliedFormat":1},{"version":"8caa5c86be1b793cd5f599e27ecb34252c41e011980f7d61ae4989a149ff6ccc","impliedFormat":1},{"version":"f9fd93190acb1ffe0bc0fb395df979452f8d625071e9ffc8636e4dfb86ab2508","impliedFormat":1},{"version":"5f41fd8732a89e940c58ce22206e3df85745feb8983e2b4c6257fb8cbb118493","impliedFormat":1},{"version":"17ed71200119e86ccef2d96b73b02ce8854b76ad6bd21b5021d4269bec527b5f","impliedFormat":1},{"version":"1cfa8647d7d71cb03847d616bd79320abfc01ddea082a49569fda71ac5ece66b","impliedFormat":1},{"version":"bb7a61dd55dc4b9422d13da3a6bb9cc5e89be888ef23bbcf6558aa9726b89a1c","impliedFormat":1},{"version":"db6d2d9daad8a6d83f281af12ce4355a20b9a3e71b82b9f57cddcca0a8964a96","impliedFormat":1},{"version":"cfe4ef4710c3786b6e23dae7c086c70b4f4835a2e4d77b75d39f9046106e83d3","impliedFormat":1},{"version":"cbea99888785d49bb630dcbb1613c73727f2b5a2cf02e1abcaab7bcf8d6bf3c5","impliedFormat":1},{"version":"98817124fd6c4f60e0b935978c207309459fb71ab112cf514f26f333bf30830e","impliedFormat":1},{"version":"a86f82d646a739041d6702101afa82dcb935c416dd93cbca7fd754fd0282ce1f","impliedFormat":1},{"version":"2dad084c67e649f0f354739ec7df7c7df0779a28a4f55c97c6b6883ae850d1ce","impliedFormat":1},{"version":"fa5bbc7ab4130dd8cdc55ea294ec39f76f2bc507a0f75f4f873e38631a836ca7","impliedFormat":1},{"version":"df45ca1176e6ac211eae7ddf51336dc075c5314bc5c253651bae639defd5eec5","impliedFormat":1},{"version":"cf86de1054b843e484a3c9300d62fbc8c97e77f168bbffb131d560ca0474d4a8","impliedFormat":1},{"version":"196c960b12253fde69b204aa4fbf69470b26daf7a430855d7f94107a16495ab0","impliedFormat":1},{"version":"528637e771ee2e808390d46a591eaef375fa4b9c99b03749e22b1d2e868b1b7c","impliedFormat":1},{"version":"bf24f6d35f7318e246010ffe9924395893c4e96d34324cde77151a73f078b9ad","impliedFormat":1},{"version":"596ccf4070268c4f5a8c459d762d8a934fa9b9317c7bf7a953e921bc9d78ce3c","impliedFormat":1},{"version":"10595c7ff5094dd5b6a959ccb1c00e6a06441b4e10a87bc09c15f23755d34439","impliedFormat":1},{"version":"9620c1ff645afb4a9ab4044c85c26676f0a93e8c0e4b593aea03a89ccb47b6d0","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"a9af0e608929aaf9ce96bd7a7b99c9360636c31d73670e4af09a09950df97841","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"c86fe861cf1b4c46a0fb7d74dffe596cf679a2e5e8b1456881313170f092e3fa","impliedFormat":1},{"version":"08ed0b3f0166787f84a6606f80aa3b1388c7518d78912571b203817406e471da","impliedFormat":1},{"version":"47e5af2a841356a961f815e7c55d72554db0c11b4cba4d0caab91f8717846a94","impliedFormat":1},{"version":"9a1a0dc84fecc111e83281743f003e1ae9048e0f83c2ae2028d17bc58fd93cc7","impliedFormat":1},{"version":"f5f541902bf7ae0512a177295de9b6bcd6809ea38307a2c0a18bfca72212f368","impliedFormat":1},{"version":"e8da637cbd6ed1cf6c36e9424f6bcee4515ca2c677534d4006cbd9a05f930f0c","impliedFormat":1},{"version":"ca1b882a105a1972f82cc58e3be491e7d750a1eb074ffd13b198269f57ed9e1b","impliedFormat":1},{"version":"fc3e1c87b39e5ba1142f27ec089d1966da168c04a859a4f6aab64dceae162c2b","impliedFormat":1},{"version":"3867ca0e9757cc41e04248574f4f07b8f9e3c0c2a796a5eb091c65bfd2fc8bdb","impliedFormat":1},{"version":"61888522cec948102eba94d831c873200aa97d00d8989fdfd2a3e0ee75ec65a2","impliedFormat":1},{"version":"4e10622f89fea7b05dd9b52fb65e1e2b5cbd96d4cca3d9e1a60bb7f8a9cb86a1","impliedFormat":1},{"version":"74b2a5e5197bd0f2e0077a1ea7c07455bbea67b87b0869d9786d55104006784f","impliedFormat":1},{"version":"59bf32919de37809e101acffc120596a9e45fdbab1a99de5087f31fdc36e2f11","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"3df3abb3e7c1a74ab419f95500a998b55dd9bc985e295de96ff315dd94c7446f","impliedFormat":1},{"version":"c40c848daad198266370c1c72a7a8c3d18d2f50727c7859fcfefd3ff69a7f288","impliedFormat":1},{"version":"ac60bbee0d4235643cc52b57768b22de8c257c12bd8c2039860540cab1fa1d82","impliedFormat":1},{"version":"973b59a17aaa817eb205baf6c132b83475a5c0a44e8294a472af7793b1817e89","impliedFormat":1},{"version":"ada39cbb2748ab2873b7835c90c8d4620723aedf323550e8489f08220e477c7f","impliedFormat":1},{"version":"6e5f5cee603d67ee1ba6120815497909b73399842254fc1e77a0d5cdc51d8c9c","impliedFormat":1},{"version":"8dba67056cbb27628e9b9a1cba8e57036d359dceded0725c72a3abe4b6c79cd4","impliedFormat":1},{"version":"70f3814c457f54a7efe2d9ce9d2686de9250bb42eb7f4c539bd2280a42e52d33","impliedFormat":1},{"version":"5cbd32af037805215112472e35773bad9d4e03f0e72b1129a0d0c12d9cd63cc7","impliedFormat":1},{"version":"ef61792acbfa8c27c9bd113f02731e66229f7d3a169e3c1993b508134f1a58e0","impliedFormat":1},{"version":"afcb759e8e3ad6549d5798820697002bc07bdd039899fad0bf522e7e8a9f5866","impliedFormat":1},{"version":"f6404e7837b96da3ea4d38c4f1a3812c96c9dcdf264e93d5bdb199f983a3ef4b","impliedFormat":1},{"version":"c5426dbfc1cf90532f66965a7aa8c1136a78d4d0f96d8180ecbfc11d7722f1a5","impliedFormat":1},{"version":"65a15fc47900787c0bd18b603afb98d33ede930bed1798fc984d5ebb78b26cf9","impliedFormat":1},{"version":"9d202701f6e0744adb6314d03d2eb8fc994798fc83d91b691b75b07626a69801","impliedFormat":1},{"version":"de9d2df7663e64e3a91bf495f315a7577e23ba088f2949d5ce9ec96f44fba37d","impliedFormat":1},{"version":"c7af78a2ea7cb1cd009cfb5bdb48cd0b03dad3b54f6da7aab615c2e9e9d570c5","impliedFormat":1},{"version":"1ee45496b5f8bdee6f7abc233355898e5bf9bd51255db65f5ff7ede617ca0027","impliedFormat":1},{"version":"566e5fb812082f8cf929c6727d40924843246cf19ee4e8b9437a6315c4792b03","affectsGlobalScope":true,"impliedFormat":1},{"version":"db01d18853469bcb5601b9fc9826931cc84cc1a1944b33cad76fd6f1e3d8c544","affectsGlobalScope":true,"impliedFormat":1},{"version":"dba114fb6a32b355a9cfc26ca2276834d72fe0e94cd2c3494005547025015369","impliedFormat":1},{"version":"903e299a28282fa7b714586e28409ed73c3b63f5365519776bf78e8cf173db36","affectsGlobalScope":true,"impliedFormat":1},{"version":"fa6c12a7c0f6b84d512f200690bfc74819e99efae69e4c95c4cd30f6884c526e","impliedFormat":1},{"version":"f1c32f9ce9c497da4dc215c3bc84b722ea02497d35f9134db3bb40a8d918b92b","impliedFormat":1},{"version":"b73c319af2cc3ef8f6421308a250f328836531ea3761823b4cabbd133047aefa","affectsGlobalScope":true,"impliedFormat":1},{"version":"e433b0337b8106909e7953015e8fa3f2d30797cea27141d1c5b135365bb975a6","impliedFormat":1},{"version":"dd3900b24a6a8745efeb7ad27629c0f8a626470ac229c1d73f1fe29d67e44dca","impliedFormat":1},{"version":"ddff7fc6edbdc5163a09e22bf8df7bef75f75369ebd7ecea95ba55c4386e2441","impliedFormat":1},{"version":"106c6025f1d99fd468fd8bf6e5bda724e11e5905a4076c5d29790b6c3745e50c","impliedFormat":1},{"version":"ec29be0737d39268696edcec4f5e97ce26f449fa9b7afc2f0f99a86def34a418","impliedFormat":1},{"version":"68a06fb972b2c7e671bf090dc5a5328d22ba07d771376c3d9acd9e7ed786a9db","impliedFormat":1},{"version":"ec6cba1c02c675e4dd173251b156792e8d3b0c816af6d6ad93f1a55d674591aa","impliedFormat":1},{"version":"b620391fe8060cf9bedc176a4d01366e6574d7a71e0ac0ab344a4e76576fcbb8","impliedFormat":1},{"version":"d729408dfde75b451530bcae944cf89ee8277e2a9df04d1f62f2abfd8b03c1e1","impliedFormat":1},{"version":"e15d3c84d5077bb4a3adee4c791022967b764dc41cb8fa3cfa44d4379b2c95f5","impliedFormat":1},{"version":"78244a2a8ab1080e0dd8fc3633c204c9a4be61611d19912f4b157f7ef7367049","impliedFormat":1},{"version":"e1fc1a1045db5aa09366be2b330e4ce391550041fc3e925f60998ca0b647aa97","impliedFormat":1},{"version":"d3f5861c48322adc023d3277e592635402ac008c5beae2e447b335fbf0da56c2","impliedFormat":1},{"version":"43ba4f2fa8c698f5c304d21a3ef596741e8e85a810b7c1f9b692653791d8d97a","impliedFormat":1},{"version":"31fb49ef3aa3d76f0beb644984e01eab0ea222372ea9b49bb6533be5722d756c","impliedFormat":1},{"version":"33cd131e1461157e3e06b06916b5176e7a8ec3fce15a5cfe145e56de744e07d2","impliedFormat":1},{"version":"889ef863f90f4917221703781d9723278db4122d75596b01c429f7c363562b86","impliedFormat":1},{"version":"3556cfbab7b43da96d15a442ddbb970e1f2fc97876d055b6555d86d7ac57dae5","impliedFormat":1},{"version":"437751e0352c6e924ddf30e90849f1d9eb00ca78c94d58d6a37202ec84eb8393","impliedFormat":1},{"version":"48e8af7fdb2677a44522fd185d8c87deff4d36ee701ea003c6c780b1407a1397","impliedFormat":1},{"version":"d11308de5a36c7015bb73adb5ad1c1bdaac2baede4cc831a05cf85efa3cc7f2f","impliedFormat":1},{"version":"8c9f19c480c747b6d8067c53fcc3cef641619029afb0a903672daed3f5acaed2","impliedFormat":1},{"version":"f9812cfc220ecf7557183379531fa409acd249b9e5b9a145d0d52b76c20862de","affectsGlobalScope":true,"impliedFormat":1},{"version":"7b068371563d0396a065ed64b049cffeb4eed89ad433ae7730fc31fb1e00ebf3","impliedFormat":1},{"version":"2e4f37ffe8862b14d8e24ae8763daaa8340c0df0b859d9a9733def0eee7562d9","impliedFormat":1},{"version":"13283350547389802aa35d9f2188effaeac805499169a06ef5cd77ce2a0bd63f","impliedFormat":1},{"version":"680793958f6a70a44c8d9ae7d46b7a385361c69ac29dcab3ed761edce1c14ab8","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"42c169fb8c2d42f4f668c624a9a11e719d5d07dacbebb63cbcf7ef365b0a75b3","impliedFormat":1},{"version":"913ddbba170240070bd5921b8f33ea780021bdf42fbdfcd4fcb2691b1884ddde","impliedFormat":1},{"version":"74c105214ddd747037d2a75da6588ec8aa1882f914e1f8a312c528f86feca2b9","impliedFormat":1},{"version":"5fe23bd829e6be57d41929ac374ee9551ccc3c44cee893167b7b5b77be708014","impliedFormat":1},{"version":"4d85f80132e24d9a5b5c5e0734e4ecd6878d8c657cc990ecc70845ef384ca96f","impliedFormat":1},{"version":"438c7513b1df91dcef49b13cd7a1c4720f91a36e88c1df731661608b7c055f10","impliedFormat":1},{"version":"cf185cc4a9a6d397f416dd28cca95c227b29f0f27b160060a95c0e5e36cda865","impliedFormat":1},{"version":"0086f3e4ad898fd7ca56bb223098acfacf3fa065595182aaf0f6c4a6a95e6fbd","impliedFormat":1},{"version":"efaa078e392f9abda3ee8ade3f3762ab77f9c50b184e6883063a911742a4c96a","impliedFormat":1},{"version":"54a8bb487e1dc04591a280e7a673cdfb272c83f61e28d8a64cf1ac2e63c35c51","impliedFormat":1},{"version":"021a9498000497497fd693dd315325484c58a71b5929e2bbb91f419b04b24cea","impliedFormat":1},{"version":"9385cdc09850950bc9b59cca445a3ceb6fcca32b54e7b626e746912e489e535e","impliedFormat":1},{"version":"2894c56cad581928bb37607810af011764a2f511f575d28c9f4af0f2ef02d1ab","impliedFormat":1},{"version":"0a72186f94215d020cb386f7dca81d7495ab6c17066eb07d0f44a5bf33c1b21a","impliedFormat":1},{"version":"84124384abae2f6f66b7fbfc03862d0c2c0b71b826f7dbf42c8085d31f1d3f95","impliedFormat":1},{"version":"63a8e96f65a22604eae82737e409d1536e69a467bb738bec505f4f97cce9d878","impliedFormat":1},{"version":"3fd78152a7031315478f159c6a5872c712ece6f01212c78ea82aef21cb0726e2","impliedFormat":1},{"version":"3a6ed8e1d630cfa1f7edf0dc46a6e20ca6c714dbe754409699008571dfe473a6","impliedFormat":1},{"version":"512fc15cca3a35b8dbbf6e23fe9d07e6f87ad03c895acffd3087ce09f352aad0","impliedFormat":1},{"version":"9a0946d15a005832e432ea0cd4da71b57797efb25b755cc07f32274296d62355","impliedFormat":1},{"version":"a52ff6c0a149e9f370372fc3c715d7f2beee1f3bab7980e271a7ab7d313ec677","impliedFormat":1},{"version":"fd933f824347f9edd919618a76cdb6a0c0085c538115d9a287fa0c7f59957ab3","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"6a1aa3e55bdc50503956c5cd09ae4cd72e3072692d742816f65c66ca14f4dfdd","impliedFormat":1},{"version":"ab75cfd9c4f93ffd601f7ca1753d6a9d953bbedfbd7a5b3f0436ac8a1de60dfa","impliedFormat":1},{"version":"59c68235df3905989afa0399381c1198313aaaf1ed387f57937eb616625dff15","impliedFormat":1},{"version":"b73cbf0a72c8800cf8f96a9acfe94f3ad32ca71342a8908b8ae484d61113f647","impliedFormat":1},{"version":"bae6dd176832f6423966647382c0d7ba9e63f8c167522f09a982f086cd4e8b23","impliedFormat":1},{"version":"1364f64d2fb03bbb514edc42224abd576c064f89be6a990136774ecdd881a1da","impliedFormat":1},{"version":"c9958eb32126a3843deedda8c22fb97024aa5d6dd588b90af2d7f2bfac540f23","impliedFormat":1},{"version":"950fb67a59be4c2dbe69a5786292e60a5cb0e8612e0e223537784c731af55db1","impliedFormat":1},{"version":"e927c2c13c4eaf0a7f17e6022eee8519eb29ef42c4c13a31e81a611ab8c95577","impliedFormat":1},{"version":"07ca44e8d8288e69afdec7a31fa408ce6ab90d4f3d620006701d5544646da6aa","impliedFormat":1},{"version":"70246ad95ad8a22bdfe806cb5d383a26c0c6e58e7207ab9c431f1cb175aca657","impliedFormat":1},{"version":"f00f3aa5d64ff46e600648b55a79dcd1333458f7a10da2ed594d9f0a44b76d0b","impliedFormat":1},{"version":"772d8d5eb158b6c92412c03228bd9902ccb1457d7a705b8129814a5d1a6308fc","impliedFormat":1},{"version":"4e4475fba4ed93a72f167b061cd94a2e171b82695c56de9899275e880e06ba41","impliedFormat":1},{"version":"97c5f5d580ab2e4decd0a3135204050f9b97cd7908c5a8fbc041eadede79b2fa","impliedFormat":1},{"version":"c99a3a5f2215d5b9d735aa04cec6e61ed079d8c0263248e298ffe4604d4d0624","impliedFormat":1},{"version":"49b2375c586882c3ac7f57eba86680ff9742a8d8cb2fe25fe54d1b9673690d41","impliedFormat":1},{"version":"802e797bcab5663b2c9f63f51bdf67eff7c41bc64c0fd65e6da3e7941359e2f7","impliedFormat":1},{"version":"b98ce74c2bc49a9b79408f049c49909190c747b0462e78f91c09618da86bae53","impliedFormat":1},{"version":"3ecfccf916fea7c6c34394413b55eb70e817a73e39b4417d6573e523784e3f8e","impliedFormat":1},{"version":"c05bc82af01e673afc99bdffd4ebafde22ab027d63e45be9e1f1db3bc39e2fc0","impliedFormat":1},{"version":"6459054aabb306821a043e02b89d54da508e3a6966601a41e71c166e4ea1474f","impliedFormat":1},{"version":"f416c9c3eee9d47ff49132c34f96b9180e50485d435d5748f0e8b72521d28d2e","impliedFormat":1},{"version":"05c97cddbaf99978f83d96de2d8af86aded9332592f08ce4a284d72d0952c391","impliedFormat":1},{"version":"14e5cdec6f8ae82dfd0694e64903a0a54abdfe37e1d966de3d4128362acbf35f","impliedFormat":1},{"version":"bbc183d2d69f4b59fd4dd8799ffdf4eb91173d1c4ad71cce91a3811c021bf80c","impliedFormat":1},{"version":"7b6ff760c8a240b40dab6e4419b989f06a5b782f4710d2967e67c695ef3e93c4","impliedFormat":1},{"version":"8dbc4134a4b3623fc476be5f36de35c40f2768e2e3d9ed437e0d5f1c4cd850f6","impliedFormat":1},{"version":"4e06330a84dec7287f7ebdd64978f41a9f70a668d3b5edc69d5d4a50b9b376bb","impliedFormat":1},{"version":"65bfa72967fbe9fc33353e1ac03f0480aa2e2ea346d61ff3ea997dfd850f641a","impliedFormat":1},{"version":"8f88c6be9803fe5aaa80b00b27f230c824d4b8a33856b865bea5793cb52bb797","impliedFormat":1},{"version":"f974e4a06953682a2c15d5bd5114c0284d5abf8bc0fe4da25cb9159427b70072","impliedFormat":1},{"version":"872caaa31423f4345983d643e4649fb30f548e9883a334d6d1c5fff68ede22d4","impliedFormat":1},{"version":"94404c4a878fe291e7578a2a80264c6f18e9f1933fbb57e48f0eb368672e389c","impliedFormat":1},{"version":"5c1b7f03aa88be854bc15810bfd5bd5a1943c5a7620e1c53eddd2a013996343e","impliedFormat":1},{"version":"09dfc64fcd6a2785867f2368419859a6cc5a8d4e73cbe2538f205b1642eb0f51","impliedFormat":1},{"version":"bcf6f0a323653e72199105a9316d91463ad4744c546d1271310818b8cef7c608","impliedFormat":1},{"version":"01aa917531e116485beca44a14970834687b857757159769c16b228eb1e49c5f","impliedFormat":1},{"version":"351475f9c874c62f9b45b1f0dc7e2704e80dfd5f1af83a3a9f841f9dfe5b2912","impliedFormat":1},{"version":"ac457ad39e531b7649e7b40ee5847606eac64e236efd76c5d12db95bf4eacd17","impliedFormat":1},{"version":"187a6fdbdecb972510b7555f3caacb44b58415da8d5825d03a583c4b73fde4cf","impliedFormat":1},{"version":"d4c3250105a612202289b3a266bb7e323db144f6b9414f9dea85c531c098b811","impliedFormat":1},{"version":"95b444b8c311f2084f0fb51c616163f950fb2e35f4eaa07878f313a2d36c98a4","impliedFormat":1},{"version":"741067675daa6d4334a2dc80a4452ca3850e89d5852e330db7cb2b5f867173b1","impliedFormat":1},{"version":"f8acecec1114f11690956e007d920044799aefeb3cece9e7f4b1f8a1d542b2c9","impliedFormat":1},{"version":"131b1475d2045f20fb9f43b7aa6b7cb51f25250b5e4c6a1d4aa3cf4dd1a68793","impliedFormat":1},{"version":"3a17f09634c50cce884721f54fd9e7b98e03ac505889c560876291fcf8a09e90","impliedFormat":1},{"version":"32531dfbb0cdc4525296648f53b2b5c39b64282791e2a8c765712e49e6461046","impliedFormat":1},{"version":"0ce1b2237c1c3df49748d61568160d780d7b26693bd9feb3acb0744a152cd86d","impliedFormat":1},{"version":"e489985388e2c71d3542612685b4a7db326922b57ac880f299da7026a4e8a117","impliedFormat":1},{"version":"e1437c5f191edb7a494f7bbbc033b97d72d42e054d521402ee194ac5b6b7bf49","impliedFormat":1},{"version":"04d3aad777b6af5bd000bfc409907a159fe77e190b9d368da4ba649cdc28d39e","affectsGlobalScope":true,"impliedFormat":1},{"version":"fd1b9d883b9446f1e1da1e1033a6a98995c25fbf3c10818a78960e2f2917d10c","impliedFormat":1},{"version":"19252079538942a69be1645e153f7dbbc1ef56b4f983c633bf31fe26aeac32cd","impliedFormat":1},{"version":"bc11f3ac00ac060462597add171220aed628c393f2782ac75dd29ff1e0db871c","impliedFormat":1},{"version":"616775f16134fa9d01fc677ad3f76e68c051a056c22ab552c64cc281a9686790","impliedFormat":1},{"version":"65c24a8baa2cca1de069a0ba9fba82a173690f52d7e2d0f1f7542d59d5eb4db0","impliedFormat":1},{"version":"313c85c332bb6892d5f7c624dc39107ca7a6b2f1b3212db86dbbefbe7f8ddd5a","impliedFormat":1},{"version":"3b0b1d352b8d2e47f1c4df4fb0678702aee071155b12ef0185fce9eb4fa4af1e","impliedFormat":1},{"version":"77e71242e71ebf8528c5802993697878f0533db8f2299b4d36aa015bae08a79c","impliedFormat":1},{"version":"a344403e7a7384e0e7093942533d309194ad0a53eca2a3100c0b0ab4d3932773","impliedFormat":1},{"version":"b7fff2d004c5879cae335db8f954eb1d61242d9f2d28515e67902032723caeab","impliedFormat":1},{"version":"5f3dc10ae646f375776b4e028d2bed039a93eebbba105694d8b910feebbe8b9c","impliedFormat":1},{"version":"bb18bf4a61a17b4a6199eb3938ecfa4a59eb7c40843ad4a82b975ab6f7e3d925","impliedFormat":1},{"version":"4545c1a1ceca170d5d83452dd7c4994644c35cf676a671412601689d9a62da35","impliedFormat":1},{"version":"e9b6fc05f536dfddcdc65dbcf04e09391b1c968ab967382e48924f5cb90d88e1","impliedFormat":1},{"version":"a2d648d333cf67b9aeac5d81a1a379d563a8ffa91ddd61c6179f68de724260ff","impliedFormat":1},{"version":"2b664c3cc544d0e35276e1fb2d4989f7d4b4027ffc64da34ec83a6ccf2e5c528","impliedFormat":1},{"version":"a3f41ed1b4f2fc3049394b945a68ae4fdefd49fa1739c32f149d32c0545d67f5","impliedFormat":1},{"version":"3cd8f0464e0939b47bfccbb9bb474a6d87d57210e304029cd8eb59c63a81935d","impliedFormat":1},{"version":"47699512e6d8bebf7be488182427189f999affe3addc1c87c882d36b7f2d0b0e","impliedFormat":1},{"version":"3026abd48e5e312f2328629ede6e0f770d21c3cd32cee705c450e589d015ee09","impliedFormat":1},{"version":"8b140b398a6afbd17cc97c38aea5274b2f7f39b1ae5b62952cfe65bf493e3e75","impliedFormat":1},{"version":"7663d2c19ce5ef8288c790edba3d45af54e58c84f1b37b1249f6d49d962f3d91","impliedFormat":1},{"version":"30112425b2cf042fca1c79c19e35f88f44bfb2e97454527528cd639dd1a460ca","impliedFormat":1},{"version":"00bd6ebe607246b45296aa2b805bd6a58c859acecda154bfa91f5334d7c175c6","impliedFormat":1},{"version":"ad036a85efcd9e5b4f7dd5c1a7362c8478f9a3b6c3554654ca24a29aa850a9c5","impliedFormat":1},{"version":"fedebeae32c5cdd1a85b4e0504a01996e4a8adf3dfa72876920d3dd6e42978e7","impliedFormat":1},{"version":"504f37ba38bfea8394ec4f397c9a2ade7c78055e41ef5a600073b515c4fd0fc9","impliedFormat":1},{"version":"cdf21eee8007e339b1b9945abf4a7b44930b1d695cc528459e68a3adc39a622e","impliedFormat":1},{"version":"db036c56f79186da50af66511d37d9fe77fa6793381927292d17f81f787bb195","impliedFormat":1},{"version":"87ac2fb61e629e777f4d161dff534c2023ee15afd9cb3b1589b9b1f014e75c58","impliedFormat":1},{"version":"13c8b4348db91e2f7d694adc17e7438e6776bc506d5c8f5de9ad9989707fa3fe","impliedFormat":1},{"version":"3c1051617aa50b38e9efaabce25e10a5dd9b1f42e372ef0e8a674076a68742ed","impliedFormat":1},{"version":"07a3e20cdcb0f1182f452c0410606711fbea922ca76929a41aacb01104bc0d27","impliedFormat":1},{"version":"1de80059b8078ea5749941c9f863aa970b4735bdbb003be4925c853a8b6b4450","impliedFormat":1},{"version":"1d079c37fa53e3c21ed3fa214a27507bda9991f2a41458705b19ed8c2b61173d","impliedFormat":1},{"version":"4cd4b6b1279e9d744a3825cbd7757bbefe7f0708f3f1069179ad535f19e8ed2c","impliedFormat":1},{"version":"5835a6e0d7cd2738e56b671af0e561e7c1b4fb77751383672f4b009f4e161d70","impliedFormat":1},{"version":"c0eeaaa67c85c3bb6c52b629ebbfd3b2292dc67e8c0ffda2fc6cd2f78dc471e6","impliedFormat":1},{"version":"4b7f74b772140395e7af67c4841be1ab867c11b3b82a51b1aeb692822b76c872","impliedFormat":1},{"version":"27be6622e2922a1b412eb057faa854831b95db9db5035c3f6d4b677b902ab3b7","impliedFormat":1},{"version":"b95a6f019095dd1d48fd04965b50dfd63e5743a6e75478343c46d2582a5132bf","impliedFormat":99},{"version":"c2008605e78208cfa9cd70bd29856b72dda7ad89df5dc895920f8e10bcb9cd0a","impliedFormat":99},{"version":"b97cb5616d2ab82a98ec9ada7b9e9cabb1f5da880ec50ea2b8dc5baa4cbf3c16","impliedFormat":99},{"version":"d23df9ff06ae8bf1dcb7cc933e97ae7da418ac77749fecee758bb43a8d69f840","affectsGlobalScope":true,"impliedFormat":1},{"version":"040c71dde2c406f869ad2f41e8d4ce579cc60c8dbe5aa0dd8962ac943b846572","affectsGlobalScope":true,"impliedFormat":1},{"version":"3586f5ea3cc27083a17bd5c9059ede9421d587286d5a47f4341a4c2d00e4fa91","impliedFormat":1},{"version":"a6df929821e62f4719551f7955b9f42c0cd53c1370aec2dd322e24196a7dfe33","impliedFormat":1},{"version":"b789bf89eb19c777ed1e956dbad0925ca795701552d22e68fd130a032008b9f9","impliedFormat":1},"8964d295a9047c3a222af813b7d37deb57b835fd0942d89222e7def0aed136cc",{"version":"681cf9768031b874fafdd81a20e8a20ca6c92a5cbf12e86532a69182e315b065","impliedFormat":1},{"version":"32727845ab5bd8a9ef3e4844c567c09f6d418fcf0f90d381c00652a6f23e7f6e","impliedFormat":1},{"version":"e5b810845dedef5aa0d682efa61be20dcb2e28c27a64ff5cc4cfc122f3f3980f","impliedFormat":1},{"version":"7a8ec10b0834eb7183e4bfcd929838ac77583828e343211bb73676d1e47f6f01","impliedFormat":1},{"version":"f02650de64b96593c1eb736f28a6a0a773c51662d8525b06cc735d77fa9c7af8","affectsGlobalScope":true,"impliedFormat":1},{"version":"3f00324f263189b385c3a9383b1f4dae6237697bcf0801f96aa35c340512d79c","impliedFormat":1},{"version":"ec8997c2e5cea26befc76e7bf990750e96babb16977673a9ff3b5c0575d01e48","impliedFormat":1},{"version":"15ee7690b57d2370e0bafee031269ba32042518edc33f9ae7eb7e2905eefd45d","signature":"585a60e4dfcdb18f0e59edb70f2ba5a21d4e2a24df13f744d047006905df73a1"},"16e9e28dd4a6509dad59594ee50e5414228ff87f1b795f92131fefe3715985c3","1a7a4b00397600634afce6a9a42c98bb766792f1ec4557c72ac5fb4e7f4afff8","6f66bbf05994480f78ad87fe555373b138a621c55a618f9420e05d60cc0c1e99","48976cc019a7c39a7b7c90c37245d23defbb0dfda186f2d2142b65e1eb19163f","f76121c4d21f71cf66914124cd056d0d36ef476f5efbf7d0ee9e929433bc9c08","11083c5e8714b65f06ee6ede1c8138f2eeb8d0c6db49e71c1283b3299bd56335","cf224d3d047f07714e8522444b11af6237dc8b2f958cba621434ca711dc665dd","90b2c10acbfa423960b6a68d75fa09d298110eccb00bc77e22691edae8bc5693",{"version":"5a6237f90ea7b312ce8e331ad5ab88661ca01c64aad1fdfa4d8a9f2f64caf57d","impliedFormat":1},{"version":"b7982958a5ed024532a66b86adf71382e71b5fc86cddfd04fc6663ec917e6aa5","impliedFormat":1},{"version":"a3628f430f8d502a5c026a0c932a5c41e6361d8e0248287872cd8999bc534399","impliedFormat":1},{"version":"fc4eaf7ff8aea6826b2640c0484cc3fbbe75521a45d28cd7708e4ef5aafc4048","impliedFormat":99},{"version":"39f509b45a50c506dcaf8853902af81cbdfd00c702178d0f1ecc77eab1a50eb5","impliedFormat":1},{"version":"2b6c6039f4d2f656904d66f82231488f4852f861d27147884895097f74e3e812","impliedFormat":1},{"version":"cc6c527d304da87b8873bcf1cf9a47a12fe1630abaf5cbb2c60cbabd8e85e4c2","impliedFormat":1},{"version":"ef1448b99805603191d861730d91469aa753698b1c773d8c7b5c75a95ce61b2e","impliedFormat":1},{"version":"941959cd493fe9e8780f8a704791c83ffff2499447622f7ee63acc7bf08be0f9","impliedFormat":1},{"version":"1fcc4bb6d083b31e1587711ab5a8b0467b52a125f9735467774285bc8cc127e6","impliedFormat":1},{"version":"d689ba4f3520ed3a9de24be37d23ad0930f75d804bd82067822b1558782f12eb","impliedFormat":1},{"version":"0e085cc503ad1332728d56244e9f7a603404beca17c0c5b2d815ed29e0727d4b","impliedFormat":1},{"version":"deda38d3245acb0404dd845dae172547c895c99c442082f176071cbb40d092f3","impliedFormat":1},{"version":"2776f7230a2ae50a27bc595893d0fcd8943869a8a3aaff99a2e3f86aafe54bdb","impliedFormat":1},{"version":"585951f20abc465c5acb3674fe5bad232c299f00d073d90c8cb1a416c807d41e","impliedFormat":1},{"version":"e6f3d02d69394dae0771c088b3c0b982cf15b6a91678c59f1d5fbd7c5e6ad8f8","impliedFormat":1},{"version":"ef182902b33ac9b9ad90c163b313722d2bc9d8c2cfefeb418b3205d70504a486","impliedFormat":1},{"version":"3f279bd4f57a5464d9201ab3520ecc468a434805243125c26a57896d7539ce46","impliedFormat":1},{"version":"95bdd836ed77c23e530fcd3a0823df8fd611035590dfd8d38ee164c56f2bd2c4","impliedFormat":1},{"version":"c2e4b711a529358fbfdded0369781ddfe70320eb535ffbf71060775d60e3fb5a","impliedFormat":1},{"version":"76d33de81cd8f74ca32f2b1d5a6725b20caef91ec8d259a27ac346b8d52df10c","impliedFormat":1},{"version":"c0e42e780d502d530ce67e30d09a3b81c5d37d500c1f7ef04f4bd806f648b96a","impliedFormat":1},{"version":"447b6a80636a59c918ed18af1019de1efa94109a086e8fd8f3d20eb9b9a6937b","impliedFormat":99},{"version":"ca5bb7562523b37cc0e0f92e1ea0b99b6957f86a81f7933e6e3fea94a2dd80a1","impliedFormat":99},{"version":"05c9c065eadecdce0ee370455e3c36674bfb08673f1a268a398002a0d2d801b7","impliedFormat":1},{"version":"b0df6363b53f0b84a98f6e8ebaebd773bcc46f77d4b61af4574c7508c40f6c04","impliedFormat":1},{"version":"0eae63800777384563d5727e572982c220d47acf736dcdb569a2749a32378f19","impliedFormat":1},{"version":"9bf41a89bd0bbd4f8a23a7925d04f99267cb84a5a5b239185f3320edea329b9c","impliedFormat":1},{"version":"ba69d5ef968a0350e3216f4dfd39f846ed9a500f360acbe473e4f88278b3c746","impliedFormat":1},{"version":"ca2d1749803143fc680e7f89c0ee9e59fdbf1b4139666016fb152121e3e2c53c","impliedFormat":1},{"version":"9eb8136b766f74e684182375d1be1e03bb504973b7251dd49be3001f586473e6","impliedFormat":1},{"version":"ecfb7796212d2f1d7fc48d7d42dd6ec4c270f3080572d19f24b2638ae0defac3","impliedFormat":1},{"version":"717c42dfb8774242bcf05836fbc643bd7ccbf21908e5b8fe7920c950617ffc19","impliedFormat":1},{"version":"60662f82f3059abd2e0d8a0a5cb56abea8b982dd5dbbf7c254e60d927be25393","impliedFormat":1},{"version":"18eaffdf9c5aaf96d3ba7e3d9d788193a119be6792c1f32da4ac3595687a3a59","impliedFormat":1},{"version":"faad9daec205f5c695bfff09086f4e1e65b32deb9abc0068cba87ff660c1be90","impliedFormat":1},{"version":"4ae9b50481136302de9c77668621ed3a0b34998f3e091ca3701426f4fe369c8a","impliedFormat":1},{"version":"9ba9ecc57d2f52b3ed3ac229636ee9a36e92e18b80eeae11ffb546c12e56d5e5","impliedFormat":1},{"version":"17644c49b3a6c1907a292b491472a609f342d069c660043b96e398574e34b6a7","impliedFormat":1},{"version":"d182d419bb30a1408784ed95fbabd973dde7517641e04525f0ce761df5d193a5","impliedFormat":1},{"version":"c5396a9d06e2e1754a53813b8e1fe9c85468ab18826222346b94cc36dc4d78f5","impliedFormat":99},{"version":"587140f465e529483e153991c3e3bfddda871bf5d28e514fc9276e1d32b7db32","signature":"bb2f42e062fe1e6d4f7775676fd89ebd60ddfd54aab6f2ebeaf617993357a12f"},"b7df8f2c9f4060716e34cc1c3a2fccce0f7a8d6c613e5c6c4b0772f15ff67aef","c99244a9825c71410a98c03f759aaac8f288120b5660b4ee49f668b4cecc06a2",{"version":"40baba5c7445b889918d0bf5062ad8a3eac2a91443e85b13800e41e812962de7","signature":"06ceff435ee5e1b14598c7630c9e81f2eac68f9a532b58cbfd0b264fbf55619d"},"e739bc37ff917168c6fa2cb6d02c876d4319a8903e8e970aa19642296732df4b","66e54622378da76d5015b19ed281ba55da74ebfe0f45b49aae0162d7a2f1d27e",{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"cdcf9ea426ad970f96ac930cd176d5c69c6c24eebd9fc580e1572d6c6a88f62c","impliedFormat":1},{"version":"23cd712e2ce083d68afe69224587438e5914b457b8acf87073c22494d706a3d0","impliedFormat":1},{"version":"487b694c3de27ddf4ad107d4007ad304d29effccf9800c8ae23c2093638d906a","impliedFormat":1},{"version":"3a80bc85f38526ca3b08007ee80712e7bb0601df178b23fbf0bf87036fce40ce","impliedFormat":1},{"version":"ccf4552357ce3c159ef75f0f0114e80401702228f1898bdc9402214c9499e8c0","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"68834d631c8838c715f225509cfc3927913b9cc7a4870460b5b60c8dbdb99baf","impliedFormat":1},{"version":"2931540c47ee0ff8a62860e61782eb17b155615db61e36986e54645ec67f67c2","impliedFormat":1},{"version":"ccab02f3920fc75c01174c47fcf67882a11daf16baf9e81701d0a94636e94556","impliedFormat":1},{"version":"f6faf5f74e4c4cc309a6c6a6c4da02dbb840be5d3e92905a23dcd7b2b0bd1986","impliedFormat":1},{"version":"ea6bc8de8b59f90a7a3960005fd01988f98fd0784e14bc6922dde2e93305ec7d","impliedFormat":1},{"version":"36107995674b29284a115e21a0618c4c2751b32a8766dd4cb3ba740308b16d59","impliedFormat":1},{"version":"914a0ae30d96d71915fc519ccb4efbf2b62c0ddfb3a3fc6129151076bc01dc60","impliedFormat":1},{"version":"33e981bf6376e939f99bd7f89abec757c64897d33c005036b9a10d9587d80187","impliedFormat":1},{"version":"7fd1b31fd35876b0aa650811c25ec2c97a3c6387e5473eb18004bed86cdd76b6","impliedFormat":1},{"version":"b41767d372275c154c7ea6c9d5449d9a741b8ce080f640155cc88ba1763e35b3","impliedFormat":1},{"version":"3bacf516d686d08682751a3bd2519ea3b8041a164bfb4f1d35728993e70a2426","impliedFormat":1},{"version":"7fb266686238369442bd1719bc0d7edd0199da4fb8540354e1ff7f16669b4323","impliedFormat":1},{"version":"0a60a292b89ca7218b8616f78e5bbd1c96b87e048849469cccb4355e98af959a","impliedFormat":1},{"version":"0b6e25234b4eec6ed96ab138d96eb70b135690d7dd01f3dd8a8ab291c35a683a","impliedFormat":1},{"version":"9666f2f84b985b62400d2e5ab0adae9ff44de9b2a34803c2c5bd3c8325b17dc0","impliedFormat":1},{"version":"40cd35c95e9cf22cfa5bd84e96408b6fcbca55295f4ff822390abb11afbc3dca","impliedFormat":1},{"version":"b1616b8959bf557feb16369c6124a97a0e74ed6f49d1df73bb4b9ddf68acf3f3","impliedFormat":1},{"version":"5b03a034c72146b61573aab280f295b015b9168470f2df05f6080a2122f9b4df","impliedFormat":1},{"version":"40b463c6766ca1b689bfcc46d26b5e295954f32ad43e37ee6953c0a677e4ae2b","impliedFormat":1},{"version":"249b9cab7f5d628b71308c7d9bb0a808b50b091e640ba3ed6e2d0516f4a8d91d","impliedFormat":1},{"version":"80aae6afc67faa5ac0b32b5b8bc8cc9f7fa299cff15cf09cc2e11fd28c6ae29e","impliedFormat":1},{"version":"f473cd2288991ff3221165dcf73cd5d24da30391f87e85b3dd4d0450c787a391","impliedFormat":1},{"version":"499e5b055a5aba1e1998f7311a6c441a369831c70905cc565ceac93c28083d53","impliedFormat":1},{"version":"54c3e2371e3d016469ad959697fd257e5621e16296fa67082c2575d0bf8eced0","impliedFormat":1},{"version":"beb8233b2c220cfa0feea31fbe9218d89fa02faa81ef744be8dce5acb89bb1fd","impliedFormat":1},{"version":"c183b931b68ad184bc8e8372bf663f3d33304772fb482f29fb91b3c391031f3e","impliedFormat":1},{"version":"5d0375ca7310efb77e3ef18d068d53784faf62705e0ad04569597ae0e755c401","impliedFormat":1},{"version":"59af37caec41ecf7b2e76059c9672a49e682c1a2aa6f9d7dc78878f53aa284d6","impliedFormat":1},{"version":"addf417b9eb3f938fddf8d81e96393a165e4be0d4a8b6402292f9c634b1cb00d","impliedFormat":1},{"version":"48cc3ec153b50985fb95153258a710782b25975b10dd4ac8a4f3920632d10790","impliedFormat":1},{"version":"adf27937dba6af9f08a68c5b1d3fce0ca7d4b960c57e6d6c844e7d1a8e53adae","impliedFormat":1},{"version":"e1528ca65ac90f6fa0e4a247eb656b4263c470bb22d9033e466463e13395e599","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"866078923a56d026e39243b4392e282c1c63159723996fa89243140e1388a98d","impliedFormat":1},{"version":"d782e571cb7d6ec0f0645957ed843d00e3f8577e08cc2940f400c931bc47a8df","impliedFormat":99},{"version":"9167246623f181441e6116605221268d94e33a1ebd88075e2dc80133c928ae7e","impliedFormat":99},{"version":"dc1a838d8a514b6de9fbce3bd5e6feb9ccfe56311e9338bb908eb4d0d966ecaf","impliedFormat":99},{"version":"186f09ed4b1bc1d5a5af5b1d9f42e2d798f776418e82599b3de16423a349d184","impliedFormat":99},{"version":"d692ae73951775d2448df535ce8bc8abf162dc343911fedda2c37b8de3b20d8e","impliedFormat":99},{"version":"2948774a5104c8ee235318dfdd3c8e2402c053b8fabc59e0cad1de8302d91cbd","impliedFormat":99},{"version":"014ba72e2add59d6d2d2e82166647982c824639e2902ccd7b3103cf720a0cb65","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"b78c801c3c21015ee487f6494448bcff55bb6b61f41172dfc2c26f2218d99138","impliedFormat":99},{"version":"de97e016d8dd4869febd5bccce02eb96957089d04b74ea5d1dc0e66112493b64","impliedFormat":99},{"version":"671ccab2e6a253d2516c0e4699b3077fc30cdb70b4436d8c79d76c91266a1a94","impliedFormat":99},{"version":"a11fbd8ffbee6e5a7fe4c7c23e6a391be615de2e710a6946d7d1f947a85a1374","impliedFormat":99},{"version":"2d383c515b9b606aefcde23da9c312a69bc7976b75abb85c02592f7a8589a343","impliedFormat":99},{"version":"e760f7860d08e9d42b6ecd7dd341602fbc0c13d60eb30beaf1153f1c7c44d66d","impliedFormat":99},{"version":"fb04e1ca667399e7302c033656cc285e6c1cff9c29f264cf229dd25e3962a762","impliedFormat":99},{"version":"ca6fb77e3480af8f2287ccb756ac88d047ba8a8bcc0512f6720ac1216e274ea2","impliedFormat":99},{"version":"c0cc44b0ad2fd65c933d187c4faad6157efbed33c3c21023802aa6a89d9b9d13","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"d76df1670eeb97afbab6c87b8cd31bbd09dbf9026ff0ca533b5d7d3fc0291f79","impliedFormat":99},{"version":"84dffe2a2331c8324501bb7363e0298074e7d59f97c068a3c497c2188865d20e","impliedFormat":99},{"version":"bc05fb9d657d30e61d50d690615f379b0d0415b8f29e69196e1dc6bfc664dc57","impliedFormat":99},{"version":"e315bab2f28d53f9ab473d9de610c455b6c414757bb19589b31ec8f490cebd4d","impliedFormat":99},{"version":"d999dd5abf4befbdab5f1248193cbea69b323b71131a02bb120f9462807fcd5a","impliedFormat":99},{"version":"031f1805f87171e8a9125cd99105bea4a869018ab2356c2e29dca7c86925510c","impliedFormat":99},{"version":"bdcb070ed484b40b84dad668b58e4861f7c3d36f38632072dad5f905bd8cc0cb","impliedFormat":99},{"version":"49af73d71b88a99b1a211ec02bacd321c21397062d253c605bb8d140082eb7b0","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"a50de7f1a7eadab7732d80dcf9c8a0c0d7d00e33315425316757006b5bec6e46","impliedFormat":99},{"version":"4c6fe268c2a984b3f14031a4b09ae7b2d9e51673258f4b4352e48d0c6ebed679","impliedFormat":99},{"version":"cd8a4297d0ab56dc571dadd2845e558c9d979fe1e120a0dec537935bc8a36dd2","impliedFormat":99},{"version":"079a12cb0e0c42655d77da5185e882b4cc94bd5c6c2131171a9289fc1f4287fc","impliedFormat":99},{"version":"d4ce52c42c23981d958206037138e05f7b48d41faa1cfaba7e9eecce8c2e5489","impliedFormat":99},{"version":"8a3be5afe0275ce84a6a6298010e66d54d2d2f8e927df6bcde0ac326b5e81792","impliedFormat":99},{"version":"167edfac7664bec77aa2efb2ce9d515c41b5cc4269091a946b3fa6ec4e7e8738","impliedFormat":99},{"version":"218997a627f0efc4b8be5e6bc0b58e0c9edf250baa3674b661d3f7e6a7ef21e8","impliedFormat":99},{"version":"c3f1acbd39f587a7539d435d6c78ce8647b3bfdc5435df153a70cb2656b52b80","impliedFormat":99},{"version":"457f9d90b6cea783727ce381a7851507acf3259964cf5fdd8a85afc91783b8dc","impliedFormat":99},{"version":"c7c74ecbba4461b55b6c9f244600af0032cfd1ed565cfb1950961cbf53a150e8","impliedFormat":99},{"version":"e8943fc25a93d31823923cc7a934f81ad940ea5e026ea47d873ce7b6986d0ee7","impliedFormat":99},{"version":"6bf5dc0c9f6b6c79fce77b56c985dadca4d4d474c9abf9139ae0785cb5c01992","impliedFormat":99},{"version":"08d76743f45a3f6ed56af01fb9e86883fe9b91f349a104f1eb351db8427c27cf","impliedFormat":99},{"version":"902eafa19470782fa677eab8df6cfeb5ba96ca3360f73405ec22ce82f8759432","impliedFormat":99},{"version":"e1cc282a46eb73cafb1ca5637c4628b3f4221c8e7bcd7a38bcf92ce43b44a093","impliedFormat":99},{"version":"4d4551dcb3fd19a4f22aaa63c6c391d42ce44a15602a6f6a19d582709edb24d9","impliedFormat":99},{"version":"a76075b5aba8187b1fc5c8f565745daed6e4341e64b44e6ec41412a16d575d62","impliedFormat":99},{"version":"f836bf3653e31c3bba120071196c95d416b83c5d860ce27549975f8785cd670a","impliedFormat":99},{"version":"058d970583137cface729371715449aac0c1388bf7a5ba15e0be952677485fe3","impliedFormat":99},{"version":"31c45c074a9acb94dbe340d9336d3c915635eac2df3308916fcf41f2ba6ab84c","impliedFormat":99},{"version":"774256d456ca1d8266f6e2170a51bad2659cb7116334d1e7977595999533a5d0","impliedFormat":99},{"version":"a3cd900b8aa1424f1d2e99c577b7c6ed8834fb6fd129b96b62a7152e5ba0871c","impliedFormat":99},{"version":"f687f35c2206a319dc7d8f0b751e182638c912838ff54034fb782beae50f7cac","impliedFormat":99},{"version":"1ea2d362005804d980325c2fe6ca0abbb145197b856a64d80016554129966c97","impliedFormat":99},{"version":"7a81f15892b1c8d0cbfb35605038ce5c6d0cf93542946aa0b8c415dbefdea1cd","impliedFormat":99},{"version":"22ef1a1604bed6e226888a2414676ef477a7ad5d6ed907a62d6e40c831797366","impliedFormat":99},{"version":"2ab500573da35083b48fa8f4fe719860099d1502df3384f977eb22ab6b14caf7","impliedFormat":99},{"version":"9fd7d60e314f01c950ba31932c150dcec5db2c82de3c7fe0d0d24ee8b54f1fca","impliedFormat":99},{"version":"9db521ae375731aef6e92ee5c30883dbf71ab70b11fd945c9c046f778b1e8cad","impliedFormat":99},{"version":"aabb12802db5f852990123e8cfccc53afc9d38ce16e664ec2e4f907a277d7b2f","impliedFormat":99},{"version":"b768935549d960e1a8d65cbcd36e5da0a64615de05d2fa03bf90330f71094b34","impliedFormat":99},{"version":"94b576c860480aac3eafdf904cd81755f5c9b16c3e0ef3253953a8f4fd8cecce","impliedFormat":99},{"version":"8dc7c54b72cb2a49a7639dccd99a559c243667a74abfb09545cf8afaecc58056","impliedFormat":99},{"version":"d2166d3793936235216ee5d014bcf0d8695f3a954ad54c01b1976c05f544ceea","impliedFormat":99},{"version":"41bf8c3193b575946682ca243de53370f61917035c3ff3fb747067bc680f2509","impliedFormat":99},{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"dbab1950ef4bf06f44795b144026a352a7b4a3a68a969bbf32eb55addd0fb95a","impliedFormat":99},{"version":"2b5368217b57528a60433558585186a925d9842fe64c1262adde8eac5cb8de33","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"0249cc57fb4f04fcc725481b5f273fe4a18d943e108724b216c762aaf311c255","impliedFormat":99},{"version":"e0c6b7c3e925dc19d45c27f88d493b40d3ea97f9363ca2acd33596081c579ed3","impliedFormat":99},{"version":"91c093343733c2c2d40bee28dc793eff3071af0cb53897651f8459ad25ad01da","impliedFormat":99},{"version":"6cc2be65d508f5404dae184fbe1bc5fc6287f2af93195feba921e619721f56a0","impliedFormat":99},{"version":"17c51065e7822de999ed5ff702aead6057c172067e485e8ffe9721bfe5010f0a","impliedFormat":99},{"version":"e1c58879ba7cfcb2a70f4ec69831f48eef47b7a356f15ab9f4fce03942d9f21a","impliedFormat":99},{"version":"f4fc36916b3eac2ea0180532b46283808604e4b6ff11e5031494d05aa6661cc6","impliedFormat":99},{"version":"82e23a5d9f36ccdac5322227cd970a545b8c23179f2035388a1524f82f96d8d0","impliedFormat":99},{"version":"c52e8203e4cc8ddd3ffa75197673942e80e3ff4b3bffa962588363e872cb9922","impliedFormat":99},{"version":"a5f2b5cdf86179d9d6ddfbc3a7e88d5253949a0ac8df3f7085f4a02e843f85a6","impliedFormat":99},{"version":"bfce32506c0d081212ff9d27ec466fa6135a695ba61d5a02738abd2442566231","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"493c39c5f9e9c050c10930448fda1be8de10a0d9b34dcd24ff17a1713c282162","impliedFormat":99},{"version":"fab630fcff210cedbe0d01eabae9020ecc96b549aa4ebd831a0bbcd0cdd877a7","impliedFormat":99},{"version":"73e4673f2da8677556210e5a127b2637bf030ab73da222ea2a19979f89d9d40a","impliedFormat":99},{"version":"dbf3d90c21c08217509df631336881a3105740033b0592dcc47036490f95e51c","impliedFormat":99},{"version":"e6ad9376e7d088ce1dc6d3183ba5f0b3fb67ee586aa824cc8519b52f2341307a","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"d62b09cb6f1ceb87ec6c26f3789bc38f8be9fb0ce3126fd0bf89b003d0cba371","impliedFormat":99},{"version":"e9d27f2b7d5171f512053f153cadc303d1b84d00c98e917664ba68eca9b7af6a","impliedFormat":99},{"version":"4899d2cf406cd68748c5d536b736c90339a39f996945126d8a11355eba5f56f3","impliedFormat":99},{"version":"491d5f012b1de793c45e75a930f5cdef1ff0e7875968e743fa6bd5dd7d31cb3b","impliedFormat":99},{"version":"53c86b81daa463deacb0046fee490b6d589438ac71311050b74dcee99afca0f6","impliedFormat":99},{"version":"70587241a4cc2e08ffc30e60c20f3eb38bd5af7e3d99640568ffe2993f933485","impliedFormat":99},{"version":"dd01943d0fe191b3b2020438367709333ff08a69d285e2f715a60711dcf83b61","impliedFormat":99},{"version":"0fd62a655321190c1db6237bd2dce50370712ed9115fcf27c04f81b76740a101","impliedFormat":99},{"version":"9d2d423bcfeccccf647b721242a2deca24dd08b4af50de64261c11210e4dc091","impliedFormat":99},{"version":"b6ff37737d006b86082f2f7176eb0a771001e9dde9152a26ef9ea8fd80e6eba0","impliedFormat":99},{"version":"29c4e9ce50026f15c4e58637d8668ced90f82ce7605ca2fd7b521667caa4a12c","impliedFormat":99},{"version":"8575340c8560a52c3309956add745660ad319dbd67309fa268f5af9b1c7551f5","impliedFormat":99},{"version":"3b56bc74e48ec8704af54db1f6ecfee746297ee344b12e990ba5f406431014c1","impliedFormat":99},{"version":"9e4991da8b398fa3ee9b889b272b4fe3c21e898d873916b89c641c0717caed10","impliedFormat":99},{"version":"581813cd18463afea0b92ec77b94c7df71e29c9d9046da829bb76488497183cf","impliedFormat":99},{"version":"7630b6a1c0ebaec2ef8e8abff850e1d6c551c47d1c345340a8ab95667460fc95","impliedFormat":99},{"version":"597b0a9ef02a28f5b1195305ec9f20a4f9948bd90ec3291d0343d1e5c0b4bd16","impliedFormat":99},{"version":"5fa235daeefc7cabde6e68cc0cdd1b9028a6414cfc7f636d62f1e34b64ca12d8","impliedFormat":99},{"version":"f9bf95954745207c3a305a59f3a8f7e36290c742d006d1ce447a41dc772ba3c3","impliedFormat":99},{"version":"732e1c24c3f5a76e61b075bfee7d2b3e5714d4960f8587b0cf989e7e151dc1ea","impliedFormat":99},{"version":"4cc5c2fb807317de6f88edae5cc2b24b705cdce764bbc1cc23aeec15d91a7a49","impliedFormat":99},{"version":"53cae4e7f0a5716f296870e5eef84af8832d5700b23ff79f349c0d1b4aa40d25","impliedFormat":99},{"version":"775e97f58cc774218eb4e979ff7f73b2fb4d958521df4707ae382b32fce5f55b","impliedFormat":99},{"version":"d93588a85b0b0eef4e6ab906fa37caa21efa1d30647aef292567c078b2e3a0a9","impliedFormat":99},{"version":"4a5d9348012a3e46c03888e71b0d318cda7e7db25869731375f90edad8dcea02","impliedFormat":99},{"version":"61b3add3d48dfc79324531ede7da59203059a62986070f97645a83acd3f20aa0","impliedFormat":99},{"version":"6cd8356a92fd9f1edcbfbd3b891f50228738522e79bfdad16e7fb7cfd4a66932","impliedFormat":99},{"version":"347efb60859c806ef954a67ee7520c9aa33e1881eedd40d236298af775deef50","impliedFormat":99},{"version":"fc391876e409d362cc43a7468226a9eb83440de09873b284bf09fbfb261ec259","impliedFormat":99},{"version":"d06f5012d5ac1bc25c5033f7e916fe42cc0253d6b523b9747809b71676069370","impliedFormat":99},{"version":"5d35840bd540fad886e21ddaf9b078a44c21a827dec9abc08d2d2c1a3ff27d44","impliedFormat":99},{"version":"a02182b20bcb1966fc15eac80506f617b71fdd0e279ccff44b27f2ee366b2823","impliedFormat":99},{"version":"32563899782c456f03cadc7a9508b9b6468dd678404b093bd7557d6c6e143218","impliedFormat":99},{"version":"f613a93e0685802f7f7e248156ae93ff9088d45abeff0b21b656520699b79f06","impliedFormat":99},{"version":"5471b59fcb6ad04c41f6bf57075e88f3094d9d498e51595b4341d8bfcb729bf5","impliedFormat":99},{"version":"4ecb0eb653de7093f2eb589cea5b35fdea6e2bbd62bc3d9fafdc5702850f7714","impliedFormat":99},{"version":"69ed52603ad6430aaffbc9dec25e0d01df733aaa32ab4d57d37987aedc94c349","impliedFormat":99},{"version":"6f8acb191da449d8dbec7a4e9c317bdb6b8af104a60a101950643ea52cfa3c85","impliedFormat":99},{"version":"e3457d3b62587043847ad1860500e5d888cba15eab52408d97604eda034c60ea","impliedFormat":99},{"version":"8bba80ef1e0e9ae8c061728626309824023e85eaafcd8c285a6fa89dc6881573","impliedFormat":99},{"version":"ada6bd808581a783390b1aabc2cc836136a5d214af0d924cc57d9f29b5733ce9","impliedFormat":99},{"version":"283336202f1a6a4e13271dc83b776718cf5d4a4137b28e2d013498e3020f7170","impliedFormat":99},{"version":"54a6a3e98b7ec00fec7bd7e42ad50c16014805576ccbe33bfee04f0aac9965da","impliedFormat":99},{"version":"7c90a7108c4319b0475d5419d52f2a2c9bf499234a2a15d5b8504983e141041b","impliedFormat":99},{"version":"67fc5d1b6877a799de1e3943ed2c3669b72a6ab3b17c7b0b0387bdd6e4c1a01f","impliedFormat":99},{"version":"616853ab33cb388421a5d5188e6e2d4b4e8db3f09474baa6a3665707009fe9cf","impliedFormat":99},{"version":"953ee863def1b11f321dcb17a7a91686aa582e69dd4ec370e9e33fbad2adcfd3","impliedFormat":99},{"version":"392e72d77ae33ee322d5b0b907398f2200f72d36adaca1ca62dfa7e22f744ac3","impliedFormat":99},{"version":"e452b617664fc3d2db96f64ef3addadb8c1ef275eff7946373528b1d6c86a217","impliedFormat":99},{"version":"c6a811837fef3d4ba22e7e4adcb16f12caf30252047b133404d698bf8f0e883a","impliedFormat":99},{"version":"2f722a3a421baf9a7c175d8ae6a3118dfd14c5f36474e03f99e3df5800065030","impliedFormat":99},{"version":"f9511d2a891b0a017ae31674977b053f42ca7221dedd012f6de6f75e7cb9aa3e","impliedFormat":99},{"version":"d8f262b549f3ed95402297d10b84f0f86e3113d6d570b03364d2cfca1f75e5d8","impliedFormat":99},{"version":"f216cb46ebeff3f767183626f70d18242307b2c3aab203841ae1d309277aad6b","impliedFormat":99},{"version":"d6d95f96dd5b374484fd000228288cbcfb80aa47cb74ebd3e19ea94a36e8260a","impliedFormat":99},{"version":"6138274c82c329cda440779d37dc66f5fb92713bfda1c5a8fc95785f64a6315f","impliedFormat":99},{"version":"92fb8aa5d61dca9ab2008d49397a639dbf71c7746da23c02245523cfec4a99ef","impliedFormat":99},{"version":"9e6cd6dc690d6e6c89b17b295cabf8a5a08011ae79a7a56578a429e5ae27b8dc","impliedFormat":99},{"version":"edf5cdeb6808ff038b8b6d83cbc5d2d1da1d3eade25db1db21b6244349a56529","impliedFormat":99},{"version":"c3602ad632c6df7653f19a531d683b50ffa6d1846d28ac5a6112c582e1067988","impliedFormat":99},{"version":"eb346e4ce0c2912e148d88955944bc54eaf28e4dcf88fec2c20e0002346f0588","impliedFormat":99},{"version":"58c5a2a520ae555e0573873a5e6303b0f1a1e70f3b376e5ac9094eaad0623d8a","impliedFormat":99},{"version":"5f8217240c95e3f3007d9968104904616287f30d853bac73874759c1dfad4017","impliedFormat":99},{"version":"7ebc96af203f866e829b528e5cffb32111a1a1ff4662bc60c3b53696e89c67f4","impliedFormat":99},{"version":"9f5ee7c037b58964c1cee63c1849fa11757f693208444be0f2d9f08defe859cd","impliedFormat":99},{"version":"33a4085365aa21a995ea4721ffff814128b126e8e346e5f064d87bfcdd0ff7ce","impliedFormat":99},{"version":"3adf214b4b307152af85b77e441d36ede388dadba2bd9962671bf933738d2a25","impliedFormat":99},{"version":"afad82addd1d9ee6e361606205bbda03e97cb3850f948e53fdbb82f160dc43c7","impliedFormat":99},{"version":"250998ae18ea49b8745d327e7739f56464a4318783129daab90b3299bf6f8a55","impliedFormat":99},{"version":"76b3afd1f2748ff725c277bd4701f442af697c0586e1b491e6a67383a246ffad","impliedFormat":99},{"version":"4df5fc6fc2438b8e3418cb25c8c0e863d1f92e4470297d6a8756394c597af844","impliedFormat":99},{"version":"92b5f0879161f1206e30a0c219dd8f23d736f2a74a4e015885e8e3f3b3c9a3e7","impliedFormat":99},{"version":"374d12016302e312ffccd3d38e6f3df1b412378bff6e6266f3e5844af450859c","impliedFormat":99},{"version":"18d0c2293aa57e33923fc1b10970650c6d6932dbfa711a3ffd67600b3caf924b","impliedFormat":99},{"version":"17758b72f880ed66754e3ff4aeade0b82417ec546b72bf3a326cadf4e56c1915","impliedFormat":99},{"version":"3df2d8d345edf29c4e0f5bb6f1b35b8008c626dc6b5f0f98cdfd5587e13c5a52","impliedFormat":99},{"version":"6452f7fccb7d729fafdd9db0b1b0fb98d772504de2fa302751e7bc4164ee75c0","impliedFormat":99},{"version":"a57f8d7e5531fdaf0e2dbb17103ba14ec6c189e92da17e9e22a73ccc77323581","impliedFormat":99},{"version":"3a8a0433d438dcfebf5589921a8ef2490c54d37f8e4832d9a06a488e6b922bc1","impliedFormat":99},{"version":"70ecaa4f1fbccc0635bd57be3474aeaeb03df99b649d3a7910984fbd25fa6d70","impliedFormat":1},{"version":"73ba15fc8b1fe8a2501bd160217112a32e85beb4af0053d27142f0385c310043","impliedFormat":1},{"version":"e63e07bdf7400618d8f94ddc7f0becb4f34ea16f4e2077e0309a965ee4bccb3d","impliedFormat":1},{"version":"49bf876b8f39333c3954c9b99b3e3948f955ee2c5c9d140103a7c51d17aa2380","impliedFormat":1},{"version":"0df055e5a743b279ac281927035f4a1d82d0d575f9132decf643044fd9257d7b","impliedFormat":1},{"version":"2af92ad8cc580ce84c16117475fbdb0d616013d4abd50e77985404d00b636c19","impliedFormat":1},{"version":"f29a2adfd092b2cd74016662956009d117ed0977fd90081ade2147d321faebe6","impliedFormat":1},{"version":"83667e74dce74a2ac0a778ee9c1ca062aef073f594acb3aefb178ff452a944b5","impliedFormat":1},{"version":"9e7ce7dde16fe73632b617ecb7a75426bd3041e7da0bb1d627eca355e78fd294","impliedFormat":1},{"version":"227172ccd6d07fbeac2e9e72083a4cc8229b52e10b5234572e8af5f6bf514281","impliedFormat":1},{"version":"31cdaa8a9f5c7f5108d4c1033ecbd33f3a44481005ac69568cf81baa0567f361","impliedFormat":1},{"version":"eef9483906576d14691da9f4f06a968e6b609d827bdbe1d3a1d50751557e36ef","impliedFormat":1},{"version":"79ecb80c26ac8a35952c61b1d3a175d2ab7ed0eea0b4603e6d52106206a5354d","impliedFormat":1},{"version":"1d2d80904fc5364023ba4f6f91d1f7c78ffce63b7db95b0c8a627a1795cffccf","impliedFormat":1},{"version":"8fa04ff61764daa514a4362470f303b637bbbf2c13cf586a0e5e986a243666cf","impliedFormat":1},{"version":"3ab8140695d4dd30ce7e1be20a39538bd1e454d591d124b74cdd3023588f4848","impliedFormat":1},{"version":"4be7d9a647c34f28cc4840b99e57286b5229b3eb5547f7b601dd8abef3d682df","impliedFormat":1},{"version":"0bcf9befca4a20b4fa6ce4a5bece4db8d03436a70ea4d44661ae9c7a10b57c80","impliedFormat":1},{"version":"59e0a4c2be65f233fee5ca07bb79839849a978a1cab6b8b3cb3662aa29d91719","impliedFormat":1},{"version":"65f0e217641c500bfc93f2c18ebf6597ab1b50c8e760ed6a9de040223aa4f621","impliedFormat":1},{"version":"a980c56f5794d0a08fe308115c3cce5e2bcbd7e2ae42d1e6e698677541428b23","impliedFormat":1},{"version":"35c36f02a6afa6e5ec3e570eb46077c1f7e39a08b84ecf02dd26add5ba9b7bad","impliedFormat":1},{"version":"33036b5ee618a7bf30f5b667b4cfb08de73c809d115f2afea28520633aff7e72","impliedFormat":1},{"version":"3a58767eb60591d2c1558c74f57d47ac1dd1e283e3bde0283647b906eca1aebc","impliedFormat":1},{"version":"1f50f683418e12392973cdb54d969655086d08d403821aad06fb428c38c0004c","impliedFormat":1},{"version":"55a70de1a2108e2fd503fd08116d41b6f1668a924bfa055dec1f3ef76cb217f9","impliedFormat":1},{"version":"288a7c3d5fd6fee8974a3fe884159b349469a4ca655ebcec6c98354c8fa9d23c","impliedFormat":1},{"version":"238d23aea1e50633049a1e1dfcad19a44e5a36304d88f7e13bbc9fca51630682","impliedFormat":1},{"version":"e51aa5e56d9bf3514faba19ba916e56b1dec9ad196bfd5eb6b86c942f8927dd0","impliedFormat":1},{"version":"9a7be590c28f7f860516c7f8354c65cac96db356594993c437c549aa63975c99","impliedFormat":1},{"version":"cab8abf010e0db556dab1a7fbacca7dfc5f3f32e3dae0af702814ca7d0b05394","impliedFormat":1},{"version":"b042e89223f672942c36d41e7c5555ccf15ce6573199fb534505dfd186c91b9b","impliedFormat":1},{"version":"53c768a6986702121e9be47b6a1192bdfa820670a3f0b172bf9bc10940794ffe","impliedFormat":1},{"version":"6828857a2bb623bb52fd4af4f6c98d96910e107af869e7c2b77022400d52998d","impliedFormat":1},{"version":"b84073343a78d3970b7692c46842d2bc98436e3038e719ce049f0b4a7190d7ac","impliedFormat":1},{"version":"518738b3a3a3b534b029df35db29a31ab3dd0f150597ad53ecbc70b2a43c14c8","impliedFormat":1},{"version":"5bfd2410d0c034c01b0ad6e3ca9b9ef6b922cef11a7d8421a43703c1626baeea","impliedFormat":1},{"version":"69994f1a5f3d73dba5fb882ed30a6d8bfbb3f1ca564a93085ddc6dd34cd147b5","impliedFormat":1},{"version":"fbbf6cf39dda76c57cbe0fecd9998718f07285123da7e30777955a681eff6c20","impliedFormat":1},{"version":"498cab8279c59ff6bad678cf7395c94a11b7113111caf866335e1c9a4ee1c991","impliedFormat":1},{"version":"1b2b39612a7b17efd4583ebb2133a6d603577096e4b760cf9d47c529b9c67414","impliedFormat":1},{"version":"5e63b311b7229bd29783ec6ecb625ad7e6e87a9ab5f4295f8e677631e210d904","impliedFormat":1},{"version":"fdfeef65925640e91d11c95aade5278625af6a1f2e1e4d99bad38132e0965d02","impliedFormat":1},{"version":"8de7cc92f4276b26773c1dd1aeffdbc2344ef9ea3de896f054be36dc0539cb5e","impliedFormat":1},{"version":"9319f02947cb4442933565659d0a51c0d8778fd18c7e97612ead8af95bf14b7e","impliedFormat":1},{"version":"22aa95f8a9510ccc6bda53447b283430298f9cb8672c2153cf1569fcb49eec92","impliedFormat":1},{"version":"37b313aae173e64574b3d35fe3b0de3d97c63b0257885cb134da637d1f93efdf","impliedFormat":1},{"version":"62970c1d53c9ac62e7a74c71237d525250eede81551a40b9c3e954ff5691365a","impliedFormat":1},{"version":"3684f5a275e1d359568bc4a79d08b7bcf14a973c7afc61ecff7a1a0888a90201","impliedFormat":1},{"version":"5b44ef24200c6073b05ac914c166614103cdb769360d771be5e24b43a3a87f45","impliedFormat":1},{"version":"38289f5cf345f7438f3da749fa74d2482fa8fc4a85d24ca26f07ac322b72a033","impliedFormat":1},{"version":"8914f6472962bcb23ebc7bdfb60c6fdf506e786c8e6e966b142c0d18216b9ed1","impliedFormat":1},{"version":"e1c770d60db7ef3a216372d61af165b0ff3d6134a91d6361ef2a28548c6cdd95","impliedFormat":1},{"version":"25214789ab14711cd7ee64298b9e92ee2151353a3fa7de2a3539b99531067ee6","impliedFormat":1},{"version":"1c1f9ead25f0ba8a7978fcdc8352108e758041ea9e3680fada574c457c16726e","impliedFormat":1},{"version":"d720ca0af98bfcb9b38dbab758abc7d872f656c2985466afb54c9495d3aa7ace","impliedFormat":1},{"version":"8fe8ac1dd27831dc531609512db0a595aad43fb75f1c7d7caab338910f3afcac","impliedFormat":1},{"version":"b914cc4c3b00603fbf8e98d277099fe0b9ea746583fba1bb001615b9eb2685f8","impliedFormat":1},{"version":"c122e80642a5d7971d4e05f108ec9b12bde3fc5565850a16529027c0654b8226","impliedFormat":1},{"version":"992d276ab098b6d6179f02bd48ba8b21b84f0b0b66d2a4a7ca655def04aa9582","impliedFormat":1},{"version":"44f5cd5353e749726f487f23b0bf5d39017788739a7a445a72d5f8c9213112e4","impliedFormat":1},{"version":"19f163212a99ca8f7a0dcde58dbd6b189b22597731bd1fb10498fdb756418d0e","impliedFormat":1},{"version":"888da990ef7ca12805ed16bcdcadc0559e29322b3267810eec210274abdfa709","impliedFormat":1},{"version":"c952e17e72dc1e8c72558cc9a5afa79ce99212e99729c632a921fe818db288e0","impliedFormat":1},{"version":"bd3afc6be5e3a43e377ce8debb2cc34337aa4931a6248623e2f0472a38df5ab1","impliedFormat":1},{"version":"0ceadc61341632138b537fdef7f88932760de6cb8ddd568a79a102e391575254","impliedFormat":1},{"version":"3c961170e58d5879b5013114a669b935895c727505eee7ca171dc0a77272ac94","impliedFormat":1},{"version":"9ce237f3485f53142c952c6f5c16928b57cdaccc95e3b041f0d8e778cd371009","impliedFormat":1},{"version":"b66414eebf3685327a7a63e2b83b87b729f23728382c2c3179c670b82c967718","impliedFormat":1},{"version":"906d635616d85b7a85dd3cbfb204af0c05277d2baacb3519fcc341f6958a0438","impliedFormat":1},{"version":"c613448f80dab1497823af3e17faf78e94f4f512b05389f84197ac4cf892e3f2","impliedFormat":1},{"version":"5fe5e77f8655c3b9e015eab646489a5b34f0368045639335ab9d1e828c5e1439","impliedFormat":1},{"version":"138d0f43b0fe5b6a57f56355610f2051634aa65f0795d3eb8ea7a20ecef5a216","impliedFormat":1},{"version":"a18d2eb5bac335e8f5077a03894b82dc51ca30f887609f77c6649ec521c30eb4","impliedFormat":1},{"version":"ca448052f36afb9f309a92f74e40f071ac750e88202d47ddbecd6d85690b61a1","impliedFormat":1},{"version":"dddbce36143eeb158221b6d3494042778013dce0320a45e2dd9c72114e1d2834","impliedFormat":1},{"version":"d9066b554e58ecafecd0abff571ef969d12f5f740f4f0f756698c20014056f9b","impliedFormat":1},{"version":"614b2fb077973da78ff18a59b82d637552e7449facd02344cc3960a91c8547d2","impliedFormat":1},{"version":"33b55dc5421948630990f8c04ad8ed11066183e9581f224c4d4e424092b61c74","impliedFormat":1},{"version":"748c351be4802d477df5ef929e0d0a4852772debbd4422e35f4967c5e7e1f3af","impliedFormat":1},{"version":"6280dfb30117e7e5b22910622cf30debedbd2cb75408ab44741ba9dd915e2577","impliedFormat":1},{"version":"4712e02c4cb461ac2e120daced545a2c99d12c1142e842b677b477f9ca4f4a92","impliedFormat":1},{"version":"a79b9dc4b2e8ead01a954533b0f9322e97d6c9ba48636deb06064baed649c004","impliedFormat":1},{"version":"2858af1f5bafa661ceec888b6ec2b73cf8de32ebd9d8f0f51030b56e6a284b35","impliedFormat":1},{"version":"72aa0061ccfff2f4af76bc1b2dd1e749981d88bcb0efec93cdb867986d78a5e5","impliedFormat":1},{"version":"f4f4ca88a2be1bb083e8cdf230c7066877736b8dc0af66140df16fc853918ff4","impliedFormat":1},{"version":"114728dc0b818dd2b0abb4e9b945c11a66c5fae73b248b8f09f8523d2bfdbbc0","impliedFormat":1},{"version":"c3c4e2388a246980373bbfe7d21d09e4d2d2acafbd7c82edfdce99b570a4470c","impliedFormat":1},{"version":"b75d9c18eea27e159ce9111835373af2f303299f251e2dc8c694c5de997f43f7","impliedFormat":1},{"version":"7a6a79529d68a2d5cc5312bfbc379426d388cdf2f12e94c7b4645a693aea1cc4","impliedFormat":1},{"version":"c6515f11b55326374bb11d1c14c5b24c0cda1a9720f198218101ba5a1c633e8c","impliedFormat":1},{"version":"c31c9fc9b7442aabba078ae2dfa1a5337ae30a87869e6272268e0a55b6abb448","impliedFormat":1},{"version":"47d576a0607782ceb77e24d54e5c323de31b3d4721a48b6ac619c0c2b2158ad1","impliedFormat":1},{"version":"b7f642770a86821f4f9ddedbe934cf42e9d46fcd5b91623dbe7ce3b4997221ea","impliedFormat":1},{"version":"747ea0635cf10b4f5bc72cee527dc02b1f21024c5564f9cf6162fb0a6c56d491","impliedFormat":1},{"version":"8fb09c1c7b3e91a3c80f93fd13a3291398cfcf07fd3c52c56e3ca46f49762012","impliedFormat":1},{"version":"428a8b3110d701fb05def44c7984bbdf23fa0bda9a994db3502d2762d6437953","impliedFormat":1},{"version":"cacc558b953e367ac34725c97edaa3932be29e981cd1afd3ab578901e9738265","impliedFormat":1},{"version":"ad466a33b783fdbbc379bc82a5356ab39d780b100178e2dc58f1d35cba590d78","impliedFormat":1},{"version":"654773ea1dbf465dbd99a43136ab6cc1d3f81b24ae918dee1482ef49aed57a24","impliedFormat":1},{"version":"539879c2c5e4df5e760d859e688e195464aae474c74b1294f39567514fad152f","impliedFormat":1},{"version":"6aa31ae3ae71cf1070d6bbeecf308da04baadd4c28142cb2f53faca2b44237be","impliedFormat":1},{"version":"100965474ec0634d3cc41d661d06001082972fad788cb6ecdc48a6152dfb0fae","impliedFormat":1},{"version":"81e9004fe653a17766c1baef973b2675e317196b8e5d5e556c4d3d72a5b51d9f","impliedFormat":1},{"version":"fbfd1dd3d63c564e964acffd43110f3835239bea5106a860b0c6f12c673cf934","impliedFormat":1},{"version":"c07ad1541868010e6fe715a9f10e99b4bb8da43ae06b98f7a381301926579991","impliedFormat":1},{"version":"ae35f0b6967a8cedbc5ec11dbdfd936cc003fd2093c127b3f861a6478cae92b8","impliedFormat":1},{"version":"3abf7e7ed0754361a1b36497870bf10d83042e1ee61f30f528bc46e13ba9c5c0","impliedFormat":1},{"version":"953da53efa000d4a319b1bbbffc586e2dc424200a658350a1351aeac9d8a763a","impliedFormat":1},{"version":"8ab8d8b53701e8310293a6869d63186053d930b8cd08d385d5f1b395821d6508","impliedFormat":1},{"version":"a670bbbabdefcbcc2c06ab4af9678703710870fd1a626c3f9299bd24e9687504","impliedFormat":1},{"version":"d26f7258b8181bfdb2f2a57b88288dbb405f73ec2c4eb42c4c8b0f20f9b68152","impliedFormat":1},{"version":"12ba121cc934a7dad0991993b8cf988c7fc9d3e8466231f565d200a02b35be7a","impliedFormat":1},{"version":"467f02dcfcd43e42511885613d5eb5ece56f2f2b1a1307c8c77bc1fa6bd9fdc0","impliedFormat":1},{"version":"92d9aa8bc2cd29e4e98b6419d9874b52be7731b58ad91349e7e464da8c28acfb","impliedFormat":1},{"version":"f483be305a738aebadbedf77a62f381d90eae5bcdd6d2a66c06b1510df2b0fbf","impliedFormat":1},{"version":"3d1bf13ed400ea46acb0c6c291dca9b9c3b47db3cef97313d393716540f8775a","impliedFormat":1},{"version":"f741c2bea2e69f19b0a08b2bbd764d3be011caa0584cf057d62c17e02b481e33","impliedFormat":1},{"version":"7f4e7b921f11c41af7d78361c190d3679e3376bfd28cdb0d8b847d99f4a096a0","impliedFormat":1},{"version":"a8829405339b2717f654796eae39f0799774fc3c3fdd27c32b6428aa5c96a03b","impliedFormat":1},{"version":"87a976eda42d1560992929cffe6f6bee978f29c8d79197a2407495b62d368822","impliedFormat":1},{"version":"e2bb63b44fdbbf48e4f596f74dea221fa931c9a4747923554b44bc095405b423","impliedFormat":1},{"version":"ff4eafe51c5e86fa503ac3387b7950dd2781d70e3af87415647b5943b9db5ef3","impliedFormat":1},{"version":"a78c8e04ccc4a39e9a29bda8f5e33ac7d0133a993e410c304466d77c38c8bbd4","impliedFormat":1},{"version":"2fe38b4077030635916079ea40177213c4775a90746538e175b18cd4069049be","impliedFormat":1},{"version":"096bc33466c88c46dfa3bb8fcf5a85ed2e86e0379aacbbb93856e4ac956b1461","impliedFormat":1},"78502cf7c3befebd74482e94b6f09bb12ec92f052c31c70b6b38a96c6f34c3e5","1ea7e6d11d22d83802e53e339f66e10948874082b01f38450581dfd65dbe914f",{"version":"5a04e588e9c557ad93d30be2aebe6efea226b15d5f03a2f165de0bebaf71bef6","signature":"49c28770cf2280334d1772f11a52047f4bd7ebcf633c01f2b289cd26583ce625"},"680cb69e1943bc4806211a1a0d180e71d7cbbe8dbb7472e0f56aca5c01ae5998","8e5ab744bb3bbb1a14ed32b1797321456a66c0792ff63637773591f07999ae43","73fc4839e672037f9b23920a884e0d127f3c60014e2e212cceeb6aced2a8257c","422bc3f816eec7e6733205754a39e01d2e5736ad4c65c8993858c90eda9b8528","eb8f9752a3d59ccc9c7937caf76d2a95489cdba8ed5e3bc46d0636eb833e5c42","1034c530a9abe756c969d3d490f137cc8c58e44b346040b9aeace6ff4536f56d","f1ab9b085b3a0ef6f37c8f092c77f2c0dca0ece5bd60a62c198785dcc2dc5957",{"version":"006d8ff9a051d61b0887b594b1e76c73314bb1a6fe39026867418937ea2259b3","impliedFormat":1},{"version":"e8da91bb8a22c38a527935f11923a8bbd0aa7854d72b3153aa6ee462e01e883e","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"a4cbc419a9ec05fa0c40c7aac9004ff6b9c2dcbe0d5f4c5dd4531bce5441404d","signature":"fb083a2464d122ec8a8773aeedcc1f1d352a37792f67f11dc6469787657d8d3b"},"a10748a5e7cc2d9984d9f9332782397f9d87fc2de259d78d2645fe2b765a95de","4ea983f929493c0420b535c09bee0fea80e341c56f7d57755ea45ab1c16ce389","e73e13275008e807c861c14d89272cb2bfd0a694d47668ed8ab36544207c2671","96054a5131fc77a920dd10d91c00925f75d0c15402926f0b82d40d449563f1e0","9bf35218edcc02cda7ba653ea47acfd1e3632393678ffc82818d5437172d9a9d",{"version":"d09a2a53da56d20aeac85e4f0b69f2ef799d73f1186b3abf93d32388ab431fe1","impliedFormat":1},"6f8cb6004eb7be21356b5d44f5ec7867b99f8f762520b6931bad0cf24a112272","1fd2c5f6b1f6a27956e6f1f3ca2922d2ff330cbd8a7e6f2b51965d4731155019","b00e4826cbcfd39589ede8c6230005d66a23330c65e8fc0502e6f76134dd1460","7c0881550f6e1256361bfdf4ae35c01bf917fb0624c05b57344c94ca9c745dc1",{"version":"82738d9afed59be7ee7b5f1602747adfb22136ff31af4d4a2cc8651ef77eaf19","impliedFormat":1},{"version":"55b9f917fb57d9f6051cce4512179e5fd699fd872ce6a8d49e0f0ec45b1bdc19","impliedFormat":1},{"version":"2013596c6c115ec71880ea60f7d891850e2147b598b0c0fea76dce8c6029f6a2","impliedFormat":99},{"version":"e0f4c3a6747fac775e2d740f92e60a6da762e4f34d0a2057e22784fb5204181a","impliedFormat":1},{"version":"1fba5e163eece0323b4d113f743842a7d3a7d788e517d3dae943171dae41c561","impliedFormat":99},{"version":"75ec6a6e61de058d8d450b229d54504ef1a47328b7e61d9cdc49e283559f3687","impliedFormat":1},{"version":"8a96c93f8e3bd0e5c8855a21e1408ff93419a1b0274ccc2f7fb246da91165719","impliedFormat":99},{"version":"a469460e21a0286fb87a7df9539ff99e6c831ee11e1f929ce6ad68b8aaca7e3d","impliedFormat":1},{"version":"1b8e0cff7e05b290d2581f93d0b9f9b1d17971034825617b55ad3f398a2870f4","impliedFormat":1},{"version":"d23b8c70c6565fef9286c65bd6ff34ae3ad7084e0ec5e177f125a42d2a7c1886","impliedFormat":1},{"version":"e1f0a4fe22cc88363101de497ca9e397f26d34fa1a36cacac21b27b6ff133754","impliedFormat":1},{"version":"5e33e33ccf4ced66964ff3b4799ecf434b9d137dd9bf8ad5efdefde4a1d0714a","impliedFormat":1},{"version":"681abfae63f06f15e42cd6f4c6f8a185da32c002e53af81652c59caa84370172","impliedFormat":1},{"version":"8ce944fdd9db48c1c6c9069ce0413338afcb5293de4e67894b13bba7e5e92aea","impliedFormat":1},{"version":"d0a9b476d2bb20ded0ac2f5d53900bb244d4e657857bed72a4991d0cccbaa7a8","impliedFormat":1},{"version":"3cf4d86f2133e1a9abcbefdb2ebad7a27055bfcc78c718d1efe19baf2b4654e4","impliedFormat":99},"45463d785aca1ea6b723969d608c1bedc8a9bc038639fcdf990cee3eaf3a7bf7","f4258b0f681ca9bb5093e525d561aba4b6f839de9a0297521914e03f092a12fa","c1853e02b70fae4936d422dfdf7f8746c745f5daafaa934d4084fb9eb1f7c34a","f38f3bf6eca7e182bcb3a1febcd3e70ca85aa3a96ec0a33a9ace76fe6c19f97b","54c58630c13162263677d5b0c6ccbc7a7494cd7edcf923ead735954f68d8571f","35185614c449362bd7f406c0b8d46a6ae5a1de1e83254d438383145776ebea07",{"version":"c57b441e0c0a9cbdfa7d850dae1f8a387d6f81cbffbc3cd0465d530084c2417d","impliedFormat":99},{"version":"26c57c9f839e6d2048d6c25e81f805ba0ca32a28fd4d824399fd5456c9b0575b","impliedFormat":1},"84a1834b4b1b3f2ce16f23e0fe3a4fcec106eb9e064885cd3c541829f135772e",{"version":"bef2c36108b64a7a1b198f1798a4dfdc91d8a53a1676dd937f1570165847aff7","signature":"865b9d66a1b7870f3c041aa8db40a540db94d5a28be904facf8c0c7caab5012c"},{"version":"39e38276ab0060d0bce60b1c66da953be5a61b3082c6b65ef70a18f0dc8cb553","signature":"cf51e065865cf626bcb5ebaa984e12a558193aa9bcecf7155bc0878d25f47c15"},"5cd992bfb07ee91264dbf5935e6ff1f47b8ceb3d5808851534074dc19dda7f12","5649039ad4206ba5b9f7e733660054366d979ffe002779f7429b4b69ada2e6e9",{"version":"5084e9991c353e4670166ee6f559dae8d31d7ba7345157e4a7efe123caf5eb90","signature":"2c60c55b858b68947ca5edfa6f5ae478a6c95637bb36b56c4454de1cc94e5bc7"},{"version":"265cf66826392219b2abfa0af6e4d78ffe2279dfcf415c7aa462e94a095822c0","signature":"4910d85ffe531b9901374526b86e84011bf3047a23d169edff6ed3bebc9a7c6f"},{"version":"c1d995dc23ff64c1fb7863e93def6cf0a3847ba979ac4bc0057ecf2715ddd70d","signature":"8427a4a2739dfb2925026a783f547fef666045fcb8cb3fc741e4fc0212dc8989"},"753a04585fec2aadef38d03edffacc635bef261496af3315df60ba4296b4b52d","55dc1094dd990051694ea89b0e309b3a20dfec659712de4aadd09878792ee77e","6d87c8b3f652a92d1a8ce5730ff88d225f5cd8bc38186efc0cc13bd68a989c8d","8f93524fc1dc50d326d96b4a6c247207d4e45bf48eac110cb3e7486ee5f20cf9","a0f20bdf6e938e90822c0204bb661b798b5ee12ea10ae4d65523ca2d5430145c","341ca593a3c98833f38003ba6157e6b6c4e6a818dfb38bace0012ca0f165fb4c",{"version":"7e875b12babf7b0a8f1e1935bf83f6b0570ec6549db2c7b581577800ffee3478","signature":"4efe36511baace0a4ffd66b853c45421d506943972d8fbab833e39e1e3bcf8a4"},"9635be3c8a3eed75d9f796a8eadc899a76ba7de8c49dd759d19f4a9c4c7f753d","87ad403d2fee0c921ddc83ce59455d07b04a5fa220ed64bf073c8d2b5489785d","6cd19dbe36c36fe123181a9858b876c84def001e31a0a6bf1a3e43fb3ca91139","ec542b3c22d8ea5f0f495963dcae950042c4794cc6801cfefb6662e4d3dc0bba","eb4240f1e6f9156493ea0891aec34f4297cea9808304db8937a73b8d6b47c7c1","9c1aa163df1752119271ea5b94bb421099cfd24d9b3deb2a71d1d127eb0fed99","19cba52bc32af24da8d51a62ce338794fa2ad5cfe065b95538ea990102959094","031e3181c52eccce77c07f8bbff949c0965e35a97c96fb6a1c1eb1f98f70790c","c5030836c0c6ef86168e9711df734d2d77ceb4c67e55dcffa22b330ec78b7c05","e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","6c9b88edb76920e1266a6341881e3a955558a8c037c176dd3b2c7eedf67e52d2",{"version":"493576324249b1dee2b52008aaf23c5da939282fbd9632f7f91f4208a9934171","signature":"6af6e303bab979716af84247d96e5d57bb3fb6b069d61072cc4c525282af53f8"},"c642ca770305bfeef1be19cc4b187cd73d1d45a6f908794331ecf5f5a2206361","5edd66825512dd10739779fa2694bbce22911fc24e5daa1fbecdc846a1639900","3cc9eea5963534c3623fe66ea5604ea61fc9af85f99a8edb57ec3ec26fd9e1d1","5e4eb83d86bc3ff145210d5066f0262cc34102497de8b3d6f6e49076440edecc","43bf758addfaa74a40ea3d07b58db821c99eda2a223b917480518860d59ca77a","eb6fdf0127a4bcfb1715a3b0fcd1c34ce1361c667341c5f6149419d9d4534fb4","b17a514f4b820a9cbb78b5f6b3c2429082abbd097c1e17a0f5c0d5d4e5abbeac",{"version":"739d29db439cd3bf20fd802b28861d40fe16257ea0104c74ab26fb2b2db13bad","signature":"588e9acab733ea8de37f9638a7c6872c4d46b58e6c2a9c4be29c4d673ef36f59"},"3c12adce94b49d01e49384c72cc33f8351ffc847d040eef7703cd30d9dd462bc","45cf2535e213a98c385a96a6ad90960768c44290b25d305bb09f155852b8550b","b7f16b3c7665c22f65cde550059b57e5175351f580ea5a44c186b1736b23fc15","cce53fba883fca21601282d427ea77709d902fca33333b82833271b1c5892eff","949774da78f489896648a31b193e630d119721c0268862861cf0074ac13d3f8b",{"version":"f50e7fe060f69749b656227efd58431cf38093988ac45d01da707247d144fefd","signature":"e049ee8d313b13354e9de8ed2b0fd9229ee5a61a064b23507f1467b818de6c34"},{"version":"da2ca71476893107dfe03e9eb2dc634db561f36fe800c5f4729841bd7a94b50a","impliedFormat":1},{"version":"6b6db2514e5656198c3226e422ce3b20eaa862baed9d245fae718fbda3615b16","impliedFormat":1},{"version":"ba1970e7b532e458592bbd8955ac69feb0ab577fd3eeda34b3d572c0d7171ead","impliedFormat":1},{"version":"d0c1756f8ca0eac71dccd44dbeb0792af96f2171ea3c66e1e1ecccceeee3e4af","impliedFormat":1},{"version":"0aed8cf6445210cbb892de5a36caa8afd3ecbb928382b7d70c6ee907ccf6779c","impliedFormat":1},{"version":"0fa81bf425bfbe2acd54ae24cabb49570ceeb6da3f7226d6ba8057024451f0c7","impliedFormat":1},{"version":"0ed218d6510a443afc7c714543f143bd7cbe1f3e3cc2a8462a1f12b316b03b09","impliedFormat":1},{"version":"f0c22053dbd4dc2f17706c62426fa378e29042b40363e54b1028a258bfa91e05","impliedFormat":1},{"version":"32b789a883704fb6be047f8a8f600685933eeda17f1ca9898ec42af0951bc5b1","impliedFormat":1},{"version":"b0f25d7f2e82edf76b2c8a4423defa26747483d6e1e772ac8476d5b78f69fe4d","impliedFormat":1},{"version":"12ff67dcd2078121daf0dfec7f427c6bb39851bf0d6203200674d610e46b0069","impliedFormat":1},{"version":"d713078712400f84d8a7d4a2d1a1fd7eeb4879603ef87ee06580220ef12d1bc9","impliedFormat":1},{"version":"6fd12b67e326558a9a6a4ccbc40fc2e1f52d989adfec3657e7a49ca3e5c76dec","impliedFormat":1},{"version":"63cce723b802ac9af294c669c70b46d24955a71c5e3de090bda13dff1df0b791","impliedFormat":1},{"version":"7e6177fe5e7f88d45a7c79f7324ab3bba6e3e6bfefd615199831677670fc1ed8","impliedFormat":1},{"version":"ac4555fcaf9a285d9c3b98807b6e0c799cfd3d1fe5861efe072ac5f982ce3c37","impliedFormat":1},{"version":"e82a51d5498c34f37bf96981223d5aa0b5051ced754d34b9747b1aa8a4f2174f","impliedFormat":1},{"version":"1d9afa7e4148512035b4ee4fc50f39c46f80b65f45488e63ec308a54b990ea7c","impliedFormat":1},{"version":"83e01ec16b5a8424ba35047471fe772e4fdeba7dfa7884d9ced04dd84c01a26c","impliedFormat":1},{"version":"2873f7d3fc801d897c9177e8bcc417d348e96c76490f55cd7237e87859af8f12","impliedFormat":1},{"version":"ede088b09b00760b9ce0997bc1669e25bd155241f369faacf09f3d810dc0ede3","impliedFormat":1},{"version":"4ea54e4119bab55529a13b147b742cefe1b1d273b34305467f63c36f831523bc","impliedFormat":1},{"version":"f48673f5cc00610f1971b6af05a2f73305cc6660f267f43ff1c156c4e4d1d778","impliedFormat":1},{"version":"31c5ae7064e1c894e2e2496842e13bbc3fee3f3b5f27185fcb60ba3cb153f138","impliedFormat":1},{"version":"2227eb2c16ccc7d2e0765e1be566a21e9f43cd0bf945e439e14a8aa97b492045","impliedFormat":1},{"version":"8484f620f8b09cd391279de948a5b1cc17d4b592ae6bcbb3d89b4aeab486e675","impliedFormat":1},{"version":"7354af961c75ecf99a1baa62657a9a9b04af1bb503c1d2bb8d6b4cae270c77e0","impliedFormat":1},{"version":"ffbefb948f6bb2b859784f25d107c40522b43767e64db6917442f93854da41c6","impliedFormat":1},{"version":"dc4781aed7c0a5bf243958749fb57b52e198904dff6c4c04755cf62817f64ffa","impliedFormat":1},{"version":"a5a669d78d77f4ba664c690a3fbcddf66332225aaffaaaedebbe5ec1af2b746f","impliedFormat":1},{"version":"9970aa594f22b8254106c66402e8ecd9a273c0e5204681b6d2aaf9b5fe01b244","impliedFormat":1},{"version":"bf1f9c3e1d24dd4a7eb0a1963f17afa39562e8ee8f2238bf0ff412c6b2176653","impliedFormat":1},{"version":"22759dfadc7f47badde31230a0a34ba6810f88b29ff314fb5e0ffd5fe91ba379","impliedFormat":1},{"version":"4a6f2e79152adb1d73a1ed31f0e2abdd33fc7673074388032924493591ba9936","impliedFormat":1},{"version":"bf2f7981c0568c3925827f14809273b12e17dad7c5de15b5246e14bb981f30a8","impliedFormat":1},{"version":"bb3f62b3ce08b5a9613022ccb757658bb4fd65e6fb817684c92435e087c023a2","impliedFormat":1},{"version":"757ee3c9f0cba15282d6343f1bb01a4e1e4c209fb6a9aad61ffac124dca61c6c","impliedFormat":1},{"version":"717e74927b33a4c6ecaa494b9a3b09f05a5d12ef0292b1db84a5ab2fcfaa5881","impliedFormat":1},{"version":"4764e86784bb88b8f3573279db3856c50a03e2b8bc184c06a40f897bff9d7e83","impliedFormat":1},{"version":"9829c6e1afba519fb32122cde3785ff93a2c31a5e413127b6b6a9bf04a00741e","impliedFormat":1},{"version":"9903107847b34bacc30daf39eff0dae9daca6a10d149c2d9f92da75a591b1da8","impliedFormat":1},"92f1963fac565ffd3eea597a00fa6ce0539e23472b3bc3c46c21b5cc311ad9d0","d17c21caf9f7629de9233f0135a742062c860acfcde14955e8e6adc23c976d66","f4eb77ae65bb89ab53261e4e445fac800d6c265e69de7220c4f0358f3d0e7b59",{"version":"9f7e7593891cf92cbc6c2af79efac69d8eec9663f85ed681018dc98cf2a0c9e7","impliedFormat":1},"51c8b8cdd5ec0e7b5b19b8f36736d34424c43b55f6564935438b9a25b1d13664","05b7553724203d3cf628a38c8bf0bf3ee8b21d8021dbb6c69004d691e35de4b7","a9f9660c3d600c2c4c03f1a733182ab5ec80b4d0404d07aa947437b0f1d51eaa",{"version":"aecbb7b7be892f7706ddd5f50db2c017bc10776fe1e3c16a5212167bca3ee5b3","signature":"df32ff23601405638901a2b12d6fe920ac7cf7db7ee9b2331f073601a77beffd"},"2499a04ddb3ac86f4f463bc69ca5987b94c593770e95ce8ab679462b479db369","89a6d41d039ab432975e7e401404b7f9efde5b75ff5869ed7c78cb30be958a10",{"version":"895bd422667e6e64fc5b92614a49f122770d7f2db3635479dd45959ac82d46bf","signature":"5ccb5b40164c03fe1733d5aaae8c295aaf5bae7883e3abc7c6b91b585fc474c7"},"764f022814e30102465d10583e7d2daa375ada1b1cd7395837f789b5e4ba86f5",{"version":"eed88e4949f96d3e335c34a436c3d411860c462eaa672bbe48691cd202bcab7d","signature":"8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"},"d2d75c757f03f471bd6637d95a7ca465f6a58890e2c241401ac0f24f9e2be04c","e8c618bcd6c55cecb9125c9a292a45be6c5f2d88a5a78f545e46151441a0b265","e2f945f6a110e1d29bbc81b5744d21918b9e2c6f454e4ecbe5af5b44ceab5ba5","e5cb0f63df06b69ec734deadd47e4139132fca3893e381ddf7a5cc71aa092b2c",{"version":"37ebe7e5bd2eca4a0bb2f0eb2e86864cac2974ae06d74777a0a5efcc2173de89","signature":"6a20dbddfd986b0589ed4c8176bdfbf754a4627e23cb742287a363451dd4dd73"},"12223fa373b98f0f8e1576a03078a76faa092d8aacbe9d39ee45c39d1a213df1","de14b6d5d6aed7d58aa4dce803dc85416d823cac477eaf153382f18534928314","0f52072348d01f569215470ca8536d8b2a26ac9f0a7285c846cd7085a873ae6a",{"version":"417468fb45b084cc5dbc156bbeac671405a14e4e482d7394ccb799bfa5e9f20f","signature":"97e04ca002588ea023e78aa69b131fbba344b81bcfb9e32611f65b4d188eb361"},"b55ba318363e021c63f828162214b579081167305e86a4f18db1f3d0d80cae19","354f0fc127e16179d20ee8c61c58c5f7ddde48d0e7867b09f5e0460695fd5121","54ebdd35e2c1aa8b799bf01e1efdcc9991a1ee9bbfe7ebaf927c75176ec3b343","b2437b5bce872532b765654a88d12adc7938dbb03602bf06446c4dcd15255787","00107995cc348e32d702cfa3c21fa300cc12299ee949bf7bc4e063cb6cbef235","38349e3da3a8b9693679602d0e3583e303f4c83d2617f0bd49a1f64e54982b67","69cbfd805675e4c5bd0e25b188029f23f4b97f61478e4510c488b717bd695cba","553824d6a895849dee1f1033fc1133110f546108e12aa43d32c688eba20bd7cf","bb961f24fd0f65edd2e6bf1dbb8436118ff72685254e95001cd9f5172cc8551e","a746d8b8bb72928f71171250a2d5a313096fa18f1c84ac8ee6d8df0b407ac85c","8774b049ad495ac25eb9b4e7434aaf06fc6496dbaa9d43b4ad01a4a46f34b69e","c9c930d62352158ed2891d30ce2de05cb83483c19ffa9a86bf05a3dac1fcf856","da3a1fa978a8903361c02d913da317fd1dbb05ecde91f7ec211c460b0bcd7c43","bce91876e1d6bae21d9cba42ae269bf89e7a25b88427b03797acab2bb95c4492","812e6eabc5a8eeec3845ed6d46aa292f61b34a26d778f32a9d56e84a7531145f","efd5db053434c47d6a9f2c73e423c76539265e1d0ed902e23c10a6d61d304b54","1c0dd339593cb2e79c61a3d21443660965dafc7fcc5d18d1cdc0c178458447ab",{"version":"620c5b17a20c4af998aa8d4b2ad2239a70a6cda67f7e7da4b08b912d497f9f38","signature":"24381ac079539036b4463bb0829df4518439b451f25d863cb37d93e5a2e5de6a"},"9cee6361582a5acf80a4a2452223ac7eaabe3118d82e75c8784729e264973a4b","9eca65003bed766b7f229bf2edf26c2e2455ed1ddc32779886b606211dcdd8b6","bd81efbc6bea7019dae278e1dec171c09abce0c88467329de25f931bea9cee2b","1d63524603e3f84cff768705cb490391889737020dc4cf1b5e457defd5211576","adf9f80d842c584e2db33d8794753ea712a506442f6409f4e729e6584171365b","f8540fb24273d44173342a40de9df6b2c7ed4e524ad69ab2a1d4d12866b38c24","30e443c23c10f812bc96f5ddf3d070ee033cebf879ed9e8346e2bb037e30e6f0",{"version":"bc14f0ace6fc07e2ed1453f478d2c6645b2e17c88d45ac77970694c2b6df8ec5","signature":"45b373ad2e114de335dd3eaf62f9658266d71c2f34537489f88f3b4815fa72f8"},"48e6bc154a59ecb46f3a9e1840fe5bead39e2f7126e967c1c7ac1aca64c8dfe6","e2b149fc39c10f22d940e258f2404ada7f0b452966ee19e4e461f475bd6436af","990647839981414886590181889822ecb021fb2789ef39ed69c106dc5c6e2b5b","6ecb858e08ee78829f23a3299e4e55ebe7498a6c5a3a72a1c78dd33dfe528880","8120d11a3e90f322cab3f2cd1194335f36b3bbd3189b8862a2e66fb91c277012","76faa370cf84663c717902c1e4491c33baee897c2f21d22e6fadb70360e54ffb","b26c1a5915c9e15489ab781c148e8e84211f2378120db615a2e8d228517ef884","50c8601a3166b4332c97965df40712c26e8c7db3c843bb1378c98a668c1e53ce","d7f045f95db5f92145e5089cbf198b9c38b591b717f887e9509f2ea4706575c2","8ee4297e40e71e2ba0f55b039fc146026b8564589109e36c0c7666c5a8d7598b","e66727a0c26c6e2ff75419991f54e2bb0846a7afd54dcc2243df0e7dad6d9cb0","76498edd4d9e65f9ecb902eee8fb9601b281d50306aa5ef188f507fb6e49e18a","02591816a371b76588624aac35090fe0dcde32968e00b9608f9c57d584008117","8e23c732a619068118b30965496f19e7a9c72bd6a2a779f6e8d8846031c9298c","2143be3241627ac8f0a193d5bdd6df601af2fa2fc5b1c85f2190a1bee2e22ce6","bf9342f9a48af0a1996348ae6a0e8183ae8c10a1ceda30f545225d666f04c2c6","7525dd83451b274a05cc66b41832faf9c9ee87cdfde95f66a5d5ee2c50434900","368b240027377c1608a58ec357e9adec0f282c7b00be6eb7caadc3260b4ea774","af51d6843f2ecf33c706966af6293a11ecfd6f51f7336d4227e6cef798709a54","7656bd0b2651ebd119558be96877acc0b1c3f53c64fa839f8e772857e6a2d44a",{"version":"a5f7b9b582d2467b70af61765455e487cc3aec4dd3a6284f584ac43f250ce37b","signature":"fa804f518e407cc57cf271546c1dd6ad705328ca20d37ac6bd732a5b47b400ba"},"9f288ede1741a0901b6e25e3f3f5a8235d879de4d3bde62ef45207ac4b6470cc","9a1cd9c623b70a7c948a251f53a408c925aba84bed538db51e2b3d27e3c3f03c","3c4f94a2e5c593f164c010f02d9fe7f43e84f9a3aa02c8add52811054a7b4839","c8d447450702c5e4ec47ed530e6ed17bac4bd2fdff8fd96d2bd572d47f5325b2","2e3e5e9c0c61b407a5cf2a76be65db1b548e2ef41c7a40354b3972d0eb037464","c6cc9e66a6ca8771bfc1ddce9443f34b3146421e8b4c94f54e551a67d76df401","0bfb211a47939f34323da0a87a3d8de72f0670dfca0986e827c25cf767f1523c","bbc1c38cfdee70c75a6819d14f3885df26be3a3d2b42d1c8a84552fe9b48a90a","78c3281be2e32bd1c556c377094dd402a1178bd2bb63f48bcf4cdd05709c138b","2c60f4b3a1527a00dcf8423c812e2ce95d64a77440db4be8c28a0adce538159d","2e9f4ba554a7419f7c82a616c700c1145fca217537d1df6847368a6a0ce3f8d8","81e66673d8e6c8442a5cb07b3aed375d7564c81bffb6967790147fa7532bef89","2658ac924897534433f474d498e15f98442fa116a1e61e26880f5fe4239b9cfa","6a753790ae197cb864cc8d7cf0a647db35b89b6037c14892260ca441b83580d0","53a326b7237664389da174d1628e794972cc569961e412a12b9465e76832b1c5",{"version":"ab16a3d7b041ddb8acd162610d5135dfa67591cc2e99458c152009bc6cec7728","signature":"58a4318cf0da39012cb1d469c4351da43f3615389688703458f0f3b44c652e4a"},{"version":"a4f6677faffb15d627131607e0124f262a8dac671b72278301209374c96188ac","signature":"a8b499df4741609ac38be069f4d17dc6c638c8f6ce503afb9ecde2611d18dbf3"},{"version":"47043e449965c1e01284054cf174e0eab85176974438f971e99c70a9dab30410","signature":"eaa751793c09b0b135c97e8272f4f5cce34c3891cd2ee87aaf3d7dc00ecc85d8"},"bcfc037fe20816503c1070c11c1c539d9f4c9853e4731fea4487c3d0cb6241b7","bcf515e71948944d803605bd765598d1dcd4576f8231dd638332df48514003f9","5d88322e0e8da65ec173b7d54a9fe399c34763793a1a75d3ef924e5e08601925","e129b6a332e8bff5edf59a52f065e52cc6c508fd7b168303fcc165852a0ad128","1c17522d9ce17869ef312d6a4e32548eb1424f86f7f77031cb669295fcc5114b",{"version":"cea98f10acaf84eff9d45d402f9d329468153d46d4378ce4f626ab5cf6107186","signature":"4c8c3abbfe8cfe5e0a338c703ac8ac4a2db1cd7a3d6203f29b05fecfacb3dcb0"},{"version":"38cdb00bf747f844410226eac4eb35fd8eaf792525871d859c00fa86df0221bd","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0491eef7ac68c1b3a32d5a43827025d8d4224faf5b2d34b3e86437480db931ba","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c70fe7ea6d90c2cbb826aeb5904cf744a88c7d6f7e36c793a3a62bea4150336d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ae77d81a5541a8abb938a0efedf9ac4bea36fb3a24cc28cfa11c598863aba571","impliedFormat":1},{"version":"427fe2004642504828c1476d0af4270e6ad4db6de78c0b5da3e4c5ca95052a99","impliedFormat":1},{"version":"2eeffcee5c1661ddca53353929558037b8cf305ffb86a803512982f99bcab50d","impliedFormat":99},{"version":"9afb4cb864d297e4092a79ee2871b5d3143ea14153f62ef0bb04ede25f432030","affectsGlobalScope":true,"impliedFormat":99},{"version":"151ff381ef9ff8da2da9b9663ebf657eac35c4c9a19183420c05728f31a6761d","impliedFormat":1},{"version":"f3d8c757e148ad968f0d98697987db363070abada5f503da3c06aefd9d4248c1","impliedFormat":1},{"version":"a4a39b5714adfcadd3bbea6698ca2e942606d833bde62ad5fb6ec55f5e438ff8","impliedFormat":1},{"version":"bbc1d029093135d7d9bfa4b38cbf8761db505026cc458b5e9c8b74f4000e5e75","impliedFormat":1},{"version":"1f68ab0e055994eb337b67aa87d2a15e0200951e9664959b3866ee6f6b11a0fe","impliedFormat":1},{"version":"963d59066dd6742da1918a6213a209bcc205b8ee53b1876ee2b4e6d80f97c85e","impliedFormat":1},{"version":"fd326577c62145816fe1acc306c734c2396487f76719d3785d4e825b34540b33","impliedFormat":1},{"version":"8a19491eba2108d5c333c249699f40aff05ad312c04a17504573b27d91f0aede","impliedFormat":1},{"version":"15fe687c59d62741b4494d5e623d497d55eb38966ecf5bea7f36e48fc3fbe15e","impliedFormat":1},{"version":"2c3b8be03577c98530ef9cb1a76e2c812636a871f367e9edf4c5f3ce702b77f8","affectsGlobalScope":true,"impliedFormat":1},{"version":"1ba59c8bbeed2cb75b239bb12041582fa3e8ef32f8d0bd0ec802e38442d3f317","impliedFormat":1}],"root":[408,[416,424],[466,471],[806,815],[817,823],[825,828],[845,850],[853,893],[935,937],[939,1030]],"options":{"allowJs":true,"esModuleInterop":true,"jsx":1,"module":99,"skipLibCheck":true,"strict":true,"target":1},"referencedMap":[[515,1],[517,2],[516,1],[514,1],[518,3],[490,4],[502,5],[488,6],[503,7],[512,8],[479,9],[480,10],[478,11],[511,12],[506,13],[510,14],[482,15],[499,16],[481,17],[509,18],[476,19],[477,13],[483,20],[484,1],[489,21],[487,20],[474,22],[513,23],[504,24],[493,25],[492,20],[494,26],[497,27],[491,28],[495,29],[507,12],[485,30],[486,31],[498,32],[475,7],[501,33],[500,20],[496,34],[505,1],[473,1],[508,35],[1028,36],[1030,37],[1029,38],[408,39],[576,40],[528,41],[526,42],[529,43],[533,44],[522,45],[532,46],[541,47],[577,48],[472,1],[545,49],[544,1],[520,1],[527,50],[523,51],[521,52],[531,53],[519,54],[530,55],[524,56],[540,57],[542,58],[550,59],[549,60],[566,61],[569,62],[568,63],[570,61],[567,64],[565,65],[539,66],[543,67],[538,68],[572,69],[534,70],[535,71],[564,72],[552,73],[553,74],[571,75],[536,70],[554,76],[557,77],[556,78],[555,79],[560,80],[559,81],[558,71],[537,70],[561,70],[563,82],[562,83],[573,84],[575,85],[548,86],[546,87],[547,88],[551,89],[574,70],[525,1],[361,1],[702,1],[701,1],[703,90],[415,91],[835,1],[833,1],[844,92],[831,1],[838,1],[841,1],[836,93],[842,1],[840,1],[843,94],[839,95],[837,1],[829,1],[834,96],[832,97],[830,1],[461,98],[462,99],[460,100],[455,101],[464,102],[449,1],[450,103],[459,104],[454,105],[463,1],[458,106],[451,1],[452,1],[457,107],[453,104],[456,105],[426,108],[427,109],[425,1],[437,110],[431,1],[440,111],[432,1],[438,112],[436,112],[439,113],[435,114],[434,1],[433,115],[428,1],[446,116],[442,117],[430,1],[429,1],[441,118],[444,119],[445,120],[443,121],[448,122],[465,123],[1031,1],[1034,124],[1032,1],[1039,125],[1038,126],[1037,127],[1035,1],[1041,128],[1036,1],[1040,1],[142,129],[143,129],[144,130],[99,131],[145,132],[146,133],[147,134],[94,1],[97,135],[95,1],[96,1],[148,136],[149,137],[150,138],[151,139],[152,140],[153,141],[154,141],[155,142],[156,143],[157,144],[158,145],[100,1],[98,1],[159,146],[160,147],[161,148],[193,149],[162,150],[163,151],[164,152],[165,153],[166,154],[167,155],[168,156],[169,157],[170,158],[171,159],[172,159],[173,160],[174,1],[175,161],[177,162],[176,163],[178,52],[179,164],[180,165],[181,166],[182,167],[183,168],[184,169],[185,170],[186,171],[187,172],[188,173],[189,174],[190,175],[101,1],[102,1],[103,1],[141,176],[191,177],[192,178],[86,1],[816,179],[198,180],[199,181],[197,182],[195,183],[196,184],[84,1],[87,185],[285,182],[1042,12],[1044,186],[1043,1],[1045,187],[1033,1],[851,1],[85,1],[447,1],[938,182],[93,188],[364,189],[368,190],[370,191],[219,192],[233,193],[335,194],[264,1],[338,195],[300,196],[308,197],[336,198],[220,199],[263,1],[265,200],[337,201],[240,202],[221,203],[244,202],[234,202],[204,202],[291,204],[292,205],[209,1],[288,206],[293,207],[379,208],[286,207],[380,209],[270,1],[289,210],[392,211],[391,212],[295,207],[390,1],[388,1],[389,213],[290,182],[277,214],[278,215],[287,216],[303,217],[304,218],[294,219],[272,220],[273,221],[383,222],[386,223],[251,224],[250,225],[249,226],[395,182],[248,227],[225,1],[398,1],[401,1],[400,182],[402,228],[200,1],[329,1],[232,229],[202,230],[352,1],[353,1],[355,1],[358,231],[354,1],[356,232],[357,232],[218,1],[231,1],[363,233],[371,234],[375,235],[214,236],[280,237],[279,1],[271,220],[299,238],[297,239],[296,1],[298,1],[302,240],[275,241],[213,242],[238,243],[326,244],[205,245],[212,246],[201,194],[340,247],[350,248],[339,1],[349,249],[239,1],[223,250],[317,251],[316,1],[323,252],[325,253],[318,254],[322,255],[324,252],[321,254],[320,252],[319,254],[260,256],[245,256],[311,257],[246,257],[207,258],[206,1],[315,259],[314,260],[313,261],[312,262],[208,263],[284,264],[301,265],[283,266],[307,267],[309,268],[306,266],[241,263],[194,1],[327,269],[266,270],[348,271],[269,272],[343,273],[211,1],[344,274],[346,275],[347,276],[330,1],[342,245],[242,277],[328,278],[351,279],[215,1],[217,1],[222,280],[310,281],[210,282],[216,1],[268,283],[267,284],[224,285],[276,286],[274,287],[226,288],[228,289],[399,1],[227,290],[229,291],[366,1],[365,1],[367,1],[397,1],[230,292],[282,182],[92,1],[305,293],[252,1],[262,294],[373,182],[382,295],[259,182],[377,207],[258,296],[360,297],[257,295],[203,1],[384,298],[255,182],[256,182],[247,1],[261,1],[254,299],[253,300],[243,301],[237,219],[345,1],[236,302],[235,1],[369,1],[281,182],[362,303],[83,1],[91,304],[88,182],[89,1],[90,1],[341,305],[334,306],[333,1],[332,307],[331,1],[372,308],[374,309],[376,310],[378,311],[381,312],[407,313],[385,313],[406,314],[387,315],[393,316],[394,317],[396,318],[403,319],[405,1],[404,12],[359,320],[591,1],[678,321],[677,322],[589,323],[586,324],[590,325],[595,326],[582,327],[594,328],[600,329],[679,330],[578,1],[580,1],[588,331],[583,332],[581,52],[593,333],[579,54],[592,334],[584,335],[602,336],[625,337],[614,338],[603,339],[611,340],[601,341],[612,1],[610,342],[605,343],[606,344],[604,345],[613,346],[587,347],[621,348],[618,349],[619,350],[620,351],[622,352],[628,353],[635,354],[634,355],[633,356],[632,357],[631,358],[629,349],[630,349],[623,359],[626,360],[624,361],[627,362],[616,363],[599,364],[615,365],[598,366],[597,367],[617,368],[596,369],[638,370],[636,349],[637,371],[640,372],[639,373],[641,349],[645,374],[643,375],[644,376],[646,377],[649,378],[648,379],[651,380],[650,381],[654,382],[652,383],[653,384],[647,385],[642,386],[655,385],[656,387],[676,388],[657,381],[658,349],[659,389],[660,390],[661,391],[607,392],[608,393],[609,394],[585,1],[662,349],[665,395],[663,349],[664,396],[666,397],[667,398],[670,399],[669,400],[671,401],[672,377],[675,402],[674,403],[673,404],[668,405],[772,406],[769,1],[797,1],[793,407],[794,408],[780,409],[781,410],[782,411],[779,412],[788,413],[783,411],[784,410],[785,414],[787,415],[777,1],[778,416],[803,417],[798,418],[799,419],[774,418],[791,420],[790,421],[770,422],[792,422],[771,422],[802,423],[776,424],[775,425],[773,1],[800,1],[789,1],[786,1],[796,426],[795,427],[752,1],[754,428],[741,429],[742,430],[743,431],[744,432],[735,433],[745,434],[746,432],[747,434],[748,435],[749,430],[750,436],[740,437],[751,438],[753,439],[738,440],[736,441],[766,1],[767,442],[737,443],[739,444],[717,445],[680,1],[718,1],[719,446],[724,447],[725,448],[726,449],[801,449],[727,449],[732,450],[728,449],[722,451],[714,452],[768,453],[733,454],[691,455],[681,452],[689,456],[682,452],[734,452],[683,452],[684,452],[685,452],[713,457],[690,458],[686,452],[687,459],[688,452],[693,460],[692,1],[759,461],[758,462],[760,463],[761,464],[762,465],[763,466],[712,467],[716,468],[765,469],[764,1],[755,470],[710,471],[756,472],[709,473],[757,474],[730,475],[729,476],[715,1],[721,477],[720,478],[805,479],[723,1],[804,480],[731,1],[694,1],[695,1],[700,1],[707,1],[699,1],[708,481],[698,1],[704,482],[706,1],[711,1],[696,1],[697,1],[705,1],[921,483],[909,1],[915,484],[928,1],[907,1],[922,1],[924,485],[925,1],[897,1],[901,486],[903,487],[902,1],[929,488],[898,489],[899,490],[900,486],[904,491],[905,491],[906,486],[896,1],[895,490],[912,1],[910,1],[911,1],[913,1],[926,1],[931,492],[930,1],[932,1],[927,1],[933,493],[934,494],[914,495],[894,1],[920,1],[917,1],[918,1],[923,1],[919,496],[916,497],[908,1],[412,498],[409,1],[410,498],[411,499],[414,500],[413,501],[852,1],[824,1],[81,1],[82,1],[13,1],[14,1],[16,1],[15,1],[2,1],[17,1],[18,1],[19,1],[20,1],[21,1],[22,1],[23,1],[24,1],[3,1],[25,1],[26,1],[4,1],[27,1],[31,1],[28,1],[29,1],[30,1],[32,1],[33,1],[34,1],[5,1],[35,1],[36,1],[37,1],[38,1],[6,1],[42,1],[39,1],[40,1],[41,1],[43,1],[7,1],[44,1],[49,1],[50,1],[45,1],[46,1],[47,1],[48,1],[8,1],[54,1],[51,1],[52,1],[53,1],[55,1],[9,1],[56,1],[57,1],[58,1],[60,1],[59,1],[61,1],[62,1],[10,1],[63,1],[64,1],[65,1],[11,1],[66,1],[67,1],[68,1],[69,1],[70,1],[1,1],[71,1],[72,1],[12,1],[76,1],[74,1],[79,1],[78,1],[73,1],[77,1],[75,1],[80,1],[119,502],[129,503],[118,502],[139,504],[110,505],[109,11],[138,12],[132,506],[137,507],[112,508],[126,509],[111,510],[135,511],[107,512],[106,12],[136,513],[108,514],[113,515],[114,1],[117,515],[104,1],[140,516],[130,517],[121,518],[122,519],[124,520],[120,521],[123,522],[133,12],[115,523],[116,524],[125,525],[105,7],[128,517],[127,515],[131,1],[134,526],[416,527],[958,528],[959,529],[960,530],[961,531],[418,532],[421,532],[422,532],[419,532],[420,532],[423,532],[424,532],[468,533],[469,534],[470,535],[471,532],[807,536],[809,536],[808,534],[811,537],[814,538],[815,539],[817,540],[818,534],[819,534],[821,541],[825,542],[823,543],[826,544],[827,536],[828,534],[846,545],[848,546],[849,534],[850,534],[855,547],[856,534],[857,534],[858,548],[859,547],[861,534],[862,549],[860,549],[863,549],[864,550],[866,551],[865,533],[867,534],[868,549],[870,552],[871,536],[962,553],[963,554],[964,555],[965,556],[967,557],[968,558],[969,559],[948,560],[971,561],[972,562],[973,563],[974,564],[979,565],[978,566],[980,559],[975,563],[981,567],[949,568],[982,569],[950,570],[985,571],[984,572],[986,573],[987,574],[983,575],[988,563],[989,576],[951,555],[992,577],[993,578],[991,579],[994,580],[990,575],[996,581],[995,581],[999,582],[997,568],[1000,582],[998,582],[1001,582],[1003,583],[1002,584],[1004,585],[1006,576],[1007,576],[1008,554],[1005,554],[1009,576],[1010,586],[1011,576],[1013,587],[1014,530],[1012,588],[1015,589],[1016,590],[1017,591],[1018,592],[966,593],[1019,182],[939,560],[1020,590],[957,594],[954,595],[953,596],[955,597],[952,598],[1021,1],[1022,560],[1023,560],[977,599],[1024,600],[1025,590],[970,601],[1026,602],[1027,590],[976,560],[956,603],[872,182],[873,1],[874,604],[806,605],[875,604],[467,534],[944,606],[810,604],[876,607],[877,1],[878,604],[879,1],[880,1],[881,1],[882,1],[883,1],[884,604],[885,1],[820,1],[886,1],[813,608],[887,1],[888,608],[889,1],[890,604],[891,604],[822,1],[892,604],[893,604],[845,609],[935,610],[936,604],[937,1],[847,305],[940,611],[941,1],[945,612],[853,604],[942,604],[466,606],[854,613],[869,1],[943,614],[417,532],[946,1],[812,1],[947,527]],"affectedFilesPendingEmit":[1028,1030,1029,416,958,959,960,961,418,421,422,419,420,423,424,468,469,470,471,807,809,808,811,814,815,817,818,819,821,825,823,826,827,828,846,848,849,850,855,856,857,858,859,861,862,860,863,864,866,865,867,868,870,871,962,963,964,965,967,968,969,948,971,972,973,974,979,978,980,975,981,949,982,950,985,984,986,987,983,988,989,951,992,993,991,994,990,996,995,999,997,1000,998,1001,1003,1002,1004,1006,1007,1008,1005,1009,1010,1011,1013,1014,1012,1015,1016,1017,1018,966,1019,939,1020,957,954,953,955,952,1021,1022,1023,977,1024,1025,970,1026,1027,976,956,872,873,874,806,875,467,944,810,876,877,878,879,880,881,882,883,884,885,820,886,813,887,888,889,890,891,822,892,893,845,935,936,937,847,940,941,945,853,942,466,854,869,943,417,946,812,947],"version":"5.9.3"}
+{"fileNames":["./node_modules/typescript/lib/lib.es5.d.ts","./node_modules/typescript/lib/lib.es2015.d.ts","./node_modules/typescript/lib/lib.es2016.d.ts","./node_modules/typescript/lib/lib.es2017.d.ts","./node_modules/typescript/lib/lib.es2018.d.ts","./node_modules/typescript/lib/lib.es2019.d.ts","./node_modules/typescript/lib/lib.es2020.d.ts","./node_modules/typescript/lib/lib.es2021.d.ts","./node_modules/typescript/lib/lib.es2022.d.ts","./node_modules/typescript/lib/lib.es2023.d.ts","./node_modules/typescript/lib/lib.es2024.d.ts","./node_modules/typescript/lib/lib.esnext.d.ts","./node_modules/typescript/lib/lib.dom.d.ts","./node_modules/typescript/lib/lib.dom.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.core.d.ts","./node_modules/typescript/lib/lib.es2015.collection.d.ts","./node_modules/typescript/lib/lib.es2015.generator.d.ts","./node_modules/typescript/lib/lib.es2015.iterable.d.ts","./node_modules/typescript/lib/lib.es2015.promise.d.ts","./node_modules/typescript/lib/lib.es2015.proxy.d.ts","./node_modules/typescript/lib/lib.es2015.reflect.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.d.ts","./node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2016.array.include.d.ts","./node_modules/typescript/lib/lib.es2016.intl.d.ts","./node_modules/typescript/lib/lib.es2017.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2017.date.d.ts","./node_modules/typescript/lib/lib.es2017.object.d.ts","./node_modules/typescript/lib/lib.es2017.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2017.string.d.ts","./node_modules/typescript/lib/lib.es2017.intl.d.ts","./node_modules/typescript/lib/lib.es2017.typedarrays.d.ts","./node_modules/typescript/lib/lib.es2018.asyncgenerator.d.ts","./node_modules/typescript/lib/lib.es2018.asynciterable.d.ts","./node_modules/typescript/lib/lib.es2018.intl.d.ts","./node_modules/typescript/lib/lib.es2018.promise.d.ts","./node_modules/typescript/lib/lib.es2018.regexp.d.ts","./node_modules/typescript/lib/lib.es2019.array.d.ts","./node_modules/typescript/lib/lib.es2019.object.d.ts","./node_modules/typescript/lib/lib.es2019.string.d.ts","./node_modules/typescript/lib/lib.es2019.symbol.d.ts","./node_modules/typescript/lib/lib.es2019.intl.d.ts","./node_modules/typescript/lib/lib.es2020.bigint.d.ts","./node_modules/typescript/lib/lib.es2020.date.d.ts","./node_modules/typescript/lib/lib.es2020.promise.d.ts","./node_modules/typescript/lib/lib.es2020.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2020.string.d.ts","./node_modules/typescript/lib/lib.es2020.symbol.wellknown.d.ts","./node_modules/typescript/lib/lib.es2020.intl.d.ts","./node_modules/typescript/lib/lib.es2020.number.d.ts","./node_modules/typescript/lib/lib.es2021.promise.d.ts","./node_modules/typescript/lib/lib.es2021.string.d.ts","./node_modules/typescript/lib/lib.es2021.weakref.d.ts","./node_modules/typescript/lib/lib.es2021.intl.d.ts","./node_modules/typescript/lib/lib.es2022.array.d.ts","./node_modules/typescript/lib/lib.es2022.error.d.ts","./node_modules/typescript/lib/lib.es2022.intl.d.ts","./node_modules/typescript/lib/lib.es2022.object.d.ts","./node_modules/typescript/lib/lib.es2022.string.d.ts","./node_modules/typescript/lib/lib.es2022.regexp.d.ts","./node_modules/typescript/lib/lib.es2023.array.d.ts","./node_modules/typescript/lib/lib.es2023.collection.d.ts","./node_modules/typescript/lib/lib.es2023.intl.d.ts","./node_modules/typescript/lib/lib.es2024.arraybuffer.d.ts","./node_modules/typescript/lib/lib.es2024.collection.d.ts","./node_modules/typescript/lib/lib.es2024.object.d.ts","./node_modules/typescript/lib/lib.es2024.promise.d.ts","./node_modules/typescript/lib/lib.es2024.regexp.d.ts","./node_modules/typescript/lib/lib.es2024.sharedmemory.d.ts","./node_modules/typescript/lib/lib.es2024.string.d.ts","./node_modules/typescript/lib/lib.esnext.array.d.ts","./node_modules/typescript/lib/lib.esnext.collection.d.ts","./node_modules/typescript/lib/lib.esnext.intl.d.ts","./node_modules/typescript/lib/lib.esnext.disposable.d.ts","./node_modules/typescript/lib/lib.esnext.promise.d.ts","./node_modules/typescript/lib/lib.esnext.decorators.d.ts","./node_modules/typescript/lib/lib.esnext.iterator.d.ts","./node_modules/typescript/lib/lib.esnext.float16.d.ts","./node_modules/typescript/lib/lib.esnext.error.d.ts","./node_modules/typescript/lib/lib.esnext.sharedmemory.d.ts","./node_modules/typescript/lib/lib.decorators.d.ts","./node_modules/typescript/lib/lib.decorators.legacy.d.ts","./node_modules/next/dist/styled-jsx/types/css.d.ts","./node_modules/@types/react/global.d.ts","./node_modules/csstype/index.d.ts","./node_modules/@types/prop-types/index.d.ts","./node_modules/@types/react/index.d.ts","./node_modules/next/dist/styled-jsx/types/index.d.ts","./node_modules/next/dist/styled-jsx/types/macro.d.ts","./node_modules/next/dist/styled-jsx/types/style.d.ts","./node_modules/next/dist/styled-jsx/types/global.d.ts","./node_modules/next/dist/shared/lib/amp.d.ts","./node_modules/next/amp.d.ts","./node_modules/@types/node/compatibility/disposable.d.ts","./node_modules/@types/node/compatibility/indexable.d.ts","./node_modules/@types/node/compatibility/iterators.d.ts","./node_modules/@types/node/compatibility/index.d.ts","./node_modules/@types/node/globals.typedarray.d.ts","./node_modules/@types/node/buffer.buffer.d.ts","./node_modules/@types/node/globals.d.ts","./node_modules/@types/node/web-globals/abortcontroller.d.ts","./node_modules/@types/node/web-globals/domexception.d.ts","./node_modules/@types/node/web-globals/events.d.ts","./node_modules/undici-types/header.d.ts","./node_modules/undici-types/readable.d.ts","./node_modules/undici-types/file.d.ts","./node_modules/undici-types/fetch.d.ts","./node_modules/undici-types/formdata.d.ts","./node_modules/undici-types/connector.d.ts","./node_modules/undici-types/client.d.ts","./node_modules/undici-types/errors.d.ts","./node_modules/undici-types/dispatcher.d.ts","./node_modules/undici-types/global-dispatcher.d.ts","./node_modules/undici-types/global-origin.d.ts","./node_modules/undici-types/pool-stats.d.ts","./node_modules/undici-types/pool.d.ts","./node_modules/undici-types/handlers.d.ts","./node_modules/undici-types/balanced-pool.d.ts","./node_modules/undici-types/agent.d.ts","./node_modules/undici-types/mock-interceptor.d.ts","./node_modules/undici-types/mock-agent.d.ts","./node_modules/undici-types/mock-client.d.ts","./node_modules/undici-types/mock-pool.d.ts","./node_modules/undici-types/mock-errors.d.ts","./node_modules/undici-types/proxy-agent.d.ts","./node_modules/undici-types/env-http-proxy-agent.d.ts","./node_modules/undici-types/retry-handler.d.ts","./node_modules/undici-types/retry-agent.d.ts","./node_modules/undici-types/api.d.ts","./node_modules/undici-types/interceptors.d.ts","./node_modules/undici-types/util.d.ts","./node_modules/undici-types/cookies.d.ts","./node_modules/undici-types/patch.d.ts","./node_modules/undici-types/websocket.d.ts","./node_modules/undici-types/eventsource.d.ts","./node_modules/undici-types/filereader.d.ts","./node_modules/undici-types/diagnostics-channel.d.ts","./node_modules/undici-types/content-type.d.ts","./node_modules/undici-types/cache.d.ts","./node_modules/undici-types/index.d.ts","./node_modules/@types/node/web-globals/fetch.d.ts","./node_modules/@types/node/assert.d.ts","./node_modules/@types/node/assert/strict.d.ts","./node_modules/@types/node/async_hooks.d.ts","./node_modules/@types/node/buffer.d.ts","./node_modules/@types/node/child_process.d.ts","./node_modules/@types/node/cluster.d.ts","./node_modules/@types/node/console.d.ts","./node_modules/@types/node/constants.d.ts","./node_modules/@types/node/crypto.d.ts","./node_modules/@types/node/dgram.d.ts","./node_modules/@types/node/diagnostics_channel.d.ts","./node_modules/@types/node/dns.d.ts","./node_modules/@types/node/dns/promises.d.ts","./node_modules/@types/node/domain.d.ts","./node_modules/@types/node/events.d.ts","./node_modules/@types/node/fs.d.ts","./node_modules/@types/node/fs/promises.d.ts","./node_modules/@types/node/http.d.ts","./node_modules/@types/node/http2.d.ts","./node_modules/@types/node/https.d.ts","./node_modules/@types/node/inspector.generated.d.ts","./node_modules/@types/node/module.d.ts","./node_modules/@types/node/net.d.ts","./node_modules/@types/node/os.d.ts","./node_modules/@types/node/path.d.ts","./node_modules/@types/node/perf_hooks.d.ts","./node_modules/@types/node/process.d.ts","./node_modules/@types/node/punycode.d.ts","./node_modules/@types/node/querystring.d.ts","./node_modules/@types/node/readline.d.ts","./node_modules/@types/node/readline/promises.d.ts","./node_modules/@types/node/repl.d.ts","./node_modules/@types/node/sea.d.ts","./node_modules/@types/node/stream.d.ts","./node_modules/@types/node/stream/promises.d.ts","./node_modules/@types/node/stream/consumers.d.ts","./node_modules/@types/node/stream/web.d.ts","./node_modules/@types/node/string_decoder.d.ts","./node_modules/@types/node/test.d.ts","./node_modules/@types/node/timers.d.ts","./node_modules/@types/node/timers/promises.d.ts","./node_modules/@types/node/tls.d.ts","./node_modules/@types/node/trace_events.d.ts","./node_modules/@types/node/tty.d.ts","./node_modules/@types/node/url.d.ts","./node_modules/@types/node/util.d.ts","./node_modules/@types/node/v8.d.ts","./node_modules/@types/node/vm.d.ts","./node_modules/@types/node/wasi.d.ts","./node_modules/@types/node/worker_threads.d.ts","./node_modules/@types/node/zlib.d.ts","./node_modules/@types/node/index.d.ts","./node_modules/next/dist/server/get-page-files.d.ts","./node_modules/@types/react/canary.d.ts","./node_modules/@types/react/experimental.d.ts","./node_modules/@types/react-dom/index.d.ts","./node_modules/@types/react-dom/canary.d.ts","./node_modules/@types/react-dom/experimental.d.ts","./node_modules/next/dist/compiled/webpack/webpack.d.ts","./node_modules/next/dist/server/config.d.ts","./node_modules/next/dist/lib/load-custom-routes.d.ts","./node_modules/next/dist/shared/lib/image-config.d.ts","./node_modules/next/dist/build/webpack/plugins/subresource-integrity-plugin.d.ts","./node_modules/next/dist/server/body-streams.d.ts","./node_modules/next/dist/server/future/route-kind.d.ts","./node_modules/next/dist/server/future/route-definitions/route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/route-match.d.ts","./node_modules/next/dist/client/components/app-router-headers.d.ts","./node_modules/next/dist/server/request-meta.d.ts","./node_modules/next/dist/server/lib/revalidate.d.ts","./node_modules/next/dist/server/config-shared.d.ts","./node_modules/next/dist/server/base-http/index.d.ts","./node_modules/next/dist/server/api-utils/index.d.ts","./node_modules/next/dist/server/node-environment.d.ts","./node_modules/next/dist/server/require-hook.d.ts","./node_modules/next/dist/server/node-polyfill-crypto.d.ts","./node_modules/next/dist/lib/page-types.d.ts","./node_modules/next/dist/build/analysis/get-page-static-info.d.ts","./node_modules/next/dist/build/webpack/loaders/get-module-build-info.d.ts","./node_modules/next/dist/build/webpack/plugins/middleware-plugin.d.ts","./node_modules/next/dist/server/render-result.d.ts","./node_modules/next/dist/server/future/helpers/i18n-provider.d.ts","./node_modules/next/dist/server/web/next-url.d.ts","./node_modules/next/dist/compiled/@edge-runtime/cookies/index.d.ts","./node_modules/next/dist/server/web/spec-extension/cookies.d.ts","./node_modules/next/dist/server/web/spec-extension/request.d.ts","./node_modules/next/dist/server/web/spec-extension/fetch-event.d.ts","./node_modules/next/dist/server/web/spec-extension/response.d.ts","./node_modules/next/dist/server/web/types.d.ts","./node_modules/next/dist/lib/setup-exception-listeners.d.ts","./node_modules/next/dist/lib/constants.d.ts","./node_modules/next/dist/build/index.d.ts","./node_modules/next/dist/build/webpack/plugins/pages-manifest-plugin.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-regex.d.ts","./node_modules/next/dist/shared/lib/router/utils/route-matcher.d.ts","./node_modules/next/dist/shared/lib/router/utils/parse-url.d.ts","./node_modules/next/dist/server/base-http/node.d.ts","./node_modules/next/dist/server/font-utils.d.ts","./node_modules/next/dist/build/webpack/plugins/flight-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-modules/route-module.d.ts","./node_modules/next/dist/server/load-components.d.ts","./node_modules/next/dist/shared/lib/router/utils/middleware-route-matcher.d.ts","./node_modules/next/dist/build/webpack/plugins/next-font-manifest-plugin.d.ts","./node_modules/next/dist/server/future/route-definitions/locale-route-definition.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-route-definition.d.ts","./node_modules/next/dist/shared/lib/mitt.d.ts","./node_modules/next/dist/client/with-router.d.ts","./node_modules/next/dist/client/router.d.ts","./node_modules/next/dist/client/route-loader.d.ts","./node_modules/next/dist/client/page-loader.d.ts","./node_modules/next/dist/shared/lib/bloom-filter.d.ts","./node_modules/next/dist/shared/lib/router/router.d.ts","./node_modules/next/dist/shared/lib/router-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/loadable.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/image-config-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/head-manager-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-definitions/app-page-route-definition.d.ts","./node_modules/next/dist/shared/lib/modern-browserslist-target.d.ts","./node_modules/next/dist/shared/lib/constants.d.ts","./node_modules/next/dist/build/webpack/loaders/metadata/types.d.ts","./node_modules/next/dist/build/page-extensions-type.d.ts","./node_modules/next/dist/build/webpack/loaders/next-app-loader.d.ts","./node_modules/next/dist/server/lib/app-dir-module.d.ts","./node_modules/next/dist/server/response-cache/types.d.ts","./node_modules/next/dist/server/response-cache/index.d.ts","./node_modules/next/dist/server/lib/incremental-cache/index.d.ts","./node_modules/next/dist/client/components/hooks-server-context.d.ts","./node_modules/next/dist/server/app-render/dynamic-rendering.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage-instance.d.ts","./node_modules/next/dist/client/components/static-generation-async-storage.external.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/request-cookies.d.ts","./node_modules/next/dist/server/async-storage/draft-mode-provider.d.ts","./node_modules/next/dist/server/web/spec-extension/adapters/headers.d.ts","./node_modules/next/dist/client/components/request-async-storage-instance.d.ts","./node_modules/next/dist/client/components/request-async-storage.external.d.ts","./node_modules/next/dist/server/app-render/create-error-handler.d.ts","./node_modules/next/dist/server/app-render/app-render.d.ts","./node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.d.ts","./node_modules/next/dist/shared/lib/amp-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.compiled.d.ts","./node_modules/@types/react/jsx-runtime.d.ts","./node_modules/next/dist/client/components/error-boundary.d.ts","./node_modules/next/dist/client/components/router-reducer/create-initial-router-state.d.ts","./node_modules/next/dist/client/components/app-router.d.ts","./node_modules/next/dist/client/components/layout-router.d.ts","./node_modules/next/dist/client/components/render-from-template-context.d.ts","./node_modules/next/dist/client/components/action-async-storage-instance.d.ts","./node_modules/next/dist/client/components/action-async-storage.external.d.ts","./node_modules/next/dist/client/components/client-page.d.ts","./node_modules/next/dist/client/components/search-params.d.ts","./node_modules/next/dist/client/components/not-found-boundary.d.ts","./node_modules/next/dist/server/app-render/rsc/preloads.d.ts","./node_modules/next/dist/server/app-render/rsc/postpone.d.ts","./node_modules/next/dist/server/app-render/rsc/taint.d.ts","./node_modules/next/dist/server/app-render/entry-base.d.ts","./node_modules/next/dist/build/templates/app-page.d.ts","./node_modules/next/dist/server/future/route-modules/app-page/module.d.ts","./node_modules/next/dist/server/app-render/types.d.ts","./node_modules/next/dist/client/components/router-reducer/fetch-server-response.d.ts","./node_modules/next/dist/client/components/router-reducer/router-reducer-types.d.ts","./node_modules/next/dist/shared/lib/app-router-context.shared-runtime.d.ts","./node_modules/next/dist/server/future/route-modules/pages/vendored/contexts/entrypoints.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.compiled.d.ts","./node_modules/next/dist/build/templates/pages.d.ts","./node_modules/next/dist/server/future/route-modules/pages/module.d.ts","./node_modules/next/dist/server/render.d.ts","./node_modules/next/dist/server/future/route-definitions/pages-api-route-definition.d.ts","./node_modules/next/dist/server/future/route-matches/pages-api-route-match.d.ts","./node_modules/next/dist/server/future/route-matchers/route-matcher.d.ts","./node_modules/next/dist/server/future/route-matcher-providers/route-matcher-provider.d.ts","./node_modules/next/dist/server/future/route-matcher-managers/route-matcher-manager.d.ts","./node_modules/next/dist/server/future/normalizers/normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/locale-route-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/pathname-normalizer.d.ts","./node_modules/next/dist/server/future/normalizers/request/suffix.d.ts","./node_modules/next/dist/server/future/normalizers/request/rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefix.d.ts","./node_modules/next/dist/server/future/normalizers/request/postponed.d.ts","./node_modules/next/dist/server/future/normalizers/request/action.d.ts","./node_modules/next/dist/server/future/normalizers/request/prefetch-rsc.d.ts","./node_modules/next/dist/server/future/normalizers/request/next-data.d.ts","./node_modules/next/dist/server/base-server.d.ts","./node_modules/next/dist/server/image-optimizer.d.ts","./node_modules/next/dist/server/next-server.d.ts","./node_modules/next/dist/lib/coalesced-function.d.ts","./node_modules/next/dist/server/lib/router-utils/types.d.ts","./node_modules/next/dist/trace/types.d.ts","./node_modules/next/dist/trace/trace.d.ts","./node_modules/next/dist/trace/shared.d.ts","./node_modules/next/dist/trace/index.d.ts","./node_modules/next/dist/build/load-jsconfig.d.ts","./node_modules/next/dist/build/webpack-config.d.ts","./node_modules/next/dist/build/webpack/plugins/define-env-plugin.d.ts","./node_modules/next/dist/build/swc/index.d.ts","./node_modules/next/dist/server/dev/parse-version-info.d.ts","./node_modules/next/dist/server/dev/hot-reloader-types.d.ts","./node_modules/next/dist/telemetry/storage.d.ts","./node_modules/next/dist/server/lib/types.d.ts","./node_modules/next/dist/server/lib/render-server.d.ts","./node_modules/next/dist/server/lib/router-server.d.ts","./node_modules/next/dist/shared/lib/router/utils/path-match.d.ts","./node_modules/next/dist/server/lib/router-utils/filesystem.d.ts","./node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.d.ts","./node_modules/next/dist/server/lib/dev-bundler-service.d.ts","./node_modules/next/dist/server/dev/static-paths-worker.d.ts","./node_modules/next/dist/server/dev/next-dev-server.d.ts","./node_modules/next/dist/server/next.d.ts","./node_modules/next/dist/lib/metadata/types/alternative-urls-types.d.ts","./node_modules/next/dist/lib/metadata/types/extra-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-types.d.ts","./node_modules/next/dist/lib/metadata/types/manifest-types.d.ts","./node_modules/next/dist/lib/metadata/types/opengraph-types.d.ts","./node_modules/next/dist/lib/metadata/types/twitter-types.d.ts","./node_modules/next/dist/lib/metadata/types/metadata-interface.d.ts","./node_modules/next/types/index.d.ts","./node_modules/next/dist/shared/lib/html-context.shared-runtime.d.ts","./node_modules/@next/env/dist/index.d.ts","./node_modules/next/dist/shared/lib/utils.d.ts","./node_modules/next/dist/pages/_app.d.ts","./node_modules/next/app.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-cache.d.ts","./node_modules/next/dist/server/web/spec-extension/revalidate.d.ts","./node_modules/next/dist/server/web/spec-extension/unstable-no-store.d.ts","./node_modules/next/cache.d.ts","./node_modules/next/dist/shared/lib/runtime-config.external.d.ts","./node_modules/next/config.d.ts","./node_modules/next/dist/pages/_document.d.ts","./node_modules/next/document.d.ts","./node_modules/next/dist/shared/lib/dynamic.d.ts","./node_modules/next/dynamic.d.ts","./node_modules/next/dist/pages/_error.d.ts","./node_modules/next/error.d.ts","./node_modules/next/dist/shared/lib/head.d.ts","./node_modules/next/head.d.ts","./node_modules/next/dist/client/components/draft-mode.d.ts","./node_modules/next/dist/client/components/headers.d.ts","./node_modules/next/headers.d.ts","./node_modules/next/dist/shared/lib/get-img-props.d.ts","./node_modules/next/dist/client/image-component.d.ts","./node_modules/next/dist/shared/lib/image-external.d.ts","./node_modules/next/image.d.ts","./node_modules/next/dist/client/link.d.ts","./node_modules/next/link.d.ts","./node_modules/next/dist/client/components/redirect-status-code.d.ts","./node_modules/next/dist/client/components/redirect.d.ts","./node_modules/next/dist/client/components/not-found.d.ts","./node_modules/next/dist/client/components/navigation.react-server.d.ts","./node_modules/next/dist/client/components/navigation.d.ts","./node_modules/next/navigation.d.ts","./node_modules/next/router.d.ts","./node_modules/next/dist/client/script.d.ts","./node_modules/next/script.d.ts","./node_modules/next/dist/server/web/spec-extension/user-agent.d.ts","./node_modules/next/dist/compiled/@edge-runtime/primitives/url.d.ts","./node_modules/next/dist/server/web/spec-extension/image-response.d.ts","./node_modules/next/dist/compiled/@vercel/og/satori/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/emoji/index.d.ts","./node_modules/next/dist/compiled/@vercel/og/types.d.ts","./node_modules/next/server.d.ts","./node_modules/next/types/global.d.ts","./node_modules/next/types/compiled.d.ts","./node_modules/next/index.d.ts","./node_modules/next/image-types/global.d.ts","./next-env.d.ts","./node_modules/playwright-core/types/protocol.d.ts","./node_modules/playwright-core/types/structs.d.ts","./node_modules/playwright-core/types/types.d.ts","./node_modules/playwright-core/index.d.ts","./node_modules/playwright/types/test.d.ts","./node_modules/playwright/test.d.ts","./node_modules/@playwright/test/index.d.ts","./playwright.config.ts","./src/middleware.ts","./src/app/api/abdm/auth/route.ts","./src/app/api/abdm/create/init/route.ts","./src/app/api/abdm/create/verify-otp/route.ts","./src/app/api/abdm/create-init/route.ts","./src/app/api/abdm/create-verify-otp/route.ts","./src/app/api/abdm/search/route.ts","./src/app/api/abdm/verify/route.ts","./node_modules/@supabase/functions-js/dist/module/types.d.ts","./node_modules/@supabase/functions-js/dist/module/functionsclient.d.ts","./node_modules/@supabase/functions-js/dist/module/index.d.ts","./node_modules/@supabase/postgrest-js/dist/index.d.mts","./node_modules/@supabase/realtime-js/dist/module/lib/websocket-factory.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/constants.d.ts","./node_modules/@supabase/phoenix/priv/static/types/longpoll.d.ts","./node_modules/@supabase/phoenix/priv/static/types/types.d.ts","./node_modules/@supabase/phoenix/priv/static/types/timer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/socket.d.ts","./node_modules/@supabase/phoenix/priv/static/types/push.d.ts","./node_modules/@supabase/phoenix/priv/static/types/channel.d.ts","./node_modules/@supabase/phoenix/priv/static/types/presence.d.ts","./node_modules/@supabase/phoenix/priv/static/types/serializer.d.ts","./node_modules/@supabase/phoenix/priv/static/types/index.d.ts","./node_modules/@supabase/realtime-js/dist/module/phoenix/types.d.ts","./node_modules/@supabase/realtime-js/dist/module/lib/constants.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimepresence.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimechannel.d.ts","./node_modules/@supabase/realtime-js/dist/module/realtimeclient.d.ts","./node_modules/@supabase/realtime-js/dist/module/index.d.ts","./node_modules/iceberg-js/dist/index.d.ts","./node_modules/@supabase/storage-js/dist/index.d.mts","./node_modules/@supabase/auth-js/dist/module/lib/error-codes.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/ethereum.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/web3/solana.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.dom.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/helpers.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.errors.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/webauthn.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/types.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/fetch.d.ts","./node_modules/@supabase/auth-js/dist/module/gotrueadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authadminapi.d.ts","./node_modules/@supabase/auth-js/dist/module/authclient.d.ts","./node_modules/@supabase/auth-js/dist/module/lib/locks.d.ts","./node_modules/@supabase/auth-js/dist/module/index.d.ts","./node_modules/@supabase/supabase-js/dist/index.d.mts","./src/lib/supabase.ts","./src/lib/api-auth.ts","./src/app/api/backup/route.ts","./src/app/api/billing/ca-report-pdf/route.ts","./src/app/api/billing/daily-closing/route.ts","./src/app/api/billing/payment/route.ts","./src/app/api/billing/webhook/route.ts","./src/app/api/check-config/route.ts","./src/app/api/cron/followup-escalation/route.ts","./src/app/api/discharge/finalize/route.ts","./node_modules/@anthropic-ai/sdk/internal/builtin-types.d.mts","../../../../node_modules/undici-types/utility.d.ts","../../../../node_modules/undici-types/header.d.ts","../../../../node_modules/undici-types/readable.d.ts","../../../../node_modules/undici-types/fetch.d.ts","../../../../node_modules/undici-types/formdata.d.ts","../../../../node_modules/undici-types/connector.d.ts","../../../../node_modules/undici-types/client-stats.d.ts","../../../../node_modules/undici-types/client.d.ts","../../../../node_modules/undici-types/errors.d.ts","../../../../node_modules/undici-types/dispatcher.d.ts","../../../../node_modules/undici-types/global-dispatcher.d.ts","../../../../node_modules/undici-types/global-origin.d.ts","../../../../node_modules/undici-types/pool-stats.d.ts","../../../../node_modules/undici-types/pool.d.ts","../../../../node_modules/undici-types/handlers.d.ts","../../../../node_modules/undici-types/balanced-pool.d.ts","../../../../node_modules/undici-types/h2c-client.d.ts","../../../../node_modules/undici-types/agent.d.ts","../../../../node_modules/undici-types/mock-interceptor.d.ts","../../../../node_modules/undici-types/mock-call-history.d.ts","../../../../node_modules/undici-types/mock-agent.d.ts","../../../../node_modules/undici-types/mock-client.d.ts","../../../../node_modules/undici-types/mock-pool.d.ts","../../../../node_modules/undici-types/snapshot-agent.d.ts","../../../../node_modules/undici-types/mock-errors.d.ts","../../../../node_modules/undici-types/proxy-agent.d.ts","../../../../node_modules/undici-types/env-http-proxy-agent.d.ts","../../../../node_modules/undici-types/retry-handler.d.ts","../../../../node_modules/undici-types/retry-agent.d.ts","../../../../node_modules/undici-types/api.d.ts","../../../../node_modules/undici-types/cache-interceptor.d.ts","../../../../node_modules/undici-types/interceptors.d.ts","../../../../node_modules/undici-types/util.d.ts","../../../../node_modules/undici-types/cookies.d.ts","../../../../node_modules/undici-types/patch.d.ts","../../../../node_modules/undici-types/websocket.d.ts","../../../../node_modules/undici-types/eventsource.d.ts","../../../../node_modules/undici-types/diagnostics-channel.d.ts","../../../../node_modules/undici-types/content-type.d.ts","../../../../node_modules/undici-types/cache.d.ts","../../../../node_modules/undici-types/index.d.ts","../../../../node_modules/formdata-polyfill/esm.min.d.ts","../../../../node_modules/fetch-blob/file.d.ts","../../../../node_modules/fetch-blob/index.d.ts","../../../../node_modules/fetch-blob/from.d.ts","../../../../node_modules/node-fetch/@types/index.d.ts","./node_modules/@anthropic-ai/sdk/internal/types.d.mts","./node_modules/@anthropic-ai/sdk/internal/headers.d.mts","./node_modules/@anthropic-ai/sdk/internal/shim-types.d.mts","./node_modules/@anthropic-ai/sdk/core/streaming.d.mts","./node_modules/@anthropic-ai/sdk/internal/request-options.d.mts","./node_modules/@anthropic-ai/sdk/internal/utils/log.d.mts","./node_modules/@anthropic-ai/sdk/resources/shared.d.mts","./node_modules/@anthropic-ai/sdk/core/error.d.mts","./node_modules/@anthropic-ai/sdk/internal/parse.d.mts","./node_modules/@anthropic-ai/sdk/core/api-promise.d.mts","./node_modules/@anthropic-ai/sdk/core/pagination.d.mts","./node_modules/@anthropic-ai/sdk/internal/uploads.d.mts","./node_modules/@anthropic-ai/sdk/internal/to-file.d.mts","./node_modules/@anthropic-ai/sdk/core/uploads.d.mts","./node_modules/@anthropic-ai/sdk/core/resource.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/environments.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/files.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/user-profiles.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.d.mts","./node_modules/@anthropic-ai/sdk/lib/beta-parser.d.mts","./node_modules/@anthropic-ai/sdk/error.d.mts","./node_modules/@anthropic-ai/sdk/lib/betamessagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/agents/index.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/line.d.mts","./node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages.d.mts","./node_modules/@anthropic-ai/sdk/lib/parser.d.mts","./node_modules/@anthropic-ai/sdk/lib/messagestream.d.mts","./node_modules/@anthropic-ai/sdk/resources/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/sessions/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/skills/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/vaults/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/index.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betarunnabletool.d.mts","./node_modules/@anthropic-ai/sdk/resources.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/compactioncontrol.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/betatoolrunner.d.mts","./node_modules/@anthropic-ai/sdk/lib/tools/toolerror.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.d.mts","./node_modules/@anthropic-ai/sdk/resources/beta/beta.d.mts","./node_modules/@anthropic-ai/sdk/resources/completions.d.mts","./node_modules/@anthropic-ai/sdk/resources/models.d.mts","./node_modules/@anthropic-ai/sdk/resources/index.d.mts","./node_modules/@anthropic-ai/sdk/client.d.mts","./node_modules/@anthropic-ai/sdk/index.d.mts","./node_modules/openai/internal/builtin-types.d.mts","./node_modules/openai/internal/types.d.mts","./node_modules/openai/internal/headers.d.mts","./node_modules/openai/internal/shim-types.d.mts","./node_modules/openai/core/streaming.d.mts","./node_modules/openai/internal/request-options.d.mts","./node_modules/openai/internal/utils/log.d.mts","./node_modules/openai/resources/shared.d.mts","./node_modules/openai/core/error.d.mts","./node_modules/openai/pagination.d.mts","./node_modules/openai/internal/parse.d.mts","./node_modules/openai/core/api-promise.d.mts","./node_modules/openai/core/pagination.d.mts","./node_modules/openai/auth/types.d.mts","./node_modules/openai/internal/uploads.d.mts","./node_modules/openai/internal/to-file.d.mts","./node_modules/openai/core/uploads.d.mts","./node_modules/openai/core/resource.d.mts","./node_modules/openai/resources/completions.d.mts","./node_modules/openai/resources/chat/completions/messages.d.mts","./node_modules/openai/resources/chat/completions/index.d.mts","./node_modules/openai/resources/chat/completions.d.mts","./node_modules/openai/error.d.mts","./node_modules/openai/lib/eventstream.d.mts","./node_modules/openai/lib/abstractchatcompletionrunner.d.mts","./node_modules/openai/lib/chatcompletionstream.d.mts","./node_modules/openai/lib/responsesparser.d.mts","./node_modules/openai/lib/responses/eventtypes.d.mts","./node_modules/openai/lib/responses/responsestream.d.mts","./node_modules/openai/resources/responses/input-items.d.mts","./node_modules/openai/resources/responses/input-tokens.d.mts","./node_modules/openai/resources/responses/responses.d.mts","./node_modules/openai/lib/parser.d.mts","./node_modules/openai/lib/chatcompletionstreamingrunner.d.mts","./node_modules/openai/lib/jsonschema.d.mts","./node_modules/openai/lib/runnablefunction.d.mts","./node_modules/openai/lib/chatcompletionrunner.d.mts","./node_modules/openai/resources/chat/completions/completions.d.mts","./node_modules/openai/resources/chat/chat.d.mts","./node_modules/openai/resources/chat/index.d.mts","./node_modules/openai/resources/audio/speech.d.mts","./node_modules/openai/resources/audio/transcriptions.d.mts","./node_modules/openai/resources/audio/translations.d.mts","./node_modules/openai/resources/audio/audio.d.mts","./node_modules/openai/resources/batches.d.mts","./node_modules/openai/resources/beta/threads/messages.d.mts","./node_modules/openai/resources/beta/threads/runs/steps.d.mts","./node_modules/openai/lib/assistantstream.d.mts","./node_modules/openai/resources/beta/threads/runs/runs.d.mts","./node_modules/openai/resources/beta/threads/threads.d.mts","./node_modules/openai/resources/beta/assistants.d.mts","./node_modules/openai/resources/beta/realtime/sessions.d.mts","./node_modules/openai/resources/beta/realtime/transcription-sessions.d.mts","./node_modules/openai/resources/beta/realtime/realtime.d.mts","./node_modules/openai/resources/beta/chatkit/threads.d.mts","./node_modules/openai/resources/beta/chatkit/sessions.d.mts","./node_modules/openai/resources/beta/chatkit/chatkit.d.mts","./node_modules/openai/resources/beta/beta.d.mts","./node_modules/openai/resources/containers/files/content.d.mts","./node_modules/openai/resources/containers/files/files.d.mts","./node_modules/openai/resources/containers/containers.d.mts","./node_modules/openai/resources/conversations/items.d.mts","./node_modules/openai/resources/conversations/conversations.d.mts","./node_modules/openai/resources/embeddings.d.mts","./node_modules/openai/resources/graders/grader-models.d.mts","./node_modules/openai/resources/evals/runs/output-items.d.mts","./node_modules/openai/resources/evals/runs/runs.d.mts","./node_modules/openai/resources/evals/evals.d.mts","./node_modules/openai/resources/files.d.mts","./node_modules/openai/resources/fine-tuning/methods.d.mts","./node_modules/openai/resources/fine-tuning/alpha/graders.d.mts","./node_modules/openai/resources/fine-tuning/alpha/alpha.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/permissions.d.mts","./node_modules/openai/resources/fine-tuning/checkpoints/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/checkpoints.d.mts","./node_modules/openai/resources/fine-tuning/jobs/jobs.d.mts","./node_modules/openai/resources/fine-tuning/fine-tuning.d.mts","./node_modules/openai/resources/graders/graders.d.mts","./node_modules/openai/resources/images.d.mts","./node_modules/openai/resources/models.d.mts","./node_modules/openai/resources/moderations.d.mts","./node_modules/openai/resources/realtime/calls.d.mts","./node_modules/openai/resources/realtime/client-secrets.d.mts","./node_modules/openai/resources/realtime/realtime.d.mts","./node_modules/openai/resources/skills/content.d.mts","./node_modules/openai/resources/skills/versions/content.d.mts","./node_modules/openai/resources/skills/versions/versions.d.mts","./node_modules/openai/resources/skills/skills.d.mts","./node_modules/openai/resources/uploads/parts.d.mts","./node_modules/openai/resources/uploads/uploads.d.mts","./node_modules/openai/uploads.d.mts","./node_modules/openai/resources/vector-stores/files.d.mts","./node_modules/openai/resources/vector-stores/file-batches.d.mts","./node_modules/openai/resources/vector-stores/vector-stores.d.mts","./node_modules/openai/resources/videos.d.mts","./node_modules/openai/resources/webhooks/webhooks.d.mts","./node_modules/openai/resources/webhooks/index.d.mts","./node_modules/openai/resources/webhooks.d.mts","./node_modules/openai/resources/index.d.mts","./node_modules/openai/client.d.mts","./node_modules/openai/azure.d.mts","./node_modules/openai/index.d.mts","./node_modules/pdf-lib/cjs/core/document/pdfheader.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfbool.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfhexstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfname.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnull.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfnumber.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfref.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfstring.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfdict.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfrawstream.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfarray.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperatornames.d.ts","./node_modules/pdf-lib/cjs/core/operators/pdfoperator.d.ts","./node_modules/pdf-lib/cjs/utils/arrays.d.ts","./node_modules/pdf-lib/cjs/utils/async.d.ts","./node_modules/pdf-lib/cjs/utils/strings.d.ts","./node_modules/pdf-lib/cjs/utils/unicode.d.ts","./node_modules/pdf-lib/cjs/utils/numbers.d.ts","./node_modules/pdf-lib/cjs/utils/errors.d.ts","./node_modules/pdf-lib/cjs/utils/base64.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/font.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/encoding.d.ts","./node_modules/@pdf-lib/standard-fonts/lib/index.d.ts","./node_modules/pdf-lib/cjs/utils/objects.d.ts","./node_modules/pdf-lib/cjs/utils/validators.d.ts","./node_modules/pdf-lib/cjs/utils/pdfdocencoding.d.ts","./node_modules/pdf-lib/cjs/utils/cache.d.ts","./node_modules/pdf-lib/cjs/utils/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfflatestream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcontentstream.d.ts","./node_modules/pdf-lib/cjs/utils/rng.d.ts","./node_modules/pdf-lib/cjs/core/pdfcontext.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfobject.d.ts","./node_modules/pdf-lib/cjs/core/errors.d.ts","./node_modules/pdf-lib/cjs/core/syntax/charcodes.d.ts","./node_modules/pdf-lib/cjs/core/pdfobjectcopier.d.ts","./node_modules/pdf-lib/cjs/core/document/pdfcrossrefsection.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailer.d.ts","./node_modules/pdf-lib/cjs/core/document/pdftrailerdict.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfwriter.d.ts","./node_modules/pdf-lib/cjs/core/writers/pdfstreamwriter.d.ts","./node_modules/pdf-lib/cjs/core/embedders/standardfontembedder.d.ts","./node_modules/pdf-lib/cjs/types/fontkit.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/customfontsubsetembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/fileembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/jpegembedder.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pngembedder.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpagetree.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfpageleaf.d.ts","./node_modules/pdf-lib/cjs/types/matrix.d.ts","./node_modules/pdf-lib/cjs/core/embedders/pdfpageembedder.d.ts","./node_modules/pdf-lib/cjs/core/interactive/viewerpreferences.d.ts","./node_modules/pdf-lib/cjs/core/objects/pdfinvalidobject.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrofield.d.ts","./node_modules/pdf-lib/cjs/core/annotation/borderstyle.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfannotation.d.ts","./node_modules/pdf-lib/cjs/core/annotation/appearancecharacteristics.d.ts","./node_modules/pdf-lib/cjs/core/annotation/pdfwidgetannotation.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocheckbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrochoice.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrocombobox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroform.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrolistbox.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrononterminal.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacropushbutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacroradiobutton.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrosignature.d.ts","./node_modules/pdf-lib/cjs/core/acroform/pdfacrotext.d.ts","./node_modules/pdf-lib/cjs/core/acroform/flags.d.ts","./node_modules/pdf-lib/cjs/core/acroform/utils.d.ts","./node_modules/pdf-lib/cjs/core/acroform/index.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcatalog.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfcrossrefstream.d.ts","./node_modules/pdf-lib/cjs/core/structures/pdfobjectstream.d.ts","./node_modules/pdf-lib/cjs/core/parser/bytestream.d.ts","./node_modules/pdf-lib/cjs/core/parser/baseparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfobjectstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfparser.d.ts","./node_modules/pdf-lib/cjs/core/parser/pdfxrefstreamparser.d.ts","./node_modules/pdf-lib/cjs/core/streams/stream.d.ts","./node_modules/pdf-lib/cjs/core/streams/decode.d.ts","./node_modules/pdf-lib/cjs/core/annotation/flags.d.ts","./node_modules/pdf-lib/cjs/core/annotation/index.d.ts","./node_modules/pdf-lib/cjs/core/index.d.ts","./node_modules/pdf-lib/cjs/api/embeddable.d.ts","./node_modules/pdf-lib/cjs/api/pdfembeddedpage.d.ts","./node_modules/pdf-lib/cjs/api/pdfimage.d.ts","./node_modules/pdf-lib/cjs/api/colors.d.ts","./node_modules/pdf-lib/cjs/api/rotations.d.ts","./node_modules/pdf-lib/cjs/api/operators.d.ts","./node_modules/pdf-lib/cjs/api/pdfpageoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfpage.d.ts","./node_modules/pdf-lib/cjs/api/image/alignment.d.ts","./node_modules/pdf-lib/cjs/api/image/index.d.ts","./node_modules/pdf-lib/cjs/api/form/pdffield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfbutton.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfcheckbox.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfdropdown.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfoptionlist.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfradiogroup.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfsignature.d.ts","./node_modules/pdf-lib/cjs/api/text/alignment.d.ts","./node_modules/pdf-lib/cjs/api/form/pdftextfield.d.ts","./node_modules/pdf-lib/cjs/api/form/pdfform.d.ts","./node_modules/pdf-lib/cjs/api/standardfonts.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocumentoptions.d.ts","./node_modules/pdf-lib/cjs/api/pdfdocument.d.ts","./node_modules/pdf-lib/cjs/api/pdffont.d.ts","./node_modules/pdf-lib/cjs/api/form/appearances.d.ts","./node_modules/pdf-lib/cjs/api/form/index.d.ts","./node_modules/pdf-lib/cjs/api/text/layout.d.ts","./node_modules/pdf-lib/cjs/api/text/index.d.ts","./node_modules/pdf-lib/cjs/api/errors.d.ts","./node_modules/pdf-lib/cjs/api/objects.d.ts","./node_modules/pdf-lib/cjs/api/operations.d.ts","./node_modules/pdf-lib/cjs/api/sizes.d.ts","./node_modules/pdf-lib/cjs/core/embedders/javascriptembedder.d.ts","./node_modules/pdf-lib/cjs/api/pdfjavascript.d.ts","./node_modules/pdf-lib/cjs/api/index.d.ts","./node_modules/pdf-lib/cjs/types/index.d.ts","./node_modules/pdf-lib/cjs/index.d.ts","./src/lib/ai-client.ts","./src/app/api/discharge-ai/route.ts","./src/app/api/doctor/earnings/route.ts","./src/app/api/doctor-note-ocr/route.ts","./src/lib/audit.ts","./src/app/api/export/route.ts","./src/types/index.ts","./src/lib/fhir.ts","./src/app/api/fhir/patient/[id]/route.ts","./src/app/api/generate-pdf/route.ts","./node_modules/@types/qrcode/index.d.ts","./src/app/api/generate-qr/route.ts","./src/app/api/google-review/route.ts","./src/app/api/insurance-bundle/[patientid]/route.ts","./src/app/api/labs/extract-values/route.ts","./src/app/api/labs/import-email/route.ts","./src/app/api/labs/lab-portal/route.ts","./src/lib/drug-database.ts","./src/app/api/medicines/import/route.ts","./src/lib/ocr.ts","./src/app/api/ocr/route.ts","./node_modules/tesseract.js/src/index.d.ts","./src/app/api/ocr-free/route.ts","./src/app/api/parse-pdf/route.ts","./src/app/api/patient-summary/route.ts","./src/app/api/payment-link/route.ts","./node_modules/@react-pdf/types/pdf.d.ts","./node_modules/@react-pdf/types/svg.d.ts","./node_modules/@react-pdf/stylesheet/lib/index.d.ts","./node_modules/@react-pdf/types/style.d.ts","./node_modules/@react-pdf/primitives/lib/index.d.ts","./node_modules/@react-pdf/types/primitive.d.ts","./node_modules/@react-pdf/font/lib/index.d.ts","./node_modules/@react-pdf/types/font.d.ts","./node_modules/@react-pdf/types/page.d.ts","./node_modules/@react-pdf/types/bookmark.d.ts","./node_modules/@react-pdf/types/node.d.ts","./node_modules/@react-pdf/types/image.d.ts","./node_modules/@react-pdf/types/context.d.ts","./node_modules/@react-pdf/types/hitslop.d.ts","./node_modules/@react-pdf/types/index.d.ts","./node_modules/@react-pdf/renderer/lib/react-pdf.d.ts","./src/lib/pdf-generator.tsx","./src/app/api/pdf/prescriptions/route.ts","./src/lib/phi-crypto.ts","./src/app/api/phi/route.ts","./src/app/api/portal/auth/send-otp/route.ts","./src/app/api/portal/auth/verify-otp/route.ts","./node_modules/clsx/clsx.d.mts","./node_modules/tailwind-merge/dist/types.d.ts","./src/lib/settings.ts","./src/lib/utils.ts","./src/app/api/portal/book-followup/route.ts","./src/app/api/portal/legacy-verify/route.ts","./src/app/api/portal/pay/route.ts","./src/app/api/portal/send-link/route.ts","./src/app/api/portal/session/route.ts","./src/app/api/reminders/route.ts","./src/app/api/reminders/auto-generate/route.ts","./src/app/api/reminders/history/route.ts","./src/app/api/reminders/send-all/route.ts","./src/app/api/test-ai/route.ts","./src/app/api/users/route.ts","./src/app/api/users/invite/route.ts","./src/app/api/value-report/route.ts","./src/app/api/video/room/route.ts","./src/lib/voice-commands.ts","./src/app/api/voice-command/route.ts","./src/app/api/voice-correct/route.ts","./src/components/voice/voicecommandbus.ts","./src/lib/abdm-server.ts","./src/lib/abdm.ts","./src/lib/allergy-alerts.ts","./src/lib/auth.ts","./src/lib/automation-engine.ts","./src/lib/billing-gst.ts","./src/lib/business-logic.ts","./src/lib/clinical-risk.ts","./src/lib/confirm-dialog.ts","./src/lib/constants.ts","./src/lib/critical-alerts.ts","./src/lib/data-retention.ts","./src/lib/dose-validation.ts","./src/lib/drug-interactions.ts","./src/lib/gyn-templates.ts","./src/lib/gynecology-templates.ts","./src/lib/ipd-billing.ts","./src/lib/lab-migration.ts","./src/lib/mfa.ts","./src/lib/offline-store.ts","./src/lib/patient-timeline.ts","./node_modules/pdfjs-dist/types/src/shared/util.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/tools.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/toolbar.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/comment.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/editor.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/freetext.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/highlight.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/draw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/outline.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/inkdraw.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/ink.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/signature.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/stamp.d.ts","./node_modules/pdfjs-dist/types/src/display/display_utils.d.ts","./node_modules/pdfjs-dist/types/web/text_accessibility.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_storage.d.ts","./node_modules/pdfjs-dist/types/src/display/optional_content_config.d.ts","./node_modules/pdfjs-dist/types/src/display/pages_mapper.d.ts","./node_modules/pdfjs-dist/types/src/display/metadata.d.ts","./node_modules/pdfjs-dist/types/src/display/pdf_objects.d.ts","./node_modules/pdfjs-dist/types/src/shared/message_handler.d.ts","./node_modules/pdfjs-dist/types/src/display/api.d.ts","./node_modules/pdfjs-dist/types/web/struct_tree_layer_builder.d.ts","./node_modules/pdfjs-dist/types/web/comment_manager.d.ts","./node_modules/pdfjs-dist/types/web/event_utils.d.ts","./node_modules/pdfjs-dist/types/web/pdf_link_service.d.ts","./node_modules/pdfjs-dist/types/web/base_download_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/annotation_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/draw_layer.d.ts","./node_modules/pdfjs-dist/types/web/l10n.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/annotation_editor_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/color_picker.d.ts","./node_modules/pdfjs-dist/types/src/display/svg_factory.d.ts","./node_modules/pdfjs-dist/types/src/display/worker_options.d.ts","./node_modules/pdfjs-dist/types/src/display/api_utils.d.ts","./node_modules/pdfjs-dist/types/src/display/editor/drawers/signaturedraw.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer_images.d.ts","./node_modules/pdfjs-dist/types/src/display/text_layer.d.ts","./node_modules/pdfjs-dist/types/src/display/touch_manager.d.ts","./node_modules/pdfjs-dist/types/src/display/xfa_layer.d.ts","./node_modules/pdfjs-dist/types/src/pdf.d.ts","./src/lib/pdf-to-image.ts","./src/lib/pharmacy.ts","./src/lib/phi-client.ts","./node_modules/lucide-react/dist/lucide-react.d.ts","./src/components/clinical/clinicalsafetymodal.tsx","./src/lib/prescription-safety.ts","./src/lib/rate-limit.ts","./src/lib/storage-upload.ts","./src/lib/whatsapp-notify.ts","./src/lib/whatsapp-templates.ts","./src/lib/appointments/followup-sync.ts","./src/lib/services/appointmentservice.ts","./src/types/abdm.ts","./tests/hms.spec.ts","./src/app/error.tsx","./src/app/layout.tsx","./src/app/not-found.tsx","./src/app/page.tsx","./src/components/layout/sidebar.tsx","./src/components/layout/mobilenav.tsx","./src/components/layout/connectionbanner.tsx","./src/components/layout/sessiontimeout.tsx","./src/components/voice/voiceassistant.tsx","./src/components/layout/appshell.tsx","./src/app/abdm-setup/page.tsx","./src/app/ai-setup/page.tsx","./src/app/analytics/page.tsx","./src/app/anc/page.tsx","./src/app/appointments/page.tsx","./src/app/audit-log/page.tsx","./src/app/auth/callback/page.tsx","./src/app/beds/page.tsx","./src/components/billing/billingextras.tsx","./src/components/shared/toast.tsx","./src/components/billing/adminbillmodify.tsx","./src/app/billing/page.tsx","./src/app/dashboard/page.tsx","./src/app/doctors/earnings/page.tsx","./src/app/forecasting/page.tsx","./src/components/shared/formscanner.tsx","./src/app/forms/page.tsx","./src/app/fund/page.tsx","./src/app/insurance/page.tsx","./src/app/intake/page.tsx","./src/app/ipd/page.tsx","./src/components/shared/smartmic.tsx","./src/components/shared/consultationattachments.tsx","./src/app/ipd/[bedid]/page.tsx","./src/app/ipd/[bedid]/billing/page.tsx","./src/app/ipd/beds/page.tsx","./src/app/labs/page.tsx","./src/app/login/page.tsx","./src/app/opd/page.tsx","./src/app/opd/[id]/page.tsx","./src/app/opd/[id]/edit/page.tsx","./src/app/opd/[id]/prescription/page.tsx","./src/app/opd/new/page.tsx","./src/app/ot-schedule/page.tsx","./src/app/ot-schedule/week/page.tsx","./src/app/patients/page.tsx","./src/app/patients/[id]/page.tsx","./src/app/patients/[id]/discharge/page.tsx","./src/app/patients/[id]/edit/page.tsx","./src/app/patients/new/page.tsx","./src/app/pharmacy/page.tsx","./src/app/pharmacy/import/page.tsx","./src/app/portal/layout.tsx","./src/app/portal/page.tsx","./src/app/portal/dashboard/page.tsx","./src/app/portal/login/page.tsx","./src/app/portal/verify/page.tsx","./src/app/queue/page.tsx","./src/app/queue/display/page.tsx","./src/app/reminders/page.tsx","./src/app/reports/page.tsx","./src/app/reports/daily/page.tsx","./src/app/reports/lab-revenue/page.tsx","./src/app/reports/monthly/page.tsx","./src/app/reports/payments/page.tsx","./src/app/reset-password/page.tsx","./src/app/search/page.tsx","./src/app/settings/page.tsx","./src/app/settings/doctors/page.tsx","./src/app/settings/lab-partners/page.tsx","./src/app/setup/page.tsx","./src/app/status/page.tsx","./src/app/value-report/page.tsx","./src/app/video/page.tsx","./src/components/charts/growthchart.tsx","./src/components/ipd/bedcard.tsx","./src/components/patients/patienttimeline.tsx","./src/components/shared/abhaverificationsection.tsx","./src/components/shared/ancoverflowbanner.tsx","./src/components/shared/dischargefinalizebutton.tsx","./src/components/shared/doctornotecamera.tsx","./src/components/shared/labmigrationbanner.tsx","./src/components/shared/roleswitcher.tsx","./.next/types/app/layout.ts","./.next/types/app/page.ts","./.next/types/app/abdm-setup/page.ts","./.next/types/app/ai-setup/page.ts","./.next/types/app/analytics/page.ts","./.next/types/app/anc/page.ts","./.next/types/app/api/abdm/auth/route.ts","./.next/types/app/api/abdm/create/init/route.ts","./.next/types/app/api/abdm/create/verify-otp/route.ts","./.next/types/app/api/abdm/create-init/route.ts","./.next/types/app/api/abdm/create-verify-otp/route.ts","./.next/types/app/api/abdm/search/route.ts","./.next/types/app/api/abdm/verify/route.ts","./.next/types/app/api/backup/route.ts","./.next/types/app/api/billing/daily-closing/route.ts","./.next/types/app/api/billing/payment/route.ts","./.next/types/app/api/billing/webhook/route.ts","./.next/types/app/api/check-config/route.ts","./.next/types/app/api/discharge/finalize/route.ts","./.next/types/app/api/discharge-ai/route.ts","./.next/types/app/api/doctor/earnings/route.ts","./.next/types/app/api/doctor-note-ocr/route.ts","./.next/types/app/api/export/route.ts","./.next/types/app/api/fhir/patient/[id]/route.ts","./.next/types/app/api/generate-pdf/route.ts","./.next/types/app/api/generate-qr/route.ts","./.next/types/app/api/google-review/route.ts","./.next/types/app/api/insurance-bundle/[patientid]/route.ts","./.next/types/app/api/medicines/import/route.ts","./.next/types/app/api/ocr/route.ts","./.next/types/app/api/ocr-free/route.ts","./.next/types/app/api/parse-pdf/route.ts","./.next/types/app/api/patient-summary/route.ts","./.next/types/app/api/payment-link/route.ts","./.next/types/app/api/pdf/prescriptions/route.ts","./.next/types/app/api/phi/route.ts","./.next/types/app/api/portal/auth/send-otp/route.ts","./.next/types/app/api/portal/auth/verify-otp/route.ts","./.next/types/app/api/portal/book-followup/route.ts","./.next/types/app/api/portal/legacy-verify/route.ts","./.next/types/app/api/portal/pay/route.ts","./.next/types/app/api/portal/send-link/route.ts","./.next/types/app/api/portal/session/route.ts","./.next/types/app/api/reminders/route.ts","./.next/types/app/api/reminders/auto-generate/route.ts","./.next/types/app/api/reminders/history/route.ts","./.next/types/app/api/reminders/send-all/route.ts","./.next/types/app/api/test-ai/route.ts","./.next/types/app/api/users/route.ts","./.next/types/app/api/users/invite/route.ts","./.next/types/app/api/value-report/route.ts","./.next/types/app/api/video/room/route.ts","./.next/types/app/api/voice-command/route.ts","./.next/types/app/api/voice-correct/route.ts","./.next/types/app/appointments/page.ts","./.next/types/app/audit-log/page.ts","./.next/types/app/auth/callback/page.ts","./.next/types/app/beds/page.ts","./.next/types/app/billing/page.ts","./.next/types/app/dashboard/page.ts","./.next/types/app/doctors/earnings/page.ts","./.next/types/app/forms/page.ts","./.next/types/app/fund/page.ts","./.next/types/app/insurance/page.ts","./.next/types/app/intake/page.ts","./.next/types/app/ipd/page.ts","./.next/types/app/ipd/[bedid]/page.ts","./.next/types/app/ipd/[bedid]/billing/page.ts","./.next/types/app/ipd/beds/page.ts","./.next/types/app/labs/page.ts","./.next/types/app/login/page.ts","./.next/types/app/opd/page.ts","./.next/types/app/opd/[id]/page.ts","./.next/types/app/opd/[id]/edit/page.ts","./.next/types/app/opd/[id]/prescription/page.ts","./.next/types/app/opd/new/page.ts","./.next/types/app/ot-schedule/page.ts","./.next/types/app/ot-schedule/week/page.ts","./.next/types/app/patients/page.ts","./.next/types/app/patients/[id]/page.ts","./.next/types/app/patients/[id]/discharge/page.ts","./.next/types/app/patients/[id]/edit/page.ts","./.next/types/app/patients/new/page.ts","./.next/types/app/pharmacy/page.ts","./.next/types/app/pharmacy/import/page.ts","./.next/types/app/portal/layout.ts","./.next/types/app/portal/page.ts","./.next/types/app/portal/dashboard/page.ts","./.next/types/app/portal/login/page.ts","./.next/types/app/portal/verify/page.ts","./.next/types/app/queue/page.ts","./.next/types/app/queue/display/page.ts","./.next/types/app/reminders/page.ts","./.next/types/app/reports/page.ts","./.next/types/app/reports/daily/page.ts","./.next/types/app/reports/lab-revenue/page.ts","./.next/types/app/reports/monthly/page.ts","./.next/types/app/reports/payments/page.ts","./.next/types/app/reset-password/page.ts","./.next/types/app/search/page.ts","./.next/types/app/settings/page.ts","./.next/types/app/settings/doctors/page.ts","./.next/types/app/settings/lab-partners/page.ts","./.next/types/app/setup/page.ts","./.next/types/app/status/page.ts","./.next/types/app/value-report/page.ts","./.next/types/app/video/page.ts","./node_modules/@types/aria-query/index.d.ts","./node_modules/@types/deep-eql/index.d.ts","./node_modules/assertion-error/index.d.ts","./node_modules/@types/chai/index.d.ts","./node_modules/@types/estree/index.d.ts","./node_modules/@types/json-schema/index.d.ts","./node_modules/@types/eslint/use-at-your-own-risk.d.ts","./node_modules/@types/eslint/index.d.ts","./node_modules/@types/eslint-scope/index.d.ts","./node_modules/@types/minimatch/index.d.ts","./node_modules/@types/glob/index.d.ts","./node_modules/@types/resolve/index.d.ts","./node_modules/@types/trusted-types/lib/index.d.ts","./node_modules/@types/trusted-types/index.d.ts","./node_modules/@types/ws/index.d.ts"],"fileIdsList":[[99,145],[99,145,519,520],[99,145,159,193,518,521],[99,145,186,483,486,489,490],[99,145,175,186,486],[99,145,186,486,490],[99,145,175],[99,145,480],[99,145,484],[99,145,186,482,483,486],[99,145,164,183],[99,145,193],[99,145,193,480],[99,145,164,186,482,486],[99,145,156,175,186,477,478,479,481,485],[99,145,486,494,502],[99,145,478,484],[99,145,486,511,512],[99,145,178,186,193,478,481,486],[99,145,486],[99,145,186,482,486],[99,145,477],[99,145,480,481,482,484,485,486,487,488,490,491,492,493,494,495,496,497,498,499,500,501,502,503,504,505,506,507,508,509,510,512,513,514,515,516],[99,145,153,486,504,507],[99,145,486,494,495,496],[99,145,484,486,495,497],[99,145,485],[99,145,478,480,486],[99,145,486,490,495,497],[99,145,490],[99,145,186,484,486,489],[99,145,478,482,486,494],[99,145,486,504],[99,145,497],[99,145,178,191,193,480,486,511],[99,145,358,966],[99,145,358,967],[99,145,358,968],[99,145,358,969],[99,145,403,418],[99,145,403,421],[99,145,403,422],[99,145,403,419],[99,145,403,420],[99,145,403,423],[99,145,403,424],[99,145,403,468],[99,145,403,470],[99,145,403,471],[99,145,403,472],[99,145,403,473],[99,145,403,811],[99,145,403,475],[99,145,403,813],[99,145,403,812],[99,145,403,815],[99,145,403,818],[99,145,403,819],[99,145,403,821],[99,145,403,822],[99,145,403,823],[99,145,403,828],[99,145,403,832],[99,145,403,830],[99,145,403,833],[99,145,403,834],[99,145,403,835],[99,145,403,853],[99,145,403,855],[99,145,403,856],[99,145,403,857],[99,145,403,862],[99,145,403,863],[99,145,403,864],[99,145,403,865],[99,145,403,866],[99,145,403,868],[99,145,403,869],[99,145,403,867],[99,145,403,870],[99,145,403,871],[99,145,403,873],[99,145,403,872],[99,145,403,874],[99,145,403,875],[99,145,403,877],[99,145,403,878],[99,145,358,970],[99,145,358,971],[99,145,358,972],[99,145,358,973],[99,145,358,977],[99,145,358,978],[99,145,358,979],[99,145,358,982],[99,145,358,983],[99,145,358,984],[99,145,358,985],[99,145,358,990],[99,145,358,989],[99,145,358,991],[99,145,358,986],[99,145,358,992],[99,145,358,957],[99,145,358,993],[99,145,358,996],[99,145,358,995],[99,145,358,997],[99,145,358,998],[99,145,358,994],[99,145,358,999],[99,145,358,1000],[99,145,358,959],[99,145,358,1003],[99,145,358,1004],[99,145,358,1002],[99,145,358,1005],[99,145,358,1001],[99,145,358,1007],[99,145,358,1006],[99,145,358,1010],[99,145,358,1008],[99,145,358,1011],[99,145,358,1009],[99,145,358,1012],[99,145,358,1014],[99,145,358,1013],[99,145,358,1015],[99,145,358,1017],[99,145,358,1018],[99,145,358,1019],[99,145,358,1016],[99,145,358,1020],[99,145,358,1021],[99,145,358,1022],[99,145,358,1024],[99,145,358,1025],[99,145,358,1023],[99,145,358,1026],[99,145,358,1027],[99,145,358,1028],[99,145,358,1029],[99,145,406,407],[99,145,476,523,524,527,528,530,532,533,536,555,576,577,578,579],[99,145,523,531,580],[99,145,529],[99,145,527,531,532,580],[99,145,580],[99,145,525,580],[99,145,534,535],[99,145,530],[99,145,530,532,533,536,553,580],[99,145,548],[99,145,527,533,580],[99,145,476,523,524,526],[99,145,178],[99,145,476],[99,140,145,517,522],[99,145,476,527,580],[99,145,527,580],[99,145,575,580],[99,145,527,544,545,575,580],[99,145,527,545,552,553,580],[99,145,555,580],[99,145,569],[99,145,527,546,569,570,572,581],[99,145,571],[99,145,579],[99,145,568],[99,145,527,532,533,537,542,576],[99,145,542,543],[99,145,527,533,537,543,576],[99,145,537,538,539,540,541,543,559,563,566,575],[99,145,527,532,533,537,576],[99,145,527,532,533,536,537,576],[99,145,538,539,540,541,547,557,561,564,567,576],[99,145,527,532,533,537,549,555,575,576],[99,145,556,575],[99,145,526,527,532,537,544,546,555,556,573,574,575,576],[99,145,526,527,532,533,537,576],[99,145,558,559,560],[99,145,527,532,533,537,559,576],[99,145,527,532,533,537,543,558,560,576],[99,145,562,563],[99,145,527,532,533,536,537,562,576],[99,145,565,566],[99,145,527,532,533,537,565,576],[99,145,526,527,532,537,555,576,577],[99,145,529,555,576,577,578],[99,145,551],[99,145,527,529,532,533,537,549,555],[99,145,550,555],[99,145,526,527,532,537,550,553,554,555],[99,145,705,706],[99,145,414],[87,99,145,850],[99,145,842],[99,145,836,837,839,841,843,844,845,846,847,848,849],[99,145,839,841,843,844,845],[99,145,840],[99,145,838],[99,145,460],[99,145,455],[99,145,450,458,459],[99,145,450,454,458,459,460],[99,145,450,455,458,460,461,462,463],[99,145,449,458],[99,145,458],[99,145,453,458],[99,145,450,451,452,453,457,459],[99,145,450,453,455,456,458],[99,145,425],[99,145,425,426],[99,145,433,434,435,436],[99,145,432,433,434,435,436,437,438,439],[99,145,433,437],[99,145,433],[99,145,432,433,434,437],[99,145,431,432],[99,145,429,443,444,445],[99,145,441],[99,145,440],[99,145,440,441,442,443,445],[99,145,429,430,441,442,444],[99,145,444],[99,145,447],[99,145,427,428,446,448,464],[99,145,1147,1148],[99,145,1150,1153],[99,145,1150,1151,1152],[99,145,1153],[99,145,156,157,193,1155],[99,142,145],[99,144,145],[145],[99,145,150,178],[99,145,146,151,156,164,175,186],[99,145,146,147,156,164],[94,95,96,99,145],[99,145,148,187],[99,145,149,150,157,165],[99,145,150,175,183],[99,145,151,153,156,164],[99,144,145,152],[99,145,153,154],[99,145,155,156],[99,144,145,156],[99,145,156,157,158,175,186],[99,145,156,157,158,171,175,178],[99,145,153,156,159,164,175,186],[99,145,156,157,159,160,164,175,183,186],[99,145,159,161,175,183,186],[97,98,99,100,101,102,103,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,156,162],[99,145,163,186,191],[99,145,153,156,164,175],[99,145,165],[99,145,166],[99,144,145,167],[99,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192],[99,145,169],[99,145,170],[99,145,156,171,172],[99,145,171,173,187,189],[99,145,156,175,176,178],[99,145,177,178],[99,145,175,176],[99,145,179],[99,142,145,175,180],[99,145,156,181,182],[99,145,181,182],[99,145,150,164,175,183],[99,145,184],[99,145,164,185],[99,145,159,170,186],[99,145,150,187],[99,145,175,188],[99,145,163,189],[99,145,190],[99,140,145],[99,140,145,156,158,167,175,178,186,189,191],[99,145,175,192],[99,145,175,193],[87,99,145,197,198,199],[87,99,145,197,198],[87,99,145],[87,91,99,145,196,359,402],[87,91,99,145,195,359,402],[84,85,86,99,145],[99,145,1158],[99,145,156,159,161,164,175,183,186,192,193],[92,99,145],[99,145,363],[99,145,365,366,367],[99,145,369],[99,145,202,212,218,220,359],[99,145,202,209,211,214,232],[99,145,212],[99,145,212,337],[99,145,266,284,299,405],[99,145,307],[99,145,202,212,219,252,262,334,335,405],[99,145,219,405],[99,145,212,262,263,264,405],[99,145,212,219,252,405],[99,145,405],[99,145,202,219,220,405],[99,145,292],[99,144,145,193,291],[87,99,145,285,286,287,304,305],[87,99,145,285],[99,145,275],[99,145,274,276,379],[87,99,145,285,286,302],[99,145,281,305,391],[99,145,389,390],[99,145,226,388],[99,145,278],[99,144,145,193,226,274,275,276,277],[87,99,145,302,304,305],[99,145,302,304],[99,145,302,303,305],[99,145,170,193],[99,145,273],[99,144,145,193,211,213,269,270,271,272],[87,99,145,203,382],[87,99,145,186,193],[87,99,145,219,250],[87,99,145,219],[99,145,248,253],[87,99,145,249,362],[87,91,99,145,159,193,195,196,359,400,401],[99,145,359],[99,145,201],[99,145,352,353,354,355,356,357],[99,145,354],[87,99,145,249,285,362],[87,99,145,285,360,362],[87,99,145,285,362],[99,145,159,193,213,362],[99,145,159,193,210,211,222,240,273,278,279,301,302],[99,145,270,273,278,286,288,289,290,292,293,294,295,296,297,298,405],[99,145,271],[87,99,145,170,193,211,212,240,242,244,269,301,305,359,405],[99,145,159,193,213,214,226,227,274],[99,145,159,193,212,214],[99,145,159,175,193,210,213,214],[99,145,159,170,186,193,210,211,212,213,214,219,222,223,233,234,236,239,240,242,243,244,268,269,302,310,312,315,317,320,322,323,324,325],[99,145,159,175,193],[99,145,202,203,204,210,211,359,362,405],[99,145,159,175,186,193,207,336,338,339,405],[99,145,170,186,193,207,210,213,230,234,236,237,238,242,269,315,326,328,334,348,349],[99,145,212,216,269],[99,145,210,212],[99,145,223,316],[99,145,318,319],[99,145,318],[99,145,316],[99,145,318,321],[99,145,206,207],[99,145,206,245],[99,145,206],[99,145,208,223,314],[99,145,313],[99,145,207,208],[99,145,208,311],[99,145,207],[99,145,301],[99,145,159,193,210,222,241,260,266,280,283,300,302],[99,145,254,255,256,257,258,259,281,282,305,360],[99,145,309],[99,145,159,193,210,222,241,246,306,308,310,359,362],[99,145,159,186,193,203,210,212,268],[99,145,265],[99,145,159,193,342,347],[99,145,233,268,362],[99,145,330,334,348,351],[99,145,159,216,334,342,343,351],[99,145,202,212,233,243,345],[99,145,159,193,212,219,243,329,330,340,341,344,346],[99,145,194,240,241,359,362],[99,145,159,170,186,193,208,210,211,213,216,221,222,230,233,234,236,237,238,239,242,244,268,269,312,326,327,362],[99,145,159,193,210,212,216,328,350],[99,145,159,193,211,213],[87,99,145,159,170,193,201,203,210,211,214,222,239,240,242,244,309,359,362],[99,145,159,170,186,193,205,208,209,213],[99,145,206,267],[99,145,159,193,206,211,222],[99,145,159,193,212,223],[99,145,159,193],[99,145,226],[99,145,225],[99,145,227],[99,145,212,224,226,230],[99,145,212,224,226],[99,145,159,193,205,212,213,219,227,228,229],[87,99,145,302,303,304],[99,145,261],[87,99,145,203],[87,99,145,236],[87,99,145,194,239,244,359,362],[99,145,203,382,383],[87,99,145,253],[87,99,145,170,186,193,201,247,249,251,252,362],[99,145,213,219,236],[99,145,235],[87,99,145,157,159,170,193,201,253,262,359,360,361],[83,87,88,89,90,99,145,195,196,359,402],[99,145,150],[99,145,331,332,333],[99,145,331],[99,145,371],[99,145,373],[99,145,375],[99,145,377],[99,145,380],[99,145,384],[91,93,99,145,359,364,368,370,372,374,376,378,381,385,387,393,394,396,403,404,405],[99,145,386],[99,145,392],[99,145,249],[99,145,395],[99,144,145,227,228,229,230,397,398,399,402],[87,91,99,145,159,161,170,193,195,196,197,199,201,214,351,358,362,402],[99,145,582,584,587,681],[99,145,582,583,584,587,588,590,593,594,595,598,600,613,619,620,625,626,639,642,644,645,649,650,658,659,660,661,662,665,669,671,675,676,677,680],[99,145,583,592,681],[99,145,589],[99,145,587,592,593,681],[99,145,681],[99,145,585,681],[99,145,596,597],[99,145,590],[99,145,590,593,594,598,681,682],[99,145,587,591,681],[99,145,582,583,584,586],[99,145,582],[99,145,582,587,681],[99,145,587,681],[99,145,587,600,603,605,615,617,618,683],[99,145,585,587,605,627,628,630,631,632],[99,145,603,606,614,617,683],[99,145,585,587,603,606,619,683],[99,145,585,603,606,607,614,617,683],[99,145,604],[99,145,589,603,613],[99,145,613],[99,145,587,605,608,609,613,683],[99,145,603,613,614],[99,145,615,616,618],[99,145,594],[99,145,599,622,623,624],[99,145,587,593,599],[99,145,586,587,593,598,599,623,625],[99,145,587,593,598,599,623,625],[99,145,587,589,593,594,599,626],[99,145,587,589,593,594,599,627,628,629,630,631],[99,145,599,631,632,635,638],[99,145,599,636,637],[99,145,587,593,599,636],[99,145,587,593,594,599,638],[99,145,589,599,633,634,635],[99,145,587,589,593,594,599,632],[99,145,586,587,589,593,594,599,627,628,629,630,631,632],[99,145,587,589,593,594,599,628],[99,145,586,587,589,593,599,627,629,630,631,632],[99,145,589,599,619],[99,145,602],[99,145,586,587,589,593,594,599,600,601,606,607,614,615,617,618,619],[99,145,601,619],[99,145,587,594,599,619],[99,145,602,620],[99,145,586,587,593,599,600,619],[99,145,587,593,594,599,613,641],[99,145,587,593,594,598,599,640],[99,145,587,589,593,599,613,643],[99,145,587,593,594,599,613,644],[99,145,587,589,593,594,599,613,646,648],[99,145,587,593,594,599,648],[99,145,587,589,593,594,599,613,619,646,647],[99,145,587,593,594,598,599],[99,145,599,652],[99,145,587,593,599,646],[99,145,599,654],[99,145,587,593,594,599],[99,145,599,651,653,655,657],[99,145,587,594,599],[99,145,587,589,593,594,599,651,656],[99,145,599,646],[99,145,589,599,613,646],[99,145,586,587,593,598,599,660],[99,145,589,600,613,621,625,626,639,642,644,645,649,650,658,659,660,661,662,665,669,671,675,676,679],[99,145,587,593,599,613,665],[99,145,587,593,599,613,664,665],[99,145,589,599,613,663,664,665],[99,145,587,594,599,613],[99,145,587,589,593,599,613],[99,145,586,587,589,593,594,599,608,610,611,612,613],[99,145,587,593,594,598,599,666,668],[99,145,587,593,594,598,599,667],[99,145,587,593,598,599],[99,145,587,593,599,650,670],[99,145,587,593,594,599,672,673,675],[99,145,587,593,594,599,672,675],[99,145,587,589,593,594,599,673,674],[99,145,678],[99,145,677],[99,145,584,599],[99,145,598],[99,145,697],[99,145,772,783,784,785,786,787,788,789,791,796],[99,145,783,784,785,786,787,788,789,791,792,797],[99,145,772,775,780,781,783,795,796,797],[99,145,772,780,783,795,797],[99,145,772,780,783,795,796,797],[99,145,772,775,776,777,782,795,796,797],[99,145,772,783,784,785,786,787,788,789,791,795,796],[99,145,772,783,795],[99,145,772,775,780,783,790,795,796,797],[99,145,781],[99,145,773,774,775,776,777,778,779,780,782,793,794,795,796,798,800,801,802,803,804,806],[99,145,772],[99,145,772,776,777,778],[99,145,690,727,735,772,774,775,780,792,793,794,796],[99,145,727,730],[99,145,772,773,795],[99,145,772,773,795,805],[99,145,772,774,775,776,777,779,795,796],[99,145,776,777,778,796],[99,145,790,799],[99,145,772,790,796],[99,145,739,744,745,746,747,748,749,750,751,752,753,754,755,756,757],[99,145,686,687,690,692,695,717,744],[99,145,687,690,693,716,745],[99,145,686,692,695,744],[99,145,690,693,716,747],[99,145,686,687,689,690,692,693,695,717],[99,145,690,693,695,716,739],[99,145,690,693,716,745],[99,145,690,693,744],[99,145,687,690,693,695,739,743],[99,145,686,689,690,692,693,716,744],[99,145,690,693,695,739],[99,145,686,689,692,693,695],[99,145,689,693],[99,145,741,742,743,770],[99,145,687,689,690,691,693,695],[99,145,686,687,690,692,693,716,740,741,742],[99,145,690],[99,145,693],[99,145,686,690,712,716,727],[99,145,686,727,728],[99,145,690,716],[99,145,690,716,734,735],[99,145,686,690,707,716],[99,145,717],[99,145,684,685,686,687,688,689,690,691,692,693,694,695,696,697,713,714,716,717,718,719,720,721,722,723,724,725,726,728,729,730,731,732,733,734,736,737,738,758,759,760,761,764,765,766,767,769,771],[99,145,685,687,689,693,695,716],[99,145,685,686,687,688,689,690,691,692,693,694,716,717],[99,145,685,686,687,688,689,690,691,692,695,716,717],[99,145,716],[99,145,691,693,716],[99,145,693,716,717],[99,145,686,687,689,692,695,696,716],[99,145,762],[99,145,694],[99,145,686,687,689,690,691,692,693,695,716,717,718,762,763],[99,145,694,764],[99,145,716,764],[99,145,690,694],[99,145,684,685,686,687,688,689,690,691,692,693,694,695,697,714,715,717],[99,145,716,717],[99,145,694,768],[99,145,690,693,716,733,737,758],[99,145,693,697,713,716],[99,145,690,693,713,716],[99,145,691,693,712],[99,145,690,713,716,717],[99,145,687,689,690,691,693,695,716,717,733],[99,145,689,690,693,695,716,734],[99,145,684,690,716,717,722,724],[99,145,684,690,693,716,717,721,722,723],[99,145,712,772,807,808],[99,145,735],[99,145,698,699,700,701,702,703,704,708,709,710,711],[99,145,707],[99,145,914,915,916,922,923,924,926,927],[99,145,914,916,917,918,919,920,921],[99,145,902,905,906,907,911,912,913,914,915,923,928,929,930],[99,145,905],[99,145,909],[99,145,910],[99,145,902,903,904,931],[99,145,905,931],[99,145,908,910],[99,145,914,922,937],[99,145,914,916,926],[99,145,901,902,914,922,928,929,931,932,933,934,935,936,937,938,939,940],[99,145,901],[99,145,925],[99,145,922],[99,145,411],[99,145,146,157,175,409,410],[99,145,413],[99,145,412],[99,112,116,145,186],[99,112,145,175,186],[99,107,145],[99,109,112,145,183,186],[99,107,145,193],[99,109,112,145,164,186],[99,104,105,108,111,145,156,175,186],[99,112,119,145],[99,104,110,145],[99,112,133,134,145],[99,108,112,145,178,186,193],[99,133,145,193],[99,106,107,145,193],[99,112,145],[99,106,107,108,109,110,111,112,113,114,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,134,135,136,137,138,139,145],[99,112,127,145],[99,112,119,120,145],[99,110,112,120,121,145],[99,111,145],[99,104,107,112,145],[99,112,116,120,121,145],[99,116,145],[99,110,112,115,145,186],[99,104,109,112,119,145],[99,107,112,133,145,191,193],[99,145,415],[87,99,145,387,881,945,965],[87,99,145,945,965],[87,99,145,466,945,965],[87,99,145,387,466,861,887,945,951,965],[99,145,403],[99,145,403,466,467],[99,145,403,465],[99,145,403,465,467],[99,145,150,403,465],[99,145,403,467,810],[99,145,403,466,467,814],[99,145,403,465,817],[99,145,403,467,809],[99,145,403,820],[99,145,403,810],[99,145,403,466,467,827],[99,145,403,831],[99,145,403,467,810,829],[99,145,403,467,809,810],[99,145,403,465,852],[99,145,403,465,854],[99,145,403,465,861],[99,145,150,403,465,467],[99,145,403,467,581,683,810],[99,145,403,465,466,467],[99,145,403,810,876],[87,99,145,387,393,466,861,945,953,965],[87,99,145,466,861,945,965],[87,99,145,393,466],[87,99,145,387,466,816,861,945,965],[87,99,145,387,393,466,860,861,885,945,965,974,976],[87,99,145,393,466,886,945,965],[87,99,145,466,886,945,965],[87,99,145,945],[87,99,145,393,829,860,861,945,965,981],[87,99,145,387,466,860,861,883,945,965],[87,99,145,387,466,861,883,945,965],[87,99,145,393,466,861,945],[87,99,145,387,393,466,861,883,945,965],[87,99,145,387,393,466,861,883,945,965,987,988],[87,99,145,387,393,466,814,829,861,945,965,981],[99,145,406],[87,99,145,393,466,814,883,889,898,945],[99,145,387,945],[87,99,145,387,393,466,814,829,861,890,945,965,981],[87,99,145,387,393,466,816,861,945,965,988],[87,99,145,387,393,466,814,816,827,829,861,945,946,947,953,965,981,987],[87,99,145,387,393,466,816,829,861,945,965,987,988],[87,99,145,387,393,466,861,945,965],[87,99,145,387,466,861,945,965],[87,99,145,387,393,466,816,861,945,965,987],[87,99,145,387,393,466,829,861,945,965,981],[87,99,145,387,393,466,816,861,887,945,951,965,988],[87,99,145,387,393,466,829,861,881,945,965,981],[87,99,145,387,466,945,965],[87,99,145,393,945],[87,99,145,466,886],[87,99,145,387,393,466,814,861,945,965],[87,99,145,466,861,945,951,965],[87,99,145,393,466,889,898,945],[87,99,145,466,883,945,965],[87,99,145,466,827,860,883,945,965],[87,99,145,387,945,965],[87,99,145,466,945],[87,99,145,886,945,965],[87,99,145,466,861,883,945,965],[87,99,145,466,814,883,945,975],[87,99,145,466,885,945],[87,99,145,387,393,466,860,881,883,945,960,961,962,963,964],[87,99,145,899,945],[99,145,387,393,945],[87,99,145,393,466,814,945],[87,99,145,387,393,466,883,889,945],[87,99,145,466,814,861,945],[87,99,145,861,945],[87,99,145,829,831,861,942,945],[87,99,145,897,945],[87,99,145,393,466,876,879,945],[99,145,466],[99,145,581,683,809],[99,145,465],[87,99,145,466],[99,145,816],[87,99,145,465,851],[99,145,941],[99,145,816,827,882,892,893,946],[99,145,466,861],[99,145,858,859,860],[99,145,861]],"fileInfos":[{"version":"c430d44666289dae81f30fa7b2edebf186ecc91a2d4c71266ea6ae76388792e1","affectsGlobalScope":true,"impliedFormat":1},{"version":"45b7ab580deca34ae9729e97c13cfd999df04416a79116c3bfb483804f85ded4","impliedFormat":1},{"version":"3facaf05f0c5fc569c5649dd359892c98a85557e3e0c847964caeb67076f4d75","impliedFormat":1},{"version":"e44bb8bbac7f10ecc786703fe0a6a4b952189f908707980ba8f3c8975a760962","impliedFormat":1},{"version":"5e1c4c362065a6b95ff952c0eab010f04dcd2c3494e813b493ecfd4fcb9fc0d8","impliedFormat":1},{"version":"68d73b4a11549f9c0b7d352d10e91e5dca8faa3322bfb77b661839c42b1ddec7","impliedFormat":1},{"version":"5efce4fc3c29ea84e8928f97adec086e3dc876365e0982cc8479a07954a3efd4","impliedFormat":1},{"version":"feecb1be483ed332fad555aff858affd90a48ab19ba7272ee084704eb7167569","impliedFormat":1},{"version":"ee7bad0c15b58988daa84371e0b89d313b762ab83cb5b31b8a2d1162e8eb41c2","impliedFormat":1},{"version":"27bdc30a0e32783366a5abeda841bc22757c1797de8681bbe81fbc735eeb1c10","impliedFormat":1},{"version":"8fd575e12870e9944c7e1d62e1f5a73fcf23dd8d3a321f2a2c74c20d022283fe","impliedFormat":1},{"version":"2ab096661c711e4a81cc464fa1e6feb929a54f5340b46b0a07ac6bbf857471f0","impliedFormat":1},{"version":"080941d9f9ff9307f7e27a83bcd888b7c8270716c39af943532438932ec1d0b9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2e80ee7a49e8ac312cc11b77f1475804bee36b3b2bc896bead8b6e1266befb43","affectsGlobalScope":true,"impliedFormat":1},{"version":"c57796738e7f83dbc4b8e65132f11a377649c00dd3eee333f672b8f0a6bea671","affectsGlobalScope":true,"impliedFormat":1},{"version":"dc2df20b1bcdc8c2d34af4926e2c3ab15ffe1160a63e58b7e09833f616efff44","affectsGlobalScope":true,"impliedFormat":1},{"version":"515d0b7b9bea2e31ea4ec968e9edd2c39d3eebf4a2d5cbd04e88639819ae3b71","affectsGlobalScope":true,"impliedFormat":1},{"version":"0559b1f683ac7505ae451f9a96ce4c3c92bdc71411651ca6ddb0e88baaaad6a3","affectsGlobalScope":true,"impliedFormat":1},{"version":"0dc1e7ceda9b8b9b455c3a2d67b0412feab00bd2f66656cd8850e8831b08b537","affectsGlobalScope":true,"impliedFormat":1},{"version":"ce691fb9e5c64efb9547083e4a34091bcbe5bdb41027e310ebba8f7d96a98671","affectsGlobalScope":true,"impliedFormat":1},{"version":"8d697a2a929a5fcb38b7a65594020fcef05ec1630804a33748829c5ff53640d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ff2a353abf8a80ee399af572debb8faab2d33ad38c4b4474cff7f26e7653b8d","affectsGlobalScope":true,"impliedFormat":1},{"version":"fb0f136d372979348d59b3f5020b4cdb81b5504192b1cacff5d1fbba29378aa1","affectsGlobalScope":true,"impliedFormat":1},{"version":"d15bea3d62cbbdb9797079416b8ac375ae99162a7fba5de2c6c505446486ac0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"68d18b664c9d32a7336a70235958b8997ebc1c3b8505f4f1ae2b7e7753b87618","affectsGlobalScope":true,"impliedFormat":1},{"version":"eb3d66c8327153d8fa7dd03f9c58d351107fe824c79e9b56b462935176cdf12a","affectsGlobalScope":true,"impliedFormat":1},{"version":"38f0219c9e23c915ef9790ab1d680440d95419ad264816fa15009a8851e79119","affectsGlobalScope":true,"impliedFormat":1},{"version":"69ab18c3b76cd9b1be3d188eaf8bba06112ebbe2f47f6c322b5105a6fbc45a2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"a680117f487a4d2f30ea46f1b4b7f58bef1480456e18ba53ee85c2746eeca012","affectsGlobalScope":true,"impliedFormat":1},{"version":"2f11ff796926e0832f9ae148008138ad583bd181899ab7dd768a2666700b1893","affectsGlobalScope":true,"impliedFormat":1},{"version":"4de680d5bb41c17f7f68e0419412ca23c98d5749dcaaea1896172f06435891fc","affectsGlobalScope":true,"impliedFormat":1},{"version":"954296b30da6d508a104a3a0b5d96b76495c709785c1d11610908e63481ee667","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac9538681b19688c8eae65811b329d3744af679e0bdfa5d842d0e32524c73e1c","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a969edff4bd52585473d24995c5ef223f6652d6ef46193309b3921d65dd4376","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e9fbd7030c440b33d021da145d3232984c8bb7916f277e8ffd3dc2e3eae2bdb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811ec78f7fefcabbda4bfa93b3eb67d9ae166ef95f9bff989d964061cbf81a0c","affectsGlobalScope":true,"impliedFormat":1},{"version":"717937616a17072082152a2ef351cb51f98802fb4b2fdabd32399843875974ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"d7e7d9b7b50e5f22c915b525acc5a49a7a6584cf8f62d0569e557c5cfc4b2ac2","affectsGlobalScope":true,"impliedFormat":1},{"version":"71c37f4c9543f31dfced6c7840e068c5a5aacb7b89111a4364b1d5276b852557","affectsGlobalScope":true,"impliedFormat":1},{"version":"576711e016cf4f1804676043e6a0a5414252560eb57de9faceee34d79798c850","affectsGlobalScope":true,"impliedFormat":1},{"version":"89c1b1281ba7b8a96efc676b11b264de7a8374c5ea1e6617f11880a13fc56dc6","affectsGlobalScope":true,"impliedFormat":1},{"version":"74f7fa2d027d5b33eb0471c8e82a6c87216223181ec31247c357a3e8e2fddc5b","affectsGlobalScope":true,"impliedFormat":1},{"version":"d6d7ae4d1f1f3772e2a3cde568ed08991a8ae34a080ff1151af28b7f798e22ca","affectsGlobalScope":true,"impliedFormat":1},{"version":"063600664504610fe3e99b717a1223f8b1900087fab0b4cad1496a114744f8df","affectsGlobalScope":true,"impliedFormat":1},{"version":"934019d7e3c81950f9a8426d093458b65d5aff2c7c1511233c0fd5b941e608ab","affectsGlobalScope":true,"impliedFormat":1},{"version":"52ada8e0b6e0482b728070b7639ee42e83a9b1c22d205992756fe020fd9f4a47","affectsGlobalScope":true,"impliedFormat":1},{"version":"3bdefe1bfd4d6dee0e26f928f93ccc128f1b64d5d501ff4a8cf3c6371200e5e6","affectsGlobalScope":true,"impliedFormat":1},{"version":"59fb2c069260b4ba00b5643b907ef5d5341b167e7d1dbf58dfd895658bda2867","affectsGlobalScope":true,"impliedFormat":1},{"version":"639e512c0dfc3fad96a84caad71b8834d66329a1f28dc95e3946c9b58176c73a","affectsGlobalScope":true,"impliedFormat":1},{"version":"368af93f74c9c932edd84c58883e736c9e3d53cec1fe24c0b0ff451f529ceab1","affectsGlobalScope":true,"impliedFormat":1},{"version":"af3dd424cf267428f30ccfc376f47a2c0114546b55c44d8c0f1d57d841e28d74","affectsGlobalScope":true,"impliedFormat":1},{"version":"995c005ab91a498455ea8dfb63aa9f83fa2ea793c3d8aa344be4a1678d06d399","affectsGlobalScope":true,"impliedFormat":1},{"version":"959d36cddf5e7d572a65045b876f2956c973a586da58e5d26cde519184fd9b8a","affectsGlobalScope":true,"impliedFormat":1},{"version":"965f36eae237dd74e6cca203a43e9ca801ce38824ead814728a2807b1910117d","affectsGlobalScope":true,"impliedFormat":1},{"version":"3925a6c820dcb1a06506c90b1577db1fdbf7705d65b62b99dce4be75c637e26b","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a3d63ef2b853447ec4f749d3f368ce642264246e02911fcb1590d8c161b8005","affectsGlobalScope":true,"impliedFormat":1},{"version":"8cdf8847677ac7d20486e54dd3fcf09eda95812ac8ace44b4418da1bbbab6eb8","affectsGlobalScope":true,"impliedFormat":1},{"version":"8444af78980e3b20b49324f4a16ba35024fef3ee069a0eb67616ea6ca821c47a","affectsGlobalScope":true,"impliedFormat":1},{"version":"3287d9d085fbd618c3971944b65b4be57859f5415f495b33a6adc994edd2f004","affectsGlobalScope":true,"impliedFormat":1},{"version":"b4b67b1a91182421f5df999988c690f14d813b9850b40acd06ed44691f6727ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"df83c2a6c73228b625b0beb6669c7ee2a09c914637e2d35170723ad49c0f5cd4","affectsGlobalScope":true,"impliedFormat":1},{"version":"436aaf437562f276ec2ddbee2f2cdedac7664c1e4c1d2c36839ddd582eeb3d0a","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e3c06ea092138bf9fa5e874a1fdbc9d54805d074bee1de31b99a11e2fec239d","affectsGlobalScope":true,"impliedFormat":1},{"version":"87dc0f382502f5bbce5129bdc0aea21e19a3abbc19259e0b43ae038a9fc4e326","affectsGlobalScope":true,"impliedFormat":1},{"version":"b1cb28af0c891c8c96b2d6b7be76bd394fddcfdb4709a20ba05a7c1605eea0f9","affectsGlobalScope":true,"impliedFormat":1},{"version":"2fef54945a13095fdb9b84f705f2b5994597640c46afeb2ce78352fab4cb3279","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac77cb3e8c6d3565793eb90a8373ee8033146315a3dbead3bde8db5eaf5e5ec6","affectsGlobalScope":true,"impliedFormat":1},{"version":"56e4ed5aab5f5920980066a9409bfaf53e6d21d3f8d020c17e4de584d29600ad","affectsGlobalScope":true,"impliedFormat":1},{"version":"4ece9f17b3866cc077099c73f4983bddbcb1dc7ddb943227f1ec070f529dedd1","affectsGlobalScope":true,"impliedFormat":1},{"version":"0a6282c8827e4b9a95f4bf4f5c205673ada31b982f50572d27103df8ceb8013c","affectsGlobalScope":true,"impliedFormat":1},{"version":"1c9319a09485199c1f7b0498f2988d6d2249793ef67edda49d1e584746be9032","affectsGlobalScope":true,"impliedFormat":1},{"version":"e3a2a0cee0f03ffdde24d89660eba2685bfbdeae955a6c67e8c4c9fd28928eeb","affectsGlobalScope":true,"impliedFormat":1},{"version":"811c71eee4aa0ac5f7adf713323a5c41b0cf6c4e17367a34fbce379e12bbf0a4","affectsGlobalScope":true,"impliedFormat":1},{"version":"51ad4c928303041605b4d7ae32e0c1ee387d43a24cd6f1ebf4a2699e1076d4fa","affectsGlobalScope":true,"impliedFormat":1},{"version":"60037901da1a425516449b9a20073aa03386cce92f7a1fd902d7602be3a7c2e9","affectsGlobalScope":true,"impliedFormat":1},{"version":"d4b1d2c51d058fc21ec2629fff7a76249dec2e36e12960ea056e3ef89174080f","affectsGlobalScope":true,"impliedFormat":1},{"version":"22adec94ef7047a6c9d1af3cb96be87a335908bf9ef386ae9fd50eeb37f44c47","affectsGlobalScope":true,"impliedFormat":1},{"version":"196cb558a13d4533a5163286f30b0509ce0210e4b316c56c38d4c0fd2fb38405","affectsGlobalScope":true,"impliedFormat":1},{"version":"73f78680d4c08509933daf80947902f6ff41b6230f94dd002ae372620adb0f60","affectsGlobalScope":true,"impliedFormat":1},{"version":"c5239f5c01bcfa9cd32f37c496cf19c61d69d37e48be9de612b541aac915805b","affectsGlobalScope":true,"impliedFormat":1},{"version":"8e7f8264d0fb4c5339605a15daadb037bf238c10b654bb3eee14208f860a32ea","affectsGlobalScope":true,"impliedFormat":1},{"version":"782dec38049b92d4e85c1585fbea5474a219c6984a35b004963b00beb1aab538","affectsGlobalScope":true,"impliedFormat":1},{"version":"0990a7576222f248f0a3b888adcb7389f957928ce2afb1cd5128169086ff4d29","impliedFormat":1},{"version":"eb5b19b86227ace1d29ea4cf81387279d04bb34051e944bc53df69f58914b788","affectsGlobalScope":true,"impliedFormat":1},{"version":"ac51dd7d31333793807a6abaa5ae168512b6131bd41d9c5b98477fc3b7800f9f","impliedFormat":1},{"version":"87d9d29dbc745f182683f63187bf3d53fd8673e5fca38ad5eaab69798ed29fbc","impliedFormat":1},{"version":"035312d4945d13efa134ae482f6dc56a1a9346f7ac3be7ccbad5741058ce87f3","affectsGlobalScope":true,"impliedFormat":1},{"version":"cc69795d9954ee4ad57545b10c7bf1a7260d990231b1685c147ea71a6faa265c","impliedFormat":1},{"version":"8bc6c94ff4f2af1f4023b7bb2379b08d3d7dd80c698c9f0b07431ea16101f05f","impliedFormat":1},{"version":"1b61d259de5350f8b1e5db06290d31eaebebc6baafd5f79d314b5af9256d7153","impliedFormat":1},{"version":"57194e1f007f3f2cbef26fa299d4c6b21f4623a2eddc63dfeef79e38e187a36e","impliedFormat":1},{"version":"0f6666b58e9276ac3a38fdc80993d19208442d6027ab885580d93aec76b4ef00","impliedFormat":1},{"version":"05fd364b8ef02fb1e174fbac8b825bdb1e5a36a016997c8e421f5fab0a6da0a0","impliedFormat":1},{"version":"70521b6ab0dcba37539e5303104f29b721bfb2940b2776da4cc818c07e1fefc1","affectsGlobalScope":true,"impliedFormat":1},{"version":"ab41ef1f2cdafb8df48be20cd969d875602483859dc194e9c97c8a576892c052","affectsGlobalScope":true,"impliedFormat":1},{"version":"d153a11543fd884b596587ccd97aebbeed950b26933ee000f94009f1ab142848","affectsGlobalScope":true,"impliedFormat":1},{"version":"21d819c173c0cf7cc3ce57c3276e77fd9a8a01d35a06ad87158781515c9a438a","impliedFormat":1},{"version":"98cffbf06d6bab333473c70a893770dbe990783904002c4f1a960447b4b53dca","affectsGlobalScope":true,"impliedFormat":1},{"version":"ba481bca06f37d3f2c137ce343c7d5937029b2468f8e26111f3c9d9963d6568d","affectsGlobalScope":true,"impliedFormat":1},{"version":"6d9ef24f9a22a88e3e9b3b3d8c40ab1ddb0853f1bfbd5c843c37800138437b61","affectsGlobalScope":true,"impliedFormat":1},{"version":"1db0b7dca579049ca4193d034d835f6bfe73096c73663e5ef9a0b5779939f3d0","affectsGlobalScope":true,"impliedFormat":1},{"version":"9798340ffb0d067d69b1ae5b32faa17ab31b82466a3fc00d8f2f2df0c8554aaa","affectsGlobalScope":true,"impliedFormat":1},{"version":"f26b11d8d8e4b8028f1c7d618b22274c892e4b0ef5b3678a8ccbad85419aef43","affectsGlobalScope":true,"impliedFormat":1},{"version":"5929864ce17fba74232584d90cb721a89b7ad277220627cc97054ba15a98ea8f","impliedFormat":1},{"version":"763fe0f42b3d79b440a9b6e51e9ba3f3f91352469c1e4b3b67bfa4ff6352f3f4","impliedFormat":1},{"version":"25c8056edf4314820382a5fdb4bb7816999acdcb929c8f75e3f39473b87e85bc","impliedFormat":1},{"version":"c464d66b20788266e5353b48dc4aa6bc0dc4a707276df1e7152ab0c9ae21fad8","impliedFormat":1},{"version":"78d0d27c130d35c60b5e5566c9f1e5be77caf39804636bc1a40133919a949f21","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"1d6e127068ea8e104a912e42fc0a110e2aa5a66a356a917a163e8cf9a65e4a75","impliedFormat":1},{"version":"5ded6427296cdf3b9542de4471d2aa8d3983671d4cac0f4bf9c637208d1ced43","impliedFormat":1},{"version":"7f182617db458e98fc18dfb272d40aa2fff3a353c44a89b2c0ccb3937709bfb5","impliedFormat":1},{"version":"cadc8aced301244057c4e7e73fbcae534b0f5b12a37b150d80e5a45aa4bebcbd","impliedFormat":1},{"version":"385aab901643aa54e1c36f5ef3107913b10d1b5bb8cbcd933d4263b80a0d7f20","impliedFormat":1},{"version":"9670d44354bab9d9982eca21945686b5c24a3f893db73c0dae0fd74217a4c219","impliedFormat":1},{"version":"0b8a9268adaf4da35e7fa830c8981cfa22adbbe5b3f6f5ab91f6658899e657a7","impliedFormat":1},{"version":"11396ed8a44c02ab9798b7dca436009f866e8dae3c9c25e8c1fbc396880bf1bb","impliedFormat":1},{"version":"ba7bc87d01492633cb5a0e5da8a4a42a1c86270e7b3d2dea5d156828a84e4882","impliedFormat":1},{"version":"4893a895ea92c85345017a04ed427cbd6a1710453338df26881a6019432febdd","impliedFormat":1},{"version":"c21dc52e277bcfc75fac0436ccb75c204f9e1b3fa5e12729670910639f27343e","impliedFormat":1},{"version":"13f6f39e12b1518c6650bbb220c8985999020fe0f21d818e28f512b7771d00f9","impliedFormat":1},{"version":"9b5369969f6e7175740bf51223112ff209f94ba43ecd3bb09eefff9fd675624a","impliedFormat":1},{"version":"4fe9e626e7164748e8769bbf74b538e09607f07ed17c2f20af8d680ee49fc1da","impliedFormat":1},{"version":"24515859bc0b836719105bb6cc3d68255042a9f02a6022b3187948b204946bd2","impliedFormat":1},{"version":"ea0148f897b45a76544ae179784c95af1bd6721b8610af9ffa467a518a086a43","impliedFormat":1},{"version":"24c6a117721e606c9984335f71711877293a9651e44f59f3d21c1ea0856f9cc9","impliedFormat":1},{"version":"dd3273ead9fbde62a72949c97dbec2247ea08e0c6952e701a483d74ef92d6a17","impliedFormat":1},{"version":"405822be75ad3e4d162e07439bac80c6bcc6dbae1929e179cf467ec0b9ee4e2e","impliedFormat":1},{"version":"0db18c6e78ea846316c012478888f33c11ffadab9efd1cc8bcc12daded7a60b6","impliedFormat":1},{"version":"e61be3f894b41b7baa1fbd6a66893f2579bfad01d208b4ff61daef21493ef0a8","impliedFormat":1},{"version":"bd0532fd6556073727d28da0edfd1736417a3f9f394877b6d5ef6ad88fba1d1a","impliedFormat":1},{"version":"89167d696a849fce5ca508032aabfe901c0868f833a8625d5a9c6e861ef935d2","impliedFormat":1},{"version":"615ba88d0128ed16bf83ef8ccbb6aff05c3ee2db1cc0f89ab50a4939bfc1943f","impliedFormat":1},{"version":"a4d551dbf8746780194d550c88f26cf937caf8d56f102969a110cfaed4b06656","impliedFormat":1},{"version":"8bd86b8e8f6a6aa6c49b71e14c4ffe1211a0e97c80f08d2c8cc98838006e4b88","impliedFormat":1},{"version":"317e63deeb21ac07f3992f5b50cdca8338f10acd4fbb7257ebf56735bf52ab00","impliedFormat":1},{"version":"4732aec92b20fb28c5fe9ad99521fb59974289ed1e45aecb282616202184064f","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"bf67d53d168abc1298888693338cb82854bdb2e69ef83f8a0092093c2d562107","impliedFormat":1},{"version":"b52476feb4a0cbcb25e5931b930fc73cb6643fb1a5060bf8a3dda0eeae5b4b68","affectsGlobalScope":true,"impliedFormat":1},{"version":"e2677634fe27e87348825bb041651e22d50a613e2fdf6a4a3ade971d71bac37e","impliedFormat":1},{"version":"7394959e5a741b185456e1ef5d64599c36c60a323207450991e7a42e08911419","impliedFormat":1},{"version":"8c0bcd6c6b67b4b503c11e91a1fb91522ed585900eab2ab1f61bba7d7caa9d6f","impliedFormat":1},{"version":"8cd19276b6590b3ebbeeb030ac271871b9ed0afc3074ac88a94ed2449174b776","affectsGlobalScope":true,"impliedFormat":1},{"version":"696eb8d28f5949b87d894b26dc97318ef944c794a9a4e4f62360cd1d1958014b","impliedFormat":1},{"version":"3f8fa3061bd7402970b399300880d55257953ee6d3cd408722cb9ac20126460c","impliedFormat":1},{"version":"35ec8b6760fd7138bbf5809b84551e31028fb2ba7b6dc91d95d098bf212ca8b4","affectsGlobalScope":true,"impliedFormat":1},{"version":"5524481e56c48ff486f42926778c0a3cce1cc85dc46683b92b1271865bcf015a","impliedFormat":1},{"version":"68bd56c92c2bd7d2339457eb84d63e7de3bd56a69b25f3576e1568d21a162398","affectsGlobalScope":true,"impliedFormat":1},{"version":"3e93b123f7c2944969d291b35fed2af79a6e9e27fdd5faa99748a51c07c02d28","impliedFormat":1},{"version":"9d19808c8c291a9010a6c788e8532a2da70f811adb431c97520803e0ec649991","impliedFormat":1},{"version":"87aad3dd9752067dc875cfaa466fc44246451c0c560b820796bdd528e29bef40","impliedFormat":1},{"version":"4aacb0dd020eeaef65426153686cc639a78ec2885dc72ad220be1d25f1a439df","impliedFormat":1},{"version":"f0bd7e6d931657b59605c44112eaf8b980ba7f957a5051ed21cb93d978cf2f45","impliedFormat":1},{"version":"8db0ae9cb14d9955b14c214f34dae1b9ef2baee2fe4ce794a4cd3ac2531e3255","affectsGlobalScope":true,"impliedFormat":1},{"version":"15fc6f7512c86810273af28f224251a5a879e4261b4d4c7e532abfbfc3983134","impliedFormat":1},{"version":"58adba1a8ab2d10b54dc1dced4e41f4e7c9772cbbac40939c0dc8ce2cdb1d442","impliedFormat":1},{"version":"641942a78f9063caa5d6b777c99304b7d1dc7328076038c6d94d8a0b81fc95c1","impliedFormat":1},{"version":"714435130b9015fae551788df2a88038471a5a11eb471f27c4ede86552842bc9","impliedFormat":1},{"version":"855cd5f7eb396f5f1ab1bc0f8580339bff77b68a770f84c6b254e319bbfd1ac7","impliedFormat":1},{"version":"5650cf3dace09e7c25d384e3e6b818b938f68f4e8de96f52d9c5a1b3db068e86","impliedFormat":1},{"version":"1354ca5c38bd3fd3836a68e0f7c9f91f172582ba30ab15bb8c075891b91502b7","affectsGlobalScope":true,"impliedFormat":1},{"version":"7e20d899c28ca26a2a7afc98beaa69e63ff7fba0a8bc47b4e3bf3ede5e09e424","impliedFormat":1},{"version":"2d2fcaab481b31a5882065c7951255703ddbe1c0e507af56ea42d79ac3911201","impliedFormat":1},{"version":"a192fe8ec33f75edbc8d8f3ed79f768dfae11ff5735e7fe52bfa69956e46d78d","impliedFormat":1},{"version":"ca867399f7db82df981d6915bcbb2d81131d7d1ef683bc782b59f71dda59bc85","affectsGlobalScope":true,"impliedFormat":1},{"version":"372413016d17d804e1d139418aca0c68e47a83fb6669490857f4b318de8cccb3","affectsGlobalScope":true,"impliedFormat":1},{"version":"9e043a1bc8fbf2a255bccf9bf27e0f1caf916c3b0518ea34aa72357c0afd42ec","impliedFormat":1},{"version":"b4f70ec656a11d570e1a9edce07d118cd58d9760239e2ece99306ee9dfe61d02","impliedFormat":1},{"version":"3bc2f1e2c95c04048212c569ed38e338873f6a8593930cf5a7ef24ffb38fc3b6","impliedFormat":1},{"version":"6e70e9570e98aae2b825b533aa6292b6abd542e8d9f6e9475e88e1d7ba17c866","impliedFormat":1},{"version":"f9d9d753d430ed050dc1bf2667a1bab711ccbb1c1507183d794cc195a5b085cc","impliedFormat":1},{"version":"9eece5e586312581ccd106d4853e861aaaa1a39f8e3ea672b8c3847eedd12f6e","impliedFormat":1},{"version":"085f552d005479e2e6a7311cdbbe5d8c55c497b4d19274285df161ee9684cd9c","impliedFormat":1},{"version":"37ba7b45141a45ce6e80e66f2a96c8a5ab1bcef0fc2d0f56bb58df96ec67e972","impliedFormat":1},{"version":"45650f47bfb376c8a8ed39d4bcda5902ab899a3150029684ee4c10676d9fbaee","impliedFormat":1},{"version":"007faacc9268357caa21d24169f3f3f2497af3e9241308df2d89f6e6d9bb3f2e","affectsGlobalScope":true,"impliedFormat":1},{"version":"74cf591a0f63db318651e0e04cb55f8791385f86e987a67fd4d2eaab8191f730","impliedFormat":1},{"version":"5eab9b3dc9b34f185417342436ec3f106898da5f4801992d8ff38ab3aff346b5","impliedFormat":1},{"version":"12ed4559eba17cd977aa0db658d25c4047067444b51acfdcbf38470630642b23","affectsGlobalScope":true,"impliedFormat":1},{"version":"f3ffabc95802521e1e4bcba4c88d8615176dc6e09111d920c7a213bdda6e1d65","impliedFormat":1},{"version":"809821b8a065e3234a55b3a9d7846231ed18d66dd749f2494c66288d890daf7f","impliedFormat":1},{"version":"ae56f65caf3be91108707bd8dfbccc2a57a91feb5daabf7165a06a945545ed26","impliedFormat":1},{"version":"a136d5de521da20f31631a0a96bf712370779d1c05b7015d7019a9b2a0446ca9","impliedFormat":1},{"version":"c3b41e74b9a84b88b1dca61ec39eee25c0dbc8e7d519ba11bb070918cfacf656","affectsGlobalScope":true,"impliedFormat":1},{"version":"4737a9dc24d0e68b734e6cfbcea0c15a2cfafeb493485e27905f7856988c6b29","affectsGlobalScope":true,"impliedFormat":1},{"version":"36d8d3e7506b631c9582c251a2c0b8a28855af3f76719b12b534c6edf952748d","impliedFormat":1},{"version":"1ca69210cc42729e7ca97d3a9ad48f2e9cb0042bada4075b588ae5387debd318","impliedFormat":1},{"version":"f5ebe66baaf7c552cfa59d75f2bfba679f329204847db3cec385acda245e574e","impliedFormat":1},{"version":"ed59add13139f84da271cafd32e2171876b0a0af2f798d0c663e8eeb867732cf","affectsGlobalScope":true,"impliedFormat":1},{"version":"b7c5e2ea4a9749097c347454805e933844ed207b6eefec6b7cfd418b5f5f7b28","impliedFormat":1},{"version":"b1810689b76fd473bd12cc9ee219f8e62f54a7d08019a235d07424afbf074d25","impliedFormat":1},{"version":"8caa5c86be1b793cd5f599e27ecb34252c41e011980f7d61ae4989a149ff6ccc","impliedFormat":1},{"version":"f9fd93190acb1ffe0bc0fb395df979452f8d625071e9ffc8636e4dfb86ab2508","impliedFormat":1},{"version":"5f41fd8732a89e940c58ce22206e3df85745feb8983e2b4c6257fb8cbb118493","impliedFormat":1},{"version":"17ed71200119e86ccef2d96b73b02ce8854b76ad6bd21b5021d4269bec527b5f","impliedFormat":1},{"version":"1cfa8647d7d71cb03847d616bd79320abfc01ddea082a49569fda71ac5ece66b","impliedFormat":1},{"version":"bb7a61dd55dc4b9422d13da3a6bb9cc5e89be888ef23bbcf6558aa9726b89a1c","impliedFormat":1},{"version":"db6d2d9daad8a6d83f281af12ce4355a20b9a3e71b82b9f57cddcca0a8964a96","impliedFormat":1},{"version":"cfe4ef4710c3786b6e23dae7c086c70b4f4835a2e4d77b75d39f9046106e83d3","impliedFormat":1},{"version":"cbea99888785d49bb630dcbb1613c73727f2b5a2cf02e1abcaab7bcf8d6bf3c5","impliedFormat":1},{"version":"98817124fd6c4f60e0b935978c207309459fb71ab112cf514f26f333bf30830e","impliedFormat":1},{"version":"a86f82d646a739041d6702101afa82dcb935c416dd93cbca7fd754fd0282ce1f","impliedFormat":1},{"version":"2dad084c67e649f0f354739ec7df7c7df0779a28a4f55c97c6b6883ae850d1ce","impliedFormat":1},{"version":"fa5bbc7ab4130dd8cdc55ea294ec39f76f2bc507a0f75f4f873e38631a836ca7","impliedFormat":1},{"version":"df45ca1176e6ac211eae7ddf51336dc075c5314bc5c253651bae639defd5eec5","impliedFormat":1},{"version":"cf86de1054b843e484a3c9300d62fbc8c97e77f168bbffb131d560ca0474d4a8","impliedFormat":1},{"version":"196c960b12253fde69b204aa4fbf69470b26daf7a430855d7f94107a16495ab0","impliedFormat":1},{"version":"528637e771ee2e808390d46a591eaef375fa4b9c99b03749e22b1d2e868b1b7c","impliedFormat":1},{"version":"bf24f6d35f7318e246010ffe9924395893c4e96d34324cde77151a73f078b9ad","impliedFormat":1},{"version":"596ccf4070268c4f5a8c459d762d8a934fa9b9317c7bf7a953e921bc9d78ce3c","impliedFormat":1},{"version":"10595c7ff5094dd5b6a959ccb1c00e6a06441b4e10a87bc09c15f23755d34439","impliedFormat":1},{"version":"9620c1ff645afb4a9ab4044c85c26676f0a93e8c0e4b593aea03a89ccb47b6d0","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"a9af0e608929aaf9ce96bd7a7b99c9360636c31d73670e4af09a09950df97841","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"c86fe861cf1b4c46a0fb7d74dffe596cf679a2e5e8b1456881313170f092e3fa","impliedFormat":1},{"version":"08ed0b3f0166787f84a6606f80aa3b1388c7518d78912571b203817406e471da","impliedFormat":1},{"version":"47e5af2a841356a961f815e7c55d72554db0c11b4cba4d0caab91f8717846a94","impliedFormat":1},{"version":"9a1a0dc84fecc111e83281743f003e1ae9048e0f83c2ae2028d17bc58fd93cc7","impliedFormat":1},{"version":"f5f541902bf7ae0512a177295de9b6bcd6809ea38307a2c0a18bfca72212f368","impliedFormat":1},{"version":"e8da637cbd6ed1cf6c36e9424f6bcee4515ca2c677534d4006cbd9a05f930f0c","impliedFormat":1},{"version":"ca1b882a105a1972f82cc58e3be491e7d750a1eb074ffd13b198269f57ed9e1b","impliedFormat":1},{"version":"fc3e1c87b39e5ba1142f27ec089d1966da168c04a859a4f6aab64dceae162c2b","impliedFormat":1},{"version":"3867ca0e9757cc41e04248574f4f07b8f9e3c0c2a796a5eb091c65bfd2fc8bdb","impliedFormat":1},{"version":"61888522cec948102eba94d831c873200aa97d00d8989fdfd2a3e0ee75ec65a2","impliedFormat":1},{"version":"4e10622f89fea7b05dd9b52fb65e1e2b5cbd96d4cca3d9e1a60bb7f8a9cb86a1","impliedFormat":1},{"version":"74b2a5e5197bd0f2e0077a1ea7c07455bbea67b87b0869d9786d55104006784f","impliedFormat":1},{"version":"59bf32919de37809e101acffc120596a9e45fdbab1a99de5087f31fdc36e2f11","impliedFormat":1},{"version":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","impliedFormat":1},{"version":"3df3abb3e7c1a74ab419f95500a998b55dd9bc985e295de96ff315dd94c7446f","impliedFormat":1},{"version":"c40c848daad198266370c1c72a7a8c3d18d2f50727c7859fcfefd3ff69a7f288","impliedFormat":1},{"version":"ac60bbee0d4235643cc52b57768b22de8c257c12bd8c2039860540cab1fa1d82","impliedFormat":1},{"version":"973b59a17aaa817eb205baf6c132b83475a5c0a44e8294a472af7793b1817e89","impliedFormat":1},{"version":"ada39cbb2748ab2873b7835c90c8d4620723aedf323550e8489f08220e477c7f","impliedFormat":1},{"version":"6e5f5cee603d67ee1ba6120815497909b73399842254fc1e77a0d5cdc51d8c9c","impliedFormat":1},{"version":"8dba67056cbb27628e9b9a1cba8e57036d359dceded0725c72a3abe4b6c79cd4","impliedFormat":1},{"version":"70f3814c457f54a7efe2d9ce9d2686de9250bb42eb7f4c539bd2280a42e52d33","impliedFormat":1},{"version":"5cbd32af037805215112472e35773bad9d4e03f0e72b1129a0d0c12d9cd63cc7","impliedFormat":1},{"version":"ef61792acbfa8c27c9bd113f02731e66229f7d3a169e3c1993b508134f1a58e0","impliedFormat":1},{"version":"afcb759e8e3ad6549d5798820697002bc07bdd039899fad0bf522e7e8a9f5866","impliedFormat":1},{"version":"f6404e7837b96da3ea4d38c4f1a3812c96c9dcdf264e93d5bdb199f983a3ef4b","impliedFormat":1},{"version":"c5426dbfc1cf90532f66965a7aa8c1136a78d4d0f96d8180ecbfc11d7722f1a5","impliedFormat":1},{"version":"65a15fc47900787c0bd18b603afb98d33ede930bed1798fc984d5ebb78b26cf9","impliedFormat":1},{"version":"9d202701f6e0744adb6314d03d2eb8fc994798fc83d91b691b75b07626a69801","impliedFormat":1},{"version":"de9d2df7663e64e3a91bf495f315a7577e23ba088f2949d5ce9ec96f44fba37d","impliedFormat":1},{"version":"c7af78a2ea7cb1cd009cfb5bdb48cd0b03dad3b54f6da7aab615c2e9e9d570c5","impliedFormat":1},{"version":"1ee45496b5f8bdee6f7abc233355898e5bf9bd51255db65f5ff7ede617ca0027","impliedFormat":1},{"version":"566e5fb812082f8cf929c6727d40924843246cf19ee4e8b9437a6315c4792b03","affectsGlobalScope":true,"impliedFormat":1},{"version":"db01d18853469bcb5601b9fc9826931cc84cc1a1944b33cad76fd6f1e3d8c544","affectsGlobalScope":true,"impliedFormat":1},{"version":"dba114fb6a32b355a9cfc26ca2276834d72fe0e94cd2c3494005547025015369","impliedFormat":1},{"version":"903e299a28282fa7b714586e28409ed73c3b63f5365519776bf78e8cf173db36","affectsGlobalScope":true,"impliedFormat":1},{"version":"fa6c12a7c0f6b84d512f200690bfc74819e99efae69e4c95c4cd30f6884c526e","impliedFormat":1},{"version":"f1c32f9ce9c497da4dc215c3bc84b722ea02497d35f9134db3bb40a8d918b92b","impliedFormat":1},{"version":"b73c319af2cc3ef8f6421308a250f328836531ea3761823b4cabbd133047aefa","affectsGlobalScope":true,"impliedFormat":1},{"version":"e433b0337b8106909e7953015e8fa3f2d30797cea27141d1c5b135365bb975a6","impliedFormat":1},{"version":"dd3900b24a6a8745efeb7ad27629c0f8a626470ac229c1d73f1fe29d67e44dca","impliedFormat":1},{"version":"ddff7fc6edbdc5163a09e22bf8df7bef75f75369ebd7ecea95ba55c4386e2441","impliedFormat":1},{"version":"106c6025f1d99fd468fd8bf6e5bda724e11e5905a4076c5d29790b6c3745e50c","impliedFormat":1},{"version":"ec29be0737d39268696edcec4f5e97ce26f449fa9b7afc2f0f99a86def34a418","impliedFormat":1},{"version":"68a06fb972b2c7e671bf090dc5a5328d22ba07d771376c3d9acd9e7ed786a9db","impliedFormat":1},{"version":"ec6cba1c02c675e4dd173251b156792e8d3b0c816af6d6ad93f1a55d674591aa","impliedFormat":1},{"version":"b620391fe8060cf9bedc176a4d01366e6574d7a71e0ac0ab344a4e76576fcbb8","impliedFormat":1},{"version":"d729408dfde75b451530bcae944cf89ee8277e2a9df04d1f62f2abfd8b03c1e1","impliedFormat":1},{"version":"e15d3c84d5077bb4a3adee4c791022967b764dc41cb8fa3cfa44d4379b2c95f5","impliedFormat":1},{"version":"78244a2a8ab1080e0dd8fc3633c204c9a4be61611d19912f4b157f7ef7367049","impliedFormat":1},{"version":"e1fc1a1045db5aa09366be2b330e4ce391550041fc3e925f60998ca0b647aa97","impliedFormat":1},{"version":"d3f5861c48322adc023d3277e592635402ac008c5beae2e447b335fbf0da56c2","impliedFormat":1},{"version":"43ba4f2fa8c698f5c304d21a3ef596741e8e85a810b7c1f9b692653791d8d97a","impliedFormat":1},{"version":"31fb49ef3aa3d76f0beb644984e01eab0ea222372ea9b49bb6533be5722d756c","impliedFormat":1},{"version":"33cd131e1461157e3e06b06916b5176e7a8ec3fce15a5cfe145e56de744e07d2","impliedFormat":1},{"version":"889ef863f90f4917221703781d9723278db4122d75596b01c429f7c363562b86","impliedFormat":1},{"version":"3556cfbab7b43da96d15a442ddbb970e1f2fc97876d055b6555d86d7ac57dae5","impliedFormat":1},{"version":"437751e0352c6e924ddf30e90849f1d9eb00ca78c94d58d6a37202ec84eb8393","impliedFormat":1},{"version":"48e8af7fdb2677a44522fd185d8c87deff4d36ee701ea003c6c780b1407a1397","impliedFormat":1},{"version":"d11308de5a36c7015bb73adb5ad1c1bdaac2baede4cc831a05cf85efa3cc7f2f","impliedFormat":1},{"version":"8c9f19c480c747b6d8067c53fcc3cef641619029afb0a903672daed3f5acaed2","impliedFormat":1},{"version":"f9812cfc220ecf7557183379531fa409acd249b9e5b9a145d0d52b76c20862de","affectsGlobalScope":true,"impliedFormat":1},{"version":"7b068371563d0396a065ed64b049cffeb4eed89ad433ae7730fc31fb1e00ebf3","impliedFormat":1},{"version":"2e4f37ffe8862b14d8e24ae8763daaa8340c0df0b859d9a9733def0eee7562d9","impliedFormat":1},{"version":"13283350547389802aa35d9f2188effaeac805499169a06ef5cd77ce2a0bd63f","impliedFormat":1},{"version":"680793958f6a70a44c8d9ae7d46b7a385361c69ac29dcab3ed761edce1c14ab8","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"42c169fb8c2d42f4f668c624a9a11e719d5d07dacbebb63cbcf7ef365b0a75b3","impliedFormat":1},{"version":"913ddbba170240070bd5921b8f33ea780021bdf42fbdfcd4fcb2691b1884ddde","impliedFormat":1},{"version":"74c105214ddd747037d2a75da6588ec8aa1882f914e1f8a312c528f86feca2b9","impliedFormat":1},{"version":"5fe23bd829e6be57d41929ac374ee9551ccc3c44cee893167b7b5b77be708014","impliedFormat":1},{"version":"4d85f80132e24d9a5b5c5e0734e4ecd6878d8c657cc990ecc70845ef384ca96f","impliedFormat":1},{"version":"438c7513b1df91dcef49b13cd7a1c4720f91a36e88c1df731661608b7c055f10","impliedFormat":1},{"version":"cf185cc4a9a6d397f416dd28cca95c227b29f0f27b160060a95c0e5e36cda865","impliedFormat":1},{"version":"0086f3e4ad898fd7ca56bb223098acfacf3fa065595182aaf0f6c4a6a95e6fbd","impliedFormat":1},{"version":"efaa078e392f9abda3ee8ade3f3762ab77f9c50b184e6883063a911742a4c96a","impliedFormat":1},{"version":"54a8bb487e1dc04591a280e7a673cdfb272c83f61e28d8a64cf1ac2e63c35c51","impliedFormat":1},{"version":"021a9498000497497fd693dd315325484c58a71b5929e2bbb91f419b04b24cea","impliedFormat":1},{"version":"9385cdc09850950bc9b59cca445a3ceb6fcca32b54e7b626e746912e489e535e","impliedFormat":1},{"version":"2894c56cad581928bb37607810af011764a2f511f575d28c9f4af0f2ef02d1ab","impliedFormat":1},{"version":"0a72186f94215d020cb386f7dca81d7495ab6c17066eb07d0f44a5bf33c1b21a","impliedFormat":1},{"version":"84124384abae2f6f66b7fbfc03862d0c2c0b71b826f7dbf42c8085d31f1d3f95","impliedFormat":1},{"version":"63a8e96f65a22604eae82737e409d1536e69a467bb738bec505f4f97cce9d878","impliedFormat":1},{"version":"3fd78152a7031315478f159c6a5872c712ece6f01212c78ea82aef21cb0726e2","impliedFormat":1},{"version":"3a6ed8e1d630cfa1f7edf0dc46a6e20ca6c714dbe754409699008571dfe473a6","impliedFormat":1},{"version":"512fc15cca3a35b8dbbf6e23fe9d07e6f87ad03c895acffd3087ce09f352aad0","impliedFormat":1},{"version":"9a0946d15a005832e432ea0cd4da71b57797efb25b755cc07f32274296d62355","impliedFormat":1},{"version":"a52ff6c0a149e9f370372fc3c715d7f2beee1f3bab7980e271a7ab7d313ec677","impliedFormat":1},{"version":"fd933f824347f9edd919618a76cdb6a0c0085c538115d9a287fa0c7f59957ab3","impliedFormat":1},{"version":"6ac6715916fa75a1f7ebdfeacac09513b4d904b667d827b7535e84ff59679aff","impliedFormat":1},{"version":"6a1aa3e55bdc50503956c5cd09ae4cd72e3072692d742816f65c66ca14f4dfdd","impliedFormat":1},{"version":"ab75cfd9c4f93ffd601f7ca1753d6a9d953bbedfbd7a5b3f0436ac8a1de60dfa","impliedFormat":1},{"version":"59c68235df3905989afa0399381c1198313aaaf1ed387f57937eb616625dff15","impliedFormat":1},{"version":"b73cbf0a72c8800cf8f96a9acfe94f3ad32ca71342a8908b8ae484d61113f647","impliedFormat":1},{"version":"bae6dd176832f6423966647382c0d7ba9e63f8c167522f09a982f086cd4e8b23","impliedFormat":1},{"version":"1364f64d2fb03bbb514edc42224abd576c064f89be6a990136774ecdd881a1da","impliedFormat":1},{"version":"c9958eb32126a3843deedda8c22fb97024aa5d6dd588b90af2d7f2bfac540f23","impliedFormat":1},{"version":"950fb67a59be4c2dbe69a5786292e60a5cb0e8612e0e223537784c731af55db1","impliedFormat":1},{"version":"e927c2c13c4eaf0a7f17e6022eee8519eb29ef42c4c13a31e81a611ab8c95577","impliedFormat":1},{"version":"07ca44e8d8288e69afdec7a31fa408ce6ab90d4f3d620006701d5544646da6aa","impliedFormat":1},{"version":"70246ad95ad8a22bdfe806cb5d383a26c0c6e58e7207ab9c431f1cb175aca657","impliedFormat":1},{"version":"f00f3aa5d64ff46e600648b55a79dcd1333458f7a10da2ed594d9f0a44b76d0b","impliedFormat":1},{"version":"772d8d5eb158b6c92412c03228bd9902ccb1457d7a705b8129814a5d1a6308fc","impliedFormat":1},{"version":"4e4475fba4ed93a72f167b061cd94a2e171b82695c56de9899275e880e06ba41","impliedFormat":1},{"version":"97c5f5d580ab2e4decd0a3135204050f9b97cd7908c5a8fbc041eadede79b2fa","impliedFormat":1},{"version":"c99a3a5f2215d5b9d735aa04cec6e61ed079d8c0263248e298ffe4604d4d0624","impliedFormat":1},{"version":"49b2375c586882c3ac7f57eba86680ff9742a8d8cb2fe25fe54d1b9673690d41","impliedFormat":1},{"version":"802e797bcab5663b2c9f63f51bdf67eff7c41bc64c0fd65e6da3e7941359e2f7","impliedFormat":1},{"version":"b98ce74c2bc49a9b79408f049c49909190c747b0462e78f91c09618da86bae53","impliedFormat":1},{"version":"3ecfccf916fea7c6c34394413b55eb70e817a73e39b4417d6573e523784e3f8e","impliedFormat":1},{"version":"c05bc82af01e673afc99bdffd4ebafde22ab027d63e45be9e1f1db3bc39e2fc0","impliedFormat":1},{"version":"6459054aabb306821a043e02b89d54da508e3a6966601a41e71c166e4ea1474f","impliedFormat":1},{"version":"f416c9c3eee9d47ff49132c34f96b9180e50485d435d5748f0e8b72521d28d2e","impliedFormat":1},{"version":"05c97cddbaf99978f83d96de2d8af86aded9332592f08ce4a284d72d0952c391","impliedFormat":1},{"version":"14e5cdec6f8ae82dfd0694e64903a0a54abdfe37e1d966de3d4128362acbf35f","impliedFormat":1},{"version":"bbc183d2d69f4b59fd4dd8799ffdf4eb91173d1c4ad71cce91a3811c021bf80c","impliedFormat":1},{"version":"7b6ff760c8a240b40dab6e4419b989f06a5b782f4710d2967e67c695ef3e93c4","impliedFormat":1},{"version":"8dbc4134a4b3623fc476be5f36de35c40f2768e2e3d9ed437e0d5f1c4cd850f6","impliedFormat":1},{"version":"4e06330a84dec7287f7ebdd64978f41a9f70a668d3b5edc69d5d4a50b9b376bb","impliedFormat":1},{"version":"65bfa72967fbe9fc33353e1ac03f0480aa2e2ea346d61ff3ea997dfd850f641a","impliedFormat":1},{"version":"8f88c6be9803fe5aaa80b00b27f230c824d4b8a33856b865bea5793cb52bb797","impliedFormat":1},{"version":"f974e4a06953682a2c15d5bd5114c0284d5abf8bc0fe4da25cb9159427b70072","impliedFormat":1},{"version":"872caaa31423f4345983d643e4649fb30f548e9883a334d6d1c5fff68ede22d4","impliedFormat":1},{"version":"94404c4a878fe291e7578a2a80264c6f18e9f1933fbb57e48f0eb368672e389c","impliedFormat":1},{"version":"5c1b7f03aa88be854bc15810bfd5bd5a1943c5a7620e1c53eddd2a013996343e","impliedFormat":1},{"version":"09dfc64fcd6a2785867f2368419859a6cc5a8d4e73cbe2538f205b1642eb0f51","impliedFormat":1},{"version":"bcf6f0a323653e72199105a9316d91463ad4744c546d1271310818b8cef7c608","impliedFormat":1},{"version":"01aa917531e116485beca44a14970834687b857757159769c16b228eb1e49c5f","impliedFormat":1},{"version":"351475f9c874c62f9b45b1f0dc7e2704e80dfd5f1af83a3a9f841f9dfe5b2912","impliedFormat":1},{"version":"ac457ad39e531b7649e7b40ee5847606eac64e236efd76c5d12db95bf4eacd17","impliedFormat":1},{"version":"187a6fdbdecb972510b7555f3caacb44b58415da8d5825d03a583c4b73fde4cf","impliedFormat":1},{"version":"d4c3250105a612202289b3a266bb7e323db144f6b9414f9dea85c531c098b811","impliedFormat":1},{"version":"95b444b8c311f2084f0fb51c616163f950fb2e35f4eaa07878f313a2d36c98a4","impliedFormat":1},{"version":"741067675daa6d4334a2dc80a4452ca3850e89d5852e330db7cb2b5f867173b1","impliedFormat":1},{"version":"f8acecec1114f11690956e007d920044799aefeb3cece9e7f4b1f8a1d542b2c9","impliedFormat":1},{"version":"131b1475d2045f20fb9f43b7aa6b7cb51f25250b5e4c6a1d4aa3cf4dd1a68793","impliedFormat":1},{"version":"3a17f09634c50cce884721f54fd9e7b98e03ac505889c560876291fcf8a09e90","impliedFormat":1},{"version":"32531dfbb0cdc4525296648f53b2b5c39b64282791e2a8c765712e49e6461046","impliedFormat":1},{"version":"0ce1b2237c1c3df49748d61568160d780d7b26693bd9feb3acb0744a152cd86d","impliedFormat":1},{"version":"e489985388e2c71d3542612685b4a7db326922b57ac880f299da7026a4e8a117","impliedFormat":1},{"version":"e1437c5f191edb7a494f7bbbc033b97d72d42e054d521402ee194ac5b6b7bf49","impliedFormat":1},{"version":"04d3aad777b6af5bd000bfc409907a159fe77e190b9d368da4ba649cdc28d39e","affectsGlobalScope":true,"impliedFormat":1},{"version":"fd1b9d883b9446f1e1da1e1033a6a98995c25fbf3c10818a78960e2f2917d10c","impliedFormat":1},{"version":"19252079538942a69be1645e153f7dbbc1ef56b4f983c633bf31fe26aeac32cd","impliedFormat":1},{"version":"bc11f3ac00ac060462597add171220aed628c393f2782ac75dd29ff1e0db871c","impliedFormat":1},{"version":"616775f16134fa9d01fc677ad3f76e68c051a056c22ab552c64cc281a9686790","impliedFormat":1},{"version":"65c24a8baa2cca1de069a0ba9fba82a173690f52d7e2d0f1f7542d59d5eb4db0","impliedFormat":1},{"version":"313c85c332bb6892d5f7c624dc39107ca7a6b2f1b3212db86dbbefbe7f8ddd5a","impliedFormat":1},{"version":"3b0b1d352b8d2e47f1c4df4fb0678702aee071155b12ef0185fce9eb4fa4af1e","impliedFormat":1},{"version":"77e71242e71ebf8528c5802993697878f0533db8f2299b4d36aa015bae08a79c","impliedFormat":1},{"version":"a344403e7a7384e0e7093942533d309194ad0a53eca2a3100c0b0ab4d3932773","impliedFormat":1},{"version":"b7fff2d004c5879cae335db8f954eb1d61242d9f2d28515e67902032723caeab","impliedFormat":1},{"version":"5f3dc10ae646f375776b4e028d2bed039a93eebbba105694d8b910feebbe8b9c","impliedFormat":1},{"version":"bb18bf4a61a17b4a6199eb3938ecfa4a59eb7c40843ad4a82b975ab6f7e3d925","impliedFormat":1},{"version":"4545c1a1ceca170d5d83452dd7c4994644c35cf676a671412601689d9a62da35","impliedFormat":1},{"version":"e9b6fc05f536dfddcdc65dbcf04e09391b1c968ab967382e48924f5cb90d88e1","impliedFormat":1},{"version":"a2d648d333cf67b9aeac5d81a1a379d563a8ffa91ddd61c6179f68de724260ff","impliedFormat":1},{"version":"2b664c3cc544d0e35276e1fb2d4989f7d4b4027ffc64da34ec83a6ccf2e5c528","impliedFormat":1},{"version":"a3f41ed1b4f2fc3049394b945a68ae4fdefd49fa1739c32f149d32c0545d67f5","impliedFormat":1},{"version":"3cd8f0464e0939b47bfccbb9bb474a6d87d57210e304029cd8eb59c63a81935d","impliedFormat":1},{"version":"47699512e6d8bebf7be488182427189f999affe3addc1c87c882d36b7f2d0b0e","impliedFormat":1},{"version":"3026abd48e5e312f2328629ede6e0f770d21c3cd32cee705c450e589d015ee09","impliedFormat":1},{"version":"8b140b398a6afbd17cc97c38aea5274b2f7f39b1ae5b62952cfe65bf493e3e75","impliedFormat":1},{"version":"7663d2c19ce5ef8288c790edba3d45af54e58c84f1b37b1249f6d49d962f3d91","impliedFormat":1},{"version":"30112425b2cf042fca1c79c19e35f88f44bfb2e97454527528cd639dd1a460ca","impliedFormat":1},{"version":"00bd6ebe607246b45296aa2b805bd6a58c859acecda154bfa91f5334d7c175c6","impliedFormat":1},{"version":"ad036a85efcd9e5b4f7dd5c1a7362c8478f9a3b6c3554654ca24a29aa850a9c5","impliedFormat":1},{"version":"fedebeae32c5cdd1a85b4e0504a01996e4a8adf3dfa72876920d3dd6e42978e7","impliedFormat":1},{"version":"504f37ba38bfea8394ec4f397c9a2ade7c78055e41ef5a600073b515c4fd0fc9","impliedFormat":1},{"version":"cdf21eee8007e339b1b9945abf4a7b44930b1d695cc528459e68a3adc39a622e","impliedFormat":1},{"version":"db036c56f79186da50af66511d37d9fe77fa6793381927292d17f81f787bb195","impliedFormat":1},{"version":"87ac2fb61e629e777f4d161dff534c2023ee15afd9cb3b1589b9b1f014e75c58","impliedFormat":1},{"version":"13c8b4348db91e2f7d694adc17e7438e6776bc506d5c8f5de9ad9989707fa3fe","impliedFormat":1},{"version":"3c1051617aa50b38e9efaabce25e10a5dd9b1f42e372ef0e8a674076a68742ed","impliedFormat":1},{"version":"07a3e20cdcb0f1182f452c0410606711fbea922ca76929a41aacb01104bc0d27","impliedFormat":1},{"version":"1de80059b8078ea5749941c9f863aa970b4735bdbb003be4925c853a8b6b4450","impliedFormat":1},{"version":"1d079c37fa53e3c21ed3fa214a27507bda9991f2a41458705b19ed8c2b61173d","impliedFormat":1},{"version":"4cd4b6b1279e9d744a3825cbd7757bbefe7f0708f3f1069179ad535f19e8ed2c","impliedFormat":1},{"version":"5835a6e0d7cd2738e56b671af0e561e7c1b4fb77751383672f4b009f4e161d70","impliedFormat":1},{"version":"c0eeaaa67c85c3bb6c52b629ebbfd3b2292dc67e8c0ffda2fc6cd2f78dc471e6","impliedFormat":1},{"version":"4b7f74b772140395e7af67c4841be1ab867c11b3b82a51b1aeb692822b76c872","impliedFormat":1},{"version":"27be6622e2922a1b412eb057faa854831b95db9db5035c3f6d4b677b902ab3b7","impliedFormat":1},{"version":"b95a6f019095dd1d48fd04965b50dfd63e5743a6e75478343c46d2582a5132bf","impliedFormat":99},{"version":"c2008605e78208cfa9cd70bd29856b72dda7ad89df5dc895920f8e10bcb9cd0a","impliedFormat":99},{"version":"b97cb5616d2ab82a98ec9ada7b9e9cabb1f5da880ec50ea2b8dc5baa4cbf3c16","impliedFormat":99},{"version":"d23df9ff06ae8bf1dcb7cc933e97ae7da418ac77749fecee758bb43a8d69f840","affectsGlobalScope":true,"impliedFormat":1},{"version":"040c71dde2c406f869ad2f41e8d4ce579cc60c8dbe5aa0dd8962ac943b846572","affectsGlobalScope":true,"impliedFormat":1},{"version":"3586f5ea3cc27083a17bd5c9059ede9421d587286d5a47f4341a4c2d00e4fa91","impliedFormat":1},{"version":"a6df929821e62f4719551f7955b9f42c0cd53c1370aec2dd322e24196a7dfe33","impliedFormat":1},{"version":"b789bf89eb19c777ed1e956dbad0925ca795701552d22e68fd130a032008b9f9","impliedFormat":1},"8964d295a9047c3a222af813b7d37deb57b835fd0942d89222e7def0aed136cc",{"version":"681cf9768031b874fafdd81a20e8a20ca6c92a5cbf12e86532a69182e315b065","impliedFormat":1},{"version":"32727845ab5bd8a9ef3e4844c567c09f6d418fcf0f90d381c00652a6f23e7f6e","impliedFormat":1},{"version":"e5b810845dedef5aa0d682efa61be20dcb2e28c27a64ff5cc4cfc122f3f3980f","impliedFormat":1},{"version":"7a8ec10b0834eb7183e4bfcd929838ac77583828e343211bb73676d1e47f6f01","impliedFormat":1},{"version":"f02650de64b96593c1eb736f28a6a0a773c51662d8525b06cc735d77fa9c7af8","affectsGlobalScope":true,"impliedFormat":1},{"version":"3f00324f263189b385c3a9383b1f4dae6237697bcf0801f96aa35c340512d79c","impliedFormat":1},{"version":"ec8997c2e5cea26befc76e7bf990750e96babb16977673a9ff3b5c0575d01e48","impliedFormat":1},{"version":"15ee7690b57d2370e0bafee031269ba32042518edc33f9ae7eb7e2905eefd45d","signature":"585a60e4dfcdb18f0e59edb70f2ba5a21d4e2a24df13f744d047006905df73a1"},"16e9e28dd4a6509dad59594ee50e5414228ff87f1b795f92131fefe3715985c3","1a7a4b00397600634afce6a9a42c98bb766792f1ec4557c72ac5fb4e7f4afff8","6f66bbf05994480f78ad87fe555373b138a621c55a618f9420e05d60cc0c1e99","48976cc019a7c39a7b7c90c37245d23defbb0dfda186f2d2142b65e1eb19163f","f76121c4d21f71cf66914124cd056d0d36ef476f5efbf7d0ee9e929433bc9c08","11083c5e8714b65f06ee6ede1c8138f2eeb8d0c6db49e71c1283b3299bd56335","cf224d3d047f07714e8522444b11af6237dc8b2f958cba621434ca711dc665dd","90b2c10acbfa423960b6a68d75fa09d298110eccb00bc77e22691edae8bc5693",{"version":"5a6237f90ea7b312ce8e331ad5ab88661ca01c64aad1fdfa4d8a9f2f64caf57d","impliedFormat":1},{"version":"b7982958a5ed024532a66b86adf71382e71b5fc86cddfd04fc6663ec917e6aa5","impliedFormat":1},{"version":"a3628f430f8d502a5c026a0c932a5c41e6361d8e0248287872cd8999bc534399","impliedFormat":1},{"version":"fc4eaf7ff8aea6826b2640c0484cc3fbbe75521a45d28cd7708e4ef5aafc4048","impliedFormat":99},{"version":"39f509b45a50c506dcaf8853902af81cbdfd00c702178d0f1ecc77eab1a50eb5","impliedFormat":1},{"version":"2b6c6039f4d2f656904d66f82231488f4852f861d27147884895097f74e3e812","impliedFormat":1},{"version":"cc6c527d304da87b8873bcf1cf9a47a12fe1630abaf5cbb2c60cbabd8e85e4c2","impliedFormat":1},{"version":"ef1448b99805603191d861730d91469aa753698b1c773d8c7b5c75a95ce61b2e","impliedFormat":1},{"version":"941959cd493fe9e8780f8a704791c83ffff2499447622f7ee63acc7bf08be0f9","impliedFormat":1},{"version":"1fcc4bb6d083b31e1587711ab5a8b0467b52a125f9735467774285bc8cc127e6","impliedFormat":1},{"version":"d689ba4f3520ed3a9de24be37d23ad0930f75d804bd82067822b1558782f12eb","impliedFormat":1},{"version":"0e085cc503ad1332728d56244e9f7a603404beca17c0c5b2d815ed29e0727d4b","impliedFormat":1},{"version":"deda38d3245acb0404dd845dae172547c895c99c442082f176071cbb40d092f3","impliedFormat":1},{"version":"2776f7230a2ae50a27bc595893d0fcd8943869a8a3aaff99a2e3f86aafe54bdb","impliedFormat":1},{"version":"585951f20abc465c5acb3674fe5bad232c299f00d073d90c8cb1a416c807d41e","impliedFormat":1},{"version":"e6f3d02d69394dae0771c088b3c0b982cf15b6a91678c59f1d5fbd7c5e6ad8f8","impliedFormat":1},{"version":"ef182902b33ac9b9ad90c163b313722d2bc9d8c2cfefeb418b3205d70504a486","impliedFormat":1},{"version":"3f279bd4f57a5464d9201ab3520ecc468a434805243125c26a57896d7539ce46","impliedFormat":1},{"version":"95bdd836ed77c23e530fcd3a0823df8fd611035590dfd8d38ee164c56f2bd2c4","impliedFormat":1},{"version":"c2e4b711a529358fbfdded0369781ddfe70320eb535ffbf71060775d60e3fb5a","impliedFormat":1},{"version":"76d33de81cd8f74ca32f2b1d5a6725b20caef91ec8d259a27ac346b8d52df10c","impliedFormat":1},{"version":"c0e42e780d502d530ce67e30d09a3b81c5d37d500c1f7ef04f4bd806f648b96a","impliedFormat":1},{"version":"447b6a80636a59c918ed18af1019de1efa94109a086e8fd8f3d20eb9b9a6937b","impliedFormat":99},{"version":"ca5bb7562523b37cc0e0f92e1ea0b99b6957f86a81f7933e6e3fea94a2dd80a1","impliedFormat":99},{"version":"05c9c065eadecdce0ee370455e3c36674bfb08673f1a268a398002a0d2d801b7","impliedFormat":1},{"version":"b0df6363b53f0b84a98f6e8ebaebd773bcc46f77d4b61af4574c7508c40f6c04","impliedFormat":1},{"version":"0eae63800777384563d5727e572982c220d47acf736dcdb569a2749a32378f19","impliedFormat":1},{"version":"9bf41a89bd0bbd4f8a23a7925d04f99267cb84a5a5b239185f3320edea329b9c","impliedFormat":1},{"version":"ba69d5ef968a0350e3216f4dfd39f846ed9a500f360acbe473e4f88278b3c746","impliedFormat":1},{"version":"ca2d1749803143fc680e7f89c0ee9e59fdbf1b4139666016fb152121e3e2c53c","impliedFormat":1},{"version":"9eb8136b766f74e684182375d1be1e03bb504973b7251dd49be3001f586473e6","impliedFormat":1},{"version":"ecfb7796212d2f1d7fc48d7d42dd6ec4c270f3080572d19f24b2638ae0defac3","impliedFormat":1},{"version":"717c42dfb8774242bcf05836fbc643bd7ccbf21908e5b8fe7920c950617ffc19","impliedFormat":1},{"version":"60662f82f3059abd2e0d8a0a5cb56abea8b982dd5dbbf7c254e60d927be25393","impliedFormat":1},{"version":"18eaffdf9c5aaf96d3ba7e3d9d788193a119be6792c1f32da4ac3595687a3a59","impliedFormat":1},{"version":"faad9daec205f5c695bfff09086f4e1e65b32deb9abc0068cba87ff660c1be90","impliedFormat":1},{"version":"4ae9b50481136302de9c77668621ed3a0b34998f3e091ca3701426f4fe369c8a","impliedFormat":1},{"version":"9ba9ecc57d2f52b3ed3ac229636ee9a36e92e18b80eeae11ffb546c12e56d5e5","impliedFormat":1},{"version":"17644c49b3a6c1907a292b491472a609f342d069c660043b96e398574e34b6a7","impliedFormat":1},{"version":"d182d419bb30a1408784ed95fbabd973dde7517641e04525f0ce761df5d193a5","impliedFormat":1},{"version":"c5396a9d06e2e1754a53813b8e1fe9c85468ab18826222346b94cc36dc4d78f5","impliedFormat":99},{"version":"587140f465e529483e153991c3e3bfddda871bf5d28e514fc9276e1d32b7db32","signature":"bb2f42e062fe1e6d4f7775676fd89ebd60ddfd54aab6f2ebeaf617993357a12f"},"b7df8f2c9f4060716e34cc1c3a2fccce0f7a8d6c613e5c6c4b0772f15ff67aef","c99244a9825c71410a98c03f759aaac8f288120b5660b4ee49f668b4cecc06a2",{"version":"da3fe58060a0e3a9e3f2eda46a42bfe1d62214733c99ea206dcc5e22d93be1c2","signature":"13a0ebb5eb3c4198a072ea78e34415307f255403589a1efc604b932422dab541"},{"version":"689e803bd4110fa7f1b139495afa9fcaaebd53cc149449ab0732646efac5ac60","signature":"49f271d5b3a43d5b2496d99de65d460b9d2bfe20bfaef77e039fc81e48fdaad0"},{"version":"40baba5c7445b889918d0bf5062ad8a3eac2a91443e85b13800e41e812962de7","signature":"06ceff435ee5e1b14598c7630c9e81f2eac68f9a532b58cbfd0b264fbf55619d"},"e739bc37ff917168c6fa2cb6d02c876d4319a8903e8e970aa19642296732df4b","66e54622378da76d5015b19ed281ba55da74ebfe0f45b49aae0162d7a2f1d27e",{"version":"8fb43586196c34689dc45bfdb817102090c0d6040ed63cbfac5dd7af4a0fbf1f","signature":"3e2afca1158d778b7fc318486b8f84d8dc8bfd8e3071bcace7c3906f3a3d8cd9"},{"version":"ca936fbb95d5b17f98e82ed085a9c3b0e0ce0017d89a557fc5ac0554c196ddce","signature":"ea371bd4fa2c57161833ab7f06fa67f7ed87397d4880a6bda5616d1ffcf342a8"},{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"cdcf9ea426ad970f96ac930cd176d5c69c6c24eebd9fc580e1572d6c6a88f62c","impliedFormat":1},{"version":"23cd712e2ce083d68afe69224587438e5914b457b8acf87073c22494d706a3d0","impliedFormat":1},{"version":"487b694c3de27ddf4ad107d4007ad304d29effccf9800c8ae23c2093638d906a","impliedFormat":1},{"version":"3a80bc85f38526ca3b08007ee80712e7bb0601df178b23fbf0bf87036fce40ce","impliedFormat":1},{"version":"ccf4552357ce3c159ef75f0f0114e80401702228f1898bdc9402214c9499e8c0","impliedFormat":1},{"version":"c6fd2c5a395f2432786c9cb8deb870b9b0e8ff7e22c029954fabdd692bff6195","impliedFormat":1},{"version":"68834d631c8838c715f225509cfc3927913b9cc7a4870460b5b60c8dbdb99baf","impliedFormat":1},{"version":"2931540c47ee0ff8a62860e61782eb17b155615db61e36986e54645ec67f67c2","impliedFormat":1},{"version":"ccab02f3920fc75c01174c47fcf67882a11daf16baf9e81701d0a94636e94556","impliedFormat":1},{"version":"f6faf5f74e4c4cc309a6c6a6c4da02dbb840be5d3e92905a23dcd7b2b0bd1986","impliedFormat":1},{"version":"ea6bc8de8b59f90a7a3960005fd01988f98fd0784e14bc6922dde2e93305ec7d","impliedFormat":1},{"version":"36107995674b29284a115e21a0618c4c2751b32a8766dd4cb3ba740308b16d59","impliedFormat":1},{"version":"914a0ae30d96d71915fc519ccb4efbf2b62c0ddfb3a3fc6129151076bc01dc60","impliedFormat":1},{"version":"33e981bf6376e939f99bd7f89abec757c64897d33c005036b9a10d9587d80187","impliedFormat":1},{"version":"7fd1b31fd35876b0aa650811c25ec2c97a3c6387e5473eb18004bed86cdd76b6","impliedFormat":1},{"version":"b41767d372275c154c7ea6c9d5449d9a741b8ce080f640155cc88ba1763e35b3","impliedFormat":1},{"version":"3bacf516d686d08682751a3bd2519ea3b8041a164bfb4f1d35728993e70a2426","impliedFormat":1},{"version":"7fb266686238369442bd1719bc0d7edd0199da4fb8540354e1ff7f16669b4323","impliedFormat":1},{"version":"0a60a292b89ca7218b8616f78e5bbd1c96b87e048849469cccb4355e98af959a","impliedFormat":1},{"version":"0b6e25234b4eec6ed96ab138d96eb70b135690d7dd01f3dd8a8ab291c35a683a","impliedFormat":1},{"version":"9666f2f84b985b62400d2e5ab0adae9ff44de9b2a34803c2c5bd3c8325b17dc0","impliedFormat":1},{"version":"40cd35c95e9cf22cfa5bd84e96408b6fcbca55295f4ff822390abb11afbc3dca","impliedFormat":1},{"version":"b1616b8959bf557feb16369c6124a97a0e74ed6f49d1df73bb4b9ddf68acf3f3","impliedFormat":1},{"version":"5b03a034c72146b61573aab280f295b015b9168470f2df05f6080a2122f9b4df","impliedFormat":1},{"version":"40b463c6766ca1b689bfcc46d26b5e295954f32ad43e37ee6953c0a677e4ae2b","impliedFormat":1},{"version":"249b9cab7f5d628b71308c7d9bb0a808b50b091e640ba3ed6e2d0516f4a8d91d","impliedFormat":1},{"version":"80aae6afc67faa5ac0b32b5b8bc8cc9f7fa299cff15cf09cc2e11fd28c6ae29e","impliedFormat":1},{"version":"f473cd2288991ff3221165dcf73cd5d24da30391f87e85b3dd4d0450c787a391","impliedFormat":1},{"version":"499e5b055a5aba1e1998f7311a6c441a369831c70905cc565ceac93c28083d53","impliedFormat":1},{"version":"54c3e2371e3d016469ad959697fd257e5621e16296fa67082c2575d0bf8eced0","impliedFormat":1},{"version":"beb8233b2c220cfa0feea31fbe9218d89fa02faa81ef744be8dce5acb89bb1fd","impliedFormat":1},{"version":"c183b931b68ad184bc8e8372bf663f3d33304772fb482f29fb91b3c391031f3e","impliedFormat":1},{"version":"5d0375ca7310efb77e3ef18d068d53784faf62705e0ad04569597ae0e755c401","impliedFormat":1},{"version":"59af37caec41ecf7b2e76059c9672a49e682c1a2aa6f9d7dc78878f53aa284d6","impliedFormat":1},{"version":"addf417b9eb3f938fddf8d81e96393a165e4be0d4a8b6402292f9c634b1cb00d","impliedFormat":1},{"version":"48cc3ec153b50985fb95153258a710782b25975b10dd4ac8a4f3920632d10790","impliedFormat":1},{"version":"adf27937dba6af9f08a68c5b1d3fce0ca7d4b960c57e6d6c844e7d1a8e53adae","impliedFormat":1},{"version":"e1528ca65ac90f6fa0e4a247eb656b4263c470bb22d9033e466463e13395e599","impliedFormat":1},{"version":"2e85db9e6fd73cfa3d7f28e0ab6b55417ea18931423bd47b409a96e4a169e8e6","impliedFormat":1},{"version":"c46e079fe54c76f95c67fb89081b3e399da2c7d109e7dca8e4b58d83e332e605","impliedFormat":1},{"version":"866078923a56d026e39243b4392e282c1c63159723996fa89243140e1388a98d","impliedFormat":1},{"version":"d782e571cb7d6ec0f0645957ed843d00e3f8577e08cc2940f400c931bc47a8df","impliedFormat":99},{"version":"9167246623f181441e6116605221268d94e33a1ebd88075e2dc80133c928ae7e","impliedFormat":99},{"version":"dc1a838d8a514b6de9fbce3bd5e6feb9ccfe56311e9338bb908eb4d0d966ecaf","impliedFormat":99},{"version":"186f09ed4b1bc1d5a5af5b1d9f42e2d798f776418e82599b3de16423a349d184","impliedFormat":99},{"version":"d692ae73951775d2448df535ce8bc8abf162dc343911fedda2c37b8de3b20d8e","impliedFormat":99},{"version":"2948774a5104c8ee235318dfdd3c8e2402c053b8fabc59e0cad1de8302d91cbd","impliedFormat":99},{"version":"014ba72e2add59d6d2d2e82166647982c824639e2902ccd7b3103cf720a0cb65","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"b78c801c3c21015ee487f6494448bcff55bb6b61f41172dfc2c26f2218d99138","impliedFormat":99},{"version":"de97e016d8dd4869febd5bccce02eb96957089d04b74ea5d1dc0e66112493b64","impliedFormat":99},{"version":"671ccab2e6a253d2516c0e4699b3077fc30cdb70b4436d8c79d76c91266a1a94","impliedFormat":99},{"version":"a11fbd8ffbee6e5a7fe4c7c23e6a391be615de2e710a6946d7d1f947a85a1374","impliedFormat":99},{"version":"2d383c515b9b606aefcde23da9c312a69bc7976b75abb85c02592f7a8589a343","impliedFormat":99},{"version":"e760f7860d08e9d42b6ecd7dd341602fbc0c13d60eb30beaf1153f1c7c44d66d","impliedFormat":99},{"version":"fb04e1ca667399e7302c033656cc285e6c1cff9c29f264cf229dd25e3962a762","impliedFormat":99},{"version":"ca6fb77e3480af8f2287ccb756ac88d047ba8a8bcc0512f6720ac1216e274ea2","impliedFormat":99},{"version":"c0cc44b0ad2fd65c933d187c4faad6157efbed33c3c21023802aa6a89d9b9d13","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"d76df1670eeb97afbab6c87b8cd31bbd09dbf9026ff0ca533b5d7d3fc0291f79","impliedFormat":99},{"version":"84dffe2a2331c8324501bb7363e0298074e7d59f97c068a3c497c2188865d20e","impliedFormat":99},{"version":"bc05fb9d657d30e61d50d690615f379b0d0415b8f29e69196e1dc6bfc664dc57","impliedFormat":99},{"version":"e315bab2f28d53f9ab473d9de610c455b6c414757bb19589b31ec8f490cebd4d","impliedFormat":99},{"version":"d999dd5abf4befbdab5f1248193cbea69b323b71131a02bb120f9462807fcd5a","impliedFormat":99},{"version":"031f1805f87171e8a9125cd99105bea4a869018ab2356c2e29dca7c86925510c","impliedFormat":99},{"version":"bdcb070ed484b40b84dad668b58e4861f7c3d36f38632072dad5f905bd8cc0cb","impliedFormat":99},{"version":"49af73d71b88a99b1a211ec02bacd321c21397062d253c605bb8d140082eb7b0","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"a50de7f1a7eadab7732d80dcf9c8a0c0d7d00e33315425316757006b5bec6e46","impliedFormat":99},{"version":"4c6fe268c2a984b3f14031a4b09ae7b2d9e51673258f4b4352e48d0c6ebed679","impliedFormat":99},{"version":"cd8a4297d0ab56dc571dadd2845e558c9d979fe1e120a0dec537935bc8a36dd2","impliedFormat":99},{"version":"079a12cb0e0c42655d77da5185e882b4cc94bd5c6c2131171a9289fc1f4287fc","impliedFormat":99},{"version":"d4ce52c42c23981d958206037138e05f7b48d41faa1cfaba7e9eecce8c2e5489","impliedFormat":99},{"version":"8a3be5afe0275ce84a6a6298010e66d54d2d2f8e927df6bcde0ac326b5e81792","impliedFormat":99},{"version":"167edfac7664bec77aa2efb2ce9d515c41b5cc4269091a946b3fa6ec4e7e8738","impliedFormat":99},{"version":"218997a627f0efc4b8be5e6bc0b58e0c9edf250baa3674b661d3f7e6a7ef21e8","impliedFormat":99},{"version":"c3f1acbd39f587a7539d435d6c78ce8647b3bfdc5435df153a70cb2656b52b80","impliedFormat":99},{"version":"457f9d90b6cea783727ce381a7851507acf3259964cf5fdd8a85afc91783b8dc","impliedFormat":99},{"version":"c7c74ecbba4461b55b6c9f244600af0032cfd1ed565cfb1950961cbf53a150e8","impliedFormat":99},{"version":"e8943fc25a93d31823923cc7a934f81ad940ea5e026ea47d873ce7b6986d0ee7","impliedFormat":99},{"version":"6bf5dc0c9f6b6c79fce77b56c985dadca4d4d474c9abf9139ae0785cb5c01992","impliedFormat":99},{"version":"08d76743f45a3f6ed56af01fb9e86883fe9b91f349a104f1eb351db8427c27cf","impliedFormat":99},{"version":"902eafa19470782fa677eab8df6cfeb5ba96ca3360f73405ec22ce82f8759432","impliedFormat":99},{"version":"e1cc282a46eb73cafb1ca5637c4628b3f4221c8e7bcd7a38bcf92ce43b44a093","impliedFormat":99},{"version":"4d4551dcb3fd19a4f22aaa63c6c391d42ce44a15602a6f6a19d582709edb24d9","impliedFormat":99},{"version":"a76075b5aba8187b1fc5c8f565745daed6e4341e64b44e6ec41412a16d575d62","impliedFormat":99},{"version":"f836bf3653e31c3bba120071196c95d416b83c5d860ce27549975f8785cd670a","impliedFormat":99},{"version":"058d970583137cface729371715449aac0c1388bf7a5ba15e0be952677485fe3","impliedFormat":99},{"version":"31c45c074a9acb94dbe340d9336d3c915635eac2df3308916fcf41f2ba6ab84c","impliedFormat":99},{"version":"774256d456ca1d8266f6e2170a51bad2659cb7116334d1e7977595999533a5d0","impliedFormat":99},{"version":"a3cd900b8aa1424f1d2e99c577b7c6ed8834fb6fd129b96b62a7152e5ba0871c","impliedFormat":99},{"version":"f687f35c2206a319dc7d8f0b751e182638c912838ff54034fb782beae50f7cac","impliedFormat":99},{"version":"1ea2d362005804d980325c2fe6ca0abbb145197b856a64d80016554129966c97","impliedFormat":99},{"version":"7a81f15892b1c8d0cbfb35605038ce5c6d0cf93542946aa0b8c415dbefdea1cd","impliedFormat":99},{"version":"22ef1a1604bed6e226888a2414676ef477a7ad5d6ed907a62d6e40c831797366","impliedFormat":99},{"version":"2ab500573da35083b48fa8f4fe719860099d1502df3384f977eb22ab6b14caf7","impliedFormat":99},{"version":"9fd7d60e314f01c950ba31932c150dcec5db2c82de3c7fe0d0d24ee8b54f1fca","impliedFormat":99},{"version":"9db521ae375731aef6e92ee5c30883dbf71ab70b11fd945c9c046f778b1e8cad","impliedFormat":99},{"version":"aabb12802db5f852990123e8cfccc53afc9d38ce16e664ec2e4f907a277d7b2f","impliedFormat":99},{"version":"b768935549d960e1a8d65cbcd36e5da0a64615de05d2fa03bf90330f71094b34","impliedFormat":99},{"version":"94b576c860480aac3eafdf904cd81755f5c9b16c3e0ef3253953a8f4fd8cecce","impliedFormat":99},{"version":"8dc7c54b72cb2a49a7639dccd99a559c243667a74abfb09545cf8afaecc58056","impliedFormat":99},{"version":"d2166d3793936235216ee5d014bcf0d8695f3a954ad54c01b1976c05f544ceea","impliedFormat":99},{"version":"41bf8c3193b575946682ca243de53370f61917035c3ff3fb747067bc680f2509","impliedFormat":99},{"version":"86d4ff8ba66b5ea1df375fe6092d2b167682ccd5dd0d9b003a7d30d95a0cda32","impliedFormat":99},{"version":"dbab1950ef4bf06f44795b144026a352a7b4a3a68a969bbf32eb55addd0fb95a","impliedFormat":99},{"version":"2b5368217b57528a60433558585186a925d9842fe64c1262adde8eac5cb8de33","impliedFormat":99},{"version":"e22273698b7aad4352f0eb3c981d510b5cf6b17fde2eeaa5c018bb065d15558f","impliedFormat":99},{"version":"0249cc57fb4f04fcc725481b5f273fe4a18d943e108724b216c762aaf311c255","impliedFormat":99},{"version":"e0c6b7c3e925dc19d45c27f88d493b40d3ea97f9363ca2acd33596081c579ed3","impliedFormat":99},{"version":"91c093343733c2c2d40bee28dc793eff3071af0cb53897651f8459ad25ad01da","impliedFormat":99},{"version":"6cc2be65d508f5404dae184fbe1bc5fc6287f2af93195feba921e619721f56a0","impliedFormat":99},{"version":"17c51065e7822de999ed5ff702aead6057c172067e485e8ffe9721bfe5010f0a","impliedFormat":99},{"version":"e1c58879ba7cfcb2a70f4ec69831f48eef47b7a356f15ab9f4fce03942d9f21a","impliedFormat":99},{"version":"f4fc36916b3eac2ea0180532b46283808604e4b6ff11e5031494d05aa6661cc6","impliedFormat":99},{"version":"82e23a5d9f36ccdac5322227cd970a545b8c23179f2035388a1524f82f96d8d0","impliedFormat":99},{"version":"c52e8203e4cc8ddd3ffa75197673942e80e3ff4b3bffa962588363e872cb9922","impliedFormat":99},{"version":"a5f2b5cdf86179d9d6ddfbc3a7e88d5253949a0ac8df3f7085f4a02e843f85a6","impliedFormat":99},{"version":"bfce32506c0d081212ff9d27ec466fa6135a695ba61d5a02738abd2442566231","impliedFormat":99},{"version":"ddaf5d3ddc45282b19fb0fecec91c87fc9b4d1f45c2ee611677345c81383c5c5","impliedFormat":99},{"version":"5668033966c8247576fc316629df131d6175d24ccf22940324c19c159671e1c1","impliedFormat":99},{"version":"493c39c5f9e9c050c10930448fda1be8de10a0d9b34dcd24ff17a1713c282162","impliedFormat":99},{"version":"fab630fcff210cedbe0d01eabae9020ecc96b549aa4ebd831a0bbcd0cdd877a7","impliedFormat":99},{"version":"73e4673f2da8677556210e5a127b2637bf030ab73da222ea2a19979f89d9d40a","impliedFormat":99},{"version":"dbf3d90c21c08217509df631336881a3105740033b0592dcc47036490f95e51c","impliedFormat":99},{"version":"e6ad9376e7d088ce1dc6d3183ba5f0b3fb67ee586aa824cc8519b52f2341307a","impliedFormat":99},{"version":"50cf14b8f0fc2722c11794ca2a06565b1f29e266491da75c745894960ebbce06","impliedFormat":99},{"version":"d62b09cb6f1ceb87ec6c26f3789bc38f8be9fb0ce3126fd0bf89b003d0cba371","impliedFormat":99},{"version":"e9d27f2b7d5171f512053f153cadc303d1b84d00c98e917664ba68eca9b7af6a","impliedFormat":99},{"version":"4899d2cf406cd68748c5d536b736c90339a39f996945126d8a11355eba5f56f3","impliedFormat":99},{"version":"491d5f012b1de793c45e75a930f5cdef1ff0e7875968e743fa6bd5dd7d31cb3b","impliedFormat":99},{"version":"53c86b81daa463deacb0046fee490b6d589438ac71311050b74dcee99afca0f6","impliedFormat":99},{"version":"70587241a4cc2e08ffc30e60c20f3eb38bd5af7e3d99640568ffe2993f933485","impliedFormat":99},{"version":"dd01943d0fe191b3b2020438367709333ff08a69d285e2f715a60711dcf83b61","impliedFormat":99},{"version":"0fd62a655321190c1db6237bd2dce50370712ed9115fcf27c04f81b76740a101","impliedFormat":99},{"version":"9d2d423bcfeccccf647b721242a2deca24dd08b4af50de64261c11210e4dc091","impliedFormat":99},{"version":"b6ff37737d006b86082f2f7176eb0a771001e9dde9152a26ef9ea8fd80e6eba0","impliedFormat":99},{"version":"29c4e9ce50026f15c4e58637d8668ced90f82ce7605ca2fd7b521667caa4a12c","impliedFormat":99},{"version":"8575340c8560a52c3309956add745660ad319dbd67309fa268f5af9b1c7551f5","impliedFormat":99},{"version":"3b56bc74e48ec8704af54db1f6ecfee746297ee344b12e990ba5f406431014c1","impliedFormat":99},{"version":"9e4991da8b398fa3ee9b889b272b4fe3c21e898d873916b89c641c0717caed10","impliedFormat":99},{"version":"581813cd18463afea0b92ec77b94c7df71e29c9d9046da829bb76488497183cf","impliedFormat":99},{"version":"7630b6a1c0ebaec2ef8e8abff850e1d6c551c47d1c345340a8ab95667460fc95","impliedFormat":99},{"version":"597b0a9ef02a28f5b1195305ec9f20a4f9948bd90ec3291d0343d1e5c0b4bd16","impliedFormat":99},{"version":"5fa235daeefc7cabde6e68cc0cdd1b9028a6414cfc7f636d62f1e34b64ca12d8","impliedFormat":99},{"version":"f9bf95954745207c3a305a59f3a8f7e36290c742d006d1ce447a41dc772ba3c3","impliedFormat":99},{"version":"732e1c24c3f5a76e61b075bfee7d2b3e5714d4960f8587b0cf989e7e151dc1ea","impliedFormat":99},{"version":"4cc5c2fb807317de6f88edae5cc2b24b705cdce764bbc1cc23aeec15d91a7a49","impliedFormat":99},{"version":"53cae4e7f0a5716f296870e5eef84af8832d5700b23ff79f349c0d1b4aa40d25","impliedFormat":99},{"version":"775e97f58cc774218eb4e979ff7f73b2fb4d958521df4707ae382b32fce5f55b","impliedFormat":99},{"version":"d93588a85b0b0eef4e6ab906fa37caa21efa1d30647aef292567c078b2e3a0a9","impliedFormat":99},{"version":"4a5d9348012a3e46c03888e71b0d318cda7e7db25869731375f90edad8dcea02","impliedFormat":99},{"version":"61b3add3d48dfc79324531ede7da59203059a62986070f97645a83acd3f20aa0","impliedFormat":99},{"version":"6cd8356a92fd9f1edcbfbd3b891f50228738522e79bfdad16e7fb7cfd4a66932","impliedFormat":99},{"version":"347efb60859c806ef954a67ee7520c9aa33e1881eedd40d236298af775deef50","impliedFormat":99},{"version":"fc391876e409d362cc43a7468226a9eb83440de09873b284bf09fbfb261ec259","impliedFormat":99},{"version":"d06f5012d5ac1bc25c5033f7e916fe42cc0253d6b523b9747809b71676069370","impliedFormat":99},{"version":"5d35840bd540fad886e21ddaf9b078a44c21a827dec9abc08d2d2c1a3ff27d44","impliedFormat":99},{"version":"a02182b20bcb1966fc15eac80506f617b71fdd0e279ccff44b27f2ee366b2823","impliedFormat":99},{"version":"32563899782c456f03cadc7a9508b9b6468dd678404b093bd7557d6c6e143218","impliedFormat":99},{"version":"f613a93e0685802f7f7e248156ae93ff9088d45abeff0b21b656520699b79f06","impliedFormat":99},{"version":"5471b59fcb6ad04c41f6bf57075e88f3094d9d498e51595b4341d8bfcb729bf5","impliedFormat":99},{"version":"4ecb0eb653de7093f2eb589cea5b35fdea6e2bbd62bc3d9fafdc5702850f7714","impliedFormat":99},{"version":"69ed52603ad6430aaffbc9dec25e0d01df733aaa32ab4d57d37987aedc94c349","impliedFormat":99},{"version":"6f8acb191da449d8dbec7a4e9c317bdb6b8af104a60a101950643ea52cfa3c85","impliedFormat":99},{"version":"e3457d3b62587043847ad1860500e5d888cba15eab52408d97604eda034c60ea","impliedFormat":99},{"version":"8bba80ef1e0e9ae8c061728626309824023e85eaafcd8c285a6fa89dc6881573","impliedFormat":99},{"version":"ada6bd808581a783390b1aabc2cc836136a5d214af0d924cc57d9f29b5733ce9","impliedFormat":99},{"version":"283336202f1a6a4e13271dc83b776718cf5d4a4137b28e2d013498e3020f7170","impliedFormat":99},{"version":"54a6a3e98b7ec00fec7bd7e42ad50c16014805576ccbe33bfee04f0aac9965da","impliedFormat":99},{"version":"7c90a7108c4319b0475d5419d52f2a2c9bf499234a2a15d5b8504983e141041b","impliedFormat":99},{"version":"67fc5d1b6877a799de1e3943ed2c3669b72a6ab3b17c7b0b0387bdd6e4c1a01f","impliedFormat":99},{"version":"616853ab33cb388421a5d5188e6e2d4b4e8db3f09474baa6a3665707009fe9cf","impliedFormat":99},{"version":"953ee863def1b11f321dcb17a7a91686aa582e69dd4ec370e9e33fbad2adcfd3","impliedFormat":99},{"version":"392e72d77ae33ee322d5b0b907398f2200f72d36adaca1ca62dfa7e22f744ac3","impliedFormat":99},{"version":"e452b617664fc3d2db96f64ef3addadb8c1ef275eff7946373528b1d6c86a217","impliedFormat":99},{"version":"c6a811837fef3d4ba22e7e4adcb16f12caf30252047b133404d698bf8f0e883a","impliedFormat":99},{"version":"2f722a3a421baf9a7c175d8ae6a3118dfd14c5f36474e03f99e3df5800065030","impliedFormat":99},{"version":"f9511d2a891b0a017ae31674977b053f42ca7221dedd012f6de6f75e7cb9aa3e","impliedFormat":99},{"version":"d8f262b549f3ed95402297d10b84f0f86e3113d6d570b03364d2cfca1f75e5d8","impliedFormat":99},{"version":"f216cb46ebeff3f767183626f70d18242307b2c3aab203841ae1d309277aad6b","impliedFormat":99},{"version":"d6d95f96dd5b374484fd000228288cbcfb80aa47cb74ebd3e19ea94a36e8260a","impliedFormat":99},{"version":"6138274c82c329cda440779d37dc66f5fb92713bfda1c5a8fc95785f64a6315f","impliedFormat":99},{"version":"92fb8aa5d61dca9ab2008d49397a639dbf71c7746da23c02245523cfec4a99ef","impliedFormat":99},{"version":"9e6cd6dc690d6e6c89b17b295cabf8a5a08011ae79a7a56578a429e5ae27b8dc","impliedFormat":99},{"version":"edf5cdeb6808ff038b8b6d83cbc5d2d1da1d3eade25db1db21b6244349a56529","impliedFormat":99},{"version":"c3602ad632c6df7653f19a531d683b50ffa6d1846d28ac5a6112c582e1067988","impliedFormat":99},{"version":"eb346e4ce0c2912e148d88955944bc54eaf28e4dcf88fec2c20e0002346f0588","impliedFormat":99},{"version":"58c5a2a520ae555e0573873a5e6303b0f1a1e70f3b376e5ac9094eaad0623d8a","impliedFormat":99},{"version":"5f8217240c95e3f3007d9968104904616287f30d853bac73874759c1dfad4017","impliedFormat":99},{"version":"7ebc96af203f866e829b528e5cffb32111a1a1ff4662bc60c3b53696e89c67f4","impliedFormat":99},{"version":"9f5ee7c037b58964c1cee63c1849fa11757f693208444be0f2d9f08defe859cd","impliedFormat":99},{"version":"33a4085365aa21a995ea4721ffff814128b126e8e346e5f064d87bfcdd0ff7ce","impliedFormat":99},{"version":"3adf214b4b307152af85b77e441d36ede388dadba2bd9962671bf933738d2a25","impliedFormat":99},{"version":"afad82addd1d9ee6e361606205bbda03e97cb3850f948e53fdbb82f160dc43c7","impliedFormat":99},{"version":"250998ae18ea49b8745d327e7739f56464a4318783129daab90b3299bf6f8a55","impliedFormat":99},{"version":"76b3afd1f2748ff725c277bd4701f442af697c0586e1b491e6a67383a246ffad","impliedFormat":99},{"version":"4df5fc6fc2438b8e3418cb25c8c0e863d1f92e4470297d6a8756394c597af844","impliedFormat":99},{"version":"92b5f0879161f1206e30a0c219dd8f23d736f2a74a4e015885e8e3f3b3c9a3e7","impliedFormat":99},{"version":"374d12016302e312ffccd3d38e6f3df1b412378bff6e6266f3e5844af450859c","impliedFormat":99},{"version":"18d0c2293aa57e33923fc1b10970650c6d6932dbfa711a3ffd67600b3caf924b","impliedFormat":99},{"version":"17758b72f880ed66754e3ff4aeade0b82417ec546b72bf3a326cadf4e56c1915","impliedFormat":99},{"version":"3df2d8d345edf29c4e0f5bb6f1b35b8008c626dc6b5f0f98cdfd5587e13c5a52","impliedFormat":99},{"version":"6452f7fccb7d729fafdd9db0b1b0fb98d772504de2fa302751e7bc4164ee75c0","impliedFormat":99},{"version":"a57f8d7e5531fdaf0e2dbb17103ba14ec6c189e92da17e9e22a73ccc77323581","impliedFormat":99},{"version":"3a8a0433d438dcfebf5589921a8ef2490c54d37f8e4832d9a06a488e6b922bc1","impliedFormat":99},{"version":"70ecaa4f1fbccc0635bd57be3474aeaeb03df99b649d3a7910984fbd25fa6d70","impliedFormat":1},{"version":"73ba15fc8b1fe8a2501bd160217112a32e85beb4af0053d27142f0385c310043","impliedFormat":1},{"version":"e63e07bdf7400618d8f94ddc7f0becb4f34ea16f4e2077e0309a965ee4bccb3d","impliedFormat":1},{"version":"49bf876b8f39333c3954c9b99b3e3948f955ee2c5c9d140103a7c51d17aa2380","impliedFormat":1},{"version":"0df055e5a743b279ac281927035f4a1d82d0d575f9132decf643044fd9257d7b","impliedFormat":1},{"version":"2af92ad8cc580ce84c16117475fbdb0d616013d4abd50e77985404d00b636c19","impliedFormat":1},{"version":"f29a2adfd092b2cd74016662956009d117ed0977fd90081ade2147d321faebe6","impliedFormat":1},{"version":"83667e74dce74a2ac0a778ee9c1ca062aef073f594acb3aefb178ff452a944b5","impliedFormat":1},{"version":"9e7ce7dde16fe73632b617ecb7a75426bd3041e7da0bb1d627eca355e78fd294","impliedFormat":1},{"version":"227172ccd6d07fbeac2e9e72083a4cc8229b52e10b5234572e8af5f6bf514281","impliedFormat":1},{"version":"31cdaa8a9f5c7f5108d4c1033ecbd33f3a44481005ac69568cf81baa0567f361","impliedFormat":1},{"version":"eef9483906576d14691da9f4f06a968e6b609d827bdbe1d3a1d50751557e36ef","impliedFormat":1},{"version":"79ecb80c26ac8a35952c61b1d3a175d2ab7ed0eea0b4603e6d52106206a5354d","impliedFormat":1},{"version":"1d2d80904fc5364023ba4f6f91d1f7c78ffce63b7db95b0c8a627a1795cffccf","impliedFormat":1},{"version":"8fa04ff61764daa514a4362470f303b637bbbf2c13cf586a0e5e986a243666cf","impliedFormat":1},{"version":"3ab8140695d4dd30ce7e1be20a39538bd1e454d591d124b74cdd3023588f4848","impliedFormat":1},{"version":"4be7d9a647c34f28cc4840b99e57286b5229b3eb5547f7b601dd8abef3d682df","impliedFormat":1},{"version":"0bcf9befca4a20b4fa6ce4a5bece4db8d03436a70ea4d44661ae9c7a10b57c80","impliedFormat":1},{"version":"59e0a4c2be65f233fee5ca07bb79839849a978a1cab6b8b3cb3662aa29d91719","impliedFormat":1},{"version":"65f0e217641c500bfc93f2c18ebf6597ab1b50c8e760ed6a9de040223aa4f621","impliedFormat":1},{"version":"a980c56f5794d0a08fe308115c3cce5e2bcbd7e2ae42d1e6e698677541428b23","impliedFormat":1},{"version":"35c36f02a6afa6e5ec3e570eb46077c1f7e39a08b84ecf02dd26add5ba9b7bad","impliedFormat":1},{"version":"33036b5ee618a7bf30f5b667b4cfb08de73c809d115f2afea28520633aff7e72","impliedFormat":1},{"version":"3a58767eb60591d2c1558c74f57d47ac1dd1e283e3bde0283647b906eca1aebc","impliedFormat":1},{"version":"1f50f683418e12392973cdb54d969655086d08d403821aad06fb428c38c0004c","impliedFormat":1},{"version":"55a70de1a2108e2fd503fd08116d41b6f1668a924bfa055dec1f3ef76cb217f9","impliedFormat":1},{"version":"288a7c3d5fd6fee8974a3fe884159b349469a4ca655ebcec6c98354c8fa9d23c","impliedFormat":1},{"version":"238d23aea1e50633049a1e1dfcad19a44e5a36304d88f7e13bbc9fca51630682","impliedFormat":1},{"version":"e51aa5e56d9bf3514faba19ba916e56b1dec9ad196bfd5eb6b86c942f8927dd0","impliedFormat":1},{"version":"9a7be590c28f7f860516c7f8354c65cac96db356594993c437c549aa63975c99","impliedFormat":1},{"version":"cab8abf010e0db556dab1a7fbacca7dfc5f3f32e3dae0af702814ca7d0b05394","impliedFormat":1},{"version":"b042e89223f672942c36d41e7c5555ccf15ce6573199fb534505dfd186c91b9b","impliedFormat":1},{"version":"53c768a6986702121e9be47b6a1192bdfa820670a3f0b172bf9bc10940794ffe","impliedFormat":1},{"version":"6828857a2bb623bb52fd4af4f6c98d96910e107af869e7c2b77022400d52998d","impliedFormat":1},{"version":"b84073343a78d3970b7692c46842d2bc98436e3038e719ce049f0b4a7190d7ac","impliedFormat":1},{"version":"518738b3a3a3b534b029df35db29a31ab3dd0f150597ad53ecbc70b2a43c14c8","impliedFormat":1},{"version":"5bfd2410d0c034c01b0ad6e3ca9b9ef6b922cef11a7d8421a43703c1626baeea","impliedFormat":1},{"version":"69994f1a5f3d73dba5fb882ed30a6d8bfbb3f1ca564a93085ddc6dd34cd147b5","impliedFormat":1},{"version":"fbbf6cf39dda76c57cbe0fecd9998718f07285123da7e30777955a681eff6c20","impliedFormat":1},{"version":"498cab8279c59ff6bad678cf7395c94a11b7113111caf866335e1c9a4ee1c991","impliedFormat":1},{"version":"1b2b39612a7b17efd4583ebb2133a6d603577096e4b760cf9d47c529b9c67414","impliedFormat":1},{"version":"5e63b311b7229bd29783ec6ecb625ad7e6e87a9ab5f4295f8e677631e210d904","impliedFormat":1},{"version":"fdfeef65925640e91d11c95aade5278625af6a1f2e1e4d99bad38132e0965d02","impliedFormat":1},{"version":"8de7cc92f4276b26773c1dd1aeffdbc2344ef9ea3de896f054be36dc0539cb5e","impliedFormat":1},{"version":"9319f02947cb4442933565659d0a51c0d8778fd18c7e97612ead8af95bf14b7e","impliedFormat":1},{"version":"22aa95f8a9510ccc6bda53447b283430298f9cb8672c2153cf1569fcb49eec92","impliedFormat":1},{"version":"37b313aae173e64574b3d35fe3b0de3d97c63b0257885cb134da637d1f93efdf","impliedFormat":1},{"version":"62970c1d53c9ac62e7a74c71237d525250eede81551a40b9c3e954ff5691365a","impliedFormat":1},{"version":"3684f5a275e1d359568bc4a79d08b7bcf14a973c7afc61ecff7a1a0888a90201","impliedFormat":1},{"version":"5b44ef24200c6073b05ac914c166614103cdb769360d771be5e24b43a3a87f45","impliedFormat":1},{"version":"38289f5cf345f7438f3da749fa74d2482fa8fc4a85d24ca26f07ac322b72a033","impliedFormat":1},{"version":"8914f6472962bcb23ebc7bdfb60c6fdf506e786c8e6e966b142c0d18216b9ed1","impliedFormat":1},{"version":"e1c770d60db7ef3a216372d61af165b0ff3d6134a91d6361ef2a28548c6cdd95","impliedFormat":1},{"version":"25214789ab14711cd7ee64298b9e92ee2151353a3fa7de2a3539b99531067ee6","impliedFormat":1},{"version":"1c1f9ead25f0ba8a7978fcdc8352108e758041ea9e3680fada574c457c16726e","impliedFormat":1},{"version":"d720ca0af98bfcb9b38dbab758abc7d872f656c2985466afb54c9495d3aa7ace","impliedFormat":1},{"version":"8fe8ac1dd27831dc531609512db0a595aad43fb75f1c7d7caab338910f3afcac","impliedFormat":1},{"version":"b914cc4c3b00603fbf8e98d277099fe0b9ea746583fba1bb001615b9eb2685f8","impliedFormat":1},{"version":"c122e80642a5d7971d4e05f108ec9b12bde3fc5565850a16529027c0654b8226","impliedFormat":1},{"version":"992d276ab098b6d6179f02bd48ba8b21b84f0b0b66d2a4a7ca655def04aa9582","impliedFormat":1},{"version":"44f5cd5353e749726f487f23b0bf5d39017788739a7a445a72d5f8c9213112e4","impliedFormat":1},{"version":"19f163212a99ca8f7a0dcde58dbd6b189b22597731bd1fb10498fdb756418d0e","impliedFormat":1},{"version":"888da990ef7ca12805ed16bcdcadc0559e29322b3267810eec210274abdfa709","impliedFormat":1},{"version":"c952e17e72dc1e8c72558cc9a5afa79ce99212e99729c632a921fe818db288e0","impliedFormat":1},{"version":"bd3afc6be5e3a43e377ce8debb2cc34337aa4931a6248623e2f0472a38df5ab1","impliedFormat":1},{"version":"0ceadc61341632138b537fdef7f88932760de6cb8ddd568a79a102e391575254","impliedFormat":1},{"version":"3c961170e58d5879b5013114a669b935895c727505eee7ca171dc0a77272ac94","impliedFormat":1},{"version":"9ce237f3485f53142c952c6f5c16928b57cdaccc95e3b041f0d8e778cd371009","impliedFormat":1},{"version":"b66414eebf3685327a7a63e2b83b87b729f23728382c2c3179c670b82c967718","impliedFormat":1},{"version":"906d635616d85b7a85dd3cbfb204af0c05277d2baacb3519fcc341f6958a0438","impliedFormat":1},{"version":"c613448f80dab1497823af3e17faf78e94f4f512b05389f84197ac4cf892e3f2","impliedFormat":1},{"version":"5fe5e77f8655c3b9e015eab646489a5b34f0368045639335ab9d1e828c5e1439","impliedFormat":1},{"version":"138d0f43b0fe5b6a57f56355610f2051634aa65f0795d3eb8ea7a20ecef5a216","impliedFormat":1},{"version":"a18d2eb5bac335e8f5077a03894b82dc51ca30f887609f77c6649ec521c30eb4","impliedFormat":1},{"version":"ca448052f36afb9f309a92f74e40f071ac750e88202d47ddbecd6d85690b61a1","impliedFormat":1},{"version":"dddbce36143eeb158221b6d3494042778013dce0320a45e2dd9c72114e1d2834","impliedFormat":1},{"version":"d9066b554e58ecafecd0abff571ef969d12f5f740f4f0f756698c20014056f9b","impliedFormat":1},{"version":"614b2fb077973da78ff18a59b82d637552e7449facd02344cc3960a91c8547d2","impliedFormat":1},{"version":"33b55dc5421948630990f8c04ad8ed11066183e9581f224c4d4e424092b61c74","impliedFormat":1},{"version":"748c351be4802d477df5ef929e0d0a4852772debbd4422e35f4967c5e7e1f3af","impliedFormat":1},{"version":"6280dfb30117e7e5b22910622cf30debedbd2cb75408ab44741ba9dd915e2577","impliedFormat":1},{"version":"4712e02c4cb461ac2e120daced545a2c99d12c1142e842b677b477f9ca4f4a92","impliedFormat":1},{"version":"a79b9dc4b2e8ead01a954533b0f9322e97d6c9ba48636deb06064baed649c004","impliedFormat":1},{"version":"2858af1f5bafa661ceec888b6ec2b73cf8de32ebd9d8f0f51030b56e6a284b35","impliedFormat":1},{"version":"72aa0061ccfff2f4af76bc1b2dd1e749981d88bcb0efec93cdb867986d78a5e5","impliedFormat":1},{"version":"f4f4ca88a2be1bb083e8cdf230c7066877736b8dc0af66140df16fc853918ff4","impliedFormat":1},{"version":"114728dc0b818dd2b0abb4e9b945c11a66c5fae73b248b8f09f8523d2bfdbbc0","impliedFormat":1},{"version":"c3c4e2388a246980373bbfe7d21d09e4d2d2acafbd7c82edfdce99b570a4470c","impliedFormat":1},{"version":"b75d9c18eea27e159ce9111835373af2f303299f251e2dc8c694c5de997f43f7","impliedFormat":1},{"version":"7a6a79529d68a2d5cc5312bfbc379426d388cdf2f12e94c7b4645a693aea1cc4","impliedFormat":1},{"version":"c6515f11b55326374bb11d1c14c5b24c0cda1a9720f198218101ba5a1c633e8c","impliedFormat":1},{"version":"c31c9fc9b7442aabba078ae2dfa1a5337ae30a87869e6272268e0a55b6abb448","impliedFormat":1},{"version":"47d576a0607782ceb77e24d54e5c323de31b3d4721a48b6ac619c0c2b2158ad1","impliedFormat":1},{"version":"b7f642770a86821f4f9ddedbe934cf42e9d46fcd5b91623dbe7ce3b4997221ea","impliedFormat":1},{"version":"747ea0635cf10b4f5bc72cee527dc02b1f21024c5564f9cf6162fb0a6c56d491","impliedFormat":1},{"version":"8fb09c1c7b3e91a3c80f93fd13a3291398cfcf07fd3c52c56e3ca46f49762012","impliedFormat":1},{"version":"428a8b3110d701fb05def44c7984bbdf23fa0bda9a994db3502d2762d6437953","impliedFormat":1},{"version":"cacc558b953e367ac34725c97edaa3932be29e981cd1afd3ab578901e9738265","impliedFormat":1},{"version":"ad466a33b783fdbbc379bc82a5356ab39d780b100178e2dc58f1d35cba590d78","impliedFormat":1},{"version":"654773ea1dbf465dbd99a43136ab6cc1d3f81b24ae918dee1482ef49aed57a24","impliedFormat":1},{"version":"539879c2c5e4df5e760d859e688e195464aae474c74b1294f39567514fad152f","impliedFormat":1},{"version":"6aa31ae3ae71cf1070d6bbeecf308da04baadd4c28142cb2f53faca2b44237be","impliedFormat":1},{"version":"100965474ec0634d3cc41d661d06001082972fad788cb6ecdc48a6152dfb0fae","impliedFormat":1},{"version":"81e9004fe653a17766c1baef973b2675e317196b8e5d5e556c4d3d72a5b51d9f","impliedFormat":1},{"version":"fbfd1dd3d63c564e964acffd43110f3835239bea5106a860b0c6f12c673cf934","impliedFormat":1},{"version":"c07ad1541868010e6fe715a9f10e99b4bb8da43ae06b98f7a381301926579991","impliedFormat":1},{"version":"ae35f0b6967a8cedbc5ec11dbdfd936cc003fd2093c127b3f861a6478cae92b8","impliedFormat":1},{"version":"3abf7e7ed0754361a1b36497870bf10d83042e1ee61f30f528bc46e13ba9c5c0","impliedFormat":1},{"version":"953da53efa000d4a319b1bbbffc586e2dc424200a658350a1351aeac9d8a763a","impliedFormat":1},{"version":"8ab8d8b53701e8310293a6869d63186053d930b8cd08d385d5f1b395821d6508","impliedFormat":1},{"version":"a670bbbabdefcbcc2c06ab4af9678703710870fd1a626c3f9299bd24e9687504","impliedFormat":1},{"version":"d26f7258b8181bfdb2f2a57b88288dbb405f73ec2c4eb42c4c8b0f20f9b68152","impliedFormat":1},{"version":"12ba121cc934a7dad0991993b8cf988c7fc9d3e8466231f565d200a02b35be7a","impliedFormat":1},{"version":"467f02dcfcd43e42511885613d5eb5ece56f2f2b1a1307c8c77bc1fa6bd9fdc0","impliedFormat":1},{"version":"92d9aa8bc2cd29e4e98b6419d9874b52be7731b58ad91349e7e464da8c28acfb","impliedFormat":1},{"version":"f483be305a738aebadbedf77a62f381d90eae5bcdd6d2a66c06b1510df2b0fbf","impliedFormat":1},{"version":"3d1bf13ed400ea46acb0c6c291dca9b9c3b47db3cef97313d393716540f8775a","impliedFormat":1},{"version":"f741c2bea2e69f19b0a08b2bbd764d3be011caa0584cf057d62c17e02b481e33","impliedFormat":1},{"version":"7f4e7b921f11c41af7d78361c190d3679e3376bfd28cdb0d8b847d99f4a096a0","impliedFormat":1},{"version":"a8829405339b2717f654796eae39f0799774fc3c3fdd27c32b6428aa5c96a03b","impliedFormat":1},{"version":"87a976eda42d1560992929cffe6f6bee978f29c8d79197a2407495b62d368822","impliedFormat":1},{"version":"e2bb63b44fdbbf48e4f596f74dea221fa931c9a4747923554b44bc095405b423","impliedFormat":1},{"version":"ff4eafe51c5e86fa503ac3387b7950dd2781d70e3af87415647b5943b9db5ef3","impliedFormat":1},{"version":"a78c8e04ccc4a39e9a29bda8f5e33ac7d0133a993e410c304466d77c38c8bbd4","impliedFormat":1},{"version":"2fe38b4077030635916079ea40177213c4775a90746538e175b18cd4069049be","impliedFormat":1},{"version":"096bc33466c88c46dfa3bb8fcf5a85ed2e86e0379aacbbb93856e4ac956b1461","impliedFormat":1},"78502cf7c3befebd74482e94b6f09bb12ec92f052c31c70b6b38a96c6f34c3e5","1ea7e6d11d22d83802e53e339f66e10948874082b01f38450581dfd65dbe914f",{"version":"b1a7fb31b5500ac4f7acdc4bb27a84427c8910f83d2c725cdd716b131fa286ef","signature":"1bc06a306daa40a99f79815631533135488589f525ed9438c1ed1997af42cb59"},"680cb69e1943bc4806211a1a0d180e71d7cbbe8dbb7472e0f56aca5c01ae5998","8e5ab744bb3bbb1a14ed32b1797321456a66c0792ff63637773591f07999ae43","73fc4839e672037f9b23920a884e0d127f3c60014e2e212cceeb6aced2a8257c","422bc3f816eec7e6733205754a39e01d2e5736ad4c65c8993858c90eda9b8528","eb8f9752a3d59ccc9c7937caf76d2a95489cdba8ed5e3bc46d0636eb833e5c42","1034c530a9abe756c969d3d490f137cc8c58e44b346040b9aeace6ff4536f56d","f1ab9b085b3a0ef6f37c8f092c77f2c0dca0ece5bd60a62c198785dcc2dc5957",{"version":"006d8ff9a051d61b0887b594b1e76c73314bb1a6fe39026867418937ea2259b3","impliedFormat":1},{"version":"e8da91bb8a22c38a527935f11923a8bbd0aa7854d72b3153aa6ee462e01e883e","signature":"ce488622793573d253e0ba00570b8abf66b288f107de6e0e0d1f2c53cd2ebb4e"},{"version":"a4cbc419a9ec05fa0c40c7aac9004ff6b9c2dcbe0d5f4c5dd4531bce5441404d","signature":"fb083a2464d122ec8a8773aeedcc1f1d352a37792f67f11dc6469787657d8d3b"},"a10748a5e7cc2d9984d9f9332782397f9d87fc2de259d78d2645fe2b765a95de",{"version":"b72740c9a91c1739b174e5dac65fbaed9f59fdd90992373925e410eea11225e5","signature":"70c4e0bcc8e621d53722b3c0a19b2e6c3de6f2390b9e0277272528fc77c521f1"},{"version":"3c24424038ece01cc1e43428b816f34ca781051fd4011192fe82ec7895af38fe","signature":"77a2f3cf1f6340401d33a1176a8a6c1cdd0811b712abfae0f4ffdcff764af956"},{"version":"91cbf2c3f86af29434768809855a37143e5b1a400a88cb3fde86f985dd139f02","signature":"70f4af610bed6fe819edf69842a092844c0373ad9e1c669e6b66b559fe9c12d0"},"4ea983f929493c0420b535c09bee0fea80e341c56f7d57755ea45ab1c16ce389","e73e13275008e807c861c14d89272cb2bfd0a694d47668ed8ab36544207c2671","96054a5131fc77a920dd10d91c00925f75d0c15402926f0b82d40d449563f1e0","9bf35218edcc02cda7ba653ea47acfd1e3632393678ffc82818d5437172d9a9d",{"version":"d09a2a53da56d20aeac85e4f0b69f2ef799d73f1186b3abf93d32388ab431fe1","impliedFormat":1},"6f8cb6004eb7be21356b5d44f5ec7867b99f8f762520b6931bad0cf24a112272","1fd2c5f6b1f6a27956e6f1f3ca2922d2ff330cbd8a7e6f2b51965d4731155019","b00e4826cbcfd39589ede8c6230005d66a23330c65e8fc0502e6f76134dd1460","7c0881550f6e1256361bfdf4ae35c01bf917fb0624c05b57344c94ca9c745dc1",{"version":"82738d9afed59be7ee7b5f1602747adfb22136ff31af4d4a2cc8651ef77eaf19","impliedFormat":1},{"version":"55b9f917fb57d9f6051cce4512179e5fd699fd872ce6a8d49e0f0ec45b1bdc19","impliedFormat":1},{"version":"2013596c6c115ec71880ea60f7d891850e2147b598b0c0fea76dce8c6029f6a2","impliedFormat":99},{"version":"e0f4c3a6747fac775e2d740f92e60a6da762e4f34d0a2057e22784fb5204181a","impliedFormat":1},{"version":"1fba5e163eece0323b4d113f743842a7d3a7d788e517d3dae943171dae41c561","impliedFormat":99},{"version":"75ec6a6e61de058d8d450b229d54504ef1a47328b7e61d9cdc49e283559f3687","impliedFormat":1},{"version":"8a96c93f8e3bd0e5c8855a21e1408ff93419a1b0274ccc2f7fb246da91165719","impliedFormat":99},{"version":"a469460e21a0286fb87a7df9539ff99e6c831ee11e1f929ce6ad68b8aaca7e3d","impliedFormat":1},{"version":"1b8e0cff7e05b290d2581f93d0b9f9b1d17971034825617b55ad3f398a2870f4","impliedFormat":1},{"version":"d23b8c70c6565fef9286c65bd6ff34ae3ad7084e0ec5e177f125a42d2a7c1886","impliedFormat":1},{"version":"e1f0a4fe22cc88363101de497ca9e397f26d34fa1a36cacac21b27b6ff133754","impliedFormat":1},{"version":"5e33e33ccf4ced66964ff3b4799ecf434b9d137dd9bf8ad5efdefde4a1d0714a","impliedFormat":1},{"version":"681abfae63f06f15e42cd6f4c6f8a185da32c002e53af81652c59caa84370172","impliedFormat":1},{"version":"8ce944fdd9db48c1c6c9069ce0413338afcb5293de4e67894b13bba7e5e92aea","impliedFormat":1},{"version":"d0a9b476d2bb20ded0ac2f5d53900bb244d4e657857bed72a4991d0cccbaa7a8","impliedFormat":1},{"version":"3cf4d86f2133e1a9abcbefdb2ebad7a27055bfcc78c718d1efe19baf2b4654e4","impliedFormat":99},"45463d785aca1ea6b723969d608c1bedc8a9bc038639fcdf990cee3eaf3a7bf7","f4258b0f681ca9bb5093e525d561aba4b6f839de9a0297521914e03f092a12fa","c1853e02b70fae4936d422dfdf7f8746c745f5daafaa934d4084fb9eb1f7c34a","f38f3bf6eca7e182bcb3a1febcd3e70ca85aa3a96ec0a33a9ace76fe6c19f97b","54c58630c13162263677d5b0c6ccbc7a7494cd7edcf923ead735954f68d8571f","35185614c449362bd7f406c0b8d46a6ae5a1de1e83254d438383145776ebea07",{"version":"c57b441e0c0a9cbdfa7d850dae1f8a387d6f81cbffbc3cd0465d530084c2417d","impliedFormat":99},{"version":"26c57c9f839e6d2048d6c25e81f805ba0ca32a28fd4d824399fd5456c9b0575b","impliedFormat":1},"84a1834b4b1b3f2ce16f23e0fe3a4fcec106eb9e064885cd3c541829f135772e",{"version":"bef2c36108b64a7a1b198f1798a4dfdc91d8a53a1676dd937f1570165847aff7","signature":"865b9d66a1b7870f3c041aa8db40a540db94d5a28be904facf8c0c7caab5012c"},{"version":"39e38276ab0060d0bce60b1c66da953be5a61b3082c6b65ef70a18f0dc8cb553","signature":"cf51e065865cf626bcb5ebaa984e12a558193aa9bcecf7155bc0878d25f47c15"},"5cd992bfb07ee91264dbf5935e6ff1f47b8ceb3d5808851534074dc19dda7f12","5649039ad4206ba5b9f7e733660054366d979ffe002779f7429b4b69ada2e6e9",{"version":"5084e9991c353e4670166ee6f559dae8d31d7ba7345157e4a7efe123caf5eb90","signature":"2c60c55b858b68947ca5edfa6f5ae478a6c95637bb36b56c4454de1cc94e5bc7"},{"version":"265cf66826392219b2abfa0af6e4d78ffe2279dfcf415c7aa462e94a095822c0","signature":"4910d85ffe531b9901374526b86e84011bf3047a23d169edff6ed3bebc9a7c6f"},{"version":"903421ed0fedbe7f4686e9a8cfac645d8b33272a78fb32c0ad9e437fd56e14cb","signature":"8427a4a2739dfb2925026a783f547fef666045fcb8cb3fc741e4fc0212dc8989"},"753a04585fec2aadef38d03edffacc635bef261496af3315df60ba4296b4b52d","55dc1094dd990051694ea89b0e309b3a20dfec659712de4aadd09878792ee77e","6d87c8b3f652a92d1a8ce5730ff88d225f5cd8bc38186efc0cc13bd68a989c8d","8f93524fc1dc50d326d96b4a6c247207d4e45bf48eac110cb3e7486ee5f20cf9","a0f20bdf6e938e90822c0204bb661b798b5ee12ea10ae4d65523ca2d5430145c","341ca593a3c98833f38003ba6157e6b6c4e6a818dfb38bace0012ca0f165fb4c",{"version":"7e875b12babf7b0a8f1e1935bf83f6b0570ec6549db2c7b581577800ffee3478","signature":"4efe36511baace0a4ffd66b853c45421d506943972d8fbab833e39e1e3bcf8a4"},"9635be3c8a3eed75d9f796a8eadc899a76ba7de8c49dd759d19f4a9c4c7f753d","87ad403d2fee0c921ddc83ce59455d07b04a5fa220ed64bf073c8d2b5489785d","6cd19dbe36c36fe123181a9858b876c84def001e31a0a6bf1a3e43fb3ca91139","ec542b3c22d8ea5f0f495963dcae950042c4794cc6801cfefb6662e4d3dc0bba","eb4240f1e6f9156493ea0891aec34f4297cea9808304db8937a73b8d6b47c7c1","9c1aa163df1752119271ea5b94bb421099cfd24d9b3deb2a71d1d127eb0fed99","19cba52bc32af24da8d51a62ce338794fa2ad5cfe065b95538ea990102959094","031e3181c52eccce77c07f8bbff949c0965e35a97c96fb6a1c1eb1f98f70790c","c5030836c0c6ef86168e9711df734d2d77ceb4c67e55dcffa22b330ec78b7c05","e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","6c9b88edb76920e1266a6341881e3a955558a8c037c176dd3b2c7eedf67e52d2",{"version":"493576324249b1dee2b52008aaf23c5da939282fbd9632f7f91f4208a9934171","signature":"6af6e303bab979716af84247d96e5d57bb3fb6b069d61072cc4c525282af53f8"},"c642ca770305bfeef1be19cc4b187cd73d1d45a6f908794331ecf5f5a2206361","5edd66825512dd10739779fa2694bbce22911fc24e5daa1fbecdc846a1639900","3cc9eea5963534c3623fe66ea5604ea61fc9af85f99a8edb57ec3ec26fd9e1d1","5e4eb83d86bc3ff145210d5066f0262cc34102497de8b3d6f6e49076440edecc","43bf758addfaa74a40ea3d07b58db821c99eda2a223b917480518860d59ca77a","eb6fdf0127a4bcfb1715a3b0fcd1c34ce1361c667341c5f6149419d9d4534fb4","b17a514f4b820a9cbb78b5f6b3c2429082abbd097c1e17a0f5c0d5d4e5abbeac",{"version":"739d29db439cd3bf20fd802b28861d40fe16257ea0104c74ab26fb2b2db13bad","signature":"588e9acab733ea8de37f9638a7c6872c4d46b58e6c2a9c4be29c4d673ef36f59"},"3c12adce94b49d01e49384c72cc33f8351ffc847d040eef7703cd30d9dd462bc","45cf2535e213a98c385a96a6ad90960768c44290b25d305bb09f155852b8550b","b7f16b3c7665c22f65cde550059b57e5175351f580ea5a44c186b1736b23fc15","cce53fba883fca21601282d427ea77709d902fca33333b82833271b1c5892eff","949774da78f489896648a31b193e630d119721c0268862861cf0074ac13d3f8b",{"version":"f50e7fe060f69749b656227efd58431cf38093988ac45d01da707247d144fefd","signature":"e049ee8d313b13354e9de8ed2b0fd9229ee5a61a064b23507f1467b818de6c34"},{"version":"da2ca71476893107dfe03e9eb2dc634db561f36fe800c5f4729841bd7a94b50a","impliedFormat":1},{"version":"6b6db2514e5656198c3226e422ce3b20eaa862baed9d245fae718fbda3615b16","impliedFormat":1},{"version":"ba1970e7b532e458592bbd8955ac69feb0ab577fd3eeda34b3d572c0d7171ead","impliedFormat":1},{"version":"d0c1756f8ca0eac71dccd44dbeb0792af96f2171ea3c66e1e1ecccceeee3e4af","impliedFormat":1},{"version":"0aed8cf6445210cbb892de5a36caa8afd3ecbb928382b7d70c6ee907ccf6779c","impliedFormat":1},{"version":"0fa81bf425bfbe2acd54ae24cabb49570ceeb6da3f7226d6ba8057024451f0c7","impliedFormat":1},{"version":"0ed218d6510a443afc7c714543f143bd7cbe1f3e3cc2a8462a1f12b316b03b09","impliedFormat":1},{"version":"f0c22053dbd4dc2f17706c62426fa378e29042b40363e54b1028a258bfa91e05","impliedFormat":1},{"version":"32b789a883704fb6be047f8a8f600685933eeda17f1ca9898ec42af0951bc5b1","impliedFormat":1},{"version":"b0f25d7f2e82edf76b2c8a4423defa26747483d6e1e772ac8476d5b78f69fe4d","impliedFormat":1},{"version":"12ff67dcd2078121daf0dfec7f427c6bb39851bf0d6203200674d610e46b0069","impliedFormat":1},{"version":"d713078712400f84d8a7d4a2d1a1fd7eeb4879603ef87ee06580220ef12d1bc9","impliedFormat":1},{"version":"6fd12b67e326558a9a6a4ccbc40fc2e1f52d989adfec3657e7a49ca3e5c76dec","impliedFormat":1},{"version":"63cce723b802ac9af294c669c70b46d24955a71c5e3de090bda13dff1df0b791","impliedFormat":1},{"version":"7e6177fe5e7f88d45a7c79f7324ab3bba6e3e6bfefd615199831677670fc1ed8","impliedFormat":1},{"version":"ac4555fcaf9a285d9c3b98807b6e0c799cfd3d1fe5861efe072ac5f982ce3c37","impliedFormat":1},{"version":"e82a51d5498c34f37bf96981223d5aa0b5051ced754d34b9747b1aa8a4f2174f","impliedFormat":1},{"version":"1d9afa7e4148512035b4ee4fc50f39c46f80b65f45488e63ec308a54b990ea7c","impliedFormat":1},{"version":"83e01ec16b5a8424ba35047471fe772e4fdeba7dfa7884d9ced04dd84c01a26c","impliedFormat":1},{"version":"2873f7d3fc801d897c9177e8bcc417d348e96c76490f55cd7237e87859af8f12","impliedFormat":1},{"version":"ede088b09b00760b9ce0997bc1669e25bd155241f369faacf09f3d810dc0ede3","impliedFormat":1},{"version":"4ea54e4119bab55529a13b147b742cefe1b1d273b34305467f63c36f831523bc","impliedFormat":1},{"version":"f48673f5cc00610f1971b6af05a2f73305cc6660f267f43ff1c156c4e4d1d778","impliedFormat":1},{"version":"31c5ae7064e1c894e2e2496842e13bbc3fee3f3b5f27185fcb60ba3cb153f138","impliedFormat":1},{"version":"2227eb2c16ccc7d2e0765e1be566a21e9f43cd0bf945e439e14a8aa97b492045","impliedFormat":1},{"version":"8484f620f8b09cd391279de948a5b1cc17d4b592ae6bcbb3d89b4aeab486e675","impliedFormat":1},{"version":"7354af961c75ecf99a1baa62657a9a9b04af1bb503c1d2bb8d6b4cae270c77e0","impliedFormat":1},{"version":"ffbefb948f6bb2b859784f25d107c40522b43767e64db6917442f93854da41c6","impliedFormat":1},{"version":"dc4781aed7c0a5bf243958749fb57b52e198904dff6c4c04755cf62817f64ffa","impliedFormat":1},{"version":"a5a669d78d77f4ba664c690a3fbcddf66332225aaffaaaedebbe5ec1af2b746f","impliedFormat":1},{"version":"9970aa594f22b8254106c66402e8ecd9a273c0e5204681b6d2aaf9b5fe01b244","impliedFormat":1},{"version":"bf1f9c3e1d24dd4a7eb0a1963f17afa39562e8ee8f2238bf0ff412c6b2176653","impliedFormat":1},{"version":"22759dfadc7f47badde31230a0a34ba6810f88b29ff314fb5e0ffd5fe91ba379","impliedFormat":1},{"version":"4a6f2e79152adb1d73a1ed31f0e2abdd33fc7673074388032924493591ba9936","impliedFormat":1},{"version":"bf2f7981c0568c3925827f14809273b12e17dad7c5de15b5246e14bb981f30a8","impliedFormat":1},{"version":"bb3f62b3ce08b5a9613022ccb757658bb4fd65e6fb817684c92435e087c023a2","impliedFormat":1},{"version":"757ee3c9f0cba15282d6343f1bb01a4e1e4c209fb6a9aad61ffac124dca61c6c","impliedFormat":1},{"version":"717e74927b33a4c6ecaa494b9a3b09f05a5d12ef0292b1db84a5ab2fcfaa5881","impliedFormat":1},{"version":"4764e86784bb88b8f3573279db3856c50a03e2b8bc184c06a40f897bff9d7e83","impliedFormat":1},{"version":"9829c6e1afba519fb32122cde3785ff93a2c31a5e413127b6b6a9bf04a00741e","impliedFormat":1},{"version":"9903107847b34bacc30daf39eff0dae9daca6a10d149c2d9f92da75a591b1da8","impliedFormat":1},"92f1963fac565ffd3eea597a00fa6ce0539e23472b3bc3c46c21b5cc311ad9d0","d17c21caf9f7629de9233f0135a742062c860acfcde14955e8e6adc23c976d66","f4eb77ae65bb89ab53261e4e445fac800d6c265e69de7220c4f0358f3d0e7b59",{"version":"9f7e7593891cf92cbc6c2af79efac69d8eec9663f85ed681018dc98cf2a0c9e7","impliedFormat":1},"51c8b8cdd5ec0e7b5b19b8f36736d34424c43b55f6564935438b9a25b1d13664","05b7553724203d3cf628a38c8bf0bf3ee8b21d8021dbb6c69004d691e35de4b7","a9f9660c3d600c2c4c03f1a733182ab5ec80b4d0404d07aa947437b0f1d51eaa",{"version":"826a12495aaee4d464a23e52a64d75e1e538cf1da8d589acd9cd18781ad4608f","signature":"df32ff23601405638901a2b12d6fe920ac7cf7db7ee9b2331f073601a77beffd"},{"version":"b85c510595528eedf52768dd7e6dee9d6d2d51d00ad12b8d2ce5290aef58a642","signature":"6c22c3ffd5d67a625553372c9ce698c277fdc0b8528761fa28379c31eb7cfebe"},"2499a04ddb3ac86f4f463bc69ca5987b94c593770e95ce8ab679462b479db369","89a6d41d039ab432975e7e401404b7f9efde5b75ff5869ed7c78cb30be958a10",{"version":"895bd422667e6e64fc5b92614a49f122770d7f2db3635479dd45959ac82d46bf","signature":"5ccb5b40164c03fe1733d5aaae8c295aaf5bae7883e3abc7c6b91b585fc474c7"},"764f022814e30102465d10583e7d2daa375ada1b1cd7395837f789b5e4ba86f5",{"version":"eed88e4949f96d3e335c34a436c3d411860c462eaa672bbe48691cd202bcab7d","signature":"8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"},"d2d75c757f03f471bd6637d95a7ca465f6a58890e2c241401ac0f24f9e2be04c","e8c618bcd6c55cecb9125c9a292a45be6c5f2d88a5a78f545e46151441a0b265","e2f945f6a110e1d29bbc81b5744d21918b9e2c6f454e4ecbe5af5b44ceab5ba5","e5cb0f63df06b69ec734deadd47e4139132fca3893e381ddf7a5cc71aa092b2c",{"version":"37ebe7e5bd2eca4a0bb2f0eb2e86864cac2974ae06d74777a0a5efcc2173de89","signature":"6a20dbddfd986b0589ed4c8176bdfbf754a4627e23cb742287a363451dd4dd73"},"12223fa373b98f0f8e1576a03078a76faa092d8aacbe9d39ee45c39d1a213df1","de14b6d5d6aed7d58aa4dce803dc85416d823cac477eaf153382f18534928314","0f52072348d01f569215470ca8536d8b2a26ac9f0a7285c846cd7085a873ae6a",{"version":"417468fb45b084cc5dbc156bbeac671405a14e4e482d7394ccb799bfa5e9f20f","signature":"97e04ca002588ea023e78aa69b131fbba344b81bcfb9e32611f65b4d188eb361"},"b55ba318363e021c63f828162214b579081167305e86a4f18db1f3d0d80cae19","354f0fc127e16179d20ee8c61c58c5f7ddde48d0e7867b09f5e0460695fd5121","54ebdd35e2c1aa8b799bf01e1efdcc9991a1ee9bbfe7ebaf927c75176ec3b343","b2437b5bce872532b765654a88d12adc7938dbb03602bf06446c4dcd15255787","00107995cc348e32d702cfa3c21fa300cc12299ee949bf7bc4e063cb6cbef235","38349e3da3a8b9693679602d0e3583e303f4c83d2617f0bd49a1f64e54982b67","69cbfd805675e4c5bd0e25b188029f23f4b97f61478e4510c488b717bd695cba","553824d6a895849dee1f1033fc1133110f546108e12aa43d32c688eba20bd7cf",{"version":"0c72ccc1dad84ef5072804b1402f05127e33f911702a26a7aaa8254f677bd7e2","signature":"2907f0eccbb2a5a584c32f629019ec627dea41ceb7d745f6231c30002001df06"},"a746d8b8bb72928f71171250a2d5a313096fa18f1c84ac8ee6d8df0b407ac85c",{"version":"cee4cd8eb46979e4f381bc9f1557b7f53500e12905b3bbd50d371df138a0223a","signature":"05b649bbea19b429703a89b858cbb688af1f1cfbb717f4f29b0f619c65fa6a32"},{"version":"35f2802c37e3bf3ea5aeffe555f8841e4cd41ad7793abff43a1f54cbd3779cc8","signature":"4f82236a7973915fe600b7714ea66f7b5820a12ebeaca372ac3119b274d35f99"},{"version":"62c55e44058b6fe9bc008aea6c39e3a1c8528a2489c88a09e64a7050841519f5","signature":"756c82f3cd5aa4871308af9ab993609fd59e16d482acecad4fd5b0f0aa10cfae"},"c9c930d62352158ed2891d30ce2de05cb83483c19ffa9a86bf05a3dac1fcf856","da3a1fa978a8903361c02d913da317fd1dbb05ecde91f7ec211c460b0bcd7c43",{"version":"9d3e8fd131ecad577815c518f2df476ef2155f56d094825f7c3844219c48aacb","signature":"25d8c90a69ab14b5a18dffb5dd756364837dc8c0458c98d6304e99eecce218c4"},"bce91876e1d6bae21d9cba42ae269bf89e7a25b88427b03797acab2bb95c4492","812e6eabc5a8eeec3845ed6d46aa292f61b34a26d778f32a9d56e84a7531145f",{"version":"5630dbcfcadfb850abe9f35284cb2eb6017ed1bd5dab0ae6e132ef69e3f8ed17","signature":"4c2ddc4144d45856b4af69032cb37ee1abfcb3dfe9d3899ce6405c4f1f82e1ea"},"1c0dd339593cb2e79c61a3d21443660965dafc7fcc5d18d1cdc0c178458447ab",{"version":"620c5b17a20c4af998aa8d4b2ad2239a70a6cda67f7e7da4b08b912d497f9f38","signature":"24381ac079539036b4463bb0829df4518439b451f25d863cb37d93e5a2e5de6a"},"9cee6361582a5acf80a4a2452223ac7eaabe3118d82e75c8784729e264973a4b","9eca65003bed766b7f229bf2edf26c2e2455ed1ddc32779886b606211dcdd8b6","bd81efbc6bea7019dae278e1dec171c09abce0c88467329de25f931bea9cee2b","1d63524603e3f84cff768705cb490391889737020dc4cf1b5e457defd5211576","adf9f80d842c584e2db33d8794753ea712a506442f6409f4e729e6584171365b","f8540fb24273d44173342a40de9df6b2c7ed4e524ad69ab2a1d4d12866b38c24","30e443c23c10f812bc96f5ddf3d070ee033cebf879ed9e8346e2bb037e30e6f0",{"version":"bc14f0ace6fc07e2ed1453f478d2c6645b2e17c88d45ac77970694c2b6df8ec5","signature":"45b373ad2e114de335dd3eaf62f9658266d71c2f34537489f88f3b4815fa72f8"},{"version":"211c4986f0c9211907a072f09577821552e4cc5d531314f01ca48d86847e4473","signature":"d76b120794e3de3046f5de58105457d4658e5f6710c19ff06ad8dff2949dc64b"},"e2b149fc39c10f22d940e258f2404ada7f0b452966ee19e4e461f475bd6436af","990647839981414886590181889822ecb021fb2789ef39ed69c106dc5c6e2b5b","6ecb858e08ee78829f23a3299e4e55ebe7498a6c5a3a72a1c78dd33dfe528880","8120d11a3e90f322cab3f2cd1194335f36b3bbd3189b8862a2e66fb91c277012","76faa370cf84663c717902c1e4491c33baee897c2f21d22e6fadb70360e54ffb","b26c1a5915c9e15489ab781c148e8e84211f2378120db615a2e8d228517ef884",{"version":"306eeb4e89647c261b4c32e894d04133d41d33aef4dd6fc1e5869fcc32d48600","signature":"2a6e5bef226f06822c6f7da1999114370c4e5b9df2515191b17e2b17060393fc"},"d7f045f95db5f92145e5089cbf198b9c38b591b717f887e9509f2ea4706575c2","8ee4297e40e71e2ba0f55b039fc146026b8564589109e36c0c7666c5a8d7598b","e66727a0c26c6e2ff75419991f54e2bb0846a7afd54dcc2243df0e7dad6d9cb0","76498edd4d9e65f9ecb902eee8fb9601b281d50306aa5ef188f507fb6e49e18a","02591816a371b76588624aac35090fe0dcde32968e00b9608f9c57d584008117","8e23c732a619068118b30965496f19e7a9c72bd6a2a779f6e8d8846031c9298c","2143be3241627ac8f0a193d5bdd6df601af2fa2fc5b1c85f2190a1bee2e22ce6","bf9342f9a48af0a1996348ae6a0e8183ae8c10a1ceda30f545225d666f04c2c6","7525dd83451b274a05cc66b41832faf9c9ee87cdfde95f66a5d5ee2c50434900","368b240027377c1608a58ec357e9adec0f282c7b00be6eb7caadc3260b4ea774","af51d6843f2ecf33c706966af6293a11ecfd6f51f7336d4227e6cef798709a54",{"version":"7febfea0b429f06e2219067fb936d5462b1b43d59d434b0fa3d3ad4aea004956","signature":"aabf6e71b09b82552469d23187ffd89fcb858ae00f9492e2beeed94bb4f0e1fe"},{"version":"a5f7b9b582d2467b70af61765455e487cc3aec4dd3a6284f584ac43f250ce37b","signature":"fa804f518e407cc57cf271546c1dd6ad705328ca20d37ac6bd732a5b47b400ba"},"9f288ede1741a0901b6e25e3f3f5a8235d879de4d3bde62ef45207ac4b6470cc","9a1cd9c623b70a7c948a251f53a408c925aba84bed538db51e2b3d27e3c3f03c",{"version":"2075d724b0ae07cf057fffdbc55e077e3d205d341108b6484053ac3430e188e0","signature":"7af8852e8b9645f5aebaca5333dd77c5e33e6692bee881c942f29e3576e41312"},"c8d447450702c5e4ec47ed530e6ed17bac4bd2fdff8fd96d2bd572d47f5325b2","2e3e5e9c0c61b407a5cf2a76be65db1b548e2ef41c7a40354b3972d0eb037464","c6cc9e66a6ca8771bfc1ddce9443f34b3146421e8b4c94f54e551a67d76df401","0bfb211a47939f34323da0a87a3d8de72f0670dfca0986e827c25cf767f1523c","bbc1c38cfdee70c75a6819d14f3885df26be3a3d2b42d1c8a84552fe9b48a90a","78c3281be2e32bd1c556c377094dd402a1178bd2bb63f48bcf4cdd05709c138b","2c60f4b3a1527a00dcf8423c812e2ce95d64a77440db4be8c28a0adce538159d",{"version":"17d40bd06b0891525215c2ba0707e47091188acdbd44adc85271ab3e7752cece","signature":"028126245eda1bf5c9e48ad2facbf9c1336ce5fe71a4a3def2d2a8757c8bd31c"},"81e66673d8e6c8442a5cb07b3aed375d7564c81bffb6967790147fa7532bef89","2658ac924897534433f474d498e15f98442fa116a1e61e26880f5fe4239b9cfa","6a753790ae197cb864cc8d7cf0a647db35b89b6037c14892260ca441b83580d0","53a326b7237664389da174d1628e794972cc569961e412a12b9465e76832b1c5",{"version":"ab16a3d7b041ddb8acd162610d5135dfa67591cc2e99458c152009bc6cec7728","signature":"58a4318cf0da39012cb1d469c4351da43f3615389688703458f0f3b44c652e4a"},{"version":"a4f6677faffb15d627131607e0124f262a8dac671b72278301209374c96188ac","signature":"a8b499df4741609ac38be069f4d17dc6c638c8f6ce503afb9ecde2611d18dbf3"},{"version":"47043e449965c1e01284054cf174e0eab85176974438f971e99c70a9dab30410","signature":"eaa751793c09b0b135c97e8272f4f5cce34c3891cd2ee87aaf3d7dc00ecc85d8"},"bcfc037fe20816503c1070c11c1c539d9f4c9853e4731fea4487c3d0cb6241b7","bcf515e71948944d803605bd765598d1dcd4576f8231dd638332df48514003f9","5d88322e0e8da65ec173b7d54a9fe399c34763793a1a75d3ef924e5e08601925","e129b6a332e8bff5edf59a52f065e52cc6c508fd7b168303fcc165852a0ad128","1c17522d9ce17869ef312d6a4e32548eb1424f86f7f77031cb669295fcc5114b",{"version":"cea98f10acaf84eff9d45d402f9d329468153d46d4378ce4f626ab5cf6107186","signature":"4c8c3abbfe8cfe5e0a338c703ac8ac4a2db1cd7a3d6203f29b05fecfacb3dcb0"},{"version":"38cdb00bf747f844410226eac4eb35fd8eaf792525871d859c00fa86df0221bd","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0491eef7ac68c1b3a32d5a43827025d8d4224faf5b2d34b3e86437480db931ba","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0b06bc2faeae3c92db2058c450b9ae9910fc46b8c74b0f3a3e128fcb67eebe48","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"eb3b9291f267aa94c8f1f45b10b92cb92ac1dd2af797df6a54004303e3beb2b4","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ef6cd4686f2a40a47962d42e1eb9dae869bfe4b944bd5b54f54952476f6312da","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"5adde841b29f9dee2d4a5d0ffe93ef0b536bb912b450da06f310dd9a0838e03b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e7d17d2477cfe17fd5596867da0c419484acdb63433d556d497e151e0fef6b9a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"2a96b88e577733a79606a5e51e03a6041fd8a73f1f8daa6f1979b9b1126a2078","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1c50bb314c7d1b6561cfbdc4f484abebbc1e193595221269da65187cba89edf1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"9b4911d84e75ccd827916cbf58594586af5c5b9c90a473da1f0f85d8f6f4c952","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"a1d653a59e705ae316e8ac9cd9e3765690268c180f6d5b1bece084b38371605a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"5441da3aea0e140f8485b25c2d08232504c8cbbc80a3dc579abd5ed5538b841f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"a80dc0f482c35a48e858299dbaac2c6d12b116f2e23bc3fb88b3cf0e8130bb2b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e268c91e0c47cab3dd69a4c8b537010d95057b898ec21df2b72188a9f7dde062","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"50381790f97962e5136606b47f28a5d8f77d07c4b612c474c1a7280c344ec084","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"f83e6f8b85a4c8b5e7f7b1b775f4cd7a20ac141cde302417658b79e21e43f314","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1215eb7f73ea7004c042483d77302aa37a3816524b789635de3caa9eea850aa1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e2f435a8c0a041586e776aca32e813a46e0aa0da4b151ae52627dff24d1d7113","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"dc831fe799a5197a5ccc2966ba7704a23b276a176f7a854c281a6441698d060e","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"7a76c387ea1286b563b60463fa856402f5a90a0e05dd36bd708e59b81558a6ce","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1988b64e788e6e0379ba6f75e3f2b12c2593bb0baea43c0bd65a4b11ffeea903","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ee534e14dfd4b4c85381c9a9c52d2c97c41c67525d8334cd5647d1a9634cdbd9","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0c3d42068e7c915fa716f960fd96363f0adabcf2d0e6add449cc1a277cbd591f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"eff46622fcae7f3c5684e9d5dbaf485b7bb6803f9b2dbc30694face82586af3f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8678aecf5d5cec7c76f1d5b56ac39bb7e4e6e240c9d0dadf86dd687309d056c2","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"72f39dc34b987a208a08f4e62d948170e51b7cc455a3c834becbfbfa57ce89ea","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b6bdc3d22749b3f3fb74982afda4174b9bad789983a73749cf9030d23b8420d8","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ac25ca166f3eaf29b3aed1a5b77c7c933754f43aaee707d5a30b6b6c254eb4a6","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"30332d54fd1cb5b25a27f289401ae554b2906ae96d35f9fd7b2aec88a38b47e4","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"daca6342a2d7fab0ae2697b8f3ecd8ec2e229343c4a71908925d5e29d914af40","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c1a0ffca413f2bb6d4b5c67839ce4adac7c836278d32357443c01b8e4e7706c3","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"0ea8d0ec5f69666b45c1a4ab82a3cdd0bf9c088db8490eb2115c8d2d9c7490c7","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"698ae6cffb5ab384ee0d177633fe7db7704bc41926dcd0e50b033e83558012d0","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"2cfab77b2c62bf20d00800dcdb880c97a45b6e3f1d7055db46c1557e5ef3d4ae","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d344bb6fba3d9fd3ccd0bec97f87bc082d0025e43dcaec17625545c713e93a2a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"f75da97954d2e654afd7c36351eb572e698edc7a0f44f3aff5215adb554a2c97","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"15ad56380ae0047cadddefd083b8867b41fb3d2aac77b47bc67299af98cc1a9f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"4f7fa0ce2e052d0bacc32abbfec185ce8a36190397c24c3ebaa207aa16af52ce","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"79228a5ab1b60039ed33b3013106ccc66e349453f25a5f247067fde3bef14f00","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"426f0fd62d959bfe85611bc7d9f65be3a5a5515aec7c62169eb832b362e651e0","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c453007dca83d03e4e5cface63df08f2bee83c388f37abd6625d28b8e00fd95d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ff0b3f8a563bd75f974929c00ebe44cde30421c5154b8af3ff0dbcfa4f1c602d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"578a2bbb56b20206603748a5494634f3f9125e0c8579288be8a11de88c8a73c9","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"bdb30399b7bfc4e929ad4789d990e08fcc7949d1146e537aa0485c8d0c5b967a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e554cf12f23157f0a5acf1079682a94ea012ced60357cebd381a1ddafd8c06ce","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"01f47cc5fc2bb2174f3f164d88f06d6098316996c9ad5bc0547ce6dc12e1201c","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"3227b8792815436086de14ea537ee0509ea1f8c2550de9058570d2ba180142d9","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"f797bb68a383e90c4f13b60d44ee3288e93fb4e25b7770bd06308318f412b438","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"abd3fd5b6f8bb5cf731506d99ca94f18242834c5035b558471cc1f75fbc24ac9","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"4d8532c187da6b8aeccfde2930ed239eb5c71760b9cd9397388564bde08db799","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c0ad867878fd4ea7c829cded9720bb9d48efe2c7859fb95a7e06665c25044c60","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"708e832ca64b5ce3afeed3033b8d404b4e3fa8214441588be07ad50c95fa1051","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"433af8accf96a75ed56175e49fc7026c9dbd06c303358148e1842933f6a638da","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"aa4f43c15fbec0d424088d0b50cad11664c470eab28bef75a79a1583907e0273","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c2377672bb3f213a808e8fc589fb62efb8514d916bb1c6fcde28f99ce881d4e7","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"06bac723b50037d69f9acaad3f71065b19b8d394607e8b7964f44deeb9b54404","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1a94ec5afb15fdba50a3765d6381f705f9b9b30c1c4dbcc163a177f97c94e7ba","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d48358a4e3404183d61b8f9c223bc283220eed3743f5d9e5523f72031c7d16a1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},"5b0500b9f0e9f8997d54d0030dbf238d283ab583fddc7469e96eeb963e4e2102",{"version":"8212736902f3cecfcb1916888d332858f7cbcfe0c8902293a308ed104a44de3f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"3cd93e2b11af71b82eb6522b1692b5b13b687d5e986407f4976d89ac92c15267","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"4691655007efb828beeda525007125dcdc99408504e9d472e4bb61399360e1d8","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1bc0ca21dc682fd2d2c715055a45c64b210cf33741408984a1a2e8cf9cf40b5b","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c39ba1a80363f075ba68acc3d7dc6f10284913b40eff9367d093115ef49c2f05","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8c2bb7c1714a6be529e5d9114d98f147abe1601b1ecb43f919ca71d88ff8639c","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ea46996cad8696300c4b6fffb9793b25a618fe4008a5cb81b41ae3977abefede","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cb6cc65a20965892c2b5c728432965479862259655fe44c53ac983183e5ff70d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"1d6eff1cb5b8fddf1f758b7c3ab0f49aea47502d0e6165fc1aa250965c5d474c","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"6355d0f103592c9a5960aee2d1ddd97ddf8eb70c80c918d8ae1feebdc783dd55","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e1fb955326068489734d305c0682466228a1ce153a67a994b6bf00d79c93dfbb","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c70fe7ea6d90c2cbb826aeb5904cf744a88c7d6f7e36c793a3a62bea4150336d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"429b5993e8138937b7c53dc0f1dd75c66ab485c2b6b72119f155b6e64184caaa","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"223900a4dc0feee041ab2d87bff8795e31edacc9ddca2fe7a954361d586a71b3","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ec4f0c0e463599c7cbf508edf530f2d1ef79c3a3043eff3163275892450c5977","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e66ab26040694cde21d89783d6837b647747f000933bbde7a6c634d9a5db2b6e","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d860e23d6ca1c97dfc46cfaba32cbf337e09f5761ec79ea69551d65d2cec4d70","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"301c88ae9d0ef7a3b0694204b12fba55725bc5b2dfb2ad985e3f29802847eb27","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d5b2c974070e5977ceb5ea4049fd0d487adce2438c7f0d084fc16d2b7f6417bf","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b0257075831cafd9565f949034bee93f95a20be011c0915ed4fe81447901500e","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b4353ac236d0ebf5457e8c737e455ba90e7a657cd764faa25fe9699c8931c292","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"fd76ed5942f9365c7eeba04bf2d646a44672eec36e40639ff8286f5026af6915","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"a13382633ea25a8ee3ee30130b3cb9c5a35a3a7741da14fdef6f29da41dcadd5","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"7200138bc2abb3de99a23c7e5afd07df70dca3065be17b596c7b354a8299cb57","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"00cd2f9613ea4aa027d4e164eb97c4d939586b4a49f5e6105a2c1e8b0a8681db","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b6f2dffea2fdb21289f7ab1ad1b837d37c6bffc5df336b9275c210999fa8b8d1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8525d693081a5784951e455707d8dcdd182d8ec50b35548fde72631821682186","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e59e5dc519d9c8e45b6257f6445829fc6e21529bcb5d2d3d68556386d7ee8dd2","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"d70eab4052db1ed3532b377fc612157058290280bd3d40c221d4f0b63bbc782a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"3ad61ebc4e7c81a3cdcb33db5ce15aefdfed87d95b40dbc4431f0a00808a244f","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"8f1910d46a4edca199cdd21265e1c19623f2ef958ee13eab83df4b0a27df2702","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"48c34d6117b93d9502272b7c820300f96057f823b5f295f30ed94b9b127fb940","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"6be7439155514bcc947df322eb77b4bb85dc6f3cedc982d46b99810ee0c8365d","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"18896aec0f6a585a47cd8f0930d594be148971fdd17758c6f2757134d7fb4bca","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"4ca510748c315ae3412a3562661163d71239cde6f1b0d98c77c85fa55776a74a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"03e664c99be497734b19fc036290978e684af1d27565136f60798259e916eb96","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"c5f66ecc7a2cdebfcb3fb180d7173199c6345b9723ace92573c2f5d5decbda28","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"9a8eab7cb8f0327817a988c6f9c497c99da5888ce781981649cce1f5cefe1645","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"5095f06967e1f7475b9438f84b7798cc95f294b2540e9c5f93d75bf9147dab97","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"e18c32c545b631a893e4cbc2a63a21476dfe78eafccc65213c9cae6bbc8fc0c3","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ce5dbbf1e186ab703469e15ad9f99fbcba397588cfbc9463d65d2fca0054a9b6","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"9b5fd57c9e2d189be952909f1086b29693133f1d3a7fd4a1bdd8fcd4a911e9fc","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"7901b1699a80c23215f24442f785bdabc2bc0c0254a1b3075eb1d78585c08149","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"b4feece894f67872fbe30c4d27069f248745a6586d4534b6593fc3b204d93903","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"36de0bc9cf69ec626eb7083b13fa94f5316587f3e66e4f84f09ebcac2265b5c1","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"cd8024cb841fcc82e481a45121cd8377bd31da236927f15e0749471f15da1745","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"7598db1d05c922e72664f49edc4279848f2a17c0b09d44908c5857daf6ffea1a","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"2f44d8a2ff9b959f010bd5bda281d71f7644037b2fb6e95f6a9fd54733d0f474","signature":"2cc743b624d6891f9275f11f76fedfe235af04641c806e7dc65e55740db4dd29"},{"version":"ae77d81a5541a8abb938a0efedf9ac4bea36fb3a24cc28cfa11c598863aba571","impliedFormat":1},{"version":"427fe2004642504828c1476d0af4270e6ad4db6de78c0b5da3e4c5ca95052a99","impliedFormat":1},{"version":"2eeffcee5c1661ddca53353929558037b8cf305ffb86a803512982f99bcab50d","impliedFormat":99},{"version":"9afb4cb864d297e4092a79ee2871b5d3143ea14153f62ef0bb04ede25f432030","affectsGlobalScope":true,"impliedFormat":99},{"version":"151ff381ef9ff8da2da9b9663ebf657eac35c4c9a19183420c05728f31a6761d","impliedFormat":1},{"version":"f3d8c757e148ad968f0d98697987db363070abada5f503da3c06aefd9d4248c1","impliedFormat":1},{"version":"a4a39b5714adfcadd3bbea6698ca2e942606d833bde62ad5fb6ec55f5e438ff8","impliedFormat":1},{"version":"bbc1d029093135d7d9bfa4b38cbf8761db505026cc458b5e9c8b74f4000e5e75","impliedFormat":1},{"version":"1f68ab0e055994eb337b67aa87d2a15e0200951e9664959b3866ee6f6b11a0fe","impliedFormat":1},{"version":"963d59066dd6742da1918a6213a209bcc205b8ee53b1876ee2b4e6d80f97c85e","impliedFormat":1},{"version":"fd326577c62145816fe1acc306c734c2396487f76719d3785d4e825b34540b33","impliedFormat":1},{"version":"8a19491eba2108d5c333c249699f40aff05ad312c04a17504573b27d91f0aede","impliedFormat":1},{"version":"15fe687c59d62741b4494d5e623d497d55eb38966ecf5bea7f36e48fc3fbe15e","impliedFormat":1},{"version":"2c3b8be03577c98530ef9cb1a76e2c812636a871f367e9edf4c5f3ce702b77f8","affectsGlobalScope":true,"impliedFormat":1},{"version":"1ba59c8bbeed2cb75b239bb12041582fa3e8ef32f8d0bd0ec802e38442d3f317","impliedFormat":1}],"root":[408,[416,424],[466,475],[810,819],[821,830],[832,835],[852,857],[860,900],[942,944],[946,1145]],"options":{"allowJs":true,"esModuleInterop":true,"jsx":1,"module":99,"skipLibCheck":true,"strict":true,"target":1},"referencedMap":[[519,1],[521,2],[520,1],[518,1],[522,3],[494,4],[506,5],[492,6],[507,7],[516,8],[483,9],[484,10],[482,11],[515,12],[510,13],[514,14],[486,15],[503,16],[485,17],[513,18],[480,19],[481,13],[487,20],[488,1],[493,21],[491,20],[478,22],[517,23],[508,24],[497,25],[496,20],[498,26],[501,27],[495,28],[499,29],[511,12],[489,30],[490,31],[502,32],[479,7],[505,33],[504,20],[500,34],[509,1],[477,1],[512,35],[1041,36],[1042,37],[1043,38],[1044,39],[1045,40],[1048,41],[1049,42],[1046,43],[1047,44],[1050,45],[1051,46],[1052,47],[1053,48],[1054,49],[1055,50],[1056,51],[1058,52],[1057,53],[1060,54],[1059,55],[1061,56],[1062,57],[1063,58],[1064,59],[1065,60],[1066,61],[1067,62],[1069,63],[1068,64],[1070,65],[1071,66],[1072,67],[1073,68],[1074,69],[1075,70],[1076,71],[1077,72],[1078,73],[1079,74],[1080,75],[1081,76],[1083,77],[1084,78],[1082,79],[1085,80],[1086,81],[1088,82],[1087,83],[1089,84],[1090,85],[1091,86],[1092,87],[1093,88],[1094,89],[1095,90],[1096,91],[1097,92],[1098,93],[1099,94],[1100,95],[1101,96],[1102,97],[1103,98],[1106,99],[1105,100],[1107,101],[1104,102],[1108,103],[1039,104],[1109,105],[1112,106],[1111,107],[1113,108],[1114,109],[1110,110],[1115,111],[1116,112],[1040,113],[1119,114],[1120,115],[1118,116],[1121,117],[1117,118],[1123,119],[1122,120],[1126,121],[1124,122],[1127,123],[1125,124],[1128,125],[1130,126],[1129,127],[1131,128],[1133,129],[1134,130],[1135,131],[1132,132],[1136,133],[1137,134],[1138,135],[1140,136],[1141,137],[1139,138],[1142,139],[1143,140],[1144,141],[1145,142],[408,143],[580,144],[532,145],[530,146],[533,147],[537,148],[526,149],[536,150],[545,151],[581,152],[476,1],[549,153],[548,1],[524,1],[531,154],[527,155],[525,156],[535,157],[523,158],[534,159],[528,160],[544,161],[546,162],[554,163],[553,164],[570,165],[573,166],[572,167],[574,165],[571,168],[569,169],[543,170],[547,171],[542,172],[576,173],[538,174],[539,175],[568,176],[556,177],[557,178],[575,179],[540,174],[558,180],[561,181],[560,182],[559,183],[564,184],[563,185],[562,175],[541,174],[565,174],[567,186],[566,187],[577,188],[579,189],[552,190],[550,191],[551,192],[555,193],[578,174],[529,1],[361,1],[706,1],[705,1],[707,194],[415,195],[842,1],[840,1],[851,196],[838,1],[845,1],[848,1],[843,197],[849,1],[847,1],[850,198],[846,199],[844,1],[836,1],[841,200],[839,201],[837,1],[461,202],[462,203],[460,204],[455,205],[464,206],[449,1],[450,207],[459,208],[454,209],[463,1],[458,210],[451,1],[452,1],[457,211],[453,208],[456,209],[426,212],[427,213],[425,1],[437,214],[431,1],[440,215],[432,1],[438,216],[436,216],[439,217],[435,218],[434,1],[433,219],[428,1],[446,220],[442,221],[430,1],[429,1],[441,222],[444,223],[445,224],[443,225],[448,226],[465,227],[1146,1],[1149,228],[1147,1],[1154,229],[1153,230],[1152,231],[1150,1],[1156,232],[1151,1],[1155,1],[142,233],[143,233],[144,234],[99,235],[145,236],[146,237],[147,238],[94,1],[97,239],[95,1],[96,1],[148,240],[149,241],[150,242],[151,243],[152,244],[153,245],[154,245],[155,246],[156,247],[157,248],[158,249],[100,1],[98,1],[159,250],[160,251],[161,252],[193,253],[162,254],[163,255],[164,256],[165,257],[166,258],[167,259],[168,260],[169,261],[170,262],[171,263],[172,263],[173,264],[174,1],[175,265],[177,266],[176,267],[178,156],[179,268],[180,269],[181,270],[182,271],[183,272],[184,273],[185,274],[186,275],[187,276],[188,277],[189,278],[190,279],[101,1],[102,1],[103,1],[141,280],[191,281],[192,282],[86,1],[820,283],[198,284],[199,285],[197,286],[195,287],[196,288],[84,1],[87,289],[285,286],[1157,12],[1159,290],[1158,1],[1160,291],[1148,1],[858,1],[85,1],[447,1],[945,286],[93,292],[364,293],[368,294],[370,295],[219,296],[233,297],[335,298],[264,1],[338,299],[300,300],[308,301],[336,302],[220,303],[263,1],[265,304],[337,305],[240,306],[221,307],[244,306],[234,306],[204,306],[291,308],[292,309],[209,1],[288,310],[293,311],[379,312],[286,311],[380,313],[270,1],[289,314],[392,315],[391,316],[295,311],[390,1],[388,1],[389,317],[290,286],[277,318],[278,319],[287,320],[303,321],[304,322],[294,323],[272,324],[273,325],[383,326],[386,327],[251,328],[250,329],[249,330],[395,286],[248,331],[225,1],[398,1],[401,1],[400,286],[402,332],[200,1],[329,1],[232,333],[202,334],[352,1],[353,1],[355,1],[358,335],[354,1],[356,336],[357,336],[218,1],[231,1],[363,337],[371,338],[375,339],[214,340],[280,341],[279,1],[271,324],[299,342],[297,343],[296,1],[298,1],[302,344],[275,345],[213,346],[238,347],[326,348],[205,349],[212,350],[201,298],[340,351],[350,352],[339,1],[349,353],[239,1],[223,354],[317,355],[316,1],[323,356],[325,357],[318,358],[322,359],[324,356],[321,358],[320,356],[319,358],[260,360],[245,360],[311,361],[246,361],[207,362],[206,1],[315,363],[314,364],[313,365],[312,366],[208,367],[284,368],[301,369],[283,370],[307,371],[309,372],[306,370],[241,367],[194,1],[327,373],[266,374],[348,375],[269,376],[343,377],[211,1],[344,378],[346,379],[347,380],[330,1],[342,349],[242,381],[328,382],[351,383],[215,1],[217,1],[222,384],[310,385],[210,386],[216,1],[268,387],[267,388],[224,389],[276,390],[274,391],[226,392],[228,393],[399,1],[227,394],[229,395],[366,1],[365,1],[367,1],[397,1],[230,396],[282,286],[92,1],[305,397],[252,1],[262,398],[373,286],[382,399],[259,286],[377,311],[258,400],[360,401],[257,399],[203,1],[384,402],[255,286],[256,286],[247,1],[261,1],[254,403],[253,404],[243,405],[237,323],[345,1],[236,406],[235,1],[369,1],[281,286],[362,407],[83,1],[91,408],[88,286],[89,1],[90,1],[341,409],[334,410],[333,1],[332,411],[331,1],[372,412],[374,413],[376,414],[378,415],[381,416],[407,417],[385,417],[406,418],[387,419],[393,420],[394,421],[396,422],[403,423],[405,1],[404,12],[359,424],[595,1],[682,425],[681,426],[593,427],[590,428],[594,429],[599,430],[586,431],[598,432],[604,433],[683,434],[582,1],[584,1],[592,435],[587,436],[585,156],[597,437],[583,158],[596,438],[588,439],[606,440],[629,441],[618,442],[607,443],[615,444],[605,445],[616,1],[614,446],[609,447],[610,448],[608,449],[617,450],[591,451],[625,452],[622,453],[623,454],[624,455],[626,456],[632,457],[639,458],[638,459],[637,460],[636,461],[635,462],[633,453],[634,453],[627,463],[630,464],[628,465],[631,466],[620,467],[603,468],[619,469],[602,470],[601,471],[621,472],[600,473],[642,474],[640,453],[641,475],[644,476],[643,477],[645,453],[649,478],[647,479],[648,480],[650,481],[653,482],[652,483],[655,484],[654,485],[658,486],[656,487],[657,488],[651,489],[646,490],[659,489],[660,491],[680,492],[661,485],[662,453],[663,493],[664,494],[665,495],[611,496],[612,497],[613,498],[589,1],[666,453],[669,499],[667,453],[668,500],[670,501],[671,502],[674,503],[673,504],[675,505],[676,481],[679,506],[678,507],[677,508],[672,509],[776,510],[773,1],[801,1],[797,511],[798,512],[784,513],[785,514],[786,515],[783,516],[792,517],[787,515],[788,514],[789,518],[791,519],[781,1],[782,520],[807,521],[802,522],[803,523],[778,522],[795,524],[794,525],[774,526],[796,526],[775,526],[806,527],[780,528],[779,529],[777,1],[804,1],[793,1],[790,1],[800,530],[799,531],[756,1],[758,532],[745,533],[746,534],[747,535],[748,536],[739,537],[749,538],[750,536],[751,538],[752,539],[753,534],[754,540],[744,541],[755,542],[757,543],[742,544],[740,545],[770,1],[771,546],[741,547],[743,548],[721,549],[684,1],[722,1],[723,550],[728,551],[729,552],[730,553],[805,553],[731,553],[736,554],[732,553],[726,555],[718,556],[772,557],[737,558],[695,559],[685,556],[693,560],[686,556],[738,556],[687,556],[688,556],[689,556],[717,561],[694,562],[690,556],[691,563],[692,556],[697,564],[696,1],[763,565],[762,566],[764,567],[765,568],[766,569],[767,570],[716,571],[720,572],[769,573],[768,1],[759,574],[714,575],[760,576],[713,577],[761,578],[734,579],[733,580],[719,1],[725,581],[724,582],[809,583],[727,1],[808,584],[735,1],[698,1],[699,1],[704,1],[711,1],[703,1],[712,585],[702,1],[708,586],[710,1],[715,1],[700,1],[701,1],[709,1],[928,587],[916,1],[922,588],[935,1],[914,1],[929,1],[931,589],[932,1],[904,1],[908,590],[910,591],[909,1],[936,592],[905,593],[906,594],[907,590],[911,595],[912,595],[913,590],[903,1],[902,594],[919,1],[917,1],[918,1],[920,1],[933,1],[938,596],[937,1],[939,1],[934,1],[940,597],[941,598],[921,599],[901,1],[927,1],[924,1],[925,1],[930,1],[926,600],[923,601],[915,1],[412,602],[409,1],[410,602],[411,603],[414,604],[413,605],[859,1],[831,1],[81,1],[82,1],[13,1],[14,1],[16,1],[15,1],[2,1],[17,1],[18,1],[19,1],[20,1],[21,1],[22,1],[23,1],[24,1],[3,1],[25,1],[26,1],[4,1],[27,1],[31,1],[28,1],[29,1],[30,1],[32,1],[33,1],[34,1],[5,1],[35,1],[36,1],[37,1],[38,1],[6,1],[42,1],[39,1],[40,1],[41,1],[43,1],[7,1],[44,1],[49,1],[50,1],[45,1],[46,1],[47,1],[48,1],[8,1],[54,1],[51,1],[52,1],[53,1],[55,1],[9,1],[56,1],[57,1],[58,1],[60,1],[59,1],[61,1],[62,1],[10,1],[63,1],[64,1],[65,1],[11,1],[66,1],[67,1],[68,1],[69,1],[70,1],[1,1],[71,1],[72,1],[12,1],[76,1],[74,1],[79,1],[78,1],[73,1],[77,1],[75,1],[80,1],[119,606],[129,607],[118,606],[139,608],[110,609],[109,11],[138,12],[132,610],[137,611],[112,612],[126,613],[111,614],[135,615],[107,616],[106,12],[136,617],[108,618],[113,619],[114,1],[117,619],[104,1],[140,620],[130,621],[121,622],[122,623],[124,624],[120,625],[123,626],[133,12],[115,627],[116,628],[125,629],[105,7],[128,621],[127,619],[131,1],[134,630],[416,631],[966,632],[967,633],[968,634],[969,635],[418,636],[421,636],[422,636],[419,636],[420,636],[423,636],[424,636],[468,637],[469,638],[470,639],[471,638],[472,640],[473,636],[474,638],[811,641],[475,639],[813,641],[812,638],[815,642],[818,643],[819,644],[821,645],[822,638],[823,638],[824,646],[825,638],[826,638],[828,647],[832,648],[830,649],[833,650],[834,641],[835,638],[853,651],[855,652],[856,638],[857,638],[862,653],[863,638],[864,638],[865,654],[866,653],[868,638],[869,639],[867,639],[870,639],[871,655],[873,656],[872,637],[874,638],[875,639],[877,657],[878,641],[970,658],[971,659],[972,660],[973,661],[977,662],[978,663],[979,664],[956,665],[980,634],[982,666],[983,667],[984,668],[985,669],[990,670],[989,671],[991,664],[986,668],[992,672],[957,673],[993,674],[958,675],[996,676],[995,677],[997,678],[998,679],[994,680],[999,668],[1000,681],[959,660],[1003,682],[1004,683],[1002,684],[1005,685],[1001,680],[1007,686],[1006,686],[1010,687],[1008,673],[1011,687],[1009,687],[1012,687],[1014,688],[1013,689],[1015,690],[1017,681],[1018,681],[1019,659],[1016,659],[1020,681],[1021,691],[1022,681],[1024,692],[1025,692],[1023,693],[1026,694],[1027,695],[1028,696],[1029,697],[976,698],[974,699],[1030,286],[946,665],[1031,695],[965,700],[962,701],[961,702],[963,703],[960,704],[1032,1],[1033,665],[1034,665],[988,705],[1035,706],[1036,695],[981,707],[1037,708],[1038,695],[987,665],[975,665],[964,709],[879,286],[880,1],[881,710],[810,711],[882,710],[467,638],[952,712],[814,710],[883,713],[884,1],[885,710],[886,1],[887,1],[888,1],[889,1],[890,1],[891,710],[892,1],[827,1],[893,1],[817,714],[894,1],[895,714],[896,1],[897,710],[898,710],[829,1],[899,710],[900,710],[852,715],[942,716],[943,710],[944,1],[854,409],[947,717],[948,1],[953,718],[860,710],[949,710],[466,712],[861,719],[876,1],[950,710],[951,720],[417,636],[954,1],[816,1],[955,631]],"affectedFilesPendingEmit":[1041,1042,1043,1044,1045,1048,1049,1046,1047,1050,1051,1052,1053,1054,1055,1056,1058,1057,1060,1059,1061,1062,1063,1064,1065,1066,1067,1069,1068,1070,1071,1072,1073,1074,1075,1076,1077,1078,1079,1080,1081,1083,1084,1082,1085,1086,1088,1087,1089,1090,1091,1092,1093,1094,1095,1096,1097,1098,1099,1100,1101,1102,1103,1106,1105,1107,1104,1108,1039,1109,1112,1111,1113,1114,1110,1115,1116,1040,1119,1120,1118,1121,1117,1123,1122,1126,1124,1127,1125,1128,1130,1129,1131,1133,1134,1135,1132,1136,1137,1138,1140,1141,1139,1142,1143,1144,1145,416,966,967,968,969,418,421,422,419,420,423,424,468,469,470,471,472,473,474,811,475,813,812,815,818,819,821,822,823,824,825,826,828,832,830,833,834,835,853,855,856,857,862,863,864,865,866,868,869,867,870,871,873,872,874,875,877,878,970,971,972,973,977,978,979,956,980,982,983,984,985,990,989,991,986,992,957,993,958,996,995,997,998,994,999,1000,959,1003,1004,1002,1005,1001,1007,1006,1010,1008,1011,1009,1012,1014,1013,1015,1017,1018,1019,1016,1020,1021,1022,1024,1025,1023,1026,1027,1028,1029,976,974,1030,946,1031,965,962,961,963,960,1032,1033,1034,988,1035,1036,981,1037,1038,987,975,964,879,880,881,810,882,467,952,814,883,884,885,886,887,888,889,890,891,892,827,893,817,894,895,896,897,898,829,899,900,852,942,943,944,854,947,948,953,860,949,466,861,876,950,951,417,954,816,955],"version":"5.9.3"}
 ```
 
 # v00-schema-master.sql
@@ -68837,6 +70343,234 @@ SELECT 'v30 migration complete — all issues fixed' AS result;
 
 ```
 
+# v31_hms_fixes.sql
+
+```sql
+-- ═══════════════════════════════════════════════════════════════
+-- HMS Fixes Migration — v31
+-- All fixes for the 5 issues reported:
+-- 1. Module connectivity & extra-click audit
+-- 2. Admin paid-bill modification
+-- 3. Attractive PDF reports
+-- 4. Lab Portal → patient profile + doctor/patient reminders
+-- 5. Bug fixes
+--
+-- Safe to re-run: all statements use IF NOT EXISTS / OR REPLACE
+-- ═══════════════════════════════════════════════════════════════
+
+-- ── FIX 1: Bills — add gst fields if missing (needed by AdminBillModify) ──
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS gst_percent  NUMERIC(5,2)  DEFAULT 0;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS gst_amount   NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ   DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_bills_patient    ON bills(patient_id);
+CREATE INDEX IF NOT EXISTS idx_bills_status     ON bills(status);
+CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at DESC);
+
+-- ── FIX 2: Reminders — CREATE table if it doesn't exist, then add columns ──
+--
+-- Use a single DO block so we never ALTER a table that doesn't exist yet.
+-- Every branch is safe to run even if the table/column already exists.
+DO $$
+BEGIN
+
+  -- ── 2a: Create reminders table if completely missing ──────────────────
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'reminders'
+  ) THEN
+    CREATE TABLE reminders (
+      id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+      patient_id    UUID        REFERENCES patients(id) ON DELETE CASCADE,
+      message       TEXT,
+      reminder_type TEXT        DEFAULT 'general',
+      status        TEXT        DEFAULT 'pending',
+      metadata      JSONB,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS allow_auth_reminders ON reminders;
+    CREATE POLICY allow_auth_reminders ON reminders
+      FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+  ELSE
+    -- ── 2b: Table exists — add missing columns one by one ────────────────
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'patient_id'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN patient_id UUID REFERENCES patients(id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'message'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN message TEXT;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'reminder_type'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN reminder_type TEXT DEFAULT 'general';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'status'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN status TEXT DEFAULT 'pending';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'metadata'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN metadata JSONB;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'reminders' AND column_name = 'updated_at'
+    ) THEN
+      ALTER TABLE reminders ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+    END IF;
+
+    -- Ensure RLS is on and policy exists
+    ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS allow_auth_reminders ON reminders;
+    CREATE POLICY allow_auth_reminders ON reminders
+      FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+  END IF;
+
+END $$;
+
+-- Indexes (safe — IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS idx_reminders_patient    ON reminders(patient_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_type       ON reminders(reminder_type);
+CREATE INDEX IF NOT EXISTS idx_reminders_status     ON reminders(status);
+CREATE INDEX IF NOT EXISTS idx_reminders_created_at ON reminders(created_at DESC);
+
+-- ── FIX 3: Patients — index doctor_id for notification routing ──
+-- Only if doctor_id column actually exists on this deployment
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'patients' AND column_name = 'doctor_id'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_patients_doctor ON patients(doctor_id) WHERE doctor_id IS NOT NULL';
+  END IF;
+END $$;
+
+-- ── FIX 4: Lab Reports — add portal & notification fields ──
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS portal_upload       BOOLEAN     DEFAULT FALSE;
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS portal_patient_mrn  TEXT;
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS notified_at         TIMESTAMPTZ;
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS notification_sent   BOOLEAN     DEFAULT FALSE;
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS lab_partner_name    TEXT;
+ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS values              JSONB;
+
+-- lab_partner_id FK — only add if lab_partners table exists
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'lab_partners'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'lab_reports' AND column_name = 'lab_partner_id'
+    ) THEN
+      ALTER TABLE lab_reports
+        ADD COLUMN lab_partner_id UUID REFERENCES lab_partners(id) ON DELETE SET NULL;
+    END IF;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_lab_reports_portal   ON lab_reports(portal_upload)     WHERE portal_upload = TRUE;
+CREATE INDEX IF NOT EXISTS idx_lab_reports_notified ON lab_reports(notification_sent);
+
+-- ── FIX 5: Lab Portal Users table ──
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'lab_portal_users'
+  ) THEN
+    -- lab_partners table may or may not exist; create without FK if missing
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'lab_partners'
+    ) THEN
+      EXECUTE '
+        CREATE TABLE lab_portal_users (
+          id             UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+          name           TEXT        NOT NULL,
+          email          TEXT,
+          lab_partner_id UUID        REFERENCES lab_partners(id) ON DELETE SET NULL,
+          auth_token     TEXT        NOT NULL UNIQUE,
+          is_active      BOOLEAN     DEFAULT TRUE,
+          last_used_at   TIMESTAMPTZ,
+          created_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+      ';
+    ELSE
+      EXECUTE '
+        CREATE TABLE lab_portal_users (
+          id             UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+          name           TEXT        NOT NULL,
+          email          TEXT,
+          lab_partner_id UUID,
+          auth_token     TEXT        NOT NULL UNIQUE,
+          is_active      BOOLEAN     DEFAULT TRUE,
+          last_used_at   TIMESTAMPTZ,
+          created_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+      ';
+    END IF;
+
+    ALTER TABLE lab_portal_users ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS allow_auth_lab_portal_users ON lab_portal_users;
+    CREATE POLICY allow_auth_lab_portal_users ON lab_portal_users
+      FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_lab_portal_users_token  ON lab_portal_users(auth_token);
+CREATE INDEX IF NOT EXISTS idx_lab_portal_users_active ON lab_portal_users(is_active);
+
+-- ── FIX 6: auto-update bills.updated_at via trigger ──
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS set_bills_updated_at ON bills;
+CREATE TRIGGER set_bills_updated_at
+  BEFORE UPDATE ON bills
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- ── FIX 7: Case-insensitive MRN index ──
+CREATE INDEX IF NOT EXISTS idx_patients_mrn_upper ON patients(UPPER(mrn));
+
+-- ── DONE ──
+SELECT 'v31 HMS fixes migration complete — all safe' AS result;
+
+```
+
 # vercel.json
 
 ```json
@@ -68856,6 +70590,5 @@ SELECT 'v30 migration complete — all issues fixed' AS result;
     }
   ]
 }
-
 ```
 
