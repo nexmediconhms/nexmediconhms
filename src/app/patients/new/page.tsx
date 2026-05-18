@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { verifyABHANumber, isValidABHANumber, mapABDMGender, buildDOBFromProfile, calculateAgeFromProfile, formatABHANumber, loadABDMConfig } from '@/lib/abdm'
 import type { ABHAProfile } from '@/lib/abdm'
+import { useFormDraft } from '@/lib/useAutoSave'
+import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
 
 // ─── Constants ────────────────────────────────────────────────
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
@@ -80,6 +82,20 @@ export default function NewPatientPage() {
   const [abhaProfile, setAbhaProfile] = useState<ABHAProfile | null>(null)
   const [abhaError, setAbhaError] = useState('')
   const abdmConfig = typeof window !== 'undefined' ? loadABDMConfig() : { enabled: false } as any
+
+  // ── Auto-save draft: persist partially-filled form to sessionStorage ──
+  const { saveDraft, clearDraft, hasDraft } = useFormDraft<FormData>({
+    key: 'patient_registration_draft',
+    setter: setForm,
+    enabled: true,
+  })
+
+  // Save draft on every form change
+  useEffect(() => {
+    // Don't save drafts if the form is entirely empty (matches EMPTY)
+    const hasData = form.full_name.trim() || form.mobile.trim() || form.age.trim()
+    if (hasData) saveDraft(form)
+  }, [form, saveDraft])
 
 
   // ── Load prefill from URL params (from forms page) ──────────
@@ -405,6 +421,8 @@ export default function NewPatientPage() {
     setSuccess({ mrn: data.mrn, name: data.full_name })
     setSuccessId(data.id)
     setSuccessMobile(form.mobile.trim())
+    // Clear draft after successful registration
+    clearDraft()
     generatePayLink(data.id, data.full_name, form.mobile.trim())
   }
 
@@ -516,7 +534,7 @@ export default function NewPatientPage() {
               </Link>
             </div>
 
-            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false) }}
+            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); clearDraft() }}
               className="text-sm text-gray-400 hover:text-gray-600 underline">
               Register another patient
             </button>
@@ -619,6 +637,20 @@ export default function NewPatientPage() {
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Or fill manually below</span>
           <div className="flex-1 h-px bg-gray-200"></div>
         </div>
+
+        {/* Draft restored banner */}
+        {hasDraft() && form.full_name.trim() && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-blue-700">
+            <ScanLine className="w-4 h-4 flex-shrink-0 text-blue-500" />
+            <span className="flex-1">Your previous draft was <strong>auto-restored</strong>. Continue filling or clear it below.</span>
+            <button
+              onClick={() => { setForm(EMPTY); clearDraft() }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg border border-blue-300 hover:bg-blue-100 transition-colors"
+            >
+              Clear Draft
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} noValidate>
 

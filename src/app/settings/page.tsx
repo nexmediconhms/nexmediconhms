@@ -1,6 +1,6 @@
 
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import {
@@ -11,6 +11,8 @@ import {
 import { loadSettings, saveSettings, DEFAULTS, type HospitalSettings } from '@/lib/settings'
 import type { ClinicUser } from '@/lib/auth'
 import { useAuth } from '@/lib/auth'
+import { useAutoSave } from '@/lib/useAutoSave'
+import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
 
 function Field({ label, value, onChange, placeholder, hint, type = 'text' }: {
   label: string; value: string; onChange: (v: string) => void
@@ -43,20 +45,28 @@ export default function SettingsPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
+  // ── Auto-save: debounced write to cloud after 2s of inactivity ──
+  const handleAutoSave = useCallback(async (data: HospitalSettings) => {
+    const ok = await saveSettings(data)
+    if (!ok) return false // Signal failure to the hook
+  }, [])
+
+  const { status: autoSaveStatus, lastSavedAt, triggerSave, errorMessage: autoSaveError } = useAutoSave({
+    data: form,
+    onSave: handleAutoSave,
+    delay: 2000,
+    enabled: true,
+    skipIfUnchanged: true,
+  })
+
+  // Manual save (kept as fallback — user can click to force immediate save)
   async function handleSave() {
     setSaving(true)
     setSaveError('')
-    const ok = await saveSettings(form)
+    await triggerSave()
     setSaving(false)
-    if (ok) {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    } else {
-      setSaveError('Failed to save to cloud. Settings saved locally as fallback.')
-      // Still show brief success since localStorage was updated
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
   }
 
   async function handleReset() {
@@ -77,10 +87,12 @@ export default function SettingsPage() {
           <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
             <Settings className="w-5 h-5 text-blue-600" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
             <p className="text-sm text-gray-500">Configure hospital, doctor, and CA details.</p>
           </div>
+          {/* Auto-save indicator — replaces the need for a prominent save button */}
+          <AutoSaveIndicator status={autoSaveStatus} lastSavedAt={lastSavedAt} errorMessage={autoSaveError} />
         </div>
 
         {saved && (
@@ -98,7 +110,7 @@ export default function SettingsPage() {
         {/* Info callout */}
         <div className="mb-5 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 flex items-start gap-3 text-sm text-blue-700">
           <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>These details appear on printed prescriptions, discharge summaries, and CA reports. Changes take effect immediately on the next print or share.</span>
+          <span>Settings are <strong>auto-saved</strong> as you type — no need to click Save manually. Changes take effect immediately on the next print or share.</span>
         </div>
 
         {/* Hospital Info */}
@@ -282,17 +294,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Save buttons */}
-        <div className="flex gap-3">
+        {/* Save buttons — auto-save handles most cases; these are kept as manual fallback */}
+        <div className="flex gap-3 items-center">
           <button onClick={handleSave} disabled={saving}
-            className="btn-primary flex items-center gap-2 disabled:opacity-50">
+            className="btn-secondary flex items-center gap-2 disabled:opacity-50 text-sm">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving...' : 'Save Settings'}
+            {saving ? 'Saving...' : 'Save Now'}
           </button>
           <button onClick={handleReset} disabled={saving}
             className="btn-secondary text-red-600 border-red-200 hover:bg-red-50 text-sm disabled:opacity-50">
             Reset to Defaults
           </button>
+          <AutoSaveIndicator status={autoSaveStatus} lastSavedAt={lastSavedAt} errorMessage={autoSaveError} className="ml-auto" />
         </div>
 
         {/* User Management section */}
