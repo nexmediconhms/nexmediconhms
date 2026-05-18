@@ -78,7 +78,7 @@ const TOAST_CONFIG: Record<ToastType, { icon: any; bg: string; border: string; t
   },
 }
 
-function ToastItem({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+function ToastItemCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
   const config = TOAST_CONFIG[toast.type]
   const Icon = config.icon
 
@@ -137,7 +137,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       >
         {toasts.map(toast => (
           <div key={toast.id} className="pointer-events-auto">
-            <ToastItem toast={toast} onDismiss={dismiss} />
+            <ToastItemCard toast={toast} onDismiss={dismiss} />
           </div>
         ))}
       </div>

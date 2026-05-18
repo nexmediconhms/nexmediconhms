@@ -18,7 +18,7 @@ import { audit } from '@/lib/audit'
 import { useToast } from '@/components/shared/Toast'
 import { useAuth } from '@/lib/auth'
 import {
-  IndianRupee, Save, AlertTriangle, Lock, Edit3, History
+  Save, AlertTriangle, Lock, Edit3, History
 } from 'lucide-react'
 
 interface AdminBillModifyProps {
