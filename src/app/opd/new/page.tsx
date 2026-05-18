@@ -11,6 +11,8 @@ import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '
 import type { OCRResult } from '@/lib/ocr'
 import { getIndiaToday } from '@/lib/utils'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
+import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
+import type { AutoSaveStatus } from '@/lib/useAutoSave'
 
 // ── Tab types ─────────────────────────────────────────────────
 type Tab = 'vitals' | 'consultation' | 'obgyn'
@@ -68,6 +70,9 @@ function NewConsultationContent() {
   const [noteOcrError, setNoteOcrError] = useState('')
   const [noteApplied, setNoteApplied] = useState(false)
   const [noteMedsQueue, setNoteMedsQueue] = useState('')
+
+  // ── Draft auto-save status (for visual indicator) ──
+  const [draftStatus, setDraftStatus] = useState<AutoSaveStatus>('idle')
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -268,6 +273,10 @@ function NewConsultationContent() {
     const key = `opd_draft_${patientId}`
     try {
       sessionStorage.setItem(key, JSON.stringify({ vitals, ob, chiefComplaint, hpi, diagnosis, notes }))
+      // Flash saved indicator briefly
+      setDraftStatus('saved')
+      const t = setTimeout(() => setDraftStatus('idle'), 2000)
+      return () => clearTimeout(t)
     } catch { /* ignore */ }
   }, [vitals, ob, chiefComplaint, hpi, diagnosis, notes, patientId])
 
@@ -596,7 +605,8 @@ function NewConsultationContent() {
               <span className="text-gray-400"> · {patient.mrn} · {patient.age}y · {patient.gender}</span>
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <AutoSaveIndicator status={draftStatus} className="mr-2" />
             <Link href={`/patients/${patient.id}`} className="btn-secondary text-xs">Cancel</Link>
             <button onClick={handleSave} disabled={saving}
               className="btn-primary flex items-center gap-2 disabled:opacity-60">
