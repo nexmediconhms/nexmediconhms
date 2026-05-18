@@ -92,12 +92,12 @@ export default function DailyReportPage() {
       return
     }
 
-    // Load bills for the date
+    // Load bills for the date — FIX: Use IST offset for accurate date filtering
     const { data: bills } = await supabase
       .from('bills')
       .select('id, patient_id, net_amount, payment_mode, status, created_at')
-      .gte('created_at', `${d}T00:00:00`)
-      .lte('created_at', `${d}T23:59:59`)
+      .gte('created_at', `${d}T00:00:00+05:30`)
+      .lte('created_at', `${d}T23:59:59+05:30`)
 
     const billsByPatient: Record<string, typeof bills> = {}
     ;(bills ?? []).forEach((b: any) => {
@@ -178,7 +178,46 @@ export default function DailyReportPage() {
             <p className="text-sm text-gray-500">{dateLabel}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => window.print()}
+            <button onClick={() => {
+              // Open clean print window without browser header/footer/URL
+              const printContent = document.querySelector('.print-only')?.outerHTML || ''
+              const pageContent = document.querySelector('.card')?.parentElement?.innerHTML || ''
+              const w = window.open('', '_blank')
+              if (w) {
+                w.document.write(`<!DOCTYPE html><html><head><title>Daily Report</title>
+                <style>
+                  body { font-family: Inter, Arial, sans-serif; color: #1e293b; padding: 20px; margin: 0; }
+                  @page { margin: 15mm; size: A4; }
+                  .no-print { display: none !important; }
+                  .print-only { display: block !important; }
+                  .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
+                  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                  th { background: #f8fafc; text-align: left; padding: 8px 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+                  td { padding: 6px 12px; border-bottom: 1px solid #f1f5f9; }
+                  .section-title { font-size: 14px; font-weight: 700; color: #1e293b; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+                  .grid { display: grid; gap: 12px; }
+                  .grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+                  .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+                  .font-mono { font-family: monospace; }
+                  .font-bold { font-weight: bold; }
+                  .text-center { text-align: center; }
+                </style></head><body>
+                  <div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:20px;">
+                    <div style="font-size:20px;font-weight:700;">${hs.hospitalName || 'NexMedicon Hospital'}</div>
+                    ${hs.address ? `<div style="font-size:11px;color:#555;margin-top:2px;">${hs.address}</div>` : ''}
+                    ${hs.phone ? `<div style="font-size:11px;color:#555;">${hs.phone}</div>` : ''}
+                    <div style="font-size:15px;font-weight:700;margin-top:10px;color:#1d4ed8;">Daily Report — ${dateLabel}</div>
+                  </div>
+                  ${pageContent}
+                  <div style="margin-top:24px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between;">
+                    <span>Generated: ${new Date().toLocaleString('en-IN')}</span>
+                    <span>${hs.hospitalName || 'NexMedicon HMS'}</span>
+                  </div>
+                </body></html>`)
+                w.document.close()
+                setTimeout(() => w.print(), 500)
+              }
+            }}
               className="btn-secondary flex items-center gap-2 text-xs">
               <Printer className="w-3.5 h-3.5" /> Print Report
             </button>

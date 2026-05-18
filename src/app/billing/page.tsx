@@ -13,6 +13,7 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 // bill flow. Before this fix, GST was a separate library with no integration.
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
+import AdminBillModify from '@/components/billing/AdminBillModify'
 import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
@@ -624,12 +625,14 @@ function BillingContent() {
       }
     }
 
-    // FIX: Fetch bills fresh for the selected period instead of using stale 30-day cache
+    // FIX: Use IST timezone offset for accurate date filtering
+    // Bills created_at is stored in UTC. To filter by IST dates correctly,
+    // we need to offset: IST = UTC + 5:30
     const { data: periodBills } = await supabase
       .from('bills')
       .select('*')
-      .gte('created_at', from + 'T00:00:00')
-      .lte('created_at', to + 'T23:59:59.999')
+      .gte('created_at', from + 'T00:00:00+05:30')
+      .lte('created_at', to + 'T23:59:59.999+05:30')
       .order('created_at', { ascending: false })
       .limit(2000)
 
@@ -661,7 +664,23 @@ function BillingContent() {
               className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
             <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs">
+              <button onClick={() => {
+                // Clean print — open receipt in new window without app chrome
+                const content = document.querySelector('.print-only')?.innerHTML || document.querySelector('.no-print + div')?.innerHTML || ''
+                const w = window.open('', '_blank')
+                if (w) {
+                  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title><style>
+                    body { font-family: Inter, sans-serif; padding: 40px; color: #1e293b; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+                    .text-right { text-align: right; }
+                    .font-mono { font-family: monospace; }
+                    .font-bold { font-weight: bold; }
+                  </style></head><body>${content}</body></html>`)
+                  w.document.close()
+                  setTimeout(() => w.print(), 300)
+                }
+              }} className="btn-secondary flex items-center gap-2 text-xs">
                 <Printer className="w-3.5 h-3.5" /> Print
               </button>
               <Link href={`/patients/${selectedBill.patient_id}`} className="btn-secondary text-xs">Patient Record</Link>
@@ -683,6 +702,10 @@ function BillingContent() {
             </div>
           )}
           <div className="no-print"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
+          {/* Admin: Modify bill amount */}
+          <div className="no-print mt-4">
+            <AdminBillModify bill={selectedBill} onUpdated={() => { loadBills(); }} />
+          </div>
         </div>
         <div className="print-only p-8"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
       </AppShell>
@@ -1153,6 +1176,30 @@ function BillingContent() {
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Share with CA</p>
                   <div className="flex flex-wrap gap-2">
 
+                    {/* Download PDF — generates proper formatted PDF */}
+                    <button onClick={async () => {
+                      try {
+                        const res = await fetch('/api/billing/ca-report-pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
+                        })
+                        if (res.ok) {
+                          const { html } = await res.json()
+                          const w = window.open('', '_blank')
+                          if (w) {
+                            w.document.write(html)
+                            w.document.close()
+                            setTimeout(() => w.print(), 500)
+                          }
+                        }
+                      } catch (e) { console.error(e) }
+                    }}
+                      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                      <Printer className="w-4 h-4" />
+                      Save as PDF
+                    </button>
+
                     {/* WhatsApp share */}
                     {caSettings.caWhatsApp ? (
                       <a
@@ -1180,11 +1227,28 @@ function BillingContent() {
                       {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
                     </a>
 
-                    {/* Print */}
-                    <button onClick={() => window.print()}
+                    {/* Print — uses PDF generator for clean output */}
+                    <button onClick={async () => {
+                      try {
+                        const res = await fetch('/api/billing/ca-report-pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
+                        })
+                        if (res.ok) {
+                          const { html } = await res.json()
+                          const w = window.open('', '_blank')
+                          if (w) {
+                            w.document.write(html)
+                            w.document.close()
+                            setTimeout(() => w.print(), 500)
+                          }
+                        }
+                      } catch (e) { window.print() }
+                    }}
                       className="flex items-center gap-2 btn-secondary text-sm">
                       <Printer className="w-4 h-4" />
-                      Print / Save PDF
+                      Print Report
                     </button>
 
                   </div>
