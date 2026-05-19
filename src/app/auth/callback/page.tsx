@@ -4,8 +4,10 @@
  * src/app/auth/callback/page.tsx
  *
  * Client-side auth callback handler.
- * Processes the `code` query parameter from Supabase auth redirects (PKCE flow).
- * Exchanges the code for a session, then redirects to /reset-password.
+ * Processes auth redirects from Supabase:
+ *   - Password recovery (code exchange → /reset-password)
+ *   - Magic link / OTP verification (code exchange → /dashboard)
+ *   - Email confirmation (code exchange → /dashboard)
  *
  * Uses window.location.search instead of useSearchParams() to avoid
  * Next.js 14 Suspense boundary requirement.
@@ -29,6 +31,10 @@ export default function AuthCallbackPage() {
         if (event === 'PASSWORD_RECOVERY') {
           redirected = true
           router.push('/reset-password')
+        } else if (event === 'SIGNED_IN' && session) {
+          // Magic link / OTP sign-in via link click
+          redirected = true
+          router.push('/dashboard')
         }
       }
     )
@@ -38,6 +44,7 @@ export default function AuthCallbackPage() {
 
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
+      const type = params.get('type')
       const hash = window.location.hash
 
       if (code) {
@@ -54,10 +61,15 @@ export default function AuthCallbackPage() {
           return
         }
 
-        // Code exchanged successfully — redirect to reset password
+        // Determine redirect based on type
         if (!redirected) {
           redirected = true
-          router.push('/reset-password')
+          if (type === 'recovery') {
+            router.push('/reset-password')
+          } else {
+            // Magic link login or email confirmation → dashboard
+            router.push('/dashboard')
+          }
         }
       } else if (hash && hash.includes('type=recovery')) {
         // Implicit flow — wait for PASSWORD_RECOVERY event from onAuthStateChange
@@ -65,6 +77,14 @@ export default function AuthCallbackPage() {
           if (!redirected) {
             redirected = true
             router.push('/reset-password')
+          }
+        }, 3000)
+      } else if (hash && (hash.includes('access_token') || hash.includes('type=magiclink'))) {
+        // Magic link via hash fragment — Supabase will process and fire SIGNED_IN
+        setTimeout(() => {
+          if (!redirected) {
+            redirected = true
+            router.push('/dashboard')
           }
         }, 3000)
       } else {

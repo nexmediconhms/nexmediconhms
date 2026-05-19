@@ -1,14 +1,18 @@
 /**
- * src/app/api/users/invite/route.ts  — UPDATED
+ * src/app/api/users/invite/route.ts — OTP-FIRST
  *
- * CHANGE: Replaced the manual inline caller-role check with requireRole('admin').
- * Everything else — temp password generator, auth.admin.createUser, duplicate
- * email handling, rollback on profile insert failure, response shape — is
- * preserved from the original exactly.
+ * Creates a new clinic user (admin/doctor/staff/lab_partner).
+ *
+ * With OTP-first login, the flow is simplified:
+ *   1. Admin enters email + name + role
+ *   2. We create the Supabase auth user (with a random internal password they'll never use)
+ *   3. We create the clinic_users profile
+ *   4. Done — user can immediately login via email OTP (no temp password to share!)
+ *
+ * The old "temp password" flow is kept as a fallback option if admin explicitly requests it.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { getAdminClient } from '@/lib/supabase'
 import { requireRole } from '@/lib/api-auth'
 
@@ -19,18 +23,16 @@ export async function POST(req: NextRequest) {
   // ────────────────────────────────────────────────────────────
 
   try {
-    // Parse request body
     const body = await req.json()
-    const { email, full_name, role, phone } = body
+    const { email, full_name, role, phone, generatePassword } = body
 
     if (!email || !full_name || !role) {
       return NextResponse.json({ error: 'email, full_name, and role are required' }, { status: 400 })
     }
-    if (!['admin', 'doctor', 'staff'].includes(role)) {
-      return NextResponse.json({ error: 'role must be admin, doctor, or staff' }, { status: 400 })
+    if (!['admin', 'doctor', 'staff', 'lab_partner'].includes(role)) {
+      return NextResponse.json({ error: 'role must be admin, doctor, staff, or lab_partner' }, { status: 400 })
     }
 
-    // Use admin client for privileged operations
     let adminClient: ReturnType<typeof getAdminClient>
     try {
       adminClient = getAdminClient()
@@ -54,14 +56,17 @@ export async function POST(req: NextRequest) {
       }, { status: 409 })
     }
 
-    // Generate a temporary password
-    const tempPassword = generateTempPassword()
+    // Generate internal password — user won't need to know this (they use OTP)
+    // Only generate a sharable temp password if admin explicitly asks for it
+    const internalPassword = generatePassword
+      ? generateTempPassword()
+      : generateRandomPassword()
 
-    // Create auth user
+    // Create auth user with email auto-confirmed
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: email.toLowerCase(),
-      password: tempPassword,
-      email_confirm: true,  // auto-confirm email
+      password: internalPassword,
+      email_confirm: true,
       user_metadata: { full_name, role },
     })
 
@@ -72,7 +77,6 @@ export async function POST(req: NextRequest) {
         const existingAuth = (users as any[])?.find((u: any) => u.email === email.toLowerCase())
 
         if (existingAuth) {
-          // Create clinic_users record for existing auth user
           const { error: insertError } = await adminClient
             .from('clinic_users')
             .insert({
@@ -90,8 +94,8 @@ export async function POST(req: NextRequest) {
 
           return NextResponse.json({
             success: true,
-            message: `User ${email} already had an auth account. Created clinic profile with role "${role}". They can log in with their existing password.`,
-            tempPassword: null,
+            message: `User ${email} already had an auth account. Created clinic profile with role "${role}". They can login immediately using email OTP.`,
+            loginMethod: 'otp',
           })
         }
       }
@@ -116,11 +120,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Failed to create user profile: ${profileError.message}` }, { status: 500 })
     }
 
+    // Response depends on whether admin requested a password
+    if (generatePassword) {
+      return NextResponse.json({
+        success: true,
+        message: `User ${full_name} (${email}) created with role "${role}".`,
+        loginMethod: 'password',
+        tempPassword: internalPassword,
+        _note: 'Share this password with the user. They can also login via email OTP without it.',
+      })
+    }
+
     return NextResponse.json({
       success: true,
-      message: `User ${full_name} (${email}) created with role "${role}".`,
-      tempPassword,
-      _note: 'Share this temporary password with the user. They should change it after first login.',
+      message: `User ${full_name} (${email}) created with role "${role}". They can login immediately using their email — no password needed!`,
+      loginMethod: 'otp',
     })
 
   } catch (err: any) {
@@ -131,11 +145,22 @@ export async function POST(req: NextRequest) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
+/** Readable temp password (for when admin explicitly wants to share one) */
 function generateTempPassword(): string {
-  const words    = ['Welcome', 'Clinic', 'Health', 'Doctor', 'Staff', 'NexMed', 'Hospital']
-  const word     = words[Math.floor(Math.random() * words.length)]
-  const digits   = Math.floor(1000 + Math.random() * 9000)
+  const words = ['Welcome', 'Clinic', 'Health', 'Doctor', 'Staff', 'NexMed', 'Hospital']
+  const word = words[Math.floor(Math.random() * words.length)]
+  const digits = Math.floor(1000 + Math.random() * 9000)
   const specials = ['!', '@', '#', '$']
-  const special  = specials[Math.floor(Math.random() * specials.length)]
+  const special = specials[Math.floor(Math.random() * specials.length)]
   return `${word}${digits}${special}`
+}
+
+/** Strong random password (user never sees this — just for Supabase auth requirement) */
+function generateRandomPassword(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%'
+  let pwd = ''
+  for (let i = 0; i < 24; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return pwd
 }
