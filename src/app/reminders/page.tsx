@@ -8,7 +8,7 @@ import {
   MessageCircle, RefreshCw, CheckCircle, Clock, AlertTriangle,
   Baby, Calendar, Pill, IndianRupee, Syringe, Loader2,
   Filter, BellRing, Send, ChevronDown, ChevronUp,
-  Zap, PlayCircle, StopCircle, History, Users,
+  Zap, PlayCircle, StopCircle, History, Users, Scissors,
 } from 'lucide-react'
 
 // ── Types (mirrors the API response) ─────────────────────────
@@ -68,13 +68,14 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   post_delivery:  { icon: Baby,          color: 'text-purple-600', label: 'Post-Delivery'       },
   vaccination:    { icon: Syringe,       color: 'text-green-600',  label: 'Vaccination'         },
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
-  ot_surgery:     { icon: Calendar,      color: 'text-purple-600', label: 'OT Surgery'          },
+  ot_surgery:     { icon: Scissors,      color: 'text-purple-600', label: 'OT Surgery'          },
 }
 
 const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [
   { key: 'all',           label: 'All',            emoji: '📋' },
   { key: 'today_only',    label: "Today's",        emoji: '🔔' },
   { key: 'appointment',   label: 'Appointments',   emoji: '📅' },
+  { key: 'ot_surgery',    label: 'OT Surgery',     emoji: '🔪' },
   { key: 'follow_up',     label: 'Follow-ups',     emoji: '🔁' },
   { key: 'anc',           label: 'ANC',            emoji: '🤰' },
   { key: 'high_risk_anc', label: 'High-Risk ANC',  emoji: '🚨' },
@@ -121,6 +122,9 @@ function buildWAMessage(r: ReminderItem, hs: any): string {
 
     case 'pending_bill':
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a gentle reminder that your *payment of ₹${c.billAmount?.toLocaleString('en-IN') || '—'}* is pending.\n\nPlease visit the hospital billing counter or contact us to complete the payment.\n\n📍 *Address:* ${a}\n📞 *Contact:* ${p}\n\n---\nઆપની ₹${c.billAmount?.toLocaleString('en-IN') || '—'} ની ચૂકવણી બાકી છે.\n\n_${h}_`
+
+    case 'ot_surgery':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your *upcoming surgery*.\n\n🏥 *Surgery:* ${c.apptType?.replace('OT: ', '') || 'Scheduled Surgery'}\n📅 *Date:* ${fmtDate(c.apptDate)}\n🕐 *Time:* ${c.apptTime || '—'}\n📍 *Address:* ${a}\n\n⚠️ *Pre-Surgery Instructions:*\n✅ *Fasting:* Do NOT eat or drink anything after midnight (12 AM) the night before surgery\n✅ Bring all previous reports, ECG, blood tests\n✅ Bring Aadhaar card / ID proof\n✅ Bring one attendant who will stay with you\n✅ Wear loose, comfortable clothing\n✅ Remove all jewellery, nail polish, and contact lenses\n✅ Inform doctor about any medications you are taking\n\n⏰ *Please arrive 2 hours before your scheduled time*\n\n📞 For any queries: ${p}\n\n---\nઆપની સર્જરી ${fmtDate(c.apptDate)} ના રોજ છે. રાત્રે 12 વાગ્યા પછી કંઈ ખાવું-પીવું નહીં. 2 કલાક વહેલા આવો.\n\n_${h} — Caring for you_ 🙏`
 
     default:
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder from ${h}. Please contact us for details.\n\n📞 ${p}\n\n_${h}_`
@@ -195,6 +199,10 @@ export default function RemindersPage() {
         () => { load(true) })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bills' },
         () => { load(true) })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ot_schedules' },
+        () => { setLastLiveAt(new Date()); load(true) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ot_schedules' },
+        () => { setLastLiveAt(new Date()); load(true) })
       .subscribe(s => setRealtimeOk(s === 'SUBSCRIBED'))
 
     // Fallback poll every 60 s when Realtime table replication isn't enabled

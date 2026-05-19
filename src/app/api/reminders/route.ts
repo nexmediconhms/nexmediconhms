@@ -76,14 +76,14 @@ const VAX_SCHEDULE: { name: string; days: number }[] = [
 
 export interface ReminderItem {
   id: string
-  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc' | 'ot_surgery'
   priority: 'urgent' | 'today' | 'tomorrow' | 'upcoming'
   patientId: string
   patientName: string
   mobile: string
   mrn: string
   sourceId: string
-  sourceTable: 'appointments' | 'prescriptions' | 'discharge_summaries' | 'bills' | 'encounters'
+  sourceTable: 'appointments' | 'prescriptions' | 'discharge_summaries' | 'bills' | 'encounters' | 'ot_schedules'
   title: string
   subtitle: string
   dueDate?: string
@@ -482,14 +482,14 @@ export async function GET(req: NextRequest) {
 
       reminders.push({
         id: `ot-${ot.id}`,
-        type: 'appointment',
+        type: 'ot_surgery',
         priority,
         patientId: ot.patient_id ?? '',
         patientName: ot.patient_name ?? '',
         mobile,
         mrn: ot.mrn ?? '',
         sourceId: ot.id,
-        sourceTable: 'appointments',
+        sourceTable: 'ot_schedules',
         title: `OT Surgery — ${ot.surgery_name}`,
         subtitle: `${ot.surgery_date} at ${ot.start_time}–${ot.end_time} · ${ot.ot_room} · Dr. ${ot.surgeon}`,
         dueDate: ot.surgery_date,
@@ -559,7 +559,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update reminder_sent_at on the source record (trackable tables only)
-    const trackable = ['appointments', 'prescriptions', 'discharge_summaries']
+    const trackable = ['appointments', 'prescriptions', 'discharge_summaries', 'ot_schedules']
     if (sourceTable && sourceId && trackable.includes(sourceTable)) {
       await supabase.from(sourceTable).update({ reminder_sent_at: now }).eq('id', sourceId)
       if (sourceTable === 'appointments') {
