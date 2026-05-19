@@ -74,6 +74,7 @@ interface Bill {
   razorpay_payment_id?: string
   notes: string
   encounter_id?: string
+  invoice_number?: string
   created_at: string
   paid_at?: string
 }
@@ -1326,7 +1327,7 @@ function BillingContent() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date', 'Patient', 'Items', 'Amount', 'Mode', 'Status', ''].map(h => (
+                  {['Date', 'Invoice #', 'Patient', 'Items', 'Amount', 'Mode', 'Status', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -1337,6 +1338,13 @@ function BillingContent() {
                     className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
                     onClick={() => { setSelectedBill(bill); setView('receipt') }}>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(bill.created_at)}</td>
+                    <td className="px-4 py-3">
+                      {bill.invoice_number ? (
+                        <span className="font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{bill.invoice_number}</span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{bill.patient_name}</div>
                       <div className="text-xs text-gray-400">{bill.mrn}</div>
@@ -1415,7 +1423,7 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
           <div><span className="font-semibold">MRN: </span><span className="font-mono">{bill.mrn}</span></div>
         </div>
         <div className="space-y-1 text-right">
-          <div><span className="font-semibold">Receipt No: </span><span className="font-mono text-xs">{bill.id.slice(-10).toUpperCase()}</span></div>
+          <div><span className="font-semibold">Invoice No: </span><span className="font-mono font-bold text-sm">{(bill as any).invoice_number || bill.id.slice(-10).toUpperCase()}</span></div>
           <div><span className="font-semibold">Date: </span>{formatDate(bill.created_at)}</div>
         </div>
       </div>
