@@ -39,7 +39,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
   Camera, FileText, Loader2, Sparkles, AlertCircle,
-  ChevronDown, ChevronUp, Eye, Stethoscope
+  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ export default function IPDNursingPage() {
   const [noteType, setNoteType] = useState<'nursing' | 'doctor'>('nursing')
 
   const [saved, setSaved] = useState(false)
-  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes'>('vitals')
+  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos'>('vitals')
 
   // Doctor note photo upload + OCR state
   const [ocrLoading, setOcrLoading] = useState(false)
@@ -162,6 +162,13 @@ export default function IPDNursingPage() {
   const [ocrError, setOcrError] = useState('')
   const [autofillApplied, setAutofillApplied] = useState(false)
   const [showOcrPreview, setShowOcrPreview] = useState(false)
+
+  // Files & Photos state
+  const [ipdFiles, setIpdFiles] = useState<any[]>([])
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [fileUploading, setFileUploading] = useState(false)
+  const [fileUploadError, setFileUploadError] = useState('')
+  const [fileOcrProcessing, setFileOcrProcessing] = useState<string | null>(null)
 
   useEffect(() => {
     if (user?.full_name) setNoteAuthor(user.full_name)
@@ -238,6 +245,132 @@ export default function IPDNursingPage() {
     window.addEventListener('autofill-fields', handleAutofill as EventListener)
     return () => window.removeEventListener('autofill-fields', handleAutofill as EventListener)
   }, [])
+
+  // ── Load IPD Files & Photos ──────────────────────────────────
+  const loadIpdFiles = useCallback(async () => {
+    if (!patient?.id) return
+    setFilesLoading(true)
+    try {
+      const { data } = await supabase
+        .from('ipd_files')
+        .select('*')
+        .eq('patient_id', patient.id)
+        .eq('bed_id', bedId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      setIpdFiles(data || [])
+    } catch (err) {
+      console.error('[IPD Files] Load error:', err)
+    }
+    setFilesLoading(false)
+  }, [patient?.id, bedId])
+
+  useEffect(() => {
+    if (patient?.id && activeTab === 'files-photos') {
+      loadIpdFiles()
+    }
+  }, [patient?.id, activeTab, loadIpdFiles])
+
+  // ── Upload file to IPD ────────────────────────────────────────
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !patient?.id) return
+    e.target.value = ''
+
+    setFileUploading(true)
+    setFileUploadError('')
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const ext = file.name.split('.').pop() || 'bin'
+      const fileName = `ipd-files/${bedId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('consultation-files')
+        .upload(fileName, Buffer.from(buffer), {
+          contentType: file.type,
+          upsert: false,
+        })
+
+      if (uploadErr) throw new Error(uploadErr.message)
+
+      const { data: urlData } = supabase.storage.from('consultation-files').getPublicUrl(fileName)
+      const publicUrl = urlData?.publicUrl || ''
+
+      // Insert into ipd_files table
+      const { data: fileRecord, error: insertErr } = await supabase.from('ipd_files').insert({
+        patient_id: patient.id,
+        bed_id: bedId,
+        file_name: file.name,
+        file_type: file.type,
+        file_size: file.size,
+        file_url: publicUrl,
+        storage_path: fileName,
+        uploaded_by: user?.full_name || 'Staff',
+        uploaded_by_role: user?.role || 'staff',
+        category: file.type.startsWith('image/') ? 'photo' : file.type === 'application/pdf' ? 'document' : 'other',
+        notes: '',
+        ocr_extracted: false,
+      }).select('*').single()
+
+      if (insertErr) throw new Error(insertErr.message)
+
+      setIpdFiles(prev => [fileRecord, ...prev])
+    } catch (err: any) {
+      setFileUploadError(err.message || 'Upload failed')
+    }
+    setFileUploading(false)
+  }
+
+  // ── AI OCR extraction from uploaded file ────────────────────
+  async function extractFromFile(fileRecord: any) {
+    setFileOcrProcessing(fileRecord.id)
+    try {
+      // Fetch the file and run OCR
+      const response = await fetch(fileRecord.file_url)
+      const blob = await response.blob()
+      const file = new File([blob], fileRecord.file_name, { type: fileRecord.file_type })
+
+      const result = await callOCRAutofill(file)
+      if (result.error) {
+        alert(`OCR Error: ${result.error}`)
+        setFileOcrProcessing(null)
+        return
+      }
+
+      // Mark file as OCR-extracted
+      await supabase.from('ipd_files').update({
+        ocr_extracted: true,
+        ocr_data: result.fields,
+        ocr_confidence: result.confidence,
+      }).eq('id', fileRecord.id)
+
+      // Apply to forms
+      if (result.fields) {
+        applyAutofillFromFields(result.fields)
+      }
+
+      // Update local state
+      setIpdFiles(prev => prev.map(f => f.id === fileRecord.id ? { ...f, ocr_extracted: true, ocr_data: result.fields } : f))
+    } catch (err: any) {
+      alert(`Failed to extract: ${err.message}`)
+    }
+    setFileOcrProcessing(null)
+  }
+
+  // ── Delete IPD file ──────────────────────────────────────────
+  async function deleteIpdFile(fileRecord: any) {
+    if (!confirm('Delete this file?')) return
+    try {
+      if (fileRecord.storage_path) {
+        await supabase.storage.from('consultation-files').remove([fileRecord.storage_path])
+      }
+      await supabase.from('ipd_files').delete().eq('id', fileRecord.id)
+      setIpdFiles(prev => prev.filter(f => f.id !== fileRecord.id))
+    } catch (err) {
+      console.error('[IPD Files] Delete error:', err)
+    }
+  }
 
   // ── Apply extracted fields to forms ──────────────────────────
   function applyAutofillFromFields(fields: any) {
@@ -434,6 +567,7 @@ export default function IPDNursingPage() {
     { id: 'io', label: '💧 I/O Chart', icon: Droplets },
     { id: 'notes', label: '📝 Nursing Notes', icon: ClipboardList },
     { id: 'doctor-notes', label: '🩺 Doctor Notes', icon: Stethoscope },
+    { id: 'files-photos', label: '📁 Files & Photos', icon: Camera },
   ] as const
 
   return (
@@ -870,6 +1004,129 @@ export default function IPDNursingPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FILES & PHOTOS TAB ────────────────────────────── */}
+          {activeTab === 'files-photos' && (
+            <div>
+              {/* Upload Section */}
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-5 mb-5">
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2">
+                  <Camera className="w-4 h-4 text-blue-600" /> Upload Files & Photos
+                </h3>
+                <p className="text-xs text-gray-600 mb-4">
+                  Upload photos, PDFs, reports, or doctor handwritten notes. The AI can extract data (vitals, I/O, notes) from uploaded images and auto-fill the IPD chart.
+                </p>
+
+                <div className="flex flex-wrap gap-3">
+                  <label className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-pointer transition-all border-2 border-dashed
+                    ${fileUploading ? 'bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-white text-blue-700 hover:bg-blue-50 border-blue-300 hover:border-blue-500'}`}>
+                    {fileUploading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
+                    ) : (
+                      <><Camera className="w-4 h-4" /> Take Photo / Upload File</>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf,.doc,.docx"
+                      capture="environment"
+                      onChange={handleFileUpload}
+                      disabled={fileUploading}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {fileUploadError && (
+                  <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <AlertCircle className="w-3.5 h-3.5" /> {fileUploadError}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 mt-3">
+                  Supported: JPG, PNG, WebP, PDF, DOC · Max 20MB · Files are stored securely and linked to this admission.
+                </p>
+              </div>
+
+              {/* File list */}
+              {filesLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="w-6 h-6 text-blue-500 animate-spin mx-auto mb-2" />
+                  <p className="text-xs text-gray-400">Loading files…</p>
+                </div>
+              ) : ipdFiles.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <Camera className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm font-medium">No files uploaded yet</p>
+                  <p className="text-xs mt-1">Upload doctor notes, lab reports, or clinical photos</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-700">{ipdFiles.length} File{ipdFiles.length !== 1 ? 's' : ''} Uploaded</h4>
+                    <button onClick={loadIpdFiles} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3" /> Refresh
+                    </button>
+                  </div>
+                  {ipdFiles.map(f => (
+                    <div key={f.id} className="border border-gray-200 rounded-xl p-4 bg-white hover:shadow-sm transition-shadow">
+                      <div className="flex items-start gap-4">
+                        {/* Thumbnail */}
+                        <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center border">
+                          {f.file_type?.startsWith('image/') ? (
+                            <img src={f.file_url} alt={f.file_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-6 h-6 text-gray-400" />
+                          )}
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-gray-900 truncate">{f.file_name}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              f.category === 'photo' ? 'bg-green-100 text-green-700' :
+                              f.category === 'document' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{f.category}</span>
+                            {f.ocr_extracted && (
+                              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                                <Sparkles className="w-3 h-3" /> AI Extracted
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            By {f.uploaded_by} ({f.uploaded_by_role}) · {formatDateTime(f.created_at)}
+                            {f.file_size && <span className="ml-2">· {(f.file_size / 1024).toFixed(0)} KB</span>}
+                          </div>
+                          {f.notes && <p className="text-xs text-gray-600 mt-1 italic">{f.notes}</p>}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-col gap-1 flex-shrink-0">
+                          <a href={f.file_url} target="_blank" rel="noopener noreferrer"
+                            className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded font-medium flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> View
+                          </a>
+                          {f.file_type?.startsWith('image/') && !f.ocr_extracted && (
+                            <button onClick={() => extractFromFile(f)}
+                              disabled={fileOcrProcessing === f.id}
+                              className="text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 px-2 py-1 rounded font-medium flex items-center gap-1 disabled:opacity-50">
+                              {fileOcrProcessing === f.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                              Extract Data
+                            </button>
+                          )}
+                          <button onClick={() => deleteIpdFile(f)}
+                            className="text-xs text-red-400 hover:text-red-600 px-2 py-1 flex items-center gap-1">
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

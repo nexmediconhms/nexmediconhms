@@ -195,6 +195,86 @@ function ActionItem({ item, onClick }: { item: ActionItem; onClick?: () => void 
 
 // ── Main Page ─────────────────────────────────────────────────
 
+// ── Doctor Alerts Section (Abnormal lab values) ───────────────
+function DoctorAlertsSection() {
+  const [alerts, setAlerts] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadAlerts() {
+      const { data } = await supabase
+        .from('doctor_alerts')
+        .select('*')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setAlerts(data || [])
+      setLoading(false)
+    }
+    loadAlerts()
+  }, [])
+
+  async function markRead(id: string) {
+    await supabase.from('doctor_alerts').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id)
+    setAlerts(prev => prev.filter(a => a.id !== id))
+  }
+
+  if (loading || alerts.length === 0) return null
+
+  return (
+    <div>
+      <h2 className="text-xs font-bold text-red-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <AlertCircle className="w-3.5 h-3.5" /> Lab Alerts — Abnormal Values
+      </h2>
+      <div className="space-y-2">
+        {alerts.map(alert => {
+          const alertData = alert.alert_data || {}
+          const abnormals = alertData.abnormal_values || []
+          return (
+            <div key={alert.id} className={`bg-white border rounded-xl p-4 ${
+              alert.severity === 'critical' ? 'border-red-300 bg-red-50/30' : 'border-orange-200 bg-orange-50/30'
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      alert.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {alert.severity === 'critical' ? '🚨 CRITICAL' : '⚠️ WARNING'}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">{alert.patient_name}</span>
+                    <span className="text-xs text-gray-400">{alert.mrn}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mb-1">
+                    {alertData.report_name} {alertData.lab_partner ? `· Lab: ${alertData.lab_partner}` : ''}
+                  </div>
+                  {abnormals.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {abnormals.slice(0, 3).map((v: string, i: number) => (
+                        <li key={i} className="text-xs text-red-700 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
+                          {v}
+                        </li>
+                      ))}
+                      {abnormals.length > 3 && (
+                        <li className="text-xs text-gray-500">+{abnormals.length - 3} more</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+                <button onClick={() => markRead(alert.id)}
+                  className="text-xs text-gray-400 hover:text-green-600 flex items-center gap-1 px-2 py-1 rounded hover:bg-green-50">
+                  <CheckCircle className="w-3.5 h-3.5" /> Done
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [data,    setData]    = useState<DashData>({
@@ -483,6 +563,9 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* DOCTOR ALERTS — Abnormal Lab Values */}
+        <DoctorAlertsSection />
 
         {/* QUICK ACTIONS */}
         <div>

@@ -444,6 +444,67 @@ export async function GET(req: NextRequest) {
     console.error('[reminders] pending_bill error:', e)
   }
 
+  // 7. OT Schedule reminders — upcoming surgeries within next 7 days
+  try {
+    const { data: otSchedules } = await supabase
+      .from('ot_schedules')
+      .select('id, patient_id, patient_name, mrn, surgery_name, surgery_date, start_time, end_time, surgeon, ot_room, priority, status')
+      .gte('surgery_date', tod)
+      .lte('surgery_date', in7)
+      .in('status', ['scheduled'])
+      .order('surgery_date', { ascending: true })
+      .order('start_time', { ascending: true })
+
+    // Batch-fetch patient mobiles
+    const otPatientIds = Array.from(new Set((otSchedules || []).map((s: any) => s.patient_id).filter(Boolean)))
+    const otMobileMap = new Map<string, string>()
+    if (otPatientIds.length > 0) {
+      const { data: pats } = await supabase
+        .from('patients')
+        .select('id, mobile')
+        .in('id', otPatientIds)
+      for (const p of pats || []) {
+        if (p.mobile) otMobileMap.set(p.id, p.mobile)
+      }
+    }
+
+    for (const ot of otSchedules || []) {
+      const mobile = otMobileMap.get(ot.patient_id) || ''
+      const daysAway = daysUntil(ot.surgery_date)
+      let priority: ReminderItem['priority']
+      if (daysAway === 0) priority = 'today'
+      else if (daysAway === 1) priority = 'tomorrow'
+      else priority = 'upcoming'
+
+      // Emergency/urgent surgeries get higher priority
+      if (ot.priority === 'emergency') priority = 'urgent'
+      else if (ot.priority === 'urgent' && daysAway <= 1) priority = 'urgent'
+
+      reminders.push({
+        id: `ot-${ot.id}`,
+        type: 'appointment',
+        priority,
+        patientId: ot.patient_id ?? '',
+        patientName: ot.patient_name ?? '',
+        mobile,
+        mrn: ot.mrn ?? '',
+        sourceId: ot.id,
+        sourceTable: 'appointments',
+        title: `OT Surgery — ${ot.surgery_name}`,
+        subtitle: `${ot.surgery_date} at ${ot.start_time}–${ot.end_time} · ${ot.ot_room} · Dr. ${ot.surgeon}`,
+        dueDate: ot.surgery_date,
+        reminderSentAt: null,
+        context: {
+          apptDate: ot.surgery_date,
+          apptTime: ot.start_time,
+          apptType: `OT: ${ot.surgery_name}`,
+        },
+      })
+    }
+  } catch (e) {
+    console.error('[reminders] ot_schedule error:', e)
+  }
+
   // Sort: urgent first, then today, tomorrow, upcoming; within each by dueDate
   const PRIORITY_ORDER = { urgent: 0, today: 1, tomorrow: 2, upcoming: 3 }
   reminders.sort((a, b) => {

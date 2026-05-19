@@ -14,7 +14,7 @@ import {
 // ── Types (mirrors the API response) ─────────────────────────
 type ReminderType =
   | 'appointment' | 'follow_up' | 'anc' | 'post_delivery'
-  | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  | 'vaccination' | 'pending_bill' | 'high_risk_anc' | 'ot_surgery'
 
 type Priority = 'urgent' | 'today' | 'tomorrow' | 'upcoming'
 
@@ -68,6 +68,7 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   post_delivery:  { icon: Baby,          color: 'text-purple-600', label: 'Post-Delivery'       },
   vaccination:    { icon: Syringe,       color: 'text-green-600',  label: 'Vaccination'         },
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
+  ot_surgery:     { icon: Calendar,      color: 'text-purple-600', label: 'OT Surgery'          },
 }
 
 const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [

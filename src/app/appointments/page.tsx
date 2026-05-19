@@ -12,7 +12,7 @@ import {
   Calendar, Plus, Search, X, CheckCircle,
   MessageCircle, Phone, Trash2,
   AlertCircle, Stethoscope, User, RefreshCw, Loader2,
-  UserCircle, BellRing,
+  UserCircle, BellRing, Scissors,
 } from 'lucide-react'
 
 type ApptStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show'
@@ -171,6 +171,23 @@ function AppointmentsContent() {
       .lt('date', today)
       .then(({ count }) => setPastCount(count || 0))
   }, [appts, today])
+
+  // ── OT Schedule display in Appointments page ────────────────
+  const [otSchedules, setOtSchedules] = useState<any[]>([])
+  useEffect(() => {
+    async function loadOT() {
+      const { data } = await supabase
+        .from('ot_schedules')
+        .select('id, patient_id, patient_name, mrn, surgery_name, surgery_date, start_time, end_time, surgeon, ot_room, priority, status')
+        .gte('surgery_date', today)
+        .in('status', ['scheduled', 'in_progress'])
+        .order('surgery_date', { ascending: true })
+        .order('start_time', { ascending: true })
+        .limit(20)
+      setOtSchedules(data || [])
+    }
+    loadOT()
+  }, [today, appts])
 
   useEffect(() => {
     const pid = searchParams.get('patientId')
@@ -648,6 +665,43 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
 
           <span className="ml-auto text-xs text-gray-400">{appts.length} appointment{appts.length !== 1 ? 's' : ''}</span>
         </div>
+
+        {/* ── OT Schedule Section ────────────────────────────── */}
+        {otSchedules.length > 0 && (
+          <div className="mb-5 bg-purple-50 border border-purple-200 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-purple-800 flex items-center gap-2">
+                <Scissors className="w-4 h-4" /> Upcoming OT Surgeries ({otSchedules.length})
+              </h3>
+              <Link href="/ot-schedule" className="text-xs text-purple-600 hover:underline font-medium">View Full Schedule →</Link>
+            </div>
+            <div className="space-y-2">
+              {otSchedules.slice(0, 5).map(ot => (
+                <div key={ot.id} className={`flex items-center gap-3 bg-white border rounded-lg p-3 ${
+                  ot.surgery_date === today ? 'border-purple-300 shadow-sm' : 'border-gray-100'
+                }`}>
+                  <div className="text-center min-w-[52px]">
+                    <div className="text-sm font-bold text-gray-800">{ot.start_time}</div>
+                    <div className="text-xs text-gray-400">{ot.surgery_date === today ? 'Today' : formatDate(ot.surgery_date)}</div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-gray-900">{ot.patient_name}</span>
+                      <span className="text-xs text-gray-400">{ot.mrn}</span>
+                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                        ot.priority === 'emergency' ? 'bg-red-100 text-red-700' :
+                        ot.priority === 'urgent' ? 'bg-orange-100 text-orange-700' :
+                        'bg-gray-100 text-gray-500'
+                      }`}>{ot.priority}</span>
+                    </div>
+                    <div className="text-xs text-gray-600 mt-0.5">{ot.surgery_name} · {ot.ot_room} · Dr. {ot.surgeon}</div>
+                  </div>
+                  <Link href={`/patients/${ot.patient_id}`} className="text-xs text-blue-600 hover:underline">View</Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* List */}
         {loading ? (
