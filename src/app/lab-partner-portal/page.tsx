@@ -223,15 +223,35 @@ export default function LabPartnerPortalPage() {
 
         {/* Success Banner */}
         {uploadResult && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="text-sm font-bold text-green-800">Report Uploaded Successfully!</h3>
-              <p className="text-xs text-green-700 mt-1">
-                "{uploadResult.reportName}" for <strong>{uploadResult.patientName}</strong> has been uploaded.
+          <div className={`mb-6 ${uploadResult.abnormalsFound > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'} border rounded-xl p-4 flex items-start gap-3`}>
+            <CheckCircle className={`w-5 h-5 ${uploadResult.abnormalsFound > 0 ? 'text-orange-600' : 'text-green-600'} flex-shrink-0 mt-0.5`} />
+            <div className="flex-1">
+              <h3 className={`text-sm font-bold ${uploadResult.abnormalsFound > 0 ? 'text-orange-800' : 'text-green-800'}`}>Report Uploaded Successfully!</h3>
+              <p className="text-xs text-gray-700 mt-1">
+                &ldquo;{uploadResult.reportName}&rdquo; for <strong>{uploadResult.patientName}</strong> has been uploaded.
                 Doctor and patient have been notified.
               </p>
-              <button onClick={() => setUploadResult(null)} className="text-xs text-green-600 underline mt-2">Dismiss</button>
+              {uploadResult.aiExtracted > 0 && (
+                <p className="text-xs text-blue-700 mt-1 font-medium">
+                  AI extracted {uploadResult.aiExtracted} lab values automatically.
+                </p>
+              )}
+              {uploadResult.abnormalsFound > 0 && (
+                <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-2">
+                  <p className="text-xs font-bold text-red-800 mb-1">
+                    {uploadResult.abnormalsFound} Abnormal Value{uploadResult.abnormalsFound > 1 ? 's' : ''} Detected — Doctor Alerted
+                  </p>
+                  <ul className="space-y-0.5">
+                    {(uploadResult.abnormalValues || []).slice(0, 5).map((v: string, i: number) => (
+                      <li key={i} className="text-xs text-red-700 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
+                        {v}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <button onClick={() => setUploadResult(null)} className="text-xs text-gray-500 underline mt-2">Dismiss</button>
             </div>
           </div>
         )}
