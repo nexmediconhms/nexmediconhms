@@ -104,6 +104,7 @@ export interface ReminderItem {
     daysOverdue?: number
     weeksGA?: string
     riskReasons?: string[]
+    medications?: string[]
   }
 }
 

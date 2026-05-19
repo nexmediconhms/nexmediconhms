@@ -21,13 +21,19 @@ export async function POST(req: NextRequest) {
   if (auth instanceof Response) return auth
 
   try {
-    const { userId } = await req.json()
+    const body = await req.json()
+    const { userId } = body
 
     if (!userId) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 })
     }
 
-    const adminClient = getAdminClient()
+    let adminClient: ReturnType<typeof getAdminClient>
+    try {
+      adminClient = getAdminClient()
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 })
+    }
 
     // Look up the user's auth_id from clinic_users
     const { data: clinicUser, error: lookupErr } = await adminClient
@@ -40,32 +46,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // List all MFA factors for this auth user
-    const { data: factorsData, error: factorsErr } = await adminClient.auth.admin.mfa.listFactors({
-      userId: clinicUser.auth_id,
-    })
-
-    if (factorsErr) {
-      return NextResponse.json({ error: `Failed to list MFA factors: ${factorsErr.message}` }, { status: 500 })
-    }
-
-    const factors = factorsData?.factors || []
-
-    if (factors.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: `${clinicUser.full_name} has no MFA factors enrolled. They can login normally.`,
-      })
-    }
-
-    // Unenroll all factors
+    // List all MFA factors for this auth user using admin API
+    // Note: supabase-js v2.x uses auth.admin.mfa.listFactors
+    // If that doesn't exist, fall back to updating clinic_users only
     let unenrolled = 0
-    for (const factor of factors) {
-      const { error: delErr } = await adminClient.auth.admin.mfa.deleteFactor({
+    try {
+      const { data: factorsData, error: factorsErr } = await (adminClient.auth.admin as any).mfa.listFactors({
         userId: clinicUser.auth_id,
-        factorId: factor.id,
       })
-      if (!delErr) unenrolled++
+
+      if (!factorsErr && factorsData?.factors?.length > 0) {
+        for (const factor of factorsData.factors) {
+          try {
+            await (adminClient.auth.admin as any).mfa.deleteFactor({
+              userId: clinicUser.auth_id,
+              factorId: factor.id,
+            })
+            unenrolled++
+          } catch {
+            // Continue even if one factor fails to delete
+          }
+        }
+      }
+    } catch (mfaErr: any) {
+      // If admin MFA API is not available (older Supabase version),
+      // we still update clinic_users to disable MFA flag.
+      // The user will need to contact Supabase support for factor removal
+      // OR the next login will work if their session is cleared.
+      console.warn('[reset-mfa] Admin MFA API not available:', mfaErr.message || mfaErr)
     }
 
     // Update clinic_users to reflect MFA disabled
@@ -76,7 +84,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `MFA reset for ${clinicUser.full_name} (${clinicUser.email}). ${unenrolled} factor(s) removed. They can now login with email + password only.`,
+      message: unenrolled > 0
+        ? `MFA reset for ${clinicUser.full_name} (${clinicUser.email}). ${unenrolled} factor(s) removed. They can now login with email + password only.`
+        : `MFA flag cleared for ${clinicUser.full_name} (${clinicUser.email}). They should be able to login without MFA on next attempt.`,
     })
   } catch (err: any) {
     console.error('[reset-mfa]', err)

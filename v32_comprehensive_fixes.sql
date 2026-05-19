@@ -294,33 +294,32 @@ DECLARE
   fy_label TEXT;
   next_seq INT;
   inv_number TEXT;
+  curr_year INT;
+  next_year_short TEXT;
 BEGIN
+  curr_year := EXTRACT(YEAR FROM CURRENT_DATE)::INT;
+  
   -- Determine current financial year (Apr 1 to Mar 31)
   IF EXTRACT(MONTH FROM CURRENT_DATE) >= 4 THEN
-    fy_start := make_date(EXTRACT(YEAR FROM CURRENT_DATE)::INT, 4, 1);
-    fy_end := make_date(EXTRACT(YEAR FROM CURRENT_DATE)::INT + 1, 3, 31);
-    fy_label := EXTRACT(YEAR FROM CURRENT_DATE)::TEXT || '-' || 
-                RIGHT(EXTRACT(YEAR FROM CURRENT_DATE)::TEXT, 2)::INT + 1;
+    fy_start := make_date(curr_year, 4, 1);
+    fy_end := make_date(curr_year + 1, 3, 31);
+    next_year_short := LPAD(((curr_year + 1) % 100)::TEXT, 2, '0');
+    fy_label := curr_year::TEXT || '-' || next_year_short;
   ELSE
-    fy_start := make_date(EXTRACT(YEAR FROM CURRENT_DATE)::INT - 1, 4, 1);
-    fy_end := make_date(EXTRACT(YEAR FROM CURRENT_DATE)::INT, 3, 31);
-    fy_label := (EXTRACT(YEAR FROM CURRENT_DATE)::INT - 1)::TEXT || '-' || 
-                RIGHT(EXTRACT(YEAR FROM CURRENT_DATE)::TEXT, 2);
+    fy_start := make_date(curr_year - 1, 4, 1);
+    fy_end := make_date(curr_year, 3, 31);
+    next_year_short := LPAD((curr_year % 100)::TEXT, 2, '0');
+    fy_label := (curr_year - 1)::TEXT || '-' || next_year_short;
   END IF;
   
   -- Count existing invoices in this FY
-  SELECT COALESCE(MAX(
-    CASE 
-      WHEN invoice_number LIKE 'INV/' || fy_label || '/%'
-      THEN NULLIF(SPLIT_PART(invoice_number, '/', 3), '')::INT
-      ELSE 0
-    END
-  ), 0) + 1
+  SELECT COUNT(*) + 1
   INTO next_seq
   FROM bills
   WHERE created_at >= fy_start 
     AND created_at < fy_end + INTERVAL '1 day'
-    AND invoice_number IS NOT NULL;
+    AND invoice_number IS NOT NULL
+    AND invoice_number LIKE 'INV/' || fy_label || '/%';
   
   inv_number := 'INV/' || fy_label || '/' || LPAD(next_seq::TEXT, 4, '0');
   
