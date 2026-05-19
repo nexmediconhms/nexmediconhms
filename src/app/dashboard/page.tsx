@@ -195,6 +195,104 @@ function ActionItem({ item, onClick }: { item: ActionItem; onClick?: () => void 
 
 // ── Main Page ─────────────────────────────────────────────────
 
+// ── Next OPD Patient Widget ───────────────────────────────────
+function NextOPDPatientCard() {
+  const [nextPatient, setNextPatient] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+
+  useEffect(() => {
+    async function loadNext() {
+      const today = todayIST()
+      const nowTime = new Date().toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+
+      // Get the next appointment that hasn't been completed yet
+      const { data } = await supabase
+        .from('appointments')
+        .select('id, patient_id, patient_name, mrn, mobile, date, time, type, status, notes')
+        .eq('date', today)
+        .neq('status', 'cancelled')
+        .neq('status', 'completed')
+        .order('time', { ascending: true })
+        .limit(5)
+
+      if (data && data.length > 0) {
+        // Find the next upcoming (time >= now) or the first unfinished one
+        const upcoming = data.find(a => (a.time || '00:00') >= nowTime) || data[0]
+        setNextPatient(upcoming)
+      }
+      setLoading(false)
+    }
+    loadNext()
+    const interval = setInterval(loadNext, 60000) // refresh every minute
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 animate-pulse">
+        <div className="h-16 bg-purple-100/50 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (!nextPatient) {
+    return (
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <CheckCircle className="w-4 h-4 text-green-500" />
+          <span className="text-sm font-bold text-green-700">All Patients Seen</span>
+        </div>
+        <p className="text-xs text-green-600">No more OPD patients waiting today.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+            <Stethoscope className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <span className="text-xs font-bold text-purple-600 uppercase tracking-wide">Next Patient</span>
+            <div className="text-sm font-bold text-gray-900">{nextPatient.patient_name}</div>
+          </div>
+        </div>
+        <span className="text-xs font-mono bg-white/70 text-purple-700 px-2 py-1 rounded-lg border border-purple-200">
+          {nextPatient.time || '—'}
+        </span>
+      </div>
+      <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
+        <span className="font-mono">{nextPatient.mrn}</span>
+        <span>·</span>
+        <span>{nextPatient.type || 'OPD'}</span>
+        {nextPatient.mobile && (
+          <>
+            <span>·</span>
+            <span className="font-mono">{nextPatient.mobile}</span>
+          </>
+        )}
+      </div>
+      {nextPatient.notes && (
+        <div className="text-xs text-gray-500 bg-white/50 rounded-lg px-2 py-1 mb-2 truncate">
+          📝 {nextPatient.notes}
+        </div>
+      )}
+      <button
+        onClick={() => router.push(`/patients/${nextPatient.patient_id}`)}
+        className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+      >
+        <Stethoscope className="w-3.5 h-3.5" /> Start Consultation
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
 // ── Doctor Alerts Section (Abnormal lab values) ───────────────
 function DoctorAlertsSection() {
   const [alerts, setAlerts] = useState<any[]>([])
@@ -586,6 +684,9 @@ export default function DashboardPage() {
 
           {/* ── RIGHT COLUMN (Actions + Alerts + Summary) ── */}
           <div className="lg:col-span-7 space-y-5">
+
+            {/* NEXT OPD PATIENT — at a glance */}
+            <NextOPDPatientCard />
 
             {/* ACTION FEED */}
             {sortedActions.length > 0 && (

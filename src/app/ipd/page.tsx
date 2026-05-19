@@ -26,6 +26,8 @@ import {
   Plus, Trash2, Save, CheckCircle, ChevronDown, ChevronUp,
   IndianRupee, FileText, Users, X
 } from 'lucide-react'
+import DischargeModal from '@/components/ipd/DischargeModal'
+import IPDFileUpload from '@/components/ipd/IPDFileUpload'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -222,21 +224,12 @@ function CensusView({
   onDischarge: () => void
   canManage: boolean
 }) {
+  const [dischargeAdmission, setDischargeAdmission] = useState<IPDAdmission | null>(null)
+
   async function markDischarged(id: string) {
-    if (!confirm('Mark this patient as discharged?')) return
-    await supabase
-      .from('ipd_admissions')
-      .update({ status: 'discharged', updated_at: new Date().toISOString() })
-      .eq('id', id)
-    // Free the bed
+    // Use the enhanced discharge modal instead of simple confirm
     const adm = admissions.find(a => a.id === id)
-    if (adm?.bed_id) {
-      await supabase
-        .from('beds')
-        .update({ status: 'cleaning', patient_id: null, patient_name: null })
-        .eq('id', adm.bed_id)
-    }
-    onDischarge()
+    if (adm) setDischargeAdmission(adm)
   }
 
   return (
@@ -330,6 +323,15 @@ function CensusView({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Enhanced Discharge Modal */}
+      {dischargeAdmission && (
+        <DischargeModal
+          admission={dischargeAdmission}
+          onClose={() => setDischargeAdmission(null)}
+          onDischarged={() => { setDischargeAdmission(null); onDischarge() }}
+        />
       )}
     </>
   )
@@ -911,6 +913,37 @@ function NursingChart({ admission, onBack, currentUserName }: {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Photos & Documents Upload */}
+      <div className="card p-5 mb-5">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-green-500"/> Photos &amp; Documents
+          <span className="text-xs text-gray-400 font-normal">(AI auto-extraction enabled)</span>
+        </h3>
+        <IPDFileUpload
+          ipdAdmissionId={admission.id}
+          patientId={admission.patient_id}
+          uploadedBy={currentUserName}
+          uploadedByRole="nurse"
+          onFileUploaded={(file, aiData) => {
+            // If AI extracted vital data, pre-fill the vital form
+            if (aiData && !aiData._error) {
+              if (aiData.pulse || aiData.bp_systolic || aiData.temperature) {
+                setVitalForm(prev => ({
+                  ...prev,
+                  pulse: aiData.pulse || prev.pulse,
+                  bp_systolic: aiData.bp_systolic || prev.bp_systolic,
+                  bp_diastolic: aiData.bp_diastolic || prev.bp_diastolic,
+                  temperature: aiData.temperature || prev.temperature,
+                  spo2: aiData.spo2 || prev.spo2,
+                  rr: aiData.respiratory_rate || aiData.rr || prev.rr,
+                  weight: aiData.weight || prev.weight,
+                }))
+              }
+            }
+          }}
+        />
       </div>
 
       {/* Chart History */}

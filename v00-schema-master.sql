@@ -251,14 +251,22 @@ CREATE TABLE IF NOT EXISTS reminderlog (
 -- ── §5  IPD ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS beds (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bednumber   TEXT NOT NULL UNIQUE,
-  ward        TEXT,
-  type        TEXT DEFAULT 'General',
-  status      TEXT DEFAULT 'available',
-  notes       TEXT,
-  createdat   TIMESTAMPTZ DEFAULT NOW(),
-  updatedat   TIMESTAMPTZ DEFAULT NOW()
+  id                 UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  bed_number         TEXT NOT NULL UNIQUE,
+  ward               TEXT NOT NULL DEFAULT 'General Ward',
+  type               TEXT DEFAULT 'General',
+  status             TEXT DEFAULT 'available'
+                       CHECK (status IN ('available','occupied','cleaning','reserved','maintenance')),
+  patient_id         UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name       TEXT,
+  admission_date     DATE,
+  expected_discharge DATE,
+  reservedfor        TEXT,
+  reservedat         TIMESTAMPTZ,
+  reservednote       TEXT,
+  notes              TEXT,
+  updated_at         TIMESTAMPTZ DEFAULT NOW(),
+  created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS ipdadmissions (

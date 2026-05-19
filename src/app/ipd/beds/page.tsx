@@ -146,15 +146,43 @@ function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
 
   async function save() {
     if (!form.bed_number.trim()) { setError('Bed number is required'); return }
+    if (!form.ward.trim()) { setError('Ward is required'); return }
     setSaving(true)
-    const { error: err } = await supabase.from('beds').insert({
-      bed_number: form.bed_number.trim().toUpperCase(),
-      ward:      form.ward.trim() || null,
+    setError('')
+
+    const bedNumber = form.bed_number.trim().toUpperCase()
+    const ward = form.ward.trim()
+
+    // Try with 'bed_number' column first (new schema)
+    let result = await supabase.from('beds').insert({
+      bed_number: bedNumber,
+      ward,
       type:      form.type,
       status:    'available',
     })
+
+    // If that fails with schema cache error, try the old column name 'bednumber'
+    if (result.error && result.error.message.includes('schema cache')) {
+      result = await supabase.from('beds').insert({
+        bednumber: bedNumber,
+        ward,
+        type:     form.type,
+        status:   'available',
+      } as any)
+    }
+
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (result.error) {
+      // Provide user-friendly error messages
+      if (result.error.message.includes('duplicate') || result.error.message.includes('unique')) {
+        setError(`Bed "${bedNumber}" already exists. Choose a different bed number.`)
+      } else if (result.error.message.includes('schema cache')) {
+        setError('Database schema mismatch. Please run the migration SQL (migrations/001-fix-beds-schema.sql) in Supabase SQL Editor to fix this.')
+      } else {
+        setError(result.error.message)
+      }
+      return
+    }
     onDone()
   }
 
@@ -376,10 +404,28 @@ export default function BedsPage() {
   const loadBeds = useCallback(async () => {
     setLoading(true)
 
-    const { data: bedData } = await supabase
+    // Try with 'bed_number' first (new schema), fallback to 'bednumber' (old schema)
+    let bedData: any[] | null = null
+    let { data, error: err1 } = await supabase
       .from('beds')
       .select('*')
       .order('bed_number')
+
+    if (err1 && err1.message.includes('schema cache')) {
+      // Old schema — try ordering by bednumber
+      const { data: oldData } = await supabase
+        .from('beds')
+        .select('*')
+        .order('bednumber' as any)
+
+      // Normalize old schema to new field names
+      bedData = (oldData || []).map((b: any) => ({
+        ...b,
+        bed_number: b.bed_number || b.bednumber,
+      }))
+    } else {
+      bedData = data
+    }
 
     if (!bedData) { setLoading(false); return }
 
