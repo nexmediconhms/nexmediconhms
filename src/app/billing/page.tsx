@@ -1179,9 +1179,17 @@ function BillingContent() {
                     {/* Download PDF — generates proper formatted PDF */}
                     <button onClick={async () => {
                       try {
+                        const { data: { session } } = await supabase.auth.getSession()
+                        if (!session?.access_token) {
+                          alert('Your session has expired. Please log in again.')
+                          return
+                        }
                         const res = await fetch('/api/billing/ca-report-pdf', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
                           body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
                         })
                         if (res.ok) {
@@ -1230,9 +1238,17 @@ function BillingContent() {
                     {/* Print — uses PDF generator for clean output */}
                     <button onClick={async () => {
                       try {
+                        const { data: { session } } = await supabase.auth.getSession()
+                        if (!session?.access_token) {
+                          alert('Your session has expired. Please log in again.')
+                          return
+                        }
                         const res = await fetch('/api/billing/ca-report-pdf', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
                           body: JSON.stringify({ reportData: caReport, hospitalSettings: hs }),
                         })
                         if (res.ok) {

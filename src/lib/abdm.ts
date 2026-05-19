@@ -269,9 +269,17 @@ export async function getABDMSessionToken(): Promise<{ token?: string; error?: s
 // ── Verify ABHA number ───────────────────────────────────────
 export async function verifyABHANumber(abhaNumber: string): Promise<ABHAVerifyResult> {
   try {
+    const { supabase } = await import('@/lib/supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      return { success: false, error: 'Not signed in. Please log in again.' }
+    }
     const res = await fetch('/api/abdm/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({ abhaNumber: abhaNumber.replace(/[-\s]/g, '') }),
     })
     const data = await res.json()
@@ -285,9 +293,17 @@ export async function verifyABHANumber(abhaNumber: string): Promise<ABHAVerifyRe
 // ── Search by ABHA address ───────────────────────────────────
 export async function searchByABHAAddress(healthId: string): Promise<ABHAVerifyResult> {
   try {
+    const { supabase } = await import('@/lib/supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      return { success: false, error: 'Not signed in. Please log in again.' }
+    }
     const res = await fetch('/api/abdm/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({ healthId }),
     })
     const data = await res.json()

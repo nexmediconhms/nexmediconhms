@@ -22,6 +22,7 @@
 "use client";
 
 import { useState } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   Shield,
   ShieldCheck,
@@ -103,9 +104,18 @@ export default function ABHAVerificationSection({
       const endpoint  = isAddress ? "/api/abdm/search" : "/api/abdm/verify";
       const body      = isAddress ? { healthId: cleaned } : { abhaNumber: cleaned };
 
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("Your session has expired. Please log in again.");
+        setLoading(false);
+        return;
+      }
       const res  = await fetch(endpoint, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body:    JSON.stringify(body),
       });
       const data = await res.json();
