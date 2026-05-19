@@ -1,0 +1,542 @@
+'use client'
+/**
+ * src/app/settings/users/page.tsx
+ *
+ * Admin-only User Management Page
+ * - Create new admin/doctor/staff credentials
+ * - Deactivate (soft-delete) existing users
+ * - Reset passwords
+ * - View all clinic users
+ *
+ * Only users with role='admin' can access this page.
+ */
+
+import { useEffect, useState, useCallback } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
+import {
+  Users, UserPlus, Shield, Trash2, CheckCircle, X,
+  AlertCircle, Loader2, Copy, RefreshCw, Lock, Eye, EyeOff,
+  Stethoscope, User, Settings,
+} from 'lucide-react'
+
+interface ClinicUserRow {
+  id: string
+  auth_id: string
+  email: string
+  full_name: string
+  role: 'admin' | 'doctor' | 'staff'
+  is_active: boolean
+  phone?: string
+  specialty?: string
+  med_reg_no?: string
+  mfa_enabled?: boolean
+  created_at?: string
+}
+
+const ROLE_CONFIG = {
+  admin:  { label: 'Admin',  icon: Shield,       color: 'bg-red-100 text-red-700 border-red-200' },
+  doctor: { label: 'Doctor', icon: Stethoscope,  color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  staff:  { label: 'Staff',  icon: User,         color: 'bg-green-100 text-green-700 border-green-200' },
+}
+
+export default function UserManagementPage() {
+  const { user, isAdmin } = useAuth()
+  const [users, setUsers] = useState<ClinicUserRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showInvite, setShowInvite] = useState(false)
+  const [showDeactivated, setShowDeactivated] = useState(false)
+
+  // Invite form
+  const [inviteForm, setInviteForm] = useState({
+    full_name: '',
+    email: '',
+    role: 'staff' as 'admin' | 'doctor' | 'staff',
+    phone: '',
+    specialty: '',
+    med_reg_no: '',
+  })
+  const [inviting, setInviting] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{
+    success?: boolean
+    tempPassword?: string
+    message?: string
+    error?: string
+  } | null>(null)
+
+  // Actions
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/users')
+      if (res.ok) {
+        const data = await res.json()
+        setUsers(data.users || [])
+      }
+    } catch (e) {
+      console.error('[UserMgmt] Load error:', e)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadUsers() }, [loadUsers])
+
+  // ── Invite new user ─────────────────────────────────────────
+  async function handleInvite() {
+    if (!inviteForm.full_name.trim() || !inviteForm.email.trim()) {
+      setInviteResult({ error: 'Name and email are required.' })
+      return
+    }
+    setInviting(true)
+    setInviteResult(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users/invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({
+          full_name: inviteForm.full_name.trim(),
+          email: inviteForm.email.trim().toLowerCase(),
+          role: inviteForm.role,
+          phone: inviteForm.phone.trim() || undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setInviteResult({
+          success: true,
+          tempPassword: data.tempPassword,
+          message: data.message,
+        })
+        // Reset form
+        setInviteForm({ full_name: '', email: '', role: 'staff', phone: '', specialty: '', med_reg_no: '' })
+        await loadUsers()
+      } else {
+        setInviteResult({ error: data.error || 'Failed to create user.' })
+      }
+    } catch (e: any) {
+      setInviteResult({ error: e.message || 'Network error' })
+    }
+    setInviting(false)
+  }
+
+  // ── Deactivate user ─────────────────────────────────────────
+  async function handleDeactivate(userId: string, userName: string) {
+    if (!confirm(`Are you sure you want to deactivate "${userName}"?\n\nThey will not be able to log in. You can reactivate later.`)) return
+
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, is_active: false }),
+      })
+      if (res.ok) await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Deactivate error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Reactivate user ─────────────────────────────────────────
+  async function handleReactivate(userId: string) {
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, is_active: true }),
+      })
+      if (res.ok) await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Reactivate error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Change role ─────────────────────────────────────────────
+  async function handleChangeRole(userId: string, newRole: string) {
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, role: newRole }),
+      })
+      await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Role change error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Guard: admin-only ───────────────────────────────────────
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto text-center py-20">
+          <Shield className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Admin Access Required</h1>
+          <p className="text-gray-500">Only administrators can manage user accounts.</p>
+        </div>
+      </AppShell>
+    )
+  }
+
+  const activeUsers = users.filter(u => u.is_active)
+  const deactivatedUsers = users.filter(u => !u.is_active)
+
+  return (
+    <AppShell>
+      <div className="p-6 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-6 h-6 text-blue-600" /> User Management
+            </h1>
+            <p className="text-sm text-gray-500">
+              Create, manage, and deactivate admin, doctor, and staff accounts.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={loadUsers}
+              className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200">
+              <RefreshCw className="w-4 h-4 text-gray-600" />
+            </button>
+            <button onClick={() => { setShowInvite(true); setInviteResult(null) }}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                         px-4 py-2 rounded-xl font-semibold text-sm">
+              <UserPlus className="w-4 h-4" /> Create User
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="card p-4 text-center">
+            <div className="text-2xl font-bold text-gray-900">{activeUsers.length}</div>
+            <div className="text-xs text-gray-500">Total Active</div>
+          </div>
+          <div className="card p-4 text-center bg-red-50">
+            <div className="text-2xl font-bold text-red-700">
+              {activeUsers.filter(u => u.role === 'admin').length}
+            </div>
+            <div className="text-xs text-gray-500">Admins</div>
+          </div>
+          <div className="card p-4 text-center bg-blue-50">
+            <div className="text-2xl font-bold text-blue-700">
+              {activeUsers.filter(u => u.role === 'doctor').length}
+            </div>
+            <div className="text-xs text-gray-500">Doctors</div>
+          </div>
+          <div className="card p-4 text-center bg-green-50">
+            <div className="text-2xl font-bold text-green-700">
+              {activeUsers.filter(u => u.role === 'staff').length}
+            </div>
+            <div className="text-xs text-gray-500">Staff</div>
+          </div>
+        </div>
+
+        {/* Active Users Table */}
+        <div className="card overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Active Users</h2>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+            </div>
+          ) : activeUsers.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <p>No users found. Create your first user above.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Name</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Email</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Role</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">MFA</th>
+                  <th className="text-right px-5 py-2.5 font-semibold text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeUsers.map(u => {
+                  const cfg = ROLE_CONFIG[u.role]
+                  const Icon = cfg.icon
+                  const isCurrentUser = u.auth_id === user?.auth_id
+                  return (
+                    <tr key={u.id} className="border-t border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${cfg.color}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">{u.full_name}</div>
+                            {u.phone && <div className="text-xs text-gray-400">{u.phone}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 font-mono text-xs">{u.email}</td>
+                      <td className="px-5 py-3">
+                        <select
+                          value={u.role}
+                          onChange={e => handleChangeRole(u.id, e.target.value)}
+                          disabled={isCurrentUser || actionLoading === u.id}
+                          className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.color}
+                            ${isCurrentUser ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="doctor">Doctor</option>
+                          <option value="staff">Staff</option>
+                        </select>
+                      </td>
+                      <td className="px-5 py-3">
+                        {u.mfa_enabled ? (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                            Enabled
+                          </span>
+                        ) : (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                            Off
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {isCurrentUser ? (
+                          <span className="text-xs text-gray-400 italic">You</span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeactivate(u.id, u.full_name)}
+                            disabled={actionLoading === u.id}
+                            className="text-xs text-red-600 hover:text-red-700 font-semibold
+                                       flex items-center gap-1 ml-auto disabled:opacity-50"
+                          >
+                            {actionLoading === u.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            Deactivate
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Deactivated Users */}
+        {deactivatedUsers.length > 0 && (
+          <div className="card overflow-hidden mb-6">
+            <button
+              onClick={() => setShowDeactivated(d => !d)}
+              className="w-full px-5 py-3 border-b border-gray-100 flex items-center justify-between
+                         hover:bg-gray-50 transition-colors"
+            >
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                Deactivated Users ({deactivatedUsers.length})
+              </h2>
+              <span className="text-xs text-gray-400">
+                {showDeactivated ? 'Hide' : 'Show'}
+              </span>
+            </button>
+
+            {showDeactivated && (
+              <table className="w-full text-sm">
+                <tbody>
+                  {deactivatedUsers.map(u => (
+                    <tr key={u.id} className="border-t border-gray-50 opacity-60 hover:opacity-100">
+                      <td className="px-5 py-3">
+                        <span className="font-medium text-gray-700">{u.full_name}</span>
+                        <span className="text-xs text-gray-400 ml-2">{u.email}</span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                          {u.role} (inactive)
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          onClick={() => handleReactivate(u.id)}
+                          disabled={actionLoading === u.id}
+                          className="text-xs text-green-600 hover:text-green-700 font-semibold
+                                     flex items-center gap-1 ml-auto disabled:opacity-50"
+                        >
+                          <CheckCircle className="w-3 h-3" /> Reactivate
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* How-to info */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+          <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> How Credentials Work
+          </h3>
+          <ul className="text-xs text-blue-700 space-y-1.5 list-disc list-inside">
+            <li><strong>Create User:</strong> Enter name, email, and role. A temporary password is auto-generated.</li>
+            <li><strong>Share Password:</strong> Share the temp password with the user. They should change it after first login from Settings.</li>
+            <li><strong>Deactivate:</strong> Disables login without deleting data. Their encounters/bills remain intact.</li>
+            <li><strong>Reactivate:</strong> Re-enables login for a previously deactivated user.</li>
+            <li><strong>MFA:</strong> Each user can enable MFA from their Settings page after login.</li>
+            <li><strong>Password Reset:</strong> If a user forgets their password, they can use the "Forgot Password" link on the login page.</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* ── Create User Modal ────────────────────────────────── */}
+      {showInvite && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowInvite(false) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-blue-600" /> Create New User
+              </h3>
+              <button onClick={() => setShowInvite(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {inviteResult?.error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {inviteResult.error}
+              </div>
+            )}
+
+            {inviteResult?.success && inviteResult.tempPassword ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-bold text-green-800">User Created Successfully!</span>
+                  </div>
+                  <p className="text-sm text-green-700 mb-3">{inviteResult.message}</p>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Lock className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm font-bold text-amber-800">Temporary Password</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2
+                                     font-mono text-lg font-bold text-gray-900 text-center">
+                      {inviteResult.tempPassword}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteResult.tempPassword || '')
+                        alert('Password copied to clipboard!')
+                      }}
+                      className="p-2 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                    >
+                      <Copy className="w-4 h-4 text-amber-700" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-600 mt-2">
+                    Share this with the user. They must change it after first login.
+                  </p>
+                </div>
+
+                <button onClick={() => { setInviteResult(null); setShowInvite(false) }}
+                  className="w-full btn-primary">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Full Name <span className="text-red-500">*</span></label>
+                  <input className="input" placeholder="e.g. Dr. Priya Sharma"
+                    value={inviteForm.full_name}
+                    onChange={e => setInviteForm(f => ({ ...f, full_name: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Email <span className="text-red-500">*</span></label>
+                  <input className="input" type="email" placeholder="user@clinic.com"
+                    value={inviteForm.email}
+                    onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))} />
+                  <p className="text-xs text-gray-400 mt-1">Used for login. Must be unique.</p>
+                </div>
+
+                <div>
+                  <label className="label">Role <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['admin', 'doctor', 'staff'] as const).map(role => {
+                      const cfg = ROLE_CONFIG[role]
+                      const Icon = cfg.icon
+                      return (
+                        <button key={role}
+                          onClick={() => setInviteForm(f => ({ ...f, role }))}
+                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all
+                            ${inviteForm.role === role
+                              ? `${cfg.color} border-current`
+                              : 'border-gray-200 hover:border-gray-300 bg-white'}`}
+                        >
+                          <Icon className="w-5 h-5" />
+                          <span className="text-xs font-bold">{cfg.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Phone (optional)</label>
+                  <input className="input" placeholder="9876543210"
+                    value={inviteForm.phone}
+                    onChange={e => setInviteForm(f => ({ ...f, phone: e.target.value }))} />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => setShowInvite(false)} className="btn-secondary flex-1">Cancel</button>
+                  <button onClick={handleInvite} disabled={inviting}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60">
+                    {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    {inviting ? 'Creating...' : 'Create User'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </AppShell>
+  )
+}

@@ -7,7 +7,7 @@ type BedStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
 
 interface BedRecord {
   id: string
-  bednumber: string
+  bed_number: string
   ward: string | null
   type: string
   status: BedStatus
@@ -38,7 +38,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
       reservedfor: extra?.reservedfor ?? null,
       reservednote: extra?.reservednote ?? null,
       reservedat: newStatus === 'reserved' ? new Date().toISOString() : null,
-      updatedat: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }).eq('id', bed.id)
     setLoading(false)
     onUpdate()
@@ -50,7 +50,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
           <div>
-            <div className="font-bold text-base">Bed {bed.bednumber}</div>
+            <div className="font-bold text-base">Bed {bed.bed_number}</div>
             <div className="text-xs opacity-70">{bed.ward || 'General'} · {bed.type}</div>
           </div>
         </div>
@@ -108,7 +108,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
       {showReserveModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-3">
-            <div className="font-bold text-gray-900">Reserve Bed {bed.bednumber}</div>
+            <div className="font-bold text-gray-900">Reserve Bed {bed.bed_number}</div>
             <input className="input w-full" placeholder="Patient / Person name (required)"
               value={reserveName} onChange={e => setReserveName(e.target.value)} />
             <textarea className="input w-full resize-none" rows={2}

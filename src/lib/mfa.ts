@@ -159,6 +159,7 @@ export async function enrollMFA(friendlyName?: string): Promise<{
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType:   'totp',
       friendlyName: friendlyName || 'NexMedicon HMS',
+      issuer:       'NexMedicon HMS',
     })
 
     if (error) return { success: false, error: error.message }

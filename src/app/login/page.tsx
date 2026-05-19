@@ -514,6 +514,10 @@ export default function LoginPage() {
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to login
           </button>
+          <p className="text-xs text-gray-400 text-center mt-3">
+            MFA not working? Contact your clinic admin to reset MFA from{' '}
+            <strong>Settings &rarr; User Management</strong>.
+          </p>
         </div>
       </LoginBackground>
     )
@@ -787,9 +791,13 @@ export default function LoginPage() {
           </div>
 
           <div className="flex justify-end">
-            <span className="text-xs text-gray-400">
-              Forgot password? Contact your clinic admin to reset it.
-            </span>
+            <button
+              type="button"
+              onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
+              className="text-xs text-blue-500 hover:text-blue-700 hover:underline"
+            >
+              Forgot password?
+            </button>
           </div>
 
           <button

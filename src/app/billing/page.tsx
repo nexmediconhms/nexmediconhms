@@ -374,6 +374,15 @@ function BillingContent() {
 
   useEffect(() => { loadBills() }, [loadBills])
 
+  // Auto-open "new bill" form if view=new in URL
+  useEffect(() => {
+    const viewParam = searchParams.get('view')
+    if (viewParam === 'new' && view === 'list') {
+      setView('new')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   // Auto-add fee from encounter type URL param
   useEffect(() => {
     const encType = searchParams.get('encounterType')
@@ -1227,13 +1236,56 @@ function BillingContent() {
                       </a>
                     )}
 
-                    {/* Email share */}
-                    <a
-                      href={`mailto:${caSettings.caEmail || ''}?subject=${encodeURIComponent(`Revenue Report — ${caReport.period} | ${hs.hospitalName || 'Clinic'}`)}&body=${buildEmailBody(caReport, { ...hs, caName: caSettings.caName })}`}
+                    {/* Email share — sends PDF via Resend or falls back to download */}
+                    <button onClick={async () => {
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession()
+                        if (!session?.access_token) {
+                          alert('Your session has expired. Please log in again.')
+                          return
+                        }
+                        const res = await fetch('/api/billing/send-email', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({
+                            recipientEmail: caSettings.caEmail || '',
+                            recipientName: caSettings.caName || 'CA',
+                            reportData: caReport,
+                            hospitalSettings: hs,
+                          }),
+                        })
+                        const data = await res.json()
+                        if (data.success) {
+                          if (data.method === 'email') {
+                            alert(`Report sent successfully to ${caSettings.caEmail}!`)
+                          } else {
+                            // Client fallback: open PDF in new window for download
+                            const w = window.open('', '_blank')
+                            if (w && data.pdfHtml) {
+                              w.document.write(data.pdfHtml)
+                              w.document.close()
+                              setTimeout(() => w.print(), 500)
+                            }
+                            // Also open mailto if available
+                            if (data.mailtoUrl) {
+                              window.location.href = data.mailtoUrl
+                            }
+                          }
+                        } else {
+                          alert(data.error || 'Failed to send email.')
+                        }
+                      } catch (e) {
+                        console.error(e)
+                        alert('Failed to send email. Please try again.')
+                      }
+                    }}
                       className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
                       <Mail className="w-4 h-4" />
-                      {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
-                    </a>
+                      {caSettings.caEmail ? `Send Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
+                    </button>
 
                     {/* Print — uses PDF generator for clean output */}
                     <button onClick={async () => {
