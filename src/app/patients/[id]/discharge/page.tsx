@@ -161,6 +161,71 @@ export default function DischargeSummaryPage() {
       setForm(prev => ({ ...prev, admission_date: enc[0].encounter_date || '' }))
       if (enc.some(e => e.ob_data && Object.keys(e.ob_data as object).length > 0)) setShowOB(true)
     }
+
+    // Auto-pull IPD admission data if exists (for admitted patients)
+    if (!ds) {
+      const { data: ipdAdm } = await supabase
+        .from('ipd_admissions')
+        .select('id, admission_date, diagnosis_on_admission, admitting_doctor, consulting_doctors, allergies, comorbidities')
+        .eq('patient_id', patientId)
+        .in('status', ['active', 'discharged'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (ipdAdm) {
+        setForm(prev => ({
+          ...prev,
+          admission_date: prev.admission_date || ipdAdm.admission_date || '',
+          final_diagnosis: prev.final_diagnosis || ipdAdm.diagnosis_on_admission || '',
+          signed_by: prev.signed_by || ipdAdm.admitting_doctor || getHospitalSettings().doctorName,
+        }))
+
+        // Pull nursing medications as treatment_given
+        const { data: nursing } = await supabase
+          .from('ipd_nursing')
+          .select('medication_name, medication_dose, medication_route, recorded_time')
+          .eq('ipd_admission_id', ipdAdm.id)
+          .eq('entry_type', 'medication')
+          .order('recorded_time', { ascending: true })
+
+        if (nursing && nursing.length > 0) {
+          const medsList = nursing
+            .filter(n => n.medication_name)
+            .map(n => `${n.medication_name} ${n.medication_dose || ''} ${n.medication_route || ''}`.trim())
+          const uniqueMeds = [...new Set(medsList)]
+          if (uniqueMeds.length > 0) {
+            setForm(prev => ({
+              ...prev,
+              treatment_given: prev.treatment_given || `Medications during admission:\n${uniqueMeds.map(m => `• ${m}`).join('\n')}`,
+            }))
+          }
+        }
+
+        // Pull lab investigations during admission
+        const { data: labs } = await supabase
+          .from('lab_reports')
+          .select('report_name, report_date, entries')
+          .eq('patient_id', patientId)
+          .gte('report_date', ipdAdm.admission_date || '')
+          .order('report_date', { ascending: true })
+
+        if (labs && labs.length > 0) {
+          const labSummary = labs.map(l => {
+            const abnormals = Array.isArray(l.entries)
+              ? (l.entries as any[]).filter(e => e.status === 'high' || e.status === 'low')
+                .map(e => `${e.testName}: ${e.value} ${e.unit} [${e.status.toUpperCase()}]`)
+              : []
+            return `${l.report_name || 'Lab'} (${l.report_date})${abnormals.length > 0 ? ': ' + abnormals.join(', ') : ''}`
+          }).join('\n')
+          setForm(prev => ({
+            ...prev,
+            investigations: prev.investigations || labSummary,
+          }))
+        }
+      }
+    }
+
     setLoading(false)
   }
 
@@ -235,7 +300,32 @@ Return ONLY valid JSON with keys: final_diagnosis, secondary_diagnosis, clinical
       err = r.error
     }
     if (err) { setSaveState('error'); return }
-    if (finalise) setIsFinal(true)
+    if (finalise) {
+      setIsFinal(true)
+      // Auto-create follow-up appointment if follow_up_date is set
+      if (form.follow_up_date && patient) {
+        try {
+          await supabase.from('appointments').insert({
+            patient_id: patientId,
+            patient_name: patient.full_name,
+            mrn: patient.mrn,
+            mobile: patient.mobile || '',
+            date: form.follow_up_date,
+            time: '10:00',
+            type: 'Discharge Follow-up',
+            notes: form.follow_up_note || `Post-discharge review — ${form.final_diagnosis || ''}`,
+            status: 'scheduled',
+          })
+        } catch (e) { console.warn('[discharge] Follow-up appointment creation failed:', e) }
+      }
+      // Mark IPD admission as discharged if active
+      try {
+        await supabase.from('ipd_admissions')
+          .update({ status: 'discharged', discharge_date: form.discharge_date || getIndiaToday(), updated_at: new Date().toISOString() })
+          .eq('patient_id', patientId)
+          .eq('status', 'active')
+      } catch (e) { console.warn('[discharge] IPD status update failed:', e) }
+    }
     setSaveState('saved'); setTimeout(()=>setSaveState('idle'), 3000)
   }
 
