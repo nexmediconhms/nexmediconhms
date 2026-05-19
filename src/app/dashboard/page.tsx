@@ -275,6 +275,128 @@ function DoctorAlertsSection() {
   )
 }
 
+// ── OPD Queue Live Widget ──────────────────────────────────────
+
+function OPDQueueWidget() {
+  const router = useRouter()
+  const [current, setCurrent] = useState<any>(null)
+  const [waiting, setWaiting] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+
+  const loadQueue = useCallback(async () => {
+    const { data } = await supabase
+      .from('opd_queue')
+      .select('id, patient_id, patient_name, mrn, token_number, status, priority, notes, called_at')
+      .eq('queue_date', todayStr)
+      .in('status', ['waiting', 'in_progress'])
+      .order('priority', { ascending: false })
+      .order('token_number', { ascending: true })
+      .limit(6)
+
+    const items = data || []
+    const inProgress = items.find((q: any) => q.status === 'in_progress') || null
+    const waitingList = items.filter((q: any) => q.status === 'waiting').slice(0, 3)
+
+    setCurrent(inProgress)
+    setWaiting(waitingList)
+    setLoading(false)
+  }, [todayStr])
+
+  useEffect(() => { loadQueue() }, [loadQueue])
+
+  // Realtime updates
+  useEffect(() => {
+    const ch = supabase.channel('dashboard-queue')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' },
+        () => loadQueue())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [loadQueue])
+
+  if (loading) return null
+  if (!current && waiting.length === 0) return null
+
+  const priorityBadge = (p: string) => {
+    if (p === 'emergency') return <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">EMERGENCY</span>
+    if (p === 'urgent') return <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">URGENT</span>
+    return null
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+          <Stethoscope className="w-3.5 h-3.5" /> OPD Queue — Live
+        </h2>
+        <button onClick={() => router.push('/queue')}
+          className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1">
+          Full Queue <ChevronRight className="w-3 h-3" />
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        {/* Current Patient */}
+        {current && (
+          <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-sm font-bold text-white">#{current.token_number}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-blue-900 truncate">{current.patient_name}</span>
+                  <span className="text-[10px] bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full font-bold animate-pulse">NOW SEEING</span>
+                  {priorityBadge(current.priority)}
+                </div>
+                <div className="text-xs text-blue-600">{current.mrn}</div>
+              </div>
+              <button onClick={() => router.push(`/opd?patientId=${current.patient_id}`)}
+                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-700 flex-shrink-0">
+                Open
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Next Waiting Patients */}
+        {waiting.length > 0 && (
+          <div className="divide-y divide-gray-50">
+            {waiting.map((q, i) => (
+              <div key={q.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-gray-50 transition-colors">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  i === 0 && !current ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  <span className="text-xs font-bold">#{q.token_number}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-800 truncate">{q.patient_name}</span>
+                    {i === 0 && !current && (
+                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">NEXT</span>
+                    )}
+                    {priorityBadge(q.priority)}
+                  </div>
+                  <div className="text-xs text-gray-400">{q.mrn}</div>
+                </div>
+                <span className="text-xs text-gray-400 flex-shrink-0">Waiting</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state — only show if widget is visible but no current */}
+        {!current && waiting.length === 0 && (
+          <div className="px-4 py-6 text-center text-sm text-gray-400">
+            No patients in queue right now
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [data,    setData]    = useState<DashData>({
@@ -545,6 +667,9 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+
+        {/* OPD QUEUE — LIVE (Current + Next Patient) */}
+        <OPDQueueWidget />
 
         {/* ACTION FEED */}
         {sortedActions.length > 0 && (
