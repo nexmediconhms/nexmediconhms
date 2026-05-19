@@ -24,7 +24,7 @@ import type { OCRResult } from '@/lib/ocr'
 import {
   FlaskConical, Search, Plus, X, ChevronRight,
   AlertTriangle, CheckCircle, ArrowLeft, Trash2, Save,
-  IndianRupee, Percent,
+  IndianRupee, Percent, Upload, Loader2,
 } from 'lucide-react'
 
 // ── Lab test presets ──────────────────────────────────────────
@@ -238,6 +238,11 @@ function LabsContent() {
   const [labAmount, setLabAmount] = useState<number>(0)
   const [paymentMode, setPaymentMode] = useState<string>('cash')
 
+  // AI PDF extraction state
+  const [pdfExtracting, setPdfExtracting] = useState(false)
+  const [pdfExtractResult, setPdfExtractResult] = useState<any>(null)
+  const [pdfExtractError, setPdfExtractError] = useState('')
+
   // Load lab partners
   useEffect(() => {
     supabase.from('lab_partners').select('id, name, hospital_pct, lab_pct, is_active')
@@ -331,6 +336,65 @@ function LabsContent() {
     }
   }
 
+  // ── AI PDF Lab Value Extraction ─────────────────────────────
+  async function handlePdfExtraction(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    setPdfExtracting(true)
+    setPdfExtractResult(null)
+    setPdfExtractError('')
+
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+
+      const res = await fetch('/api/labs/extract-values', {
+        method: 'POST',
+        body: fd,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Extraction failed')
+      }
+
+      const data = await res.json()
+      setPdfExtractResult(data)
+
+      // Auto-fill entries from extracted values
+      if (data.values && Object.keys(data.values).length > 0) {
+        const newEntries: LabEntry[] = []
+        for (const [testName, valueWithUnit] of Object.entries(data.values)) {
+          const valueStr = String(valueWithUnit).replace(/[^\d.]/g, '')
+          const unitStr = String(valueWithUnit).replace(/[\d.]/g, '').trim()
+          const test = ALL_TESTS.find(t => t.name === testName)
+          const status = test ? determineStatus(test, valueStr) : 'pending'
+          const refRange = test ? `${test.low}–${test.high} ${test.unit}` : ''
+
+          newEntries.push({
+            testName,
+            value: valueStr,
+            unit: unitStr || (test?.unit || ''),
+            referenceRange: refRange,
+            status,
+            remarks: status === 'high' || status === 'low' ? `⚠️ ${status.toUpperCase()}` : '',
+          })
+        }
+        if (newEntries.length > 0) {
+          setEntries(prev => {
+            const existing = prev.filter(e => e.testName.trim())
+            return [...existing, ...newEntries]
+          })
+        }
+      }
+    } catch (err: any) {
+      setPdfExtractError(err.message || 'PDF extraction failed')
+    }
+    setPdfExtracting(false)
+  }
+
   // ── Save ──────────────────────────────────────────────────
   async function handleSave() {
     if (!patientId) { setError('Select a patient first.'); return }
@@ -367,6 +431,35 @@ function LabsContent() {
           .from('lab_reports').insert(payload).select().single()
         if (e) throw e
         await audit('create', 'lab_report', data?.id, `Lab report — ${patientName}`)
+
+        // ── WhatsApp "Report Ready" notification + Abnormal alerts ──
+        try {
+          const completedEntries = entries.filter(e => e.testName.trim() && e.value.trim())
+          const abnormalEntries = completedEntries.filter(e => e.status === 'high' || e.status === 'low')
+          const abnormalValues = abnormalEntries.map(e =>
+            `${e.testName}: ${e.value} ${e.unit} [${e.status.toUpperCase()}] (Normal: ${e.referenceRange})`
+          )
+
+          const partnerName = selectedPartnerId
+            ? partners.find(p => p.id === selectedPartnerId)?.name || ''
+            : ''
+
+          await fetch('/api/labs/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              patientName,
+              patientId,
+              mrn,
+              abnormalValues,
+              labPartner: partnerName || labName,
+              reportType: 'lab_report',
+              reportName: completedEntries.map(e => e.testName).slice(0, 3).join(', ') || 'Lab Report',
+            }),
+          })
+        } catch (notifyErr) {
+          console.warn('[Labs] Notification failed (non-fatal):', notifyErr)
+        }
       }
 
       resetForm()
@@ -605,6 +698,56 @@ function LabsContent() {
                 onExtracted={handleOCR}
                 label="Scan printed lab report — extracts all values automatically"
               />
+            </div>
+
+            {/* AI PDF Lab Value Extraction */}
+            <div className="card p-4 border-l-4 border-purple-300">
+              <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+                <FlaskConical className="w-4 h-4 text-purple-600" /> AI PDF Lab Value Extraction
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Upload a PDF lab report — AI will extract Hb, WBC, Sugar, and other values automatically.
+                Abnormal values will be highlighted and doctor will be alerted.
+              </p>
+              <label className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-pointer transition-all border
+                ${pdfExtracting ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-purple-600 text-white hover:bg-purple-700 border-purple-600'}`}>
+                {pdfExtracting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Extracting values…</>
+                ) : (
+                  <><Upload className="w-4 h-4" /> Upload PDF for AI Extraction</>
+                )}
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={handlePdfExtraction}
+                  disabled={pdfExtracting}
+                  className="hidden"
+                />
+              </label>
+              {pdfExtractResult && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-sm text-green-800 font-medium">
+                    <CheckCircle className="w-4 h-4" /> Extracted {pdfExtractResult.extractedCount} values
+                    {pdfExtractResult.hasAbnormals && (
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold ml-2">
+                        ⚠️ {pdfExtractResult.abnormals?.length || 0} Abnormal
+                      </span>
+                    )}
+                  </div>
+                  {pdfExtractResult.abnormals?.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {pdfExtractResult.abnormals.map((a: string, i: number) => (
+                        <li key={i} className="text-xs text-red-700 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> {a}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {pdfExtractError && (
+                <div className="mt-3 text-xs text-red-600">{pdfExtractError}</div>
+              )}
             </div>
 
             {/* Patient + Meta */}

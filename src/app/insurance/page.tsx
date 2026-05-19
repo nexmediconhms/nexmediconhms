@@ -3,12 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getIndiaToday } from '@/lib/utils'
+import { formatDate, getIndiaToday, getHospitalSettings } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   Shield, Plus, X, Search, ArrowLeft, Save, Loader2,
   CheckCircle, Clock, AlertTriangle, IndianRupee,
-  RefreshCw, ChevronRight, FileText,
+  RefreshCw, ChevronRight, FileText, Share2, MessageCircle,
+  Send, Upload, ExternalLink,
 } from 'lucide-react'
 
 interface Claim {
@@ -183,6 +184,81 @@ export default function InsurancePage() {
     setForm({ policy_number: '', tpa_name: '', insurance_company: '', claim_amount: '', diagnosis: '', surgery_name: '', admission_date: '', discharge_date: '', notes: '' })
   }
 
+  // ── Share with CA (Chartered Accountant) ─────────────────────
+  async function shareWithCA(claim: Claim) {
+    const caNumber = prompt('Enter CA WhatsApp number (10-digit mobile):')
+    if (!caNumber || caNumber.replace(/\D/g, '').length < 10) return
+
+    const fullNum = caNumber.replace(/\D/g, '').length === 10 ? '91' + caNumber.replace(/\D/g, '') : caNumber.replace(/\D/g, '')
+
+    const hs = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
+    const hospitalName = hs.hospitalName || 'NexMedicon Hospital'
+
+    const message = `*${hospitalName} — Insurance Claim Documents*
+
+📋 *Claim Details:*
+• Patient: ${claim.patient_name} (MRN: ${claim.mrn})
+• TPA: ${claim.tpa_name || 'N/A'}
+• Insurance: ${claim.insurance_company || 'N/A'}
+• Policy: ${claim.policy_number || 'N/A'}
+• Claim Amount: ₹${claim.claim_amount.toLocaleString('en-IN')}
+${claim.approved_amount ? `• Approved: ₹${claim.approved_amount.toLocaleString('en-IN')}` : ''}
+• Status: ${STATUS_CONFIG[claim.status]?.label || claim.status}
+${claim.pre_auth_number ? `• Pre-Auth #: ${claim.pre_auth_number}` : ''}
+${claim.claim_number ? `• Claim #: ${claim.claim_number}` : ''}
+${claim.settlement_utr ? `• UTR: ${claim.settlement_utr}` : ''}
+
+🏥 *Treatment:*
+• Diagnosis: ${claim.diagnosis || 'N/A'}
+• Surgery: ${claim.surgery_name || 'N/A'}
+• Admission: ${claim.admission_date ? formatDate(claim.admission_date) : 'N/A'}
+• Discharge: ${claim.discharge_date ? formatDate(claim.discharge_date) : 'N/A'}
+
+${claim.notes ? `📝 Notes: ${claim.notes}` : ''}
+
+---
+Shared from ${hospitalName} Insurance Module
+Please process/file as required.`
+
+    const waUrl = `https://wa.me/${fullNum}?text=${encodeURIComponent(message)}`
+
+    // Log the share
+    await supabase.from('insurance_ca_shares').insert({
+      claim_id: claim.id,
+      shared_to: caNumber,
+      shared_by: user?.full_name || 'Staff',
+      share_method: 'whatsapp',
+      documents: { claim_amount: claim.claim_amount, status: claim.status },
+      notes: `Shared claim data for ${claim.patient_name}`,
+    })
+
+    window.open(waUrl, '_blank')
+  }
+
+  // ── Generate Insurance Bundle / Documents ────────────────────
+  async function generateDocBundle(claim: Claim) {
+    try {
+      const res = await fetch('/api/insurance-bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimId: claim.id }),
+      })
+      if (res.ok) {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `Insurance_${claim.patient_name}_${claim.mrn}.pdf`
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        alert('Failed to generate document bundle. Please try again.')
+      }
+    } catch {
+      alert('Error generating documents.')
+    }
+  }
+
   function inr(n: number) { return `₹${n.toLocaleString('en-IN')}` }
 
   // ═══ NEW CLAIM ═══
@@ -336,6 +412,14 @@ export default function InsurancePage() {
                           → {STATUS_CONFIG[ns]?.label || ns}
                         </button>
                       ))}
+                      <button onClick={() => shareWithCA(c)}
+                        className="text-xs bg-green-50 border border-green-200 hover:bg-green-100 px-2 py-1 rounded font-medium text-green-700 text-left flex items-center gap-1">
+                        <Share2 className="w-3 h-3" /> Share with CA
+                      </button>
+                      <button onClick={() => generateDocBundle(c)}
+                        className="text-xs bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded font-medium text-blue-700 text-left flex items-center gap-1">
+                        <FileText className="w-3 h-3" /> Download Docs
+                      </button>
                       <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
                     </div>
                   </div>

@@ -9,7 +9,20 @@ import {
     Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
     ChevronLeft, ChevronRight, Search, Calendar, ArrowLeft,
     Save, Loader2, Trash2, RefreshCw, MessageCircle,
+    Baby, Sparkles,
 } from 'lucide-react'
+
+// ── Delivery-date suggestion interface ─────────────────────────
+interface DeliverySuggestion {
+    patient_id: string
+    patient_name: string
+    mrn: string
+    mobile: string
+    edd: string
+    lmp: string
+    days_until_delivery: number
+    ga_weeks: number
+}
 
 interface OTSchedule {
     id: string
@@ -79,6 +92,92 @@ export default function OTSchedulePage() {
     })
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const today = getIndiaToday()
+
+    // ── Delivery-date auto-suggestions (Top 5 nearest EDD) ─────
+    const [deliverySuggestions, setDeliverySuggestions] = useState<DeliverySuggestion[]>([])
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+    const [showSuggestions, setShowSuggestions] = useState(false)
+
+    const loadDeliverySuggestions = useCallback(async () => {
+        setLoadingSuggestions(true)
+        try {
+            // Fetch recent encounters with ob_data (LMP/EDD) from the last 10 months
+            const tenMonthsAgo = new Date()
+            tenMonthsAgo.setMonth(tenMonthsAgo.getMonth() - 10)
+            const fromDate = tenMonthsAgo.toISOString().split('T')[0]
+
+            const { data: encs } = await supabase
+                .from('encounters')
+                .select('patient_id, ob_data, patients!inner(id, full_name, mrn, mobile)')
+                .not('ob_data', 'is', null)
+                .gte('encounter_date', fromDate)
+                .order('encounter_date', { ascending: false })
+                .limit(500)
+
+            if (!encs || encs.length === 0) {
+                setDeliverySuggestions([])
+                setLoadingSuggestions(false)
+                return
+            }
+
+            // Keep only the latest encounter per patient
+            const latestByPatient = new Map<string, any>()
+            for (const enc of encs) {
+                if (!latestByPatient.has(enc.patient_id)) {
+                    latestByPatient.set(enc.patient_id, enc)
+                }
+            }
+
+            const todayMs = new Date().getTime()
+            const suggestions: DeliverySuggestion[] = []
+
+            for (const enc of Array.from(latestByPatient.values())) {
+                const ob = enc.ob_data as any
+                const pat = enc.patients as any
+                if (!ob?.lmp && !ob?.edd) continue
+                if (!pat?.full_name) continue
+
+                // Calculate EDD from LMP if not directly available
+                let eddStr = ob.edd
+                if (!eddStr && ob.lmp) {
+                    const lmpDate = new Date(ob.lmp)
+                    const eddDate = new Date(lmpDate.getTime() + 280 * 24 * 60 * 60 * 1000)
+                    eddStr = eddDate.toISOString().split('T')[0]
+                }
+                if (!eddStr) continue
+
+                const eddMs = new Date(eddStr).getTime()
+                const daysUntil = Math.round((eddMs - todayMs) / (1000 * 60 * 60 * 24))
+
+                // Only show patients whose delivery date is within -7 to +30 days (upcoming)
+                if (daysUntil < -7 || daysUntil > 30) continue
+
+                const lmpMs = ob.lmp ? new Date(ob.lmp).getTime() : eddMs - 280 * 24 * 60 * 60 * 1000
+                const gaWeeks = Math.floor((todayMs - lmpMs) / (7 * 24 * 60 * 60 * 1000))
+
+                suggestions.push({
+                    patient_id: enc.patient_id,
+                    patient_name: pat.full_name,
+                    mrn: pat.mrn || '',
+                    mobile: pat.mobile || '',
+                    edd: eddStr,
+                    lmp: ob.lmp || '',
+                    days_until_delivery: daysUntil,
+                    ga_weeks: gaWeeks,
+                })
+            }
+
+            // Sort by nearest delivery date first, take top 5
+            suggestions.sort((a, b) => a.days_until_delivery - b.days_until_delivery)
+            setDeliverySuggestions(suggestions.slice(0, 5))
+        } catch (err) {
+            console.error('[OT] Error loading delivery suggestions:', err)
+            setDeliverySuggestions([])
+        }
+        setLoadingSuggestions(false)
+    }, [])
+
+    useEffect(() => { loadDeliverySuggestions() }, [loadDeliverySuggestions])
 
     const loadSchedules = useCallback(async () => {
         setLoading(true)
@@ -207,6 +306,44 @@ Post-Op: ${notes}` : ''}`,
                                 )}
                             </div>
                         )}
+                        {/* ── Delivery Date Auto-Suggestions (Top 5 nearest) ──── */}
+                        {!selPatient && deliverySuggestions.length > 0 && (
+                            <div className="mt-3">
+                                <button onClick={() => setShowSuggestions(s => !s)} className="flex items-center gap-2 text-xs font-semibold text-pink-700 bg-pink-50 border border-pink-200 rounded-lg px-3 py-2 hover:bg-pink-100 transition-colors w-full justify-between">
+                                    <span className="flex items-center gap-1.5"><Baby className="w-3.5 h-3.5" /><Sparkles className="w-3 h-3" /> Delivery Due Soon — {deliverySuggestions.length} patient{deliverySuggestions.length > 1 ? 's' : ''}</span>
+                                    <span className="text-pink-400">{showSuggestions ? '▲' : '▼'}</span>
+                                </button>
+                                {showSuggestions && (
+                                    <div className="mt-2 border border-pink-100 rounded-lg overflow-hidden bg-white shadow-sm">
+                                        {deliverySuggestions.map(s => (
+                                            <button key={s.patient_id} onClick={() => {
+                                                setSelPatient({ id: s.patient_id, full_name: s.patient_name, mrn: s.mrn, mobile: s.mobile })
+                                                setPatientResults([])
+                                                setShowSuggestions(false)
+                                                // Auto-set surgery to LSCS if near/past EDD
+                                                if (s.days_until_delivery <= 3) {
+                                                    setForm(p => ({ ...p, surgery_name: 'LSCS (Caesarean Section)', priority: 'urgent' }))
+                                                }
+                                            }} className="w-full text-left px-4 py-3 hover:bg-pink-50 text-sm border-b last:border-0 flex items-center justify-between gap-2">
+                                                <div>
+                                                    <span className="font-semibold text-gray-900">{s.patient_name}</span>
+                                                    <span className="text-gray-400 ml-2 text-xs">{s.mrn}</span>
+                                                    <div className="text-xs text-gray-500 mt-0.5">GA: {s.ga_weeks}w · EDD: {formatDate(s.edd)}</div>
+                                                </div>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                                    s.days_until_delivery <= 0 ? 'bg-red-100 text-red-700' :
+                                                    s.days_until_delivery <= 3 ? 'bg-orange-100 text-orange-700' :
+                                                    s.days_until_delivery <= 7 ? 'bg-yellow-100 text-yellow-700' :
+                                                    'bg-blue-100 text-blue-600'
+                                                }`}>
+                                                    {s.days_until_delivery <= 0 ? `${Math.abs(s.days_until_delivery)}d overdue` : `${s.days_until_delivery}d away`}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div className="card p-5 mb-4">
                         <h2 className="section-title">Surgery Details</h2>
@@ -266,6 +403,35 @@ Post-Op: ${notes}` : ''}`,
                     <input className="input w-48 text-sm py-1.5" placeholder="All" value={surgeonFilter} onChange={e => setSurgeonFilter(e.target.value)} />
                     {surgeonFilter && <button onClick={() => setSurgeonFilter('')}><X className="w-3.5 h-3.5 text-gray-400" /></button>}
                 </div>
+                {/* ── Delivery Date Suggestions Banner (List View) ──── */}
+                {deliverySuggestions.length > 0 && (
+                    <div className="mb-4 bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-xl p-4">
+                        <h3 className="text-sm font-bold text-pink-800 flex items-center gap-2 mb-2">
+                            <Baby className="w-4 h-4" /> Patients with Delivery Due Soon
+                            <span className="text-xs font-normal text-pink-500">(Top 5 — nearest first)</span>
+                        </h3>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                            {deliverySuggestions.map(s => (
+                                <button key={s.patient_id} onClick={() => {
+                                    setSelPatient({ id: s.patient_id, full_name: s.patient_name, mrn: s.mrn, mobile: s.mobile })
+                                    setForm(p => ({ ...p, surgery_name: s.days_until_delivery <= 3 ? 'LSCS (Caesarean Section)' : p.surgery_name, priority: s.days_until_delivery <= 0 ? 'emergency' : s.days_until_delivery <= 3 ? 'urgent' : 'elective' }))
+                                    setView('new')
+                                }} className="flex-shrink-0 bg-white border border-pink-100 rounded-lg px-3 py-2 hover:border-pink-300 hover:shadow-sm transition-all text-left min-w-[160px]">
+                                    <div className="text-xs font-semibold text-gray-900 truncate">{s.patient_name}</div>
+                                    <div className="text-xs text-gray-500">{s.mrn} · GA {s.ga_weeks}w</div>
+                                    <div className={`text-xs font-bold mt-1 ${
+                                        s.days_until_delivery <= 0 ? 'text-red-600' :
+                                        s.days_until_delivery <= 3 ? 'text-orange-600' :
+                                        s.days_until_delivery <= 7 ? 'text-yellow-700' :
+                                        'text-blue-600'
+                                    }`}>
+                                        EDD: {formatDate(s.edd)} ({s.days_until_delivery <= 0 ? `${Math.abs(s.days_until_delivery)}d overdue` : `${s.days_until_delivery}d`})
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : schedules.length === 0 ? (
                     <div className="card p-12 text-center text-gray-400">
                         <Scissors className="w-10 h-10 mx-auto mb-3 opacity-30" />
