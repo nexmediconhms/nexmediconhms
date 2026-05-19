@@ -96,7 +96,7 @@ function buildMessage(
     case 'appointment':
       return `Namaste ${patientName} ji,\n\nYour appointment is scheduled on ${ctx.apptDate || ''}${ctx.apptTime ? ' at ' + ctx.apptTime : ''}.\n\nPlease arrive 10 minutes early.\n\nThank you!`
     case 'follow_up':
-      return `Namaste ${patientName} ji,\n\nYour follow-up visit is due on ${ctx.followUpDate || ''}.${ctx.diagnosis ? '\nDiagnosis: ' + ctx.diagnosis : ''}\n\nPlease don't miss your follow-up.\n\nThank you!`
+      return `Namaste ${patientName} ji,\n\nYour follow-up visit is due on ${ctx.followUpDate || ''}.${ctx.diagnosis ? '\nDiagnosis: ' + ctx.diagnosis : ''}${ctx.medications ? '\n\nMedications to continue:\n' + ctx.medications : ''}\n\nPlease don't miss your follow-up.\n\nThank you!`
     case 'anc':
       return `Namaste ${patientName} ji,\n\nYour antenatal check-up is due (GA: ${ctx.weeksGA || ''}).\n\nPlease visit the clinic for your ANC visit.\n\nThank you!`
     case 'post_delivery':
@@ -168,8 +168,19 @@ interface AutoReminder {
 
 // ─────────────────────────────────────────────────────────────
 // POST — Vercel cron handler
+// GET  — Manual trigger from Reminders page "Auto-Send" button
 // ─────────────────────────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  // GET handler is called from the UI "Auto-Send Today's Reminders" button.
+  // No CRON_SECRET needed — just let it through (the page is behind auth anyway).
+  return handleAutoGenerate(req)
+}
+
 export async function POST(req: NextRequest) {
+  return handleAutoGenerate(req)
+}
+
+async function handleAutoGenerate(req: NextRequest) {
   // ── FIX A: Cron secret validation ────────────────────────────
   // Vercel cron passes the secret in Authorization header.
   // We also accept ?secret= for testing via browser/curl.
@@ -262,7 +273,7 @@ export async function POST(req: NextRequest) {
 
       const { data: rxs } = await supabase
         .from('prescriptions')
-        .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, reminder_sent_at')
+        .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, medications, reminder_sent_at')
         .gte('follow_up_date', tod)
         .lte('follow_up_date', in2)
         .order('follow_up_date', { ascending: true })
@@ -273,6 +284,16 @@ export async function POST(req: NextRequest) {
 
         const daysAway = daysUntil(rx.follow_up_date)
         const priority = daysAway === 0 ? 'today' : 'tomorrow'
+
+        // Extract medication names for the reminder message
+        let medNames = ''
+        if (Array.isArray(rx.medications) && rx.medications.length > 0) {
+          medNames = rx.medications
+            .map((m: any) => `- ${m.drug || m.name || ''}${m.dose ? ' (' + m.dose + ')' : ''}`)
+            .filter((s: string) => s.length > 2)
+            .slice(0, 5)
+            .join('\n')
+        }
 
         autoReminders.push({
           patientId:   rx.patient_id ?? '',
@@ -285,6 +306,7 @@ export async function POST(req: NextRequest) {
           message:     buildMessage('follow_up', rx.patient_name ?? '', {
             followUpDate: rx.follow_up_date,
             diagnosis:    rx.diagnosis ?? '',
+            medications:  medNames,
           }),
         })
       }

@@ -13,16 +13,17 @@ import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { BedStatus, getBedActions, isBedAssignable } from '@/lib/business-logic'
+import { useAuth } from '@/lib/auth'
 import {
   Bed, User, Lock, Wrench, CheckCircle, Plus,
-  RefreshCw, Search, X, AlertCircle,
+  RefreshCw, Search, X, AlertCircle, Trash2,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────
 
 interface BedRecord {
   id:           string
-  bednumber:    string
+  bed_number:   string
   ward:         string | null
   type:         string
   status:       BedStatus
@@ -65,7 +66,7 @@ function ReserveModal({
         reservedfor:  name.trim(),
         reservednote: note.trim() || null,
         reservedat:   new Date().toISOString(),
-        updatedat:    new Date().toISOString(),
+        updated_at:   new Date().toISOString(),
       })
       .eq('id', bed.id)
 
@@ -78,7 +79,7 @@ function ReserveModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">🔒 Reserve Bed {bed.bednumber}</h3>
+          <h3 className="font-bold text-gray-900">🔒 Reserve Bed {bed.bed_number}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
@@ -139,15 +140,15 @@ function ReserveModal({
 // ── Add Bed Modal ─────────────────────────────────────────────
 
 function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [form,   setForm]   = useState({ bednumber: '', ward: '', type: 'General' })
+  const [form,   setForm]   = useState({ bed_number: '', ward: '', type: 'General' })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
 
   async function save() {
-    if (!form.bednumber.trim()) { setError('Bed number is required'); return }
+    if (!form.bed_number.trim()) { setError('Bed number is required'); return }
     setSaving(true)
     const { error: err } = await supabase.from('beds').insert({
-      bednumber: form.bednumber.trim().toUpperCase(),
+      bed_number: form.bed_number.trim().toUpperCase(),
       ward:      form.ward.trim() || null,
       type:      form.type,
       status:    'available',
@@ -176,8 +177,8 @@ function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g. B01, W2-03"
-              value={form.bednumber}
-              onChange={e => setForm(f => ({ ...f, bednumber: e.target.value }))}
+              value={form.bed_number}
+              onChange={e => setForm(f => ({ ...f, bed_number: e.target.value }))}
             />
           </div>
           <div>
@@ -241,7 +242,7 @@ function BedCard({
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${s.dot} flex-shrink-0`} />
           <div>
-            <div className="font-bold text-gray-900">Bed {bed.bednumber}</div>
+            <div className="font-bold text-gray-900">Bed {bed.bed_number}</div>
             <div className="text-xs text-gray-500">{bed.ward || 'General'} · {bed.type}</div>
           </div>
         </div>
@@ -338,6 +339,17 @@ function BedCard({
             Discharge patient to free this bed
           </p>
         )}
+
+        {/* Delete button — only visible for non-occupied beds */}
+        {bed.status !== 'occupied' && (
+          <button
+            onClick={() => onAction(bed, 'delete')}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                       bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold ml-auto"
+          >
+            <Trash2 className="w-3 h-3" /> Remove
+          </button>
+        )}
       </div>
     </div>
   )
@@ -346,6 +358,7 @@ function BedCard({
 // ── Main Page ─────────────────────────────────────────────────
 
 export default function BedsPage() {
+  const { isAdmin } = useAuth()
   const [beds,         setBeds]         = useState<BedRecord[]>([])
   const [loading,      setLoading]      = useState(true)
   const [search,       setSearch]       = useState('')
@@ -366,25 +379,25 @@ export default function BedsPage() {
     const { data: bedData } = await supabase
       .from('beds')
       .select('*')
-      .order('bednumber')
+      .order('bed_number')
 
     if (!bedData) { setLoading(false); return }
 
     // Get active admissions to find who's in each bed
     const { data: admissions } = await supabase
-      .from('ipdadmissions')
-      .select('id, bedid, patientid, patients(fullname, mrn)')
-      .eq('status', 'admitted')
+      .from('ipd_admissions')
+      .select('id, bed_id, patient_id, patient_name, mrn')
+      .eq('status', 'active')
 
     const admMap = new Map<string, any>()
     for (const adm of admissions || []) {
-      if (adm.bedid) admMap.set(adm.bedid, adm)
+      if (adm.bed_id) admMap.set(adm.bed_id, adm)
     }
 
     setBeds(bedData.map(b => ({
       ...b,
-      patient_name: admMap.get(b.id)?.patients?.fullname,
-      patient_mrn:  admMap.get(b.id)?.patients?.mrn,
+      patient_name: admMap.get(b.id)?.patient_name,
+      patient_mrn:  admMap.get(b.id)?.mrn,
     })))
     setLoading(false)
   }, [])
@@ -397,13 +410,22 @@ export default function BedsPage() {
       return
     }
 
+    if (action === 'delete') {
+      if (!isAdmin) { alert('Only admin can delete beds.'); return }
+      if (bed.status === 'occupied') { alert('Cannot delete an occupied bed. Discharge the patient first.'); return }
+      if (!confirm(`Are you sure you want to permanently remove Bed ${bed.bed_number}? This cannot be undone.`)) return
+      await supabase.from('beds').delete().eq('id', bed.id)
+      await loadBeds()
+      return
+    }
+
     const newStatus = action as BedStatus
     await supabase.from('beds').update({
       status:       newStatus,
       reservedfor:  null,
       reservednote: null,
       reservedat:   null,
-      updatedat:    new Date().toISOString(),
+      updated_at:   new Date().toISOString(),
     }).eq('id', bed.id)
 
     await loadBeds()
@@ -412,7 +434,7 @@ export default function BedsPage() {
   const filtered = beds.filter(b => {
     const matchSearch =
       !search ||
-      b.bednumber.toLowerCase().includes(search.toLowerCase()) ||
+      b.bed_number.toLowerCase().includes(search.toLowerCase()) ||
       (b.ward || '').toLowerCase().includes(search.toLowerCase()) ||
       (b.patient_name || '').toLowerCase().includes(search.toLowerCase()) ||
       (b.reservedfor || '').toLowerCase().includes(search.toLowerCase())
@@ -436,13 +458,15 @@ export default function BedsPage() {
               className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200">
               <RefreshCw className="w-4 h-4 text-gray-600" />
             </button>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
-                         px-4 py-2 rounded-xl font-semibold text-sm"
-            >
-              <Plus className="w-4 h-4" /> Add Bed
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                           px-4 py-2 rounded-xl font-semibold text-sm"
+              >
+                <Plus className="w-4 h-4" /> Add Bed
+              </button>
+            )}
           </div>
         </div>
 

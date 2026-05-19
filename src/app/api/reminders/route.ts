@@ -179,7 +179,7 @@ export async function GET(req: NextRequest) {
     const fourteenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA', { timeZone: IST }) })()
     const { data: rxs } = await supabase
       .from('prescriptions')
-      .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, reminder_sent_at')
+      .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, medications, reminder_sent_at')
       .gte('follow_up_date', fourteenDaysAgo)
       .lte('follow_up_date', in7)
       .order('follow_up_date', { ascending: true })
@@ -193,6 +193,15 @@ export async function GET(req: NextRequest) {
       else if (daysAway === 1) priority = 'tomorrow'
       else priority = 'upcoming'
 
+      // Extract medication names for follow-up reminders
+      let medNames: string[] = []
+      if (Array.isArray(rx.medications) && rx.medications.length > 0) {
+        medNames = rx.medications
+          .map((m: any) => m.drug || m.name || '')
+          .filter((s: string) => s.length > 0)
+          .slice(0, 5)
+      }
+
       reminders.push({
         id: `rx-${rx.id}`,
         type: 'follow_up',
@@ -204,7 +213,7 @@ export async function GET(req: NextRequest) {
         sourceId: rx.id,
         sourceTable: 'prescriptions',
         title: daysAway < 0 ? `Follow-up OVERDUE (${Math.abs(daysAway)}d)` : 'Follow-up Due',
-        subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
+        subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}${medNames.length > 0 ? ` | Meds: ${medNames.join(', ')}` : ''}`,
         dueDate: rx.follow_up_date,
         reminderSentAt: rx.reminder_sent_at ?? null,
         context: {
@@ -212,6 +221,7 @@ export async function GET(req: NextRequest) {
           diagnosis: rx.diagnosis,
           labTests: rx.lab_tests,
           daysOverdue: daysAway < 0 ? Math.abs(daysAway) : undefined,
+          medications: medNames,
         },
       })
     }

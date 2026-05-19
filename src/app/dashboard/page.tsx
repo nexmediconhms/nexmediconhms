@@ -486,7 +486,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="p-4 sm:p-6 max-w-xl mx-auto space-y-5">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -510,116 +510,125 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* TODAY'S REVENUE KPI */}
-        <TodayRevenueCard data={data} loading={loading} />
+        {/* ═══ MAIN GRID: 2-column on lg, single on mobile ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-        {/* 3 REVENUE PILLARS */}
-        <div>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-            Revenue Opportunities
-          </h2>
-          <div className="flex gap-3">
-            <PillarCard
-              icon={Target}
-              title="Fill Empty Slots"
-              value={data.bedsAvailable > 0 ? `${data.bedsAvailable} beds` : 'All full'}
-              sub="Available for admission"
-              className="text-emerald-800 bg-emerald-50 border-emerald-200"
-              onClick={() => router.push('/ipd/beds')}
-            />
-            <PillarCard
-              icon={AlertCircle}
-              title="Pending Bills"
-              value={formatCurrency(data.pendingBillsAmt)}
-              sub={`${data.pendingBillsCount} patients`}
-              className="text-orange-800 bg-orange-50 border-orange-200"
-              onClick={() => router.push('/billing')}
-            />
-            <PillarCard
-              icon={TrendingUp}
-              title="This Week"
-              value={formatCurrency(data.weekRevenue)}
-              sub="Collected"
-              className="text-blue-800 bg-blue-50 border-blue-200"
-              onClick={() => router.push('/analytics')}
-            />
-          </div>
-        </div>
+          {/* ── LEFT COLUMN (Revenue + Quick Actions) ── */}
+          <div className="lg:col-span-5 space-y-5">
+            {/* TODAY'S REVENUE KPI */}
+            <TodayRevenueCard data={data} loading={loading} />
 
-        {/* ACTION FEED */}
-        {sortedActions.length > 0 && (
-          <div>
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Action Required
-            </h2>
-            <div className="space-y-2">
-              {sortedActions.map(item => (
-                <ActionItem
-                  key={item.id}
-                  item={item}
-                  onClick={item.href ? () => router.push(item.href!) : undefined}
+            {/* 3 REVENUE PILLARS */}
+            <div>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                Revenue Opportunities
+              </h2>
+              <div className="flex gap-3">
+                <PillarCard
+                  icon={Target}
+                  title="Fill Empty Slots"
+                  value={data.bedsAvailable > 0 ? `${data.bedsAvailable} beds` : 'All full'}
+                  sub="Available for admission"
+                  className="text-emerald-800 bg-emerald-50 border-emerald-200"
+                  onClick={() => router.push('/beds')}
                 />
-              ))}
+                <PillarCard
+                  icon={AlertCircle}
+                  title="Pending Bills"
+                  value={formatCurrency(data.pendingBillsAmt)}
+                  sub={`${data.pendingBillsCount} patients`}
+                  className="text-orange-800 bg-orange-50 border-orange-200"
+                  onClick={() => router.push('/billing')}
+                />
+                <PillarCard
+                  icon={TrendingUp}
+                  title="This Week"
+                  value={formatCurrency(data.weekRevenue)}
+                  sub="Collected"
+                  className="text-blue-800 bg-blue-50 border-blue-200"
+                  onClick={() => router.push('/analytics')}
+                />
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS */}
+            <div>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                Quick Actions
+              </h2>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { icon: Users,       label: 'New Patient',   href: '/patients/new',   color: 'text-blue-600',   bg: 'bg-blue-50'   },
+                  { icon: Calendar,    label: 'Appointment',   href: '/appointments',   color: 'text-purple-600', bg: 'bg-purple-50' },
+                  { icon: IndianRupee, label: 'New Bill',      href: '/billing',        color: 'text-green-600',  bg: 'bg-green-50'  },
+                  { icon: Bed,         label: 'Admit Patient', href: '/ipd',            color: 'text-red-600',    bg: 'bg-red-50'    },
+                  { icon: FileText,    label: 'Prescription',  href: '/opd',            color: 'text-teal-600',   bg: 'bg-teal-50'   },
+                  { icon: BarChart2,   label: 'Analytics',     href: '/analytics',      color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                ].map(({ icon: Icon, label, href, color, bg }) => (
+                  <button
+                    key={href}
+                    onClick={() => router.push(href)}
+                    className="flex flex-col items-center gap-2 bg-white border border-gray-200
+                               rounded-2xl p-4 hover:shadow-md hover:border-gray-300
+                               transition-all hover:scale-[1.03]"
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
+                      <Icon className={`w-5 h-5 ${color}`} />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 text-center leading-tight">
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
 
-        {/* DOCTOR ALERTS — Abnormal Lab Values */}
-        <DoctorAlertsSection />
+          {/* ── RIGHT COLUMN (Actions + Alerts + Summary) ── */}
+          <div className="lg:col-span-7 space-y-5">
 
-        {/* QUICK ACTIONS */}
-        <div>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-            Quick Actions
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { icon: Users,       label: 'New Patient',   href: '/patients/new',     color: 'text-blue-600',   bg: 'bg-blue-50'   },
-              { icon: Calendar,    label: 'Appointment',   href: '/appointments/new', color: 'text-purple-600', bg: 'bg-purple-50' },
-              { icon: IndianRupee, label: 'New Bill',      href: '/billing/new',      color: 'text-green-600',  bg: 'bg-green-50'  },
-              { icon: Bed,         label: 'Admit Patient', href: '/ipd/new',          color: 'text-red-600',    bg: 'bg-red-50'    },
-              { icon: FileText,    label: 'Prescription',  href: '/prescriptions/new',color: 'text-teal-600',   bg: 'bg-teal-50'   },
-              { icon: BarChart2,   label: 'Analytics',     href: '/analytics',        color: 'text-indigo-600', bg: 'bg-indigo-50' },
-            ].map(({ icon: Icon, label, href, color, bg }) => (
-              <button
-                key={href}
-                onClick={() => router.push(href)}
-                className="flex flex-col items-center gap-2 bg-white border border-gray-200
-                           rounded-2xl p-4 hover:shadow-md hover:border-gray-300
-                           transition-all hover:scale-[1.03]"
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
-                  <Icon className={`w-5 h-5 ${color}`} />
+            {/* ACTION FEED */}
+            {sortedActions.length > 0 && (
+              <div>
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                  Action Required
+                </h2>
+                <div className="space-y-2">
+                  {sortedActions.map(item => (
+                    <ActionItem
+                      key={item.id}
+                      item={item}
+                      onClick={item.href ? () => router.push(item.href!) : undefined}
+                    />
+                  ))}
                 </div>
-                <span className="text-xs font-semibold text-gray-700 text-center leading-tight">
-                  {label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* TODAY SUMMARY */}
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-          <h2 className="text-sm font-bold text-gray-700 mb-3">Today at a Glance</h2>
-          <div className="space-y-2">
-            {[
-              { label: 'Appointments',        value: data.todayAppts,      icon: Calendar,     c: 'text-blue-500'   },
-              { label: 'Patients Seen',        value: data.todayPatients,   icon: Stethoscope,  c: 'text-green-500'  },
-              { label: 'Beds Occupied',        value: data.bedsOccupied,    icon: Bed,          c: 'text-red-500'    },
-              { label: 'Follow-ups Due',        value: data.followUpsToday,  icon: Clock,        c: 'text-orange-500' },
-              { label: 'Unbilled Encounters',  value: data.unbilledToday,   icon: AlertCircle,  c: 'text-amber-500'  },
-            ].map(({ label, value, icon: Icon, c }) => (
-              <div key={label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Icon className={`w-4 h-4 ${c}`} />
-                  {label}
-                </div>
-                <span className={`text-sm font-bold ${value > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                  {value}
-                </span>
               </div>
-            ))}
+            )}
+
+            {/* DOCTOR ALERTS — Abnormal Lab Values */}
+            <DoctorAlertsSection />
+
+            {/* TODAY SUMMARY */}
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+              <h2 className="text-sm font-bold text-gray-700 mb-3">Today at a Glance</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {[
+                  { label: 'Appointments',       value: data.todayAppts,     icon: Calendar,    c: 'text-blue-500',   bg: 'bg-blue-50'   },
+                  { label: 'Patients Seen',      value: data.todayPatients,  icon: Stethoscope, c: 'text-green-500',  bg: 'bg-green-50'  },
+                  { label: 'Beds Occupied',      value: data.bedsOccupied,   icon: Bed,         c: 'text-red-500',    bg: 'bg-red-50'    },
+                  { label: 'Follow-ups Due',     value: data.followUpsToday, icon: Clock,       c: 'text-orange-500', bg: 'bg-orange-50' },
+                  { label: 'Unbilled',           value: data.unbilledToday,  icon: AlertCircle, c: 'text-amber-500',  bg: 'bg-amber-50'  },
+                ].map(({ label, value, icon: Icon, c, bg }) => (
+                  <div key={label} className={`flex flex-col items-center p-3 rounded-xl ${bg} border border-gray-100`}>
+                    <Icon className={`w-5 h-5 ${c} mb-1`} />
+                    <span className={`text-xl font-bold ${value > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                      {value}
+                    </span>
+                    <span className="text-[10px] text-gray-500 text-center leading-tight mt-0.5">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
