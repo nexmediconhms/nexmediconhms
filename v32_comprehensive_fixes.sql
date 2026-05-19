@@ -287,7 +287,7 @@ END $$;
 CREATE OR REPLACE FUNCTION generate_invoice_number()
 RETURNS TEXT
 LANGUAGE plpgsql
-AS $$
+AS $fn$
 DECLARE
   fy_start DATE;
   fy_end DATE;
@@ -325,7 +325,7 @@ BEGIN
   
   RETURN inv_number;
 END;
-$$;
+$fn$;
 
 -- ── 11. DISCHARGE_SUMMARIES — ensure reminder_sent_at ─────────
 DO $$
