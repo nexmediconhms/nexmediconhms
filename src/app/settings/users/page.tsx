@@ -18,7 +18,7 @@ import { useAuth } from '@/lib/auth'
 import {
   Users, UserPlus, Shield, Trash2, CheckCircle, X,
   AlertCircle, Loader2, Copy, RefreshCw, Lock, Eye, EyeOff,
-  Stethoscope, User, Settings,
+  Stethoscope, User, Settings, Mail,
 } from 'lucide-react'
 
 interface ClinicUserRow {
@@ -405,15 +405,17 @@ export default function UserManagementPage() {
         {/* How-to info */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
           <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" /> How Credentials Work
+            <AlertCircle className="w-4 h-4" /> How Login Works (OTP-First)
           </h3>
           <ul className="text-xs text-blue-700 space-y-1.5 list-disc list-inside">
-            <li><strong>Create User:</strong> Enter name, email, and role. A temporary password is auto-generated.</li>
-            <li><strong>Share Password:</strong> Share the temp password with the user. They should change it after first login from Settings.</li>
+            <li><strong>Create User:</strong> Enter name, email, and role. That's it — no password needed!</li>
+            <li><strong>User Login:</strong> They enter their email → receive a 6-digit code → type it → done.</li>
+            <li><strong>No Passwords:</strong> Users never need to remember or share passwords. Email OTP is the primary method.</li>
+            <li><strong>Password Fallback:</strong> If needed, check "Generate password" during creation for offline scenarios.</li>
             <li><strong>Deactivate:</strong> Disables login without deleting data. Their encounters/bills remain intact.</li>
             <li><strong>Reactivate:</strong> Re-enables login for a previously deactivated user.</li>
-            <li><strong>MFA:</strong> Each user can enable MFA from their Settings page after login.</li>
-            <li><strong>Password Reset:</strong> If a user forgets their password, they can use the "Forgot Password" link on the login page.</li>
+            <li><strong>Self-Recovery:</strong> Users can always login via email OTP — no admin needed for password resets.</li>
+            <li><strong>MFA (Optional):</strong> Users can optionally enable TOTP from Settings for extra security.</li>
           </ul>
         </div>
       </div>
@@ -438,7 +440,7 @@ export default function UserManagementPage() {
               </div>
             )}
 
-            {inviteResult?.success && inviteResult.tempPassword ? (
+            {inviteResult?.success ? (
               <div className="space-y-4">
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -448,30 +450,43 @@ export default function UserManagementPage() {
                   <p className="text-sm text-green-700 mb-3">{inviteResult.message}</p>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Lock className="w-4 h-4 text-amber-600" />
-                    <span className="text-sm font-bold text-amber-800">Temporary Password</span>
+                {inviteResult.tempPassword ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Lock className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-bold text-amber-800">Temporary Password (optional fallback)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2
+                                       font-mono text-lg font-bold text-gray-900 text-center">
+                        {inviteResult.tempPassword}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(inviteResult.tempPassword || '')
+                          alert('Password copied to clipboard!')
+                        }}
+                        className="p-2 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                      >
+                        <Copy className="w-4 h-4 text-amber-700" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-600 mt-2">
+                      This is only needed if the user wants to use password login. They can also login via email OTP without any password.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2
-                                     font-mono text-lg font-bold text-gray-900 text-center">
-                      {inviteResult.tempPassword}
-                    </code>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(inviteResult.tempPassword || '')
-                        alert('Password copied to clipboard!')
-                      }}
-                      className="p-2 bg-amber-100 hover:bg-amber-200 rounded-lg"
-                    >
-                      <Copy className="w-4 h-4 text-amber-700" />
-                    </button>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Mail className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-bold text-blue-800">Login via Email OTP</span>
+                    </div>
+                    <p className="text-sm text-blue-700">
+                      The user can now login immediately by entering their email on the login page.
+                      A 6-digit code will be sent to their email — no password needed!
+                    </p>
                   </div>
-                  <p className="text-xs text-amber-600 mt-2">
-                    Share this with the user. They must change it after first login.
-                  </p>
-                </div>
+                )}
 
                 <button onClick={() => { setInviteResult(null); setShowInvite(false) }}
                   className="w-full btn-primary">

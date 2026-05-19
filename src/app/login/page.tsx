@@ -1,27 +1,26 @@
 'use client'
 /**
- * src/app/login/page.tsx — FIXED
+ * src/app/login/page.tsx — OTP-FIRST LOGIN
  *
- * Bugs fixed vs previous delivery:
+ * Complete rewrite with OTP/Magic Link as primary login method.
+ * Password login is available as a secondary fallback.
  *
- * BUG 1 (CRITICAL — breaks typing): `const Bg = (...)` was defined INSIDE
- *   LoginPage(). React treats a component defined inside another component as
- *   a NEW component type on every render. Every keystroke (state change) caused
- *   React to unmount + remount Bg's children — destroying the <input> DOM node
- *   and resetting focus. Fix: Bg is now a module-level component (outside LoginPage).
+ * Flow:
+ *   1. User enters email → clicks "Send Login Code"
+ *   2. Supabase sends a 6-digit OTP + magic link to their email
+ *   3. User types OTP (or clicks magic link from email)
+ *   4. Session created → redirect to dashboard
  *
- * BUG 2: MFA enrollment offered on EVERY login for users with no MFA.
- *   This interrupted normal login for all non-MFA users. Fix: enrollment offer
- *   only shown to admin role users; regular staff skip straight to dashboard.
+ * Password fallback:
+ *   - Small link "Sign in with password instead"
+ *   - For scenarios where email is down or slow
  *
- * BUG 3: useEffect([router]) — router from next/navigation is stable so this
- *   is fine, but the inner isFirstTimeSetup() call had no error handling.
- *   Fix: wrapped in try/catch.
+ * MFA:
+ *   - Now OPTIONAL — not forced on first login
+ *   - Can be enabled from Settings by any user
  *
- * BUG 4: startEnrollment() was async and called with await inside handleLogin,
- *   but setView('mfa-enroll') was called before enrollment state was set.
- *   This caused the enrollment screen to render with null enrollment (blank QR).
- *   Fix: await startEnrollment() completes before setView().
+ * First-time setup:
+ *   - Still supported — first user becomes admin
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -29,29 +28,22 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/lib/constants'
 import { isFirstTimeSetup, bootstrapAdmin } from '@/lib/auth'
-import {
-  getMFAStatus,
-  getAAL,
-  enrollMFA,
-  verifyMFACode,
-  challengeMFA,
-  verifyMFA,
-  type MFAEnrollment,
-} from '@/lib/mfa'
+import { getAAL, verifyMFACode } from '@/lib/mfa'
 import { auditLogin } from '@/lib/audit'
 import {
-  Eye, EyeOff, Activity, ArrowLeft,
-  Shield, KeyRound, QrCode, CheckCircle2,
+  Eye, EyeOff, Activity, ArrowLeft, Mail,
+  Shield, KeyRound, CheckCircle2, Loader2,
 } from 'lucide-react'
 
-type View = 'login' | 'forgot' | 'setup' | 'mfa-verify' | 'mfa-enroll'
+type View =
+  | 'email'          // Enter email (primary screen)
+  | 'otp'            // Enter 6-digit OTP code
+  | 'password'       // Fallback password login
+  | 'forgot'         // Password reset
+  | 'setup'          // First-time admin setup
+  | 'mfa-verify'     // MFA verification (if user has TOTP enabled)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BUG FIX: Bg is declared at MODULE LEVEL — outside LoginPage.
-// A component defined inside another component gets a new identity on every
-// render, which causes React to unmount + remount it (and destroy its children's
-// DOM nodes) on every keystroke. Moving it outside completely prevents this.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Background component (module-level to prevent re-mount on keystroke)
 function LoginBackground({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
@@ -67,378 +59,300 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Client-side rate limiter for login attempts.
-// Defense-in-depth: since supabase.auth.signInWithPassword() calls go directly
-// from browser to Supabase (bypassing Next.js middleware), this client-side
-// limiter is the first line of defense against brute force from the same browser.
-// ─────────────────────────────────────────────────────────────────────────────
-const LOGIN_MAX_ATTEMPTS = 5
-const LOGIN_WINDOW_MS = 15 * 60 * 1000      // 15 minutes
-const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000 // 30-minute lockout
-const RESET_MAX_ATTEMPTS = 3
-const RESET_WINDOW_MS = 60 * 60 * 1000      // 60 minutes
+// ── Rate limiter
+function useRateLimiter(max: number, windowMs: number, blockMs: number) {
+  const attempts = useRef<number[]>([])
+  const blocked = useRef(0)
 
-function useClientRateLimiter(maxAttempts: number, windowMs: number, blockDurationMs: number) {
-  const attemptsRef = useRef<number[]>([])
-  const blockedUntilRef = useRef<number>(0)
-
-  function check(): { allowed: boolean; retryAfter: number; message: string } {
+  function check() {
     const now = Date.now()
-
-    // Check hard block
-    if (blockedUntilRef.current > now) {
-      const retryAfter = Math.ceil((blockedUntilRef.current - now) / 1000)
-      const minutes = Math.ceil(retryAfter / 60)
-      return {
-        allowed: false,
-        retryAfter,
-        message: `Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`,
-      }
+    if (blocked.current > now) {
+      const mins = Math.ceil((blocked.current - now) / 60000)
+      return { ok: false, msg: `Too many attempts. Try again in ${mins} min.` }
     }
-
-    // Clean old attempts outside the window
-    attemptsRef.current = attemptsRef.current.filter(t => t > now - windowMs)
-
-    // Check if over limit
-    if (attemptsRef.current.length >= maxAttempts) {
-      // Apply hard block
-      blockedUntilRef.current = now + blockDurationMs
-      const retryAfter = Math.ceil(blockDurationMs / 1000)
-      const minutes = Math.ceil(retryAfter / 60)
-      return {
-        allowed: false,
-        retryAfter,
-        message: `Too many attempts. Account locked for ${minutes} minutes. Please try again later.`,
-      }
+    attempts.current = attempts.current.filter(t => t > now - windowMs)
+    if (attempts.current.length >= max) {
+      blocked.current = now + blockMs
+      return { ok: false, msg: `Too many attempts. Locked for ${Math.ceil(blockMs / 60000)} min.` }
     }
-
-    return { allowed: true, retryAfter: 0, message: '' }
+    return { ok: true, msg: '' }
   }
-
-  function record(): void {
-    attemptsRef.current.push(Date.now())
-  }
-
-  function reset(): void {
-    attemptsRef.current = []
-    blockedUntilRef.current = 0
-  }
-
+  function record() { attempts.current.push(Date.now()) }
+  function reset() { attempts.current = []; blocked.current = 0 }
   return { check, record, reset }
 }
 
 export default function LoginPage() {
   const router = useRouter()
-  const otpRef = useRef<HTMLInputElement>(null)
-  const loginLimiter = useClientRateLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, LOGIN_BLOCK_DURATION_MS)
-  const resetLimiter = useClientRateLimiter(RESET_MAX_ATTEMPTS, RESET_WINDOW_MS, RESET_WINDOW_MS)
+  const otpInputRef = useRef<HTMLInputElement>(null)
+  const limiter = useRateLimiter(5, 15 * 60000, 30 * 60000)
 
-  const [view, setView] = useState<View>('login')
+  const [view, setView] = useState<View>('email')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Resend cooldown
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // First-time setup
   const [setupName, setSetupName] = useState('')
   const [setupDone, setSetupDone] = useState(false)
 
-  // MFA verify
+  // MFA
   const [mfaCode, setMfaCode] = useState('')
-  const [mfaLoading, setMfaLoading] = useState(false)
 
-  // MFA enroll
-  const [enrollment, setEnrollment] = useState<MFAEnrollment | null>(null)
-  const [enrollCode, setEnrollCode] = useState('')
-  const [enrollLoading, setEnrollLoading] = useState(false)
-  const [enrollDone, setEnrollDone] = useState(false)
-
-  // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
-  // and redirect if already logged in — combined to avoid race conditions
+  // ── On mount: check if already logged in or handle auth callbacks
   useEffect(() => {
-    // BUG FIX: Clear any role simulation override when arriving at login page.
-    // This prevents the "stuck in doctor view after sign-out" bug where
-    // sessionStorage retains the override from a previous session.
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('nexmedicon_role_override')
     }
 
-    let isRecovery = false
     let redirected = false
 
-    // Set up auth state listener FIRST — this catches PASSWORD_RECOVERY events
-    // that fire after code exchange or hash fragment processing
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (redirected) return
-        if (event === 'PASSWORD_RECOVERY') {
-          // User arrived via a password reset link — redirect to reset page
-          isRecovery = true
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (redirected) return
+      if (event === 'PASSWORD_RECOVERY') {
+        redirected = true
+        router.push('/reset-password')
+      }
+      // Magic link / OTP verified via link click
+      if (event === 'SIGNED_IN' && session && view === 'otp') {
+        redirected = true
+        auditLogin().then(() => router.push('/dashboard'))
+      }
+    })
+
+    async function init() {
+      // Handle auth code in URL (PKCE flow from magic link)
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      const hash = window.location.hash
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (!error && !redirected) {
           redirected = true
-          router.push('/reset-password')
+          await auditLogin()
+          router.push('/dashboard')
         }
+        return
       }
-    )
+      if (hash && hash.includes('type=recovery')) return
 
-    async function handleAuthFlow() {
-      if (typeof window !== 'undefined') {
-        const hash = window.location.hash
-        const params = new URLSearchParams(window.location.search)
-
-        // Check if the URL hash contains a recovery token (implicit flow)
-        if (hash && hash.includes('type=recovery')) {
-          isRecovery = true
-          // Supabase client will auto-process the hash and fire PASSWORD_RECOVERY
-          // Just wait for the onAuthStateChange callback above
-          return
-        }
-
-        // Check if URL has a code parameter (PKCE flow) — exchange it
-        const code = params.get('code')
-        if (code) {
-          isRecovery = true // Assume recovery — codes only arrive at /login from password reset
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchangeError) {
-            setError('Password reset link expired or invalid. Please request a new one.')
-            return
-          }
-          // Code exchanged successfully — redirect to reset password immediately
-          // In PKCE flow, PASSWORD_RECOVERY event may not fire, so don't wait for it
-          if (!redirected) {
-            redirected = true
-            router.push('/reset-password')
-          }
-          return
-        }
-      }
-
-      // No code or hash — check if already logged in
-      if (!isRecovery) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
-        if (redirected) return
+      // Already logged in?
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && !redirected) {
         try {
           const firstTime = await isFirstTimeSetup()
-          if (redirected) return
-          if (firstTime) setView('setup')
-          else {
-            redirected = true
-            router.push('/dashboard')
-          }
-        } catch {
-          if (!redirected) {
-            redirected = true
-            router.push('/dashboard')
-          }
-        }
+          if (firstTime) { setView('setup'); return }
+        } catch {}
+        redirected = true
+        router.push('/dashboard')
       }
     }
 
-    handleAuthFlow()
-
+    init()
     return () => { subscription.unsubscribe() }
   }, [router])
 
-  // Auto-focus OTP field when switching to MFA screens
+  // Auto-focus OTP input
   useEffect(() => {
-    if (view === 'mfa-verify' || view === 'mfa-enroll') {
-      setTimeout(() => otpRef.current?.focus(), 120)
+    if (view === 'otp' || view === 'mfa-verify') {
+      setTimeout(() => otpInputRef.current?.focus(), 150)
     }
   }, [view])
 
-  // ── Login ─────────────────────────────────────────────────────
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
+  // Cooldown timer
+  function startCooldown() {
+    setResendCooldown(60)
+    if (cooldownRef.current) clearInterval(cooldownRef.current)
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  // ── Send OTP via Supabase signInWithOtp
+  async function handleSendOTP(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.')
+      return
+    }
     setLoading(true)
     setError('')
-    const rateCheck = loginLimiter.check()
-    if (!rateCheck.allowed) { setError(rateCheck.message); setLoading(false); return }
 
+    const rate = limiter.check()
+    if (!rate.ok) { setError(rate.msg); setLoading(false); return }
 
-    // ── Rate limit check (client-side defense-in-depth) ──────────
-    if (!rateCheck.allowed) {
-      setError(rateCheck.message)
-      setLoading(false)
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: {
+        shouldCreateUser: false, // Only existing users can login
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
+    })
+
+    setLoading(false)
+
+    if (otpError) {
+      limiter.record()
+      // Supabase returns generic error for non-existent users (good for security)
+      if (otpError.message.includes('Signups not allowed') || otpError.message.includes('not allowed')) {
+        setError('No account found with this email. Contact your admin to get access.')
+      } else {
+        setError(otpError.message || 'Failed to send login code. Try again.')
+      }
       return
     }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-    if (authError) {
-      // Record failed attempt for rate limiting
-      loginLimiter.record()
-      setError('Invalid email or password. Please try again.')
-      setLoading(false)
+    limiter.reset()
+    setView('otp')
+    startCooldown()
+    setSuccess(`Login code sent to ${email}. Check your inbox (and spam folder).`)
+  }
+
+  // ── Verify OTP code
+  async function handleVerifyOTP(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (otpCode.length !== 6) {
+      setError('Please enter the complete 6-digit code.')
+      return
+    }
+    setLoading(true)
+    setError('')
+
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: otpCode,
+      type: 'email',
+    })
+
+    setLoading(false)
+
+    if (verifyError) {
+      setError('Invalid or expired code. Please try again or request a new one.')
+      setOtpCode('')
+      otpInputRef.current?.focus()
       return
     }
 
-    // Successful login — reset the rate limiter
-    loginLimiter.reset()
-
-    // First-time admin setup?
+    // Check MFA requirement
     try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) {
-        setView('setup')
-        setLoading(false)
-        return
-      }
-    } catch { /* non-fatal */ }
-
-    // MFA gate — check AAL level
-    try {
-      // Skip MFA if already verified in this browser session
-      const alreadyVerified = sessionStorage.getItem('nexmedicon_mfa_verified')
-      if (alreadyVerified === 'true') {
-        // Session still has valid token, skip MFA prompt
-        router.push('/dashboard')
-        return
-      }
-      await supabase.auth.refreshSession()
       const aal = await getAAL()
       if (aal.needsMFA) {
-        // User has a verified TOTP factor — require verification before dashboard
+        setView('mfa-verify')
+        return
+      }
+    } catch {}
+
+    // First-time setup check
+    try {
+      const firstTime = await isFirstTimeSetup()
+      if (firstTime) { setView('setup'); return }
+    } catch {}
+
+    await auditLogin()
+    router.push('/dashboard')
+  }
+
+  // ── Password login (fallback)
+  async function handlePasswordLogin(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !password) {
+      setError('Email and password are required.')
+      return
+    }
+    setLoading(true)
+    setError('')
+
+    const rate = limiter.check()
+    if (!rate.ok) { setError(rate.msg); setLoading(false); return }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+
+    if (authError) {
+      limiter.record()
+      setError('Invalid email or password.')
+      setLoading(false)
+      return
+    }
+
+    limiter.reset()
+
+    // Check MFA
+    try {
+      const aal = await getAAL()
+      if (aal.needsMFA) {
         setLoading(false)
         setView('mfa-verify')
         return
       }
+    } catch {}
 
-      // BUG FIX: Only offer MFA enrollment to admin users, and only if they
-      // have no factor at all. Don't block doctors/staff from logging in.
-      const mfaStatus = await getMFAStatus()
-      if (!mfaStatus.enrolled) {
-        // Check role — only prompt admins to set up MFA on first login
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: cu } = await supabase
-            .from('clinic_users')
-            .select('role')
-            .eq('auth_id', user.id)
-            .single()
-          if (cu?.role === 'admin') {
-            // BUG FIX: await startEnrollment() BEFORE setView so that the QR
-            // code state is populated before the enrollment screen renders.
-            await startEnrollment()
-            setLoading(false)
-            setView('mfa-enroll')
-            return
-          }
-        }
-      }
-    } catch {
-      // MFA check failed — let user through without blocking login
-    }
+    // First-time setup
+    try {
+      const firstTime = await isFirstTimeSetup()
+      if (firstTime) { setLoading(false); setView('setup'); return }
+    } catch {}
 
     await auditLogin()
     router.push('/dashboard')
   }
 
-  // ── MFA verify ────────────────────────────────────────────────
+  // ── MFA verify
   async function handleMFAVerify(e: React.FormEvent) {
     e.preventDefault()
-    if (!mfaCode.trim() || mfaCode.length !== 6) {
-      setError('Please enter the 6-digit code from your authenticator app.')
-      return
-    }
-    setMfaLoading(true)
-    setError('')
-
-    const result = await verifyMFACode(mfaCode)
-    setMfaLoading(false)
-    sessionStorage.setItem('nexmedicon_mfa_verified', 'true')
-
-    if (result.success) {
-      await auditLogin()
-      router.push('/dashboard')
-    } else {
-      setError(result.error || 'Invalid code. Please try again.')
-      setMfaCode('')
-      otpRef.current?.focus()
-    }
-  }
-
-  // ── MFA enroll — start ────────────────────────────────────────
-  async function startEnrollment() {
-    try {
-      const result = await enrollMFA('NexMedicon HMS')
-      if (result.success && result.enrollment) {
-        setEnrollment(result.enrollment)
-      }
-    } catch {
-      // enrollment start failed — user will see spinner and can skip
-    }
-  }
-
-  // ── MFA enroll — confirm code ─────────────────────────────────
-  async function handleEnrollVerify(e: React.FormEvent) {
-    e.preventDefault()
-    if (!enrollCode.trim() || enrollCode.length !== 6) {
-      setError('Enter the 6-digit code from your authenticator app.')
-      return
-    }
-    if (!enrollment) return
-    setEnrollLoading(true)
-    setError('')
-
-    const challenge = await challengeMFA(enrollment.id)
-    if (!challenge.success || !challenge.challengeId) {
-      setError(challenge.error || 'Could not create challenge. Try again.')
-      setEnrollLoading(false)
-      return
-    }
-
-    const result = await verifyMFA(enrollment.id, challenge.challengeId, enrollCode)
-    setEnrollLoading(false)
-
-    if (result.success) {
-      setEnrollDone(true)
-      setTimeout(async () => {
-        await auditLogin()
-        router.push('/dashboard')
-      }, 1500)
-    } else {
-      setError(result.error || 'Invalid code. Make sure your app time is correct.')
-      setEnrollCode('')
-      otpRef.current?.focus()
-    }
-  }
-
-  // ── Skip MFA enrollment ───────────────────────────────────────
-  async function skipMFAEnroll() {
-    await auditLogin()
-    router.push('/dashboard')
-  }
-
-  // ── Forgot password ───────────────────────────────────────────
-  async function handleForgotPassword(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email.trim()) { setError('Please enter your email address.'); return }
+    if (mfaCode.length !== 6) { setError('Enter the 6-digit code from your authenticator.'); return }
     setLoading(true)
     setError('')
 
-    // ── Rate limit check (client-side defense-in-depth) ──────────
-    const rateCheck = resetLimiter.check()
-    if (!rateCheck.allowed) {
-      setError(rateCheck.message)
-      setLoading(false)
-      return
-    }
-    resetLimiter.record()
-
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-    })
+    const result = await verifyMFACode(mfaCode)
     setLoading(false)
-    if (resetError) setError(resetError.message)
-    else setSuccess('Password reset email sent! Check your inbox.')
+
+    if (result.success) {
+      sessionStorage.setItem('nexmedicon_mfa_verified', 'true')
+      await auditLogin()
+      router.push('/dashboard')
+    } else {
+      setError(result.error || 'Invalid code. Try again.')
+      setMfaCode('')
+      otpInputRef.current?.focus()
+    }
   }
 
-  // ── First-time admin setup ────────────────────────────────────
+  // ── Forgot password
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim()) { setError('Enter your email first.'); return }
+    setLoading(true)
+    setError('')
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/auth/callback?type=recovery` }
+    )
+
+    setLoading(false)
+    if (resetError) setError(resetError.message)
+    else setSuccess('Password reset link sent! Check your email.')
+  }
+
+  // ── First-time setup
   async function handleSetup(e: React.FormEvent) {
     e.preventDefault()
-    if (!setupName.trim()) { setError('Please enter your name.'); return }
+    if (!setupName.trim()) { setError('Enter your name.'); return }
     setLoading(true)
     setError('')
     const result = await bootstrapAdmin(setupName.trim())
@@ -447,16 +361,13 @@ export default function LoginPage() {
       setSetupDone(true)
       setTimeout(() => router.push('/dashboard'), 2000)
     } else {
-      setError(result.error || 'Setup failed. Please try again.')
+      setError(result.error || 'Setup failed.')
     }
   }
 
-  function fillDemo() {
-    setEmail('demo@hospital.com')
-    setPassword('demo1234')
-  }
-
-  // ══ MFA VERIFY screen ═════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // MFA VERIFY SCREEN
+  // ══════════════════════════════════════════════════════════════
   if (view === 'mfa-verify') {
     return (
       <LoginBackground>
@@ -465,160 +376,39 @@ export default function LoginPage() {
             <KeyRound className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">Two-Factor Auth</h1>
-          <p className="text-blue-200 text-sm mt-1">Enter the 6-digit code from your authenticator app</p>
+          <p className="text-blue-200 text-sm mt-1">Enter the code from your authenticator app</p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
-            </div>
-          )}
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
           <form onSubmit={handleMFAVerify} className="space-y-5">
-            <div>
-              <label className="label">Verification Code</label>
-              <input
-                ref={otpRef}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                autoComplete="one-time-code"
-                className="input text-center text-2xl tracking-[0.5em] font-mono"
-                placeholder="000000"
-                value={mfaCode}
-                onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                required
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                Open Google Authenticator, Authy, or any TOTP app and enter the current 6-digit code for{' '}
-                <strong>NexMedicon HMS</strong>.
-              </p>
-            </div>
-            <button
-              type="submit"
-              disabled={mfaLoading || mfaCode.length !== 6}
-              className="w-full btn-primary py-3 text-base disabled:opacity-60"
-            >
-              {mfaLoading ? 'Verifying…' : 'Verify & Sign In'}
+            <input
+              ref={otpInputRef}
+              type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+              className="input text-center text-2xl tracking-[0.5em] font-mono"
+              placeholder="000000"
+              value={mfaCode}
+              onChange={e => { setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+            />
+            <button type="submit" disabled={loading || mfaCode.length !== 6}
+              className="w-full btn-primary py-3 text-base disabled:opacity-60">
+              {loading ? 'Verifying…' : 'Verify & Sign In'}
             </button>
           </form>
-          <button
-            onClick={() => {
-              setView('login')
-              setError('')
-              setMfaCode('')
-              supabase.auth.signOut()
-            }}
-            className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to login
+          <button onClick={() => { setView('email'); setError(''); supabase.auth.signOut() }}
+            className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1">
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
           <p className="text-xs text-gray-400 text-center mt-3">
-            MFA not working? Contact your clinic admin to reset MFA from{' '}
-            <strong>Settings &rarr; User Management</strong>.
+            MFA not working? Contact your admin to reset it from Settings → User Management.
           </p>
         </div>
       </LoginBackground>
     )
   }
 
-  // ══ MFA ENROLL screen ═════════════════════════════════════════
-  if (view === 'mfa-enroll') {
-    return (
-      <LoginBackground>
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-            <QrCode className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-white">Set Up Two-Factor Auth</h1>
-          <p className="text-blue-200 text-sm mt-1">Recommended for admin accounts</p>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          {enrollDone ? (
-            <div className="text-center py-6">
-              <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto mb-3" />
-              <h2 className="text-xl font-bold text-gray-900 mb-1">MFA Enabled!</h2>
-              <p className="text-gray-500 text-sm">Redirecting to dashboard…</p>
-            </div>
-          ) : (
-            <>
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {error}
-                </div>
-              )}
-
-              {enrollment ? (
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800 mb-1">Step 1 — Scan this QR code</p>
-                    <p className="text-xs text-gray-500 mb-3">Use Google Authenticator, Authy, or any TOTP app.</p>
-                    <div className="flex justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={enrollment.totp.qr_code}
-                        alt="MFA QR Code"
-                        className="border-4 border-white shadow-lg rounded-lg w-44 h-44"
-                      />
-                    </div>
-                    <details className="mt-3">
-                      <summary className="text-xs text-blue-600 cursor-pointer">
-                        Can&apos;t scan? Enter code manually
-                      </summary>
-                      <p className="text-xs font-mono bg-gray-100 rounded p-2 mt-1 break-all select-all">
-                        {enrollment.totp.secret}
-                      </p>
-                    </details>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800 mb-1">Step 2 — Enter the 6-digit code</p>
-                    <form onSubmit={handleEnrollVerify} className="space-y-3">
-                      <input
-                        ref={otpRef}
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={6}
-                        autoComplete="one-time-code"
-                        className="input text-center text-2xl tracking-[0.5em] font-mono"
-                        placeholder="000000"
-                        value={enrollCode}
-                        onChange={e => setEnrollCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        required
-                      />
-                      <button
-                        type="submit"
-                        disabled={enrollLoading || enrollCode.length !== 6}
-                        className="w-full btn-primary py-3 disabled:opacity-60"
-                      >
-                        {enrollLoading ? 'Verifying…' : 'Confirm & Enable MFA'}
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-
-              <button
-                onClick={skipMFAEnroll}
-                className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 text-center"
-              >
-                Skip for now
-              </button>
-            </>
-          )}
-        </div>
-      </LoginBackground>
-    )
-  }
-
-  // ══ FIRST-TIME SETUP screen ═══════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // FIRST-TIME SETUP
+  // ══════════════════════════════════════════════════════════════
   if (view === 'setup') {
     return (
       <LoginBackground>
@@ -627,7 +417,7 @@ export default function LoginPage() {
             <Shield className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">Welcome to {BRAND.name}</h1>
-          <p className="text-blue-200 text-sm mt-1">First-time setup — create your admin account</p>
+          <p className="text-blue-200 text-sm mt-1">First-time setup — create your admin profile</p>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           {setupDone ? (
@@ -638,34 +428,18 @@ export default function LoginPage() {
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Set Up Admin Account</h2>
               <p className="text-sm text-gray-500 mb-6">
-                You&apos;re the first user. You&apos;ll be set up as <strong>Admin</strong> with full access.
-                Invite doctors and staff later from Settings.
+                You're the first user. You'll be set up as <strong>Admin</strong> with full access.
+                Add doctors and staff later from Settings.
               </p>
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {error}
-                </div>
-              )}
+              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
               <form onSubmit={handleSetup} className="space-y-4">
                 <div>
                   <label className="label">Your Full Name</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="Dr. Patel"
-                    value={setupName}
-                    onChange={e => setSetupName(e.target.value)}
-                    autoFocus
-                    required
-                  />
+                  <input type="text" className="input" placeholder="Dr. Patel"
+                    value={setupName} onChange={e => setSetupName(e.target.value)} autoFocus required />
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full btn-primary py-3 text-base disabled:opacity-60"
-                >
+                <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
                   {loading ? 'Setting up…' : 'Create Admin Account'}
                 </button>
               </form>
@@ -676,7 +450,9 @@ export default function LoginPage() {
     )
   }
 
-  // ══ FORGOT PASSWORD screen ════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // FORGOT PASSWORD
+  // ══════════════════════════════════════════════════════════════
   if (view === 'forgot') {
     return (
       <LoginBackground>
@@ -687,44 +463,21 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-white">{BRAND.name}</h1>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <button
-            onClick={() => { setView('login'); setError(''); setSuccess('') }}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to login
+          <button onClick={() => { setView('password'); setError(''); setSuccess('') }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+            <ArrowLeft className="w-4 h-4" /> Back to password login
           </button>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Enter your email and we&apos;ll send a reset link.
-          </p>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {success}
-            </div>
-          )}
+          <p className="text-sm text-gray-500 mb-6">We'll send a reset link to your email.</p>
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <div>
               <label className="label">Email Address</label>
-              <input
-                type="email"
-                className="input"
-                placeholder="doctor@hospital.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                autoFocus
-                required
-              />
+              <input type="email" className="input" placeholder="you@clinic.com"
+                value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary py-3 text-base disabled:opacity-60"
-            >
+            <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
               {loading ? 'Sending…' : 'Send Reset Link'}
             </button>
           </form>
@@ -733,7 +486,128 @@ export default function LoginPage() {
     )
   }
 
-  // ══ MAIN LOGIN screen ═════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // PASSWORD LOGIN (FALLBACK)
+  // ══════════════════════════════════════════════════════════════
+  if (view === 'password') {
+    return (
+      <LoginBackground>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+            <Activity className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">{BRAND.name}</h1>
+          <p className="text-blue-200 text-sm mt-1">Sign in with password</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <button onClick={() => { setView('email'); setError('') }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+            <ArrowLeft className="w-4 h-4" /> Back to email login
+          </button>
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          <form onSubmit={handlePasswordLogin} className="space-y-4">
+            <div>
+              <label className="label">Email</label>
+              <input type="email" className="input" placeholder="you@clinic.com"
+                value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoFocus required />
+            </div>
+            <div>
+              <label className="label">Password</label>
+              <div className="relative">
+                <input type={showPwd ? 'text' : 'password'} className="input pr-10" placeholder="••••••••"
+                  value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required />
+                <button type="button" onClick={() => setShowPwd(p => !p)} tabIndex={-1}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
+                className="text-xs text-blue-500 hover:text-blue-700 hover:underline">
+                Forgot password?
+              </button>
+            </div>
+            <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-base disabled:opacity-60">
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+        </div>
+      </LoginBackground>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // OTP VERIFICATION SCREEN
+  // ══════════════════════════════════════════════════════════════
+  if (view === 'otp') {
+    return (
+      <LoginBackground>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+            <Mail className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-white">Check Your Email</h1>
+          <p className="text-blue-200 text-sm mt-1">We sent a 6-digit code to <strong>{email}</strong></p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
+
+          <form onSubmit={handleVerifyOTP} className="space-y-5">
+            <div>
+              <label className="label">Enter 6-digit code</label>
+              <input
+                ref={otpInputRef}
+                type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                className="input text-center text-3xl tracking-[0.6em] font-mono py-4"
+                placeholder="______"
+                value={otpCode}
+                onChange={e => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+                autoFocus
+              />
+              <p className="text-xs text-gray-400 mt-2 text-center">
+                Can't find it? Check your spam/junk folder.
+              </p>
+            </div>
+
+            <button type="submit" disabled={loading || otpCode.length !== 6}
+              className="w-full btn-primary py-3.5 text-base disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              {loading ? 'Verifying…' : 'Verify & Sign In'}
+            </button>
+          </form>
+
+          {/* Resend */}
+          <div className="mt-5 text-center">
+            {resendCooldown > 0 ? (
+              <p className="text-xs text-gray-400">Resend available in {resendCooldown}s</p>
+            ) : (
+              <button onClick={() => { setError(''); setSuccess(''); handleSendOTP() }}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline">
+                Resend code
+              </button>
+            )}
+          </div>
+
+          {/* Back / change email */}
+          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+            <button onClick={() => { setView('email'); setError(''); setSuccess(''); setOtpCode('') }}
+              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              <ArrowLeft className="w-3 h-3" /> Change email
+            </button>
+            <p className="text-xs text-gray-400">
+              Or click the <strong>magic link</strong> in the email
+            </p>
+          </div>
+        </div>
+      </LoginBackground>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PRIMARY SCREEN — EMAIL ENTRY (OTP-FIRST)
+  // ══════════════════════════════════════════════════════════════
   return (
     <LoginBackground>
       <div className="text-center mb-8">
@@ -745,85 +619,54 @@ export default function LoginPage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign in to your account</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in to your account</h2>
+        <p className="text-sm text-gray-500 mb-6">
+          We'll email you a login code — no password needed.
+        </p>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-            {error}
-          </div>
-        )}
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleSendOTP} className="space-y-4">
           <div>
             <label className="label">Email Address</label>
             <input
               type="email"
               className="input"
-              placeholder="doctor@hospital.com"
+              placeholder="doctor@clinic.com"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); setError('') }}
               autoComplete="email"
               autoFocus
               required
             />
           </div>
-          <div>
-            <label className="label">Password</label>
-            <div className="relative">
-              <input
-                type={showPwd ? 'text' : 'password'}
-                className="input pr-10"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPwd(p => !p)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                tabIndex={-1}
-              >
-                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
 
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
-              className="text-xs text-blue-500 hover:text-blue-700 hover:underline"
-            >
-              Forgot password?
-            </button>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full btn-primary py-3 text-base disabled:opacity-60"
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
+          <button type="submit" disabled={loading || !email.includes('@')}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl
+                       text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200">
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Mail className="w-5 h-5" />
+            )}
+            {loading ? 'Sending…' : 'Send Login Code'}
           </button>
         </form>
+
+        {/* Secondary: password login */}
+        <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+          <button onClick={() => { setView('password'); setError('') }}
+            className="text-sm text-gray-500 hover:text-gray-700 hover:underline">
+            Sign in with password instead
+          </button>
+        </div>
 
         <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-gray-400">
           <Shield className="w-3.5 h-3.5 text-green-500" />
           <span>Secured with end-to-end encryption</span>
         </div>
-
-        {/* Demo — dev only */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-5 pt-5 border-t border-gray-100">
-            <p className="text-xs text-gray-500 text-center mb-3">Dev mode only</p>
-            <button onClick={fillDemo} className="w-full btn-secondary text-xs py-2">
-              Fill Demo Credentials
-            </button>
-          </div>
-        )}
       </div>
+
       <p className="text-center text-blue-300 text-xs mt-6">{BRAND.copyright}</p>
     </LoginBackground>
   )
