@@ -14,7 +14,8 @@
  * (migrated away from localStorage per requirement #7)
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -99,13 +100,30 @@ function daysSince(dateStr: string) {
 
 // ── Main Component ─────────────────────────────────────────────
 
-export default function IPDPage() {
+export default function IPDPageWrapper() {
+  return (
+    <Suspense fallback={<AppShell><div className="p-6 flex items-center justify-center h-40"><div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"/></div></AppShell>}>
+      <IPDPageContent />
+    </Suspense>
+  )
+}
+
+function IPDPageContent() {
   const { user, can } = useAuth()
+  const searchParams = useSearchParams()
   const [admissions, setAdmissions] = useState<IPDAdmission[]>([])
   const [loading, setLoading]       = useState(true)
   const [query, setQuery]           = useState('')
   const [view, setView]             = useState<'census' | 'admit' | 'chart'>('census')
   const [selectedAdmission, setSelectedAdmission] = useState<IPDAdmission | null>(null)
+
+  // Auto-switch to admit view when arriving with patientId in URL
+  const urlPatientId = searchParams.get('patientId')
+  useEffect(() => {
+    if (urlPatientId) {
+      setView('admit')
+    }
+  }, [urlPatientId])
 
   useEffect(() => { loadAdmissions() }, [])
 
@@ -194,6 +212,7 @@ export default function IPDPage() {
           <AdmitForm
             onSuccess={() => { setView('census'); loadAdmissions() }}
             onCancel={() => setView('census')}
+            prefillPatientId={urlPatientId || undefined}
           />
         )}
 
@@ -339,7 +358,7 @@ function CensusView({
 
 // ── Admit Form ─────────────────────────────────────────────────
 
-function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () => void; onCancel: () => void; prefillPatientId?: string }) {
   const [patientQuery, setPatientQuery] = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selectedPatient, setSelectedPatient] = useState<any>(null)
@@ -376,6 +395,22 @@ function AdmitForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
       .order('full_name')
       .then(({ data }) => setDoctors(data || []))
   }, [])
+
+  // Pre-fill patient when arriving from Patients page with patientId in URL
+  useEffect(() => {
+    if (!prefillPatientId) return
+    async function loadPatient() {
+      const { data } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, age, gender, mobile')
+        .eq('id', prefillPatientId)
+        .single()
+      if (data) {
+        setSelectedPatient(data)
+      }
+    }
+    loadPatient()
+  }, [prefillPatientId])
 
   // Patient search
   const searchPatients = useCallback(async (q: string) => {

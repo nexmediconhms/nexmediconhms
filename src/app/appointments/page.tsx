@@ -215,6 +215,17 @@ function AppointmentsContent() {
   // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
+
+    // Validate: if date is today, time must be in the future
+    if (apptDate === today) {
+      const now = new Date()
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      if (apptTime <= currentTimeStr) {
+        setSaveError(`Cannot book at ${apptTime} — that time has already passed. Please select a future time or a later date.`)
+        return
+      }
+    }
+
     setSaving(true); setSaveError('')
 
     try {
@@ -551,8 +562,19 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div>
                 <label className="label">Time</label>
                 <select className="input" value={apptTime} onChange={e => setApptTime(e.target.value)}>
-                  {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
+                  {TIME_SLOTS.filter(t => {
+                    // If date is today, only show times after current time
+                    if (apptDate === today) {
+                      const now = new Date()
+                      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                      return t > currentTimeStr
+                    }
+                    return true
+                  }).map(t => <option key={t}>{t}</option>)}
                 </select>
+                {apptDate === today && (
+                  <p className="text-xs text-amber-600 mt-1">Only future time slots shown for today</p>
+                )}
               </div>
               <div className="col-span-2">
                 <label className="label">Visit Type</label>

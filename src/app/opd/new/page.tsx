@@ -6,11 +6,13 @@ import AppShell from '@/components/layout/AppShell'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { getIndiaToday } from '@/lib/utils'
 import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
+import Toast from '@/components/shared/Toast'
 import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
 import type { AutoSaveStatus } from '@/lib/useAutoSave'
 
@@ -44,6 +46,7 @@ function NewConsultationContent() {
   const searchParams = useSearchParams()
   const patientId = searchParams.get('patient')
   const prefillFlag = searchParams.get('prefill')
+  const { user } = useAuth()
 
   const [patient, setPatient] = useState<Patient | null>(null)
   const [tab, setTab] = useState<Tab>('vitals')
@@ -547,7 +550,7 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        doctor_name: getHospitalSettings().doctorName,
+        doctor_name: user?.full_name || getHospitalSettings().doctorName,
       })
       .select('id')
       .single()
@@ -618,12 +621,8 @@ function NewConsultationContent() {
           </div>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
-          </div>
-        )}
+        {/* Error — sticky toast at bottom of screen */}
+        <Toast message={error} type="error" onDismiss={() => setError('')} />
         {visitedToday && (
           <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
