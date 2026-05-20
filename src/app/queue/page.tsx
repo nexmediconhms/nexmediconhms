@@ -131,8 +131,8 @@ function QueueContent() {
     setPatientSearch(''); setPatientResults([])
   }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const [queueDate, setQueueDate] = useState(today)  // ← Date filter state
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const [queueDate, setQueueDate] = useState(today)  // ← Date filter state (IST)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
   // ── Load queue for selected date ──────────────────────────

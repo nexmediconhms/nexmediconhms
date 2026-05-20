@@ -527,26 +527,39 @@ export default function NewPatientPage() {
     // Auto-add to OPD queue if selected
     if (addToQueue) {
       try {
-        const today = new Date().toISOString().slice(0, 10)
-        // Get next token number
-        const { data: lastToken } = await supabase
+        // Use IST date to match the queue page's date format
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+
+        // Check if patient is already in today's queue (prevent duplicates)
+        const { data: existingEntry } = await supabase
           .from('opd_queue')
-          .select('token_number')
+          .select('id')
+          .eq('patient_id', successId)
           .eq('queue_date', today)
-          .order('token_number', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
 
-        const nextToken = (lastToken?.token_number || 0) + 1
+        if (!existingEntry) {
+          // Get next token number
+          const { data: lastToken } = await supabase
+            .from('opd_queue')
+            .select('token_number')
+            .eq('queue_date', today)
+            .order('token_number', { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
-        await supabase.from('opd_queue').insert({
-          patient_id: successId,
-          queue_date: today,
-          token_number: nextToken,
-          status: 'waiting',
-          priority: 'normal',
-          notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
-        })
+          const nextToken = (lastToken?.token_number || 0) + 1
+
+          await supabase.from('opd_queue').insert({
+            patient_id: successId,
+            queue_date: today,
+            token_number: nextToken,
+            status: 'waiting',
+            priority: 'normal',
+            notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
+          })
+        }
       } catch {
         // Non-fatal
       }
