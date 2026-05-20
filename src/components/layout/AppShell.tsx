@@ -222,7 +222,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         loadUser()
       }, 1500)
     } else {
-      setSetupError(result.error || 'Failed to create admin account.')
+      // Show actionable error with SQL fix instructions
+      const errMsg = result.error || 'Failed to create admin account.'
+      if (errMsg.includes('does not exist') || errMsg.includes('Failed to check')) {
+        setSetupError(
+          'Database table not found. Go to Supabase → SQL Editor → run the SETUP-LOGIN-FIX.sql file from the repository. This creates the table and your admin account in one step.'
+        )
+      } else {
+        setSetupError(errMsg)
+      }
     }
   }
 
