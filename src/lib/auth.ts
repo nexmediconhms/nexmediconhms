@@ -176,7 +176,7 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
     return null
   }
 
-  // Attempt 1: Direct query (works when RLS policies are correct)
+  // Attempt 1: Direct query by auth_id (works when RLS policies are correct)
   const { data, error } = await supabase
     .from('clinic_users')
     .select('*')
@@ -188,10 +188,31 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
     return mapClinicUser(data)
   }
 
-  // Direct query failed — likely RLS policy issue
-  console.warn('[loadClinicUser] Direct query failed (likely RLS):', error?.message, '— falling back to /api/me')
+  // Attempt 2: Try by email (handles auth_id mismatch)
+  if (authUser.email) {
+    const { data: emailData, error: emailError } = await supabase
+      .from('clinic_users')
+      .select('*')
+      .eq('email', authUser.email)
+      .eq('is_active', true)
+      .single()
 
-  // Attempt 2: Use server-side API that bypasses RLS
+    if (!emailError && emailData) {
+      // Fix the auth_id mismatch silently
+      supabase
+        .from('clinic_users')
+        .update({ auth_id: authUser.id })
+        .eq('id', emailData.id)
+        .then(() => {})
+        .catch(() => {})
+      return mapClinicUser({ ...emailData, auth_id: authUser.id })
+    }
+  }
+
+  // Direct queries failed — likely RLS policy issue
+  console.warn('[loadClinicUser] Direct queries failed (likely RLS):', error?.message, '— falling back to /api/me')
+
+  // Attempt 3: Use server-side API that bypasses RLS
   try {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) {
