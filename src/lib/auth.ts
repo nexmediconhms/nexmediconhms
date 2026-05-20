@@ -234,29 +234,56 @@ function mapClinicUser(data: any): ClinicUser {
 }
 
 export async function isFirstTimeSetup(): Promise<boolean> {
-  const { count, error } = await supabase
-    .from('clinic_users')
-    .select('id', { count: 'exact', head: true })
-  if (error) return false
-  return (count ?? 0) === 0
+  // Use server-side API that bypasses RLS to accurately count users
+  try {
+    const res = await fetch('/api/bootstrap')
+    if (!res.ok) {
+      // Fallback to client-side query (may be blocked by RLS but try anyway)
+      const { count, error } = await supabase
+        .from('clinic_users')
+        .select('id', { count: 'exact', head: true })
+      if (error) return false
+      return (count ?? 0) === 0
+    }
+    const data = await res.json()
+    return data.isFirstTime === true
+  } catch {
+    // Fallback to client-side query
+    const { count, error } = await supabase
+      .from('clinic_users')
+      .select('id', { count: 'exact', head: true })
+    if (error) return false
+    return (count ?? 0) === 0
+  }
 }
 
 export async function bootstrapAdmin(fullName: string): Promise<{ success: boolean; error?: string }> {
-  const { data: { user: authUser } } = await supabase.auth.getUser()
-  if (!authUser) return { success: false, error: 'Not authenticated' }
+  // Use server-side API that bypasses RLS for the first admin insert
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      return { success: false, error: 'Not authenticated — no session token' }
+    }
 
-  const { error } = await supabase
-    .from('clinic_users')
-    .insert({
-      auth_id:   authUser.id,
-      email:     authUser.email,
-      full_name: fullName,
-      role:      'admin',
-      is_active: true,
+    const res = await fetch('/api/bootstrap', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ full_name: fullName }),
     })
 
-  if (error) return { success: false, error: error.message }
-  return { success: true }
+    const data = await res.json()
+
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Bootstrap failed' }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error during bootstrap' }
+  }
 }
 
 // ─── Nav items ────────────────────────────────────────────────
