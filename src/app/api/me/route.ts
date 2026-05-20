@@ -60,12 +60,34 @@ export async function GET(req: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    const { data, error } = await adminClient
+    // Try by auth_id first
+    let { data, error } = await adminClient
       .from('clinic_users')
       .select('*')
       .eq('auth_id', authUser.id)
       .eq('is_active', true)
       .single()
+
+    // If not found by auth_id, try by email
+    if ((error || !data) && authUser.email) {
+      const { data: emailData, error: emailError } = await adminClient
+        .from('clinic_users')
+        .select('*')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
+        .single()
+
+      if (!emailError && emailData) {
+        // Fix the auth_id to match going forward
+        await adminClient
+          .from('clinic_users')
+          .update({ auth_id: authUser.id })
+          .eq('id', emailData.id)
+
+        data = { ...emailData, auth_id: authUser.id }
+        error = null
+      }
+    }
 
     if (error || !data) {
       console.error('[/api/me] clinic_users lookup failed:', {

@@ -88,15 +88,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!session) { router.push('/login'); return }
 
     // Check if this is a first-time setup (no users in clinic_users)
+    // Use the server-side /api/bootstrap endpoint which bypasses RLS
+    let isFirstTime = false
     try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) {
-        // Show the setup form directly here instead of redirecting to /login
-        setShowFirstTimeSetup(true)
-        setLoading(false)
-        return
+      const res = await fetch('/api/bootstrap')
+      if (res.ok) {
+        const data = await res.json()
+        isFirstTime = data.isFirstTime === true
+      } else {
+        // Fallback: try client-side (may fail due to RLS)
+        const firstTime = await isFirstTimeSetup()
+        isFirstTime = firstTime
       }
-    } catch { /* non-fatal — proceed */ }
+    } catch {
+      try {
+        const firstTime = await isFirstTimeSetup()
+        isFirstTime = firstTime
+      } catch { /* give up on first-time check */ }
+    }
+
+    if (isFirstTime) {
+      setShowFirstTimeSetup(true)
+      setLoading(false)
+      return
+    }
 
     const user = await loadClinicUser()
     if (!user) { setNoProfile(true); setLoading(false); return }
