@@ -8,9 +8,13 @@
  * Usage:
  *   <Toast message={error} type="error" onDismiss={() => setError('')} />
  *   <Toast message={success} type="success" onDismiss={() => setSuccess('')} />
+ *
+ * Hook usage:
+ *   const { showSuccess, showError, showWarning, ToastContainer } = useToast()
+ *   // Call showSuccess('Done!') etc. and render <ToastContainer /> in your JSX
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, CheckCircle, X, Info } from 'lucide-react'
 
 type ToastType = 'error' | 'success' | 'warning' | 'info'
@@ -72,4 +76,42 @@ export default function Toast({ message, type = 'error', onDismiss, duration = 0
       </div>
     </div>
   )
+}
+
+/**
+ * useToast hook — imperative toast notifications.
+ * Returns show functions and a ToastContainer to render in your component.
+ *
+ * Usage:
+ *   const { showSuccess, showError, showWarning, ToastContainer } = useToast()
+ *   showError('Something went wrong')
+ *   // In JSX: <ToastContainer />
+ */
+export function useToast() {
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
+
+  const dismiss = useCallback(() => setToast(null), [])
+
+  const showSuccess = useCallback((message: string) => {
+    setToast({ message, type: 'success' })
+  }, [])
+
+  const showError = useCallback((message: string) => {
+    setToast({ message, type: 'error' })
+  }, [])
+
+  const showWarning = useCallback((message: string) => {
+    setToast({ message, type: 'warning' })
+  }, [])
+
+  const showInfo = useCallback((message: string) => {
+    setToast({ message, type: 'info' })
+  }, [])
+
+  const ToastContainer = useCallback(() => {
+    if (!toast) return null
+    return <Toast message={toast.message} type={toast.type} onDismiss={dismiss} duration={4000} />
+  }, [toast, dismiss])
+
+  return { showSuccess, showError, showWarning, showInfo, ToastContainer }
 }

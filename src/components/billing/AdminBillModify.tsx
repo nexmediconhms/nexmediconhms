@@ -53,7 +53,7 @@ interface AdminBillModifyProps {
 
 export default function AdminBillModify({ bill, onUpdated }: AdminBillModifyProps) {
   const { isAdmin } = useAuth()
-  const { showSuccess, showError, showWarning } = useToast()
+  const { showSuccess, showError, showWarning, ToastContainer } = useToast()
   const [editing, setEditing] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<string[]>([])
@@ -220,7 +220,8 @@ export default function AdminBillModify({ bill, onUpdated }: AdminBillModifyProp
   }
 
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mt-3 space-y-4">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mt-3 space-y-4 relative">
+      <ToastContainer />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
           <AlertTriangle className="w-4 h-4" />
