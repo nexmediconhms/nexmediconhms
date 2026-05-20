@@ -226,7 +226,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (noProfile) {
-    async function handleEmergencyBootstrap() {
+    const handleEmergencyBootstrap = () => {
       setNoProfile(false)
       setShowFirstTimeSetup(true)
     }
@@ -276,7 +276,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // First-time setup screen
   if (showFirstTimeSetup) {
-    async function handleFirstTimeSetup(e: React.FormEvent) {
+    const handleFirstTimeSetup = async (e: React.FormEvent) => {
       e.preventDefault()
       if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
       setSetupLoading(true)
