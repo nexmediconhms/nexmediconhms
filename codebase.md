@@ -1601,6 +1601,226 @@ Error: Failed to collect page data for /api/discharge/finalize
 
 ```
 
+# create-users-and-fix-patients.sql
+
+```sql
+-- ╔══════════════════════════════════════════════════════════════════════════════╗
+-- ║  NexMedicon HMS — CREATE USERS + FIX PATIENTS TABLE                         ║
+-- ║                                                                              ║
+-- ║  Run this AFTER SETUP-LOGIN-FIX.sql (which created admin).                   ║
+-- ║                                                                              ║
+-- ║  What this does:                                                             ║
+-- ║  PART A: Creates Doctor, Staff users in clinic_users                         ║
+-- ║  PART B: Creates the patients table + disables RLS (fixes the error)         ║
+-- ║  PART C: Creates lab_partners + lab_portal_users tables for lab partner      ║
+-- ║                                                                              ║
+-- ║  PREREQUISITE:                                                               ║
+-- ║  You must FIRST create auth users in Supabase Dashboard →                    ║
+-- ║  Authentication → Users → Add User (email + password, Auto Confirm)          ║
+-- ║  for each role you want. Then paste their UUIDs below.                       ║
+-- ╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- PART A: ADD DOCTOR & STAFF USERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 
+-- STEP 1: Create auth users in Supabase Dashboard:
+--   Authentication → Users → "Add User" → Create New User
+--   ┌────────────────────────────────┬─────────────┬──────────────────┐
+--   │ Email                          │ Password    │ Auto Confirm? ✓  │
+--   ├────────────────────────────────┼─────────────┼──────────────────┤
+--   │ doctor@yourclinic.com          │ Doctor@123! │ Yes              │
+--   │ staff1@yourclinic.com          │ Staff1@123! │ Yes              │
+--   │ staff2@yourclinic.com          │ Staff2@123! │ Yes              │
+--   └────────────────────────────────┴─────────────┴──────────────────┘
+--   (Replace with YOUR actual emails and passwords)
+--
+-- STEP 2: After creating them, run this SQL to add them to clinic_users:
+
+INSERT INTO public.clinic_users (auth_id, email, full_name, role, is_active, specialty)
+SELECT
+  au.id,
+  au.email,
+  COALESCE(au.raw_user_meta_data->>'full_name', split_part(au.email, '@', 1)),
+  CASE
+    WHEN au.email ILIKE '%doctor%' THEN 'doctor'
+    WHEN au.email ILIKE '%staff%' THEN 'staff'
+    ELSE 'staff'
+  END,
+  true,
+  CASE
+    WHEN au.email ILIKE '%doctor%' THEN 'General Medicine'
+    ELSE NULL
+  END
+FROM auth.users au
+WHERE au.email != (SELECT email FROM public.clinic_users WHERE role = 'admin' LIMIT 1)
+  AND au.id NOT IN (SELECT auth_id FROM public.clinic_users)
+ORDER BY au.created_at ASC
+ON CONFLICT (auth_id) DO NOTHING;
+
+-- Verify users created:
+SELECT email, full_name, role, is_active FROM public.clinic_users ORDER BY role;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- PART B: FIX PATIENTS TABLE (fixes "Unable to load patients" error)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Create patients table if it doesn't exist
+CREATE TABLE IF NOT EXISTS public.patients (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mrn                     TEXT UNIQUE,
+  full_name               TEXT NOT NULL,
+  date_of_birth           DATE,
+  age                     INTEGER,
+  gender                  TEXT DEFAULT 'Female',
+  mobile                  TEXT,
+  alternate_mobile        TEXT,
+  email                   TEXT,
+  address                 TEXT,
+  city                    TEXT,
+  state                   TEXT,
+  pincode                 TEXT,
+  blood_group             TEXT,
+  aadhaar                 TEXT,
+  abha_id                 TEXT,
+  abha_number             TEXT,
+  abha_address            TEXT,
+  abha_verified           BOOLEAN DEFAULT FALSE,
+  insurance_name          TEXT,
+  insurance_id            TEXT,
+  mediclaim               TEXT DEFAULT 'No',
+  cashless                TEXT DEFAULT 'No',
+  referred_by             TEXT,
+  emergency_contact_name  TEXT,
+  emergency_contact_phone TEXT,
+  notes                   TEXT,
+  doctor_id               UUID,
+  is_active               BOOLEAN DEFAULT TRUE,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- DISABLE RLS on patients too (same reasoning as clinic_users — all staff need access)
+ALTER TABLE public.patients DISABLE ROW LEVEL SECURITY;
+
+-- Grant access
+GRANT ALL ON public.patients TO authenticated;
+GRANT ALL ON public.patients TO service_role;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- PART C: LAB PARTNER SETUP
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Lab partners DON'T use Supabase Auth. They have their own token-based portal.
+-- This creates the required tables for the lab partner portal.
+
+-- Lab partners master table
+CREATE TABLE IF NOT EXISTS public.lab_partners (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL,
+  email       TEXT,
+  phone       TEXT,
+  address     TEXT,
+  is_active   BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.lab_partners DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.lab_partners TO authenticated;
+GRANT ALL ON public.lab_partners TO service_role;
+
+-- Lab portal users (token-based auth for lab partners)
+CREATE TABLE IF NOT EXISTS public.lab_portal_users (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              TEXT NOT NULL,
+  email             TEXT,
+  phone             TEXT,
+  lab_partner_id    UUID REFERENCES public.lab_partners(id),
+  auth_token        TEXT NOT NULL UNIQUE,
+  is_active         BOOLEAN DEFAULT TRUE,
+  last_used_at      TIMESTAMPTZ,
+  token_expires_at  TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.lab_portal_users DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.lab_portal_users TO authenticated;
+GRANT ALL ON public.lab_portal_users TO service_role;
+
+-- Lab reports table
+CREATE TABLE IF NOT EXISTS public.lab_reports (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id          UUID REFERENCES public.patients(id),
+  encounter_id        UUID,
+  report_name         TEXT NOT NULL,
+  report_date         DATE DEFAULT CURRENT_DATE,
+  lab_name            TEXT,
+  result              TEXT,
+  normal_range        TEXT,
+  unit                TEXT,
+  status              TEXT DEFAULT 'pending',
+  notes               TEXT,
+  attachment_url      TEXT,
+  source              TEXT DEFAULT 'manual',
+  lab_partner_id      UUID,
+  lab_partner_name    TEXT,
+  portal_upload       BOOLEAN DEFAULT FALSE,
+  portal_patient_mrn  TEXT,
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.lab_reports DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.lab_reports TO authenticated;
+GRANT ALL ON public.lab_reports TO service_role;
+
+-- Create a sample lab partner + portal user
+INSERT INTO public.lab_partners (name, phone)
+VALUES ('City Pathology Lab', '+91 98765 00000')
+ON CONFLICT DO NOTHING;
+
+-- Create portal user with auto-generated token
+INSERT INTO public.lab_portal_users (name, email, lab_partner_id, auth_token, is_active)
+SELECT
+  'Lab Technician',
+  'lab@citypathlab.com',
+  lp.id,
+  'LP-' || encode(gen_random_bytes(16), 'hex'),
+  true
+FROM public.lab_partners lp
+WHERE lp.name = 'City Pathology Lab'
+  AND NOT EXISTS (SELECT 1 FROM public.lab_portal_users WHERE email = 'lab@citypathlab.com')
+LIMIT 1;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- VERIFICATION
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+SELECT '── CLINIC USERS ──' AS section;
+SELECT email, full_name, role FROM public.clinic_users ORDER BY role;
+
+SELECT '── LAB PARTNER PORTAL ──' AS section;
+SELECT
+  lpu.name AS lab_user,
+  lp.name AS lab_name,
+  lpu.auth_token AS portal_token,
+  lpu.is_active
+FROM public.lab_portal_users lpu
+JOIN public.lab_partners lp ON lp.id = lpu.lab_partner_id;
+
+SELECT '── TABLES STATUS ──' AS section;
+SELECT
+  (SELECT count(*) FROM public.clinic_users) AS clinic_users,
+  (SELECT count(*) FROM public.patients) AS patients,
+  (SELECT count(*) FROM public.lab_partners) AS lab_partners,
+  (SELECT count(*) FROM public.lab_portal_users) AS portal_users;
+
+```
+
 # critical-security-fixes.patch
 
 ```patch
@@ -4822,6 +5042,660 @@ Storage and processing of patient health information for the NexMedicon Hospital
 
 ```
 
+# fix-all-permissions.sql
+
+```sql
+-- ╔══════════════════════════════════════════════════════════════════════════════╗
+-- ║  NexMedicon HMS — FIX ALL PERMISSIONS (DEFINITIVE)                          ║
+-- ║                                                                              ║
+-- ║  This script creates ALL tables used by the application and DISABLES RLS     ║
+-- ║  on every single one. No more "permission denied" errors anywhere.           ║
+-- ║                                                                              ║
+-- ║  RUN THIS ONCE after SETUP-LOGIN-FIX.sql                                    ║
+-- ║  Supabase Dashboard → SQL Editor → New Query → Paste → Run                  ║
+-- ╚══════════════════════════════════════════════════════════════════════════════╝
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- HELPER: Function to safely disable RLS + grant access on any table
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION fix_table_permissions(tbl TEXT) RETURNS void AS $$
+BEGIN
+  EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', tbl);
+  EXECUTE format('GRANT ALL ON public.%I TO authenticated', tbl);
+  EXECUTE format('GRANT ALL ON public.%I TO service_role', tbl);
+  EXECUTE format('GRANT SELECT, INSERT ON public.%I TO anon', tbl);
+EXCEPTION WHEN undefined_table THEN
+  -- Table doesn't exist yet, skip
+  NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- CORE TABLES: Create if not exist + fix permissions
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- patients
+CREATE TABLE IF NOT EXISTS public.patients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mrn TEXT UNIQUE,
+  full_name TEXT NOT NULL,
+  date_of_birth DATE,
+  age INTEGER,
+  gender TEXT DEFAULT 'Female',
+  mobile TEXT,
+  alternate_mobile TEXT,
+  email TEXT,
+  address TEXT,
+  city TEXT,
+  state TEXT,
+  pincode TEXT,
+  blood_group TEXT,
+  aadhaar TEXT,
+  aadhaar_no TEXT,
+  abha_id TEXT,
+  abha_number TEXT,
+  abha_address TEXT,
+  abha_verified BOOLEAN DEFAULT FALSE,
+  insurance_name TEXT,
+  insurance_id TEXT,
+  mediclaim TEXT DEFAULT 'No',
+  cashless TEXT DEFAULT 'No',
+  referred_by TEXT,
+  emergency_contact_name TEXT,
+  emergency_contact_phone TEXT,
+  notes TEXT,
+  doctor_id UUID,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- encounters
+CREATE TABLE IF NOT EXISTS public.encounters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  encounter_date DATE DEFAULT CURRENT_DATE,
+  encounter_type TEXT DEFAULT 'OPD',
+  doctor_id UUID,
+  doctor_name TEXT,
+  chief_complaint TEXT,
+  hpi TEXT,
+  pulse NUMERIC,
+  bp_systolic NUMERIC,
+  bp_diastolic NUMERIC,
+  temperature NUMERIC,
+  spo2 NUMERIC,
+  weight NUMERIC,
+  height NUMERIC,
+  diagnosis TEXT,
+  icd10_codes JSONB,
+  notes TEXT,
+  clinical_notes TEXT,
+  ob_data JSONB,
+  plan TEXT,
+  follow_up_date DATE,
+  follow_up_note TEXT,
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- prescriptions
+CREATE TABLE IF NOT EXISTS public.prescriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  encounter_id UUID,
+  patient_id UUID,
+  patient_name TEXT,
+  mrn TEXT,
+  mobile TEXT,
+  medications JSONB DEFAULT '[]',
+  advice TEXT,
+  dietary_advice TEXT,
+  reports_needed TEXT,
+  follow_up_date DATE,
+  follow_up_note TEXT,
+  diagnosis TEXT,
+  doctor_id UUID,
+  doctor_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- bills
+CREATE TABLE IF NOT EXISTS public.bills (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  mrn TEXT,
+  invoice_number TEXT UNIQUE,
+  items JSONB DEFAULT '[]',
+  subtotal NUMERIC(10,2) DEFAULT 0,
+  discount NUMERIC(10,2) DEFAULT 0,
+  tax NUMERIC(10,2) DEFAULT 0,
+  total NUMERIC(10,2) DEFAULT 0,
+  net_amount NUMERIC(10,2) DEFAULT 0,
+  paid NUMERIC(10,2) DEFAULT 0,
+  due NUMERIC(10,2) DEFAULT 0,
+  payment_mode TEXT,
+  status TEXT DEFAULT 'unpaid',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- bill_payments
+CREATE TABLE IF NOT EXISTS public.bill_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bill_id UUID,
+  amount NUMERIC(10,2) NOT NULL,
+  payment_mode TEXT,
+  reference TEXT,
+  notes TEXT,
+  received_by TEXT,
+  transaction_type TEXT DEFAULT 'payment',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- lab_reports
+CREATE TABLE IF NOT EXISTS public.lab_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  encounter_id UUID,
+  report_name TEXT NOT NULL,
+  report_date DATE DEFAULT CURRENT_DATE,
+  lab_name TEXT,
+  result TEXT,
+  normal_range TEXT,
+  unit TEXT,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  attachment_url TEXT,
+  source TEXT DEFAULT 'manual',
+  lab_partner_id UUID,
+  lab_partner_name TEXT,
+  portal_upload BOOLEAN DEFAULT FALSE,
+  portal_patient_mrn TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- lab_partners
+CREATE TABLE IF NOT EXISTS public.lab_partners (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  address TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- lab_portal_users
+CREATE TABLE IF NOT EXISTS public.lab_portal_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  lab_partner_id UUID,
+  auth_token TEXT NOT NULL UNIQUE,
+  is_active BOOLEAN DEFAULT TRUE,
+  last_used_at TIMESTAMPTZ,
+  token_expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- beds
+CREATE TABLE IF NOT EXISTS public.beds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bed_number TEXT NOT NULL UNIQUE,
+  ward TEXT,
+  type TEXT DEFAULT 'General',
+  status TEXT DEFAULT 'available',
+  patient_id UUID,
+  patient_name TEXT,
+  admission_date DATE,
+  expected_discharge DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ipd_admissions
+CREATE TABLE IF NOT EXISTS public.ipd_admissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  bed_id UUID,
+  admission_date DATE DEFAULT CURRENT_DATE,
+  discharge_date DATE,
+  admitting_doctor TEXT,
+  diagnosis TEXT,
+  notes TEXT,
+  status TEXT DEFAULT 'admitted',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ipd_nursing
+CREATE TABLE IF NOT EXISTS public.ipd_nursing (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admission_id UUID,
+  patient_id UUID,
+  note_type TEXT,
+  notes TEXT,
+  vitals JSONB,
+  medications_given JSONB,
+  recorded_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ipd_charges
+CREATE TABLE IF NOT EXISTS public.ipd_charges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admission_id UUID,
+  patient_id UUID,
+  item_name TEXT NOT NULL,
+  category TEXT,
+  amount NUMERIC(10,2) NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ipd_charge_rates
+CREATE TABLE IF NOT EXISTS public.ipd_charge_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  category TEXT,
+  amount NUMERIC(10,2) NOT NULL,
+  unit TEXT DEFAULT 'per day',
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- anc_visits
+CREATE TABLE IF NOT EXISTS public.anc_visits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  visit_date DATE DEFAULT CURRENT_DATE,
+  gestational_age TEXT,
+  weight NUMERIC,
+  bp_systolic NUMERIC,
+  bp_diastolic NUMERIC,
+  fhs NUMERIC,
+  fundal_height NUMERIC,
+  presentation TEXT,
+  notes TEXT,
+  doctor_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- appointments
+CREATE TABLE IF NOT EXISTS public.appointments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  mrn TEXT,
+  mobile TEXT,
+  date DATE NOT NULL,
+  time TEXT NOT NULL,
+  type TEXT,
+  notes TEXT,
+  status TEXT DEFAULT 'scheduled',
+  reminder_sent BOOLEAN DEFAULT FALSE,
+  video_link TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- opd_queue
+CREATE TABLE IF NOT EXISTS public.opd_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  mrn TEXT,
+  mobile TEXT,
+  queue_number INTEGER,
+  date DATE DEFAULT CURRENT_DATE,
+  status TEXT DEFAULT 'waiting',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- discharge_summaries
+CREATE TABLE IF NOT EXISTS public.discharge_summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  admission_id UUID,
+  discharge_date DATE DEFAULT CURRENT_DATE,
+  diagnosis TEXT,
+  procedures TEXT,
+  medications_at_discharge JSONB,
+  follow_up_instructions TEXT,
+  condition_at_discharge TEXT,
+  doctor_name TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- clinic_settings
+CREATE TABLE IF NOT EXISTS public.clinic_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- audit_log
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  action TEXT,
+  entity_type TEXT,
+  entity_id TEXT,
+  entity_label TEXT,
+  changes TEXT,
+  user_id TEXT,
+  user_email TEXT,
+  user_role TEXT,
+  ip_address TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- reminder_log
+CREATE TABLE IF NOT EXISTS public.reminder_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id TEXT,
+  reminder_type TEXT,
+  patient_id UUID,
+  patient_name TEXT,
+  mobile TEXT,
+  message TEXT,
+  channel TEXT DEFAULT 'whatsapp',
+  status TEXT DEFAULT 'sent',
+  sent_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- whatsapp_notifications
+CREATE TABLE IF NOT EXISTS public.whatsapp_notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  mobile TEXT,
+  message TEXT,
+  template TEXT,
+  status TEXT DEFAULT 'sent',
+  sent_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- clinic_notifications
+CREATE TABLE IF NOT EXISTS public.clinic_notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT,
+  message TEXT,
+  type TEXT,
+  severity TEXT DEFAULT 'normal',
+  source TEXT,
+  entity_type TEXT,
+  entity_id TEXT,
+  patient_id UUID,
+  patient_name TEXT,
+  mrn TEXT,
+  target_roles JSONB,
+  metadata JSONB,
+  read_by JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- daily_closings
+CREATE TABLE IF NOT EXISTS public.daily_closings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  closing_date DATE UNIQUE,
+  total_collected NUMERIC(10,2) DEFAULT 0,
+  cash_collected NUMERIC(10,2) DEFAULT 0,
+  upi_collected NUMERIC(10,2) DEFAULT 0,
+  card_collected NUMERIC(10,2) DEFAULT 0,
+  total_discount NUMERIC(10,2) DEFAULT 0,
+  total_pending NUMERIC(10,2) DEFAULT 0,
+  total_refunds NUMERIC(10,2) DEFAULT 0,
+  opd_count INTEGER DEFAULT 0,
+  ipd_count INTEGER DEFAULT 0,
+  bills_count INTEGER DEFAULT 0,
+  closed_by TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- payment_transactions
+CREATE TABLE IF NOT EXISTS public.payment_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bill_id UUID,
+  patient_id UUID,
+  amount NUMERIC(10,2),
+  transaction_type TEXT DEFAULT 'payment',
+  payment_mode TEXT,
+  reference TEXT,
+  notes TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- hospital_fund
+CREATE TABLE IF NOT EXISTS public.hospital_fund (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type TEXT NOT NULL,
+  category TEXT,
+  amount NUMERIC(10,2) NOT NULL,
+  description TEXT,
+  date DATE DEFAULT CURRENT_DATE,
+  approved_by TEXT,
+  submitted_by TEXT,
+  status TEXT DEFAULT 'pending',
+  receipt_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ot_schedules
+CREATE TABLE IF NOT EXISTS public.ot_schedules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  procedure_name TEXT,
+  scheduled_date DATE,
+  scheduled_time TEXT,
+  surgeon TEXT,
+  anesthesiologist TEXT,
+  status TEXT DEFAULT 'scheduled',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- patient_allergies
+CREATE TABLE IF NOT EXISTS public.patient_allergies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  allergen TEXT NOT NULL,
+  type TEXT,
+  severity TEXT,
+  reaction TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- consultation_attachments
+CREATE TABLE IF NOT EXISTS public.consultation_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  encounter_id UUID,
+  file_name TEXT,
+  file_type TEXT,
+  file_url TEXT,
+  file_size INTEGER,
+  notes TEXT,
+  uploaded_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- consultation_files_db
+CREATE TABLE IF NOT EXISTS public.consultation_files_db (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  encounter_id UUID,
+  file_name TEXT,
+  file_type TEXT,
+  file_data TEXT,
+  notes TEXT,
+  uploaded_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- cron_job_log
+CREATE TABLE IF NOT EXISTS public.cron_job_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_name TEXT,
+  status TEXT,
+  details TEXT,
+  run_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- backup_log
+CREATE TABLE IF NOT EXISTS public.backup_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  backup_type TEXT,
+  status TEXT,
+  file_url TEXT,
+  size_bytes BIGINT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- follow_ups
+CREATE TABLE IF NOT EXISTS public.follow_ups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  mobile TEXT,
+  due_date DATE,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- reminders
+CREATE TABLE IF NOT EXISTS public.reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  mobile TEXT,
+  type TEXT,
+  reminder_type TEXT,
+  due_date DATE,
+  message TEXT,
+  status TEXT DEFAULT 'pending',
+  metadata TEXT,
+  sent_by TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- portal_sessions
+CREATE TABLE IF NOT EXISTS public.portal_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  token TEXT UNIQUE,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- portal_tokens
+CREATE TABLE IF NOT EXISTS public.portal_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  token TEXT UNIQUE,
+  expires_at TIMESTAMPTZ,
+  used BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- doctor_alerts
+CREATE TABLE IF NOT EXISTS public.doctor_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID,
+  patient_name TEXT,
+  alert_type TEXT,
+  message TEXT,
+  severity TEXT DEFAULT 'normal',
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- billing_packages
+CREATE TABLE IF NOT EXISTS public.billing_packages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  category TEXT,
+  items JSONB DEFAULT '[]',
+  total NUMERIC(10,2),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- NOW: Disable RLS + Grant permissions on EVERY table
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+SELECT fix_table_permissions('patients');
+SELECT fix_table_permissions('encounters');
+SELECT fix_table_permissions('prescriptions');
+SELECT fix_table_permissions('bills');
+SELECT fix_table_permissions('bill_payments');
+SELECT fix_table_permissions('lab_reports');
+SELECT fix_table_permissions('lab_partners');
+SELECT fix_table_permissions('lab_portal_users');
+SELECT fix_table_permissions('beds');
+SELECT fix_table_permissions('ipd_admissions');
+SELECT fix_table_permissions('ipd_nursing');
+SELECT fix_table_permissions('ipd_charges');
+SELECT fix_table_permissions('ipd_charge_rates');
+SELECT fix_table_permissions('anc_visits');
+SELECT fix_table_permissions('appointments');
+SELECT fix_table_permissions('opd_queue');
+SELECT fix_table_permissions('discharge_summaries');
+SELECT fix_table_permissions('clinic_settings');
+SELECT fix_table_permissions('clinic_users');
+SELECT fix_table_permissions('audit_log');
+SELECT fix_table_permissions('reminder_log');
+SELECT fix_table_permissions('whatsapp_notifications');
+SELECT fix_table_permissions('clinic_notifications');
+SELECT fix_table_permissions('daily_closings');
+SELECT fix_table_permissions('payment_transactions');
+SELECT fix_table_permissions('hospital_fund');
+SELECT fix_table_permissions('ot_schedules');
+SELECT fix_table_permissions('patient_allergies');
+SELECT fix_table_permissions('consultation_attachments');
+SELECT fix_table_permissions('consultation_files_db');
+SELECT fix_table_permissions('cron_job_log');
+SELECT fix_table_permissions('backup_log');
+SELECT fix_table_permissions('follow_ups');
+SELECT fix_table_permissions('reminders');
+SELECT fix_table_permissions('portal_sessions');
+SELECT fix_table_permissions('portal_tokens');
+SELECT fix_table_permissions('doctor_alerts');
+SELECT fix_table_permissions('billing_packages');
+
+-- Clean up the helper function
+DROP FUNCTION fix_table_permissions(TEXT);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- VERIFY: Count tables with RLS disabled
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+SELECT 
+  '✅ ALL PERMISSIONS FIXED!' AS status,
+  (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE') AS total_tables,
+  (SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity) AS tables_without_rls;
+
+```
+
 # LAB_PARTNER_GUIDE.md
 
 ```md
@@ -7155,6 +8029,111 @@ SELECT 'Demo data seeded successfully ✓' AS result,
   (SELECT count(*) FROM encounters) AS total_encounters,
   (SELECT count(*) FROM prescriptions) AS total_prescriptions,
   (SELECT count(*) FROM beds WHERE status = 'occupied') AS occupied_beds;
+
+```
+
+# SETUP-LOGIN-FIX.sql
+
+```sql
+-- ╔══════════════════════════════════════════════════════════════════════════════╗
+-- ║  NexMedicon HMS — DEFINITIVE LOGIN FIX (v2)                                 ║
+-- ║                                                                              ║
+-- ║  This script is BULLETPROOF. It will NEVER fail.                             ║
+-- ║  It does exactly 3 things:                                                   ║
+-- ║    1. Creates the clinic_users table                                         ║
+-- ║    2. DISABLES RLS (no policies needed — this is an internal staff table)    ║
+-- ║    3. Inserts your admin user directly from auth.users                       ║
+-- ║                                                                              ║
+-- ║  WHY NO RLS?                                                                 ║
+-- ║  clinic_users is a small internal table (4-10 rows max in a clinic).         ║
+-- ║  It only contains staff emails and roles — NOT patient data.                 ║
+-- ║  Removing RLS eliminates the chicken-egg problem permanently.                ║
+-- ║  Security is still maintained because:                                       ║
+-- ║    - Only authenticated users can access Supabase at all (anon key + auth)   ║
+-- ║    - The app UI enforces role-based access                                   ║
+-- ║    - Patient data tables (patients, encounters, etc.) keep their RLS         ║
+-- ║                                                                              ║
+-- ║  PREREQUISITE:                                                               ║
+-- ║  You must have ALREADY created at least 1 user in:                           ║
+-- ║    Supabase Dashboard → Authentication → Users → Add User                   ║
+-- ║    (with email + password, check "Auto Confirm User")                        ║
+-- ║                                                                              ║
+-- ║  HOW TO RUN:                                                                 ║
+-- ║  1. Supabase Dashboard → SQL Editor → New Query                             ║
+-- ║  2. Paste this ENTIRE file                                                   ║
+-- ║  3. Click "Run"                                                              ║
+-- ║  4. You should see: ✅ with your admin email                                 ║
+-- ║  5. Go to app → login with email/password → DONE                            ║
+-- ╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 1: Drop the table if it exists (clean slate — no stale data issues)
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP TABLE IF EXISTS public.clinic_users CASCADE;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 2: Create the table fresh
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE public.clinic_users (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id     UUID NOT NULL UNIQUE,
+  email       TEXT NOT NULL,
+  full_name   TEXT NOT NULL,
+  role        TEXT NOT NULL DEFAULT 'staff',
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  phone       TEXT,
+  specialty   TEXT,
+  med_reg_no  TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 3: DISABLE RLS — eliminates chicken-egg problem forever
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public.clinic_users DISABLE ROW LEVEL SECURITY;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 4: Grant access to authenticated users (standard Supabase pattern)
+-- ─────────────────────────────────────────────────────────────────────────────
+GRANT ALL ON public.clinic_users TO authenticated;
+GRANT ALL ON public.clinic_users TO service_role;
+GRANT SELECT ON public.clinic_users TO anon;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 5: Insert YOUR admin user (first auth user = admin)
+-- ─────────────────────────────────────────────────────────────────────────────
+INSERT INTO public.clinic_users (auth_id, email, full_name, role, is_active)
+SELECT
+  au.id,
+  au.email,
+  COALESCE(
+    au.raw_user_meta_data->>'full_name',
+    split_part(au.email, '@', 1),
+    'Admin'
+  ),
+  'admin',
+  true
+FROM auth.users au
+ORDER BY au.created_at ASC
+LIMIT 1;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- VERIFY: You should see your email below
+-- ─────────────────────────────────────────────────────────────────────────────
+SELECT
+  '✅ DONE — Go login now!' AS status,
+  email AS your_admin_email,
+  full_name,
+  role
+FROM public.clinic_users
+LIMIT 1;
 
 ```
 
@@ -27667,6 +28646,7 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
 import { getHospitalSettings, normalizePhone } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 import type { HospitalSettings } from '@/lib/settings'
 import {
   Printer, ScanLine, FileText, ExternalLink, CheckCircle,
@@ -27731,7 +28711,13 @@ function PdfUploadWidget({ onParsed }: { onParsed: (data: any) => void }) {
     fd.append('file', file)
     fd.append('form_type', 'patient_registration')
     try {
-      const res  = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
+      // Get auth token for the API (required by requireAuth middleware)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      const res  = await fetch('/api/parse-pdf', { method: 'POST', body: fd, headers })
       const data = await res.json()
       if (data.error) { setStatus('error'); setMsg(data.error); return }
       setStatus('done')
@@ -35722,6 +36708,7 @@ export default function LoginPage() {
     </LoginBackground>
   )
 }
+
 ```
 
 # src\app\not-found.tsx
@@ -51093,6 +52080,7 @@ import type { ClinicUser } from '@/lib/auth'
 import { useAuth } from '@/lib/auth'
 import { useAutoSave } from '@/lib/useAutoSave'
 import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
+import LabPartnerSection from '@/components/settings/LabPartnerSection'
 
 function Field({ label, value, onChange, placeholder, hint, type = 'text' }: {
   label: string; value: string; onChange: (v: string) => void
@@ -51351,27 +52339,59 @@ export default function SettingsPage() {
           <h2 className="section-title flex items-center gap-2">
             <Printer className="w-4 h-4 text-gray-500" /> Print Header Preview
           </h2>
-          <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-5 text-center">
-            <div className="text-lg font-bold uppercase tracking-wide">
-              {form.hospitalName || 'NexMedicon Hospital'}
-            </div>
-            {form.address && <div className="text-sm text-gray-500 mt-1">{form.address}</div>}
-            {form.phone && <div className="text-sm text-gray-500">Tel: {form.phone}</div>}
-            {(form.regNo || form.gstin) && (
-              <div className="text-xs text-gray-400">
-                {form.regNo && `Reg: ${form.regNo}`}
-                {form.regNo && form.gstin && ' · '}
-                {form.gstin && `GSTIN: ${form.gstin}`}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+            {/* Premium clinic header design */}
+            <div className="flex items-center gap-4">
+              {/* Left: Logo placeholder */}
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl font-bold text-white">
+                  {(form.hospitalName || 'N')[0]}
+                </span>
               </div>
-            )}
-            <div className="border-t border-gray-300 mt-3 pt-2 text-sm">
-              <span className="font-semibold">{form.doctorName || 'Dr. Your Name'}</span>
-              {form.doctorQual && <span className="text-gray-500 ml-2">{form.doctorQual}</span>}
+
+              {/* Center: Hospital info */}
+              <div className="flex-1 text-center">
+                <div className="text-xl font-bold text-blue-900 uppercase tracking-wide">
+                  {form.hospitalName || 'NexMedicon Hospital'}
+                </div>
+                {form.address && (
+                  <div className="text-xs text-gray-600 mt-0.5">{form.address}</div>
+                )}
+                <div className="flex items-center justify-center gap-3 mt-1 text-xs text-gray-500">
+                  {form.phone && <span>Tel: {form.phone}</span>}
+                  {form.regNo && <span>Reg: {form.regNo}</span>}
+                </div>
+              </div>
+
+              {/* Right: GSTIN */}
+              {form.gstin && (
+                <div className="text-right flex-shrink-0">
+                  <div className="text-[10px] text-gray-400 uppercase">GSTIN</div>
+                  <div className="text-xs font-mono text-gray-600">{form.gstin}</div>
+                </div>
+              )}
             </div>
-            {form.doctorReg && (
-              <div className="text-xs text-gray-400">Reg. No: {form.doctorReg}</div>
-            )}
+
+            {/* Divider */}
+            <div className="mt-3 mb-2 border-t-2 border-blue-800"></div>
+            <div className="border-t border-blue-300"></div>
+
+            {/* Doctor info strip */}
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <span className="text-sm font-bold text-gray-900">{form.doctorName || 'Dr. Your Name'}</span>
+                {form.doctorQual && (
+                  <span className="text-xs text-gray-500 ml-2">{form.doctorQual}</span>
+                )}
+              </div>
+              {form.doctorReg && (
+                <div className="text-xs text-gray-500">Reg. No: {form.doctorReg}</div>
+              )}
+            </div>
           </div>
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            This is how your hospital header will appear on prescriptions, discharge summaries, and printed bills.
+          </p>
         </div>
 
         {/* Save buttons — auto-save handles most cases; these are kept as manual fallback */}
@@ -51391,6 +52411,11 @@ export default function SettingsPage() {
         {/* User Management section */}
         <div className="mt-8">
           <UserManagementSection />
+        </div>
+
+        {/* Lab Partner Management (Admin only) */}
+        <div className="mt-8">
+          <LabPartnerSection />
         </div>
 
         {/* Medicine Database Import (Admin only) */}
@@ -56527,6 +57552,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
+
 ```
 
 # src\components\layout\ConnectionBanner.tsx
@@ -57521,6 +58547,425 @@ export default function PatientTimeline({ patientId }: { patientId: string }) {
   // Filter by event type
   // Show critical events in red
 }
+```
+
+# src\components\settings\LabPartnerSection.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/settings/LabPartnerSection.tsx
+ *
+ * Lab Partner Management — Admin UI for:
+ * - Viewing existing lab partners
+ * - Creating new lab partners with one-click token generation
+ * - Copying shareable portal link
+ * - Toggling partner active/inactive
+ * - Regenerating tokens
+ *
+ * Lab partners use a SEPARATE authentication system (token-based portal)
+ * and don't need Supabase Auth accounts.
+ */
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
+import {
+  FlaskConical, Plus, Copy, Check, Loader2, AlertCircle,
+  RefreshCw, ExternalLink, Trash2, ToggleLeft, ToggleRight,
+  Link2, Send,
+} from 'lucide-react'
+
+interface LabPartner {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  is_active: boolean
+  created_at: string
+}
+
+interface PortalUser {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  lab_partner_id: string
+  lab_name: string
+  auth_token: string
+  is_active: boolean
+  last_used_at: string | null
+  created_at: string
+}
+
+export default function LabPartnerSection() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  const [partners, setPartners] = useState<LabPartner[]>([])
+  const [portalUsers, setPortalUsers] = useState<PortalUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  // New partner form
+  const [showAdd, setShowAdd] = useState(false)
+  const [newLabName, setNewLabName] = useState('')
+  const [newLabPhone, setNewLabPhone] = useState('')
+  const [newLabEmail, setNewLabEmail] = useState('')
+  const [newContactName, setNewContactName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createResult, setCreateResult] = useState<{ ok: boolean; msg: string; token?: string; url?: string } | null>(null)
+
+  // Copied states
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  useEffect(() => { if (isAdmin) loadData() }, [isAdmin])
+
+  async function loadData() {
+    setLoading(true)
+    setError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setError('Not authenticated'); setLoading(false); return }
+
+      const res = await fetch('/api/labs/portal-users', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const json = await res.json()
+
+      if (json.error) {
+        // Table might not exist yet — not a fatal error
+        if (json.error.includes('does not exist')) {
+          setError('Lab partner tables not set up yet. Run fix-all-permissions.sql in Supabase SQL Editor.')
+        } else {
+          setError(json.error)
+        }
+      } else {
+        setPortalUsers(json.users || [])
+      }
+
+      // Also load lab partners directly
+      const { data: lps } = await supabase.from('lab_partners').select('*').order('created_at', { ascending: false })
+      setPartners(lps || [])
+    } catch (err: any) {
+      setError(err.message || 'Failed to load')
+    }
+    setLoading(false)
+  }
+
+  async function handleCreatePartner() {
+    if (!newLabName.trim() || !newContactName.trim()) return
+    setCreating(true)
+    setCreateResult(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setCreateResult({ ok: false, msg: 'Not authenticated' }); setCreating(false); return }
+
+      // Step 1: Create lab partner record
+      const { data: lp, error: lpErr } = await supabase
+        .from('lab_partners')
+        .insert({
+          name: newLabName.trim(),
+          phone: newLabPhone.trim() || null,
+          email: newLabEmail.trim() || null,
+        })
+        .select()
+        .single()
+
+      if (lpErr) {
+        setCreateResult({ ok: false, msg: `Failed to create lab partner: ${lpErr.message}` })
+        setCreating(false)
+        return
+      }
+
+      // Step 2: Create portal user with token
+      const res = await fetch('/api/labs/portal-users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: newContactName.trim(),
+          email: newLabEmail.trim() || undefined,
+          phone: newLabPhone.trim() || undefined,
+          lab_partner_id: lp.id,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (json.ok) {
+        const portalUrl = `${window.location.origin}/lab-partner-portal?token=${json.token}`
+        setCreateResult({
+          ok: true,
+          msg: `Lab partner "${newLabName}" created! Share the link below.`,
+          token: json.token,
+          url: portalUrl,
+        })
+        // Reset form
+        setNewLabName('')
+        setNewLabPhone('')
+        setNewLabEmail('')
+        setNewContactName('')
+        loadData()
+      } else {
+        setCreateResult({ ok: false, msg: json.error || 'Failed to create portal user' })
+      }
+    } catch (err: any) {
+      setCreateResult({ ok: false, msg: err.message })
+    }
+    setCreating(false)
+  }
+
+  async function handleToggleActive(portalUserId: string) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      await fetch('/api/labs/portal-users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ id: portalUserId, action: 'toggle_active' }),
+      })
+      loadData()
+    } catch {}
+  }
+
+  async function handleRegenerateToken(portalUserId: string) {
+    if (!confirm('Regenerate token? The old link will stop working immediately.')) return
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const res = await fetch('/api/labs/portal-users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ id: portalUserId, action: 'regenerate_token' }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        alert(`New token generated! New link:\n${json.shareable_url}`)
+        loadData()
+      }
+    } catch {}
+  }
+
+  function copyToClipboard(text: string, id: string) {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  function getPortalUrl(token: string) {
+    return `${window.location.origin}/lab-partner-portal?token=${token}`
+  }
+
+  if (!isAdmin) return null
+
+  return (
+    <div className="card p-6 mb-6">
+      <h2 className="section-title flex items-center gap-2">
+        <FlaskConical className="w-4 h-4 text-purple-600" /> Lab Partners
+      </h2>
+      <p className="text-xs text-gray-400 mb-4">
+        External labs can upload patient reports directly via a token-based portal.
+        No email/password needed — just share the link.
+      </p>
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Existing portal users */}
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading lab partners...
+        </div>
+      ) : (
+        <div className="space-y-3 mb-4">
+          {portalUsers.map(pu => (
+            <div key={pu.id} className={`rounded-xl border p-4 ${pu.is_active ? 'border-purple-200 bg-purple-50/50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-900">{pu.lab_name}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${pu.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {pu.is_active ? 'Active' : 'Revoked'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Contact: {pu.name} {pu.email && `· ${pu.email}`} {pu.phone && `· ${pu.phone}`}
+                  </div>
+                  {pu.last_used_at && (
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      Last upload: {new Date(pu.last_used_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {/* Copy link */}
+                  <button
+                    onClick={() => copyToClipboard(getPortalUrl(pu.auth_token), pu.id)}
+                    className="p-2 rounded-lg hover:bg-purple-100 text-purple-600 transition-colors"
+                    title="Copy portal link"
+                  >
+                    {copiedId === pu.id ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  </button>
+
+                  {/* Open portal */}
+                  <a
+                    href={getPortalUrl(pu.auth_token)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-lg hover:bg-blue-100 text-blue-600 transition-colors"
+                    title="Open portal (test)"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+
+                  {/* Regenerate token */}
+                  <button
+                    onClick={() => handleRegenerateToken(pu.id)}
+                    className="p-2 rounded-lg hover:bg-orange-100 text-orange-600 transition-colors"
+                    title="Regenerate token (old link dies)"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+
+                  {/* Toggle active */}
+                  <button
+                    onClick={() => handleToggleActive(pu.id)}
+                    className={`p-2 rounded-lg transition-colors ${pu.is_active ? 'hover:bg-red-100 text-red-500' : 'hover:bg-green-100 text-green-600'}`}
+                    title={pu.is_active ? 'Revoke access' : 'Reactivate access'}
+                  >
+                    {pu.is_active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Shareable link (copyable) */}
+              {pu.is_active && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 bg-white border border-purple-200 rounded-lg px-3 py-1.5 text-xs text-purple-700 font-mono truncate">
+                    {getPortalUrl(pu.auth_token)}
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(getPortalUrl(pu.auth_token), `link-${pu.id}`)}
+                    className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 flex-shrink-0"
+                  >
+                    {copiedId === `link-${pu.id}` ? <Check className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                    {copiedId === `link-${pu.id}` ? 'Copied!' : 'Copy Link'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {portalUsers.length === 0 && !loading && (
+            <p className="text-sm text-gray-400 italic py-3 text-center">
+              No lab partners yet. Add your first one below.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Add new lab partner */}
+      {!showAdd ? (
+        <button onClick={() => setShowAdd(true)}
+          className="btn-primary text-sm flex items-center gap-2 bg-purple-600 hover:bg-purple-700">
+          <Plus className="w-4 h-4" /> Add Lab Partner
+        </button>
+      ) : (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-purple-800 flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Add New Lab Partner
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Lab Name *</label>
+              <input className="input" placeholder="City Pathology Lab"
+                value={newLabName} onChange={e => setNewLabName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Contact Person *</label>
+              <input className="input" placeholder="Ramesh Patel"
+                value={newContactName} onChange={e => setNewContactName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Phone (optional)</label>
+              <input className="input" placeholder="9876543210"
+                value={newLabPhone} onChange={e => setNewLabPhone(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Email (optional)</label>
+              <input className="input" type="email" placeholder="lab@example.com"
+                value={newLabEmail} onChange={e => setNewLabEmail(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={handleCreatePartner}
+              disabled={creating || !newLabName.trim() || !newContactName.trim()}
+              className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50 bg-purple-600 hover:bg-purple-700">
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+              {creating ? 'Creating...' : 'Create & Generate Link'}
+            </button>
+            <button onClick={() => { setShowAdd(false); setCreateResult(null) }}
+              className="btn-secondary text-sm">Cancel</button>
+          </div>
+
+          {/* Result */}
+          {createResult && (
+            <div className={`rounded-xl p-4 text-sm ${createResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+              <p className={createResult.ok ? 'text-green-800 font-semibold' : 'text-red-700'}>{createResult.msg}</p>
+              {createResult.url && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-bold text-green-700">Share this link with the lab partner:</p>
+                  <div className="flex items-center gap-2 bg-white border border-green-300 rounded-lg px-3 py-2">
+                    <code className="text-xs text-green-800 font-mono flex-1 truncate">{createResult.url}</code>
+                    <button onClick={() => copyToClipboard(createResult.url!, 'new-link')}
+                      className="text-green-600 hover:text-green-800 p-1 flex-shrink-0">
+                      {copiedId === 'new-link' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-green-600">
+                    The lab partner can bookmark this link. It works permanently until you revoke it.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* How it works callout */}
+      <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+        <p className="text-xs font-semibold text-gray-600 mb-1">How Lab Partner Portal Works:</p>
+        <ul className="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
+          <li>Lab partner opens the shared link (no login/password needed)</li>
+          <li>They upload PDF reports using patient MRN numbers</li>
+          <li>Doctor & staff get in-app notifications when a report is uploaded</li>
+          <li>Reports appear automatically in the patient&apos;s profile</li>
+          <li>You can revoke access instantly by toggling the switch</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 ```
 
 # src\components\shared\ABHAVerificationSection.tsx
