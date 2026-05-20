@@ -450,24 +450,8 @@ export default function NewPatientPage() {
 
     // ── Create notification for new patient registration ──
     try {
-      await fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'New Patient Registered',
-          message: `${data.full_name} (MRN: ${data.mrn}) has been registered.`,
-          type: 'info',
-          severity: 'normal',
-          source: 'patient_registration',
-          entity_type: 'patient',
-          entity_id: data.id,
-          patient_id: data.id,
-          patient_name: data.full_name,
-          mrn: data.mrn,
-          target_roles: ['admin', 'doctor', 'staff'],
-          metadata: { mobile: normalizedMobile, gender: form.gender, age: form.age },
-        }),
-      })
+      const { notify } = await import('@/lib/notifications')
+      await notify.patientRegistered(data.id, data.full_name, data.mrn)
     } catch {
       // Non-fatal: notification failure should not block registration
     }
@@ -567,6 +551,12 @@ export default function NewPatientPage() {
         // Non-fatal
       }
     }
+
+    // Send payment received notification
+    try {
+      const { default: notify } = await import('@/lib/notifications')
+      await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, paymentMethod)
+    } catch { /* non-fatal */ }
 
     setPaymentConfirmed(true)
   }
