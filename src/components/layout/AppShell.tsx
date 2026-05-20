@@ -26,14 +26,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AuthContext, loadClinicUser, hasPermission } from '@/lib/auth'
+import { AuthContext, loadClinicUser, isFirstTimeSetup, bootstrapAdmin, hasPermission } from '@/lib/auth'
 import type { ClinicUser, AuthContextType, Permission, UserRole } from '@/lib/auth'
 import { initSettings } from '@/lib/settings'
 import { initABDMConfig } from '@/lib/abdm'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle, X, UserPlus, Loader2, CheckCircle2 } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotificationPanel from './NotificationPanel';
@@ -58,8 +58,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [clinicUser, setClinicUser] = useState<ClinicUser | null>(null)
   const [noProfile, setNoProfile] = useState(false)
+  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false)
   const [configWarn, setConfigWarn] = useState<string[]>([])
   const [warnDismissed, setWarnDismissed] = useState(false)
+
+  // First-time setup form state
+  const [setupName, setSetupName] = useState('')
+  const [setupLoading, setSetupLoading] = useState(false)
+  const [setupError, setSetupError] = useState('')
+  const [setupDone, setSetupDone] = useState(false)
 
   // FIX #2: Role override state for single-user setups
   const [roleOverride, setRoleOverrideState] = useState<UserRole | null>(null)
@@ -219,6 +226,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (noProfile) {
+    async function handleEmergencyBootstrap() {
+      setNoProfile(false)
+      setShowFirstTimeSetup(true)
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8 text-center">
@@ -230,19 +242,119 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             Your account exists but hasn&apos;t been assigned a role yet.
             Please contact your clinic administrator.
           </p>
-          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 mb-6">
+          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 mb-4">
             <p className="font-semibold mb-1">For the admin:</p>
             <p>
               Go to <strong>Settings → Manage Users</strong> and add this email
               with the appropriate role.
             </p>
           </div>
+
+          {/* First-time setup fallback */}
+          <div className="border-t border-gray-200 pt-4 mb-4">
+            <p className="text-xs text-gray-400 mb-2">
+              First time setting up? No admin exists yet?
+            </p>
+            <button
+              onClick={handleEmergencyBootstrap}
+              className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
+            >
+              → Set up as Admin (first-time only)
+            </button>
+          </div>
+
           <button
             onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
             className="btn-secondary"
           >
             Sign Out
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  // First-time setup screen
+  if (showFirstTimeSetup) {
+    async function handleFirstTimeSetup(e: React.FormEvent) {
+      e.preventDefault()
+      if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
+      setSetupLoading(true)
+      setSetupError('')
+
+      const result = await bootstrapAdmin(setupName.trim())
+      setSetupLoading(false)
+
+      if (result.success) {
+        setSetupDone(true)
+        setTimeout(() => {
+          setShowFirstTimeSetup(false)
+          setLoading(true)
+          loadUser()
+        }, 1500)
+      } else {
+        setSetupError(result.error || 'Failed to create admin account.')
+      }
+    }
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+              <UserPlus className="w-8 h-8 text-blue-600" />
+            </div>
+            <h1 className="text-3xl font-bold text-white">Welcome to NexMedicon</h1>
+            <p className="text-blue-200 text-sm mt-2">First-time setup — you&apos;ll be the clinic admin</p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            {setupDone ? (
+              <div className="text-center py-4">
+                <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Admin Account Created!</h2>
+                <p className="text-sm text-gray-500">Loading your dashboard…</p>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Create Admin Account</h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Enter your name to become the first admin.
+                </p>
+                {setupError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+                    {setupError}
+                  </div>
+                )}
+                <form onSubmit={handleFirstTimeSetup} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Your Full Name</label>
+                    <input
+                      type="text"
+                      value={setupName}
+                      onChange={e => setSetupName(e.target.value)}
+                      placeholder="Dr. Your Name"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      autoFocus
+                      disabled={setupLoading}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={setupLoading || !setupName.trim()}
+                    className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {setupLoading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Creating…</>) : 'Create Admin Account & Continue'}
+                  </button>
+                </form>
+                <button
+                  onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+                  className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 text-center"
+                >
+                  Sign Out
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     )
