@@ -690,50 +690,20 @@ export default function NewPatientPage() {
               <div className="text-4xl font-bold text-blue-700 font-mono tracking-wide">{success.mrn}</div>
             </div>
 
-            {/* Step 1: Payment */}
-            <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-left">
-              <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">
-                💳 Step 1 — Collect Payment First
-              </p>
-              <p className="text-xs text-amber-700 mb-3">
-                Collect the registration/consultation fee before starting the consultation.
-              </p>
-              <div className="flex flex-col gap-2">
-                <Link href={`/billing?patientId=${successId}&patientName=${encodeURIComponent(success.name)}&mrn=${success.mrn}`}
-                  className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-3 rounded-xl transition-colors shadow-sm">
-                  💳 Collect Payment at Counter
-                </Link>
-                {payLinkLoading ? (
-                  <div className="text-xs text-center text-gray-400 py-2">Generating payment link...</div>
-                ) : payLink ? (
-                  <div className="bg-white rounded-xl border border-green-200 p-3">
-                    <p className="text-xs font-semibold text-green-800 mb-1.5">📱 Send Payment Link to Patient</p>
-                    {payLink.url && (
-                      <div className="bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-600 mb-2 break-all select-all">
-                        {payLink.url}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      {successMobile && (
-                        <a href={`https://wa.me/91${successMobile.replace(/\D/g, '')}?text=${encodeURIComponent(payLink.whatsappText)}`}
-                          target="_blank" rel="noopener noreferrer"
-                          className="flex-1 flex items-center justify-center gap-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
-                          📲 Send via WhatsApp
-                        </a>
-                      )}
-                      <button onClick={() => { navigator.clipboard.writeText(payLink.whatsappText) }}
-                        className="flex-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-2 rounded-lg transition-colors">
-                        📋 Copy Message
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
+            {/* Payment confirmed badge */}
+            {paymentConfirmed && (
+              <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl p-4 text-left flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-green-800">✓ Payment Collected — ₹{paymentAmount}</p>
+                  <p className="text-xs text-green-600">via {paymentMethod}{addToQueue ? ' · Added to OPD Queue' : ''}</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Step 2: Consultation */}
+            {/* Next Steps */}
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
-              🩺 Step 2 — After Payment
+              🩺 Next Steps
             </p>
             <div className="grid grid-cols-1 gap-2 mb-5">
               <Link href={`/opd/new?patient=${successId}`}
