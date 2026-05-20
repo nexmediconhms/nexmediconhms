@@ -51,13 +51,14 @@ export default function AuthCallbackPage() {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
         if (exchangeError) {
-          setError('Failed to verify the link. It may have expired. Please request a new one.')
+          console.error('[auth/callback] Code exchange failed:', exchangeError.message)
+          setError('Failed to verify the link. It may have expired or already been used. Please request a new login code.')
           setTimeout(() => {
             if (!redirected) {
               redirected = true
               router.push('/login')
             }
-          }, 3000)
+          }, 4000)
           return
         }
 
@@ -88,7 +89,14 @@ export default function AuthCallbackPage() {
           }
         }, 3000)
       } else {
-        // No code, no hash — redirect to login
+        // No code, no hash — check if already signed in (token refresh may have happened)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session && !redirected) {
+          redirected = true
+          router.push('/dashboard')
+          return
+        }
+        // No code and no session — redirect to login
         if (!redirected) {
           redirected = true
           router.push('/login')

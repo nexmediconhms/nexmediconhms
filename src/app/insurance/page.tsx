@@ -338,97 +338,331 @@ Please process/file as required.`
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <div className="card p-4 bg-orange-50">
-            <div className="text-2xl font-bold text-orange-700">{inr(pendingAmount)}</div>
-            <div className="text-xs font-semibold text-gray-600">{pending.length} Pending Claims</div>
-          </div>
-          <div className="card p-4 bg-green-50">
-            <div className="text-2xl font-bold text-green-700">{inr(settledAmount)}</div>
-            <div className="text-xs font-semibold text-gray-600">{settled.length} Settled</div>
-          </div>
-          <div className="card p-4 bg-blue-50">
-            <div className="text-2xl font-bold text-blue-700">{claims.length}</div>
-            <div className="text-xs font-semibold text-gray-600">Total Claims</div>
-          </div>
-        </div>
-
-        {/* Search + filter */}
-        <div className="flex gap-3 mb-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input className="input pl-9" placeholder="Search patient, MRN, TPA, claim #…" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <select className="input w-48" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="all">All Status</option>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Claims list */}
-        {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : filtered.length === 0 ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">{claims.length === 0 ? 'No claims yet' : 'No claims match filter'}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map(c => {
-              const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.pre_auth_pending
-              const Icon = cfg.icon
-              const nextStatuses = STATUS_FLOW[c.status] || []
-              return (
-                <div key={c.id} className={`card p-4 border ${cfg.color}`}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-semibold text-gray-900">{c.patient_name}</span>
-                        <span className="text-xs text-gray-400">{c.mrn}</span>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}><Icon className="w-3 h-3 inline mr-1" />{cfg.label}</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {c.tpa_name && <span>{c.tpa_name}</span>}
-                        {c.insurance_company && <span className="ml-2 text-gray-400">({c.insurance_company})</span>}
-                        {c.policy_number && <span className="ml-2 text-xs text-gray-400">Policy: {c.policy_number}</span>}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {c.diagnosis && <span>Dx: {c.diagnosis}</span>}
-                        {c.surgery_name && <span className="ml-2">Surgery: {c.surgery_name}</span>}
-                      </div>
-                      <div className="flex items-center gap-4 mt-2">
-                        <span className="text-sm font-mono font-bold text-gray-800">Claimed: {inr(c.claim_amount)}</span>
-                        {c.approved_amount != null && <span className="text-sm font-mono font-bold text-green-700">Approved: {inr(c.approved_amount)}</span>}
-                        {c.settlement_utr && <span className="text-xs text-gray-400">UTR: {c.settlement_utr}</span>}
-                      </div>
-                      {c.notes && <div className="text-xs text-gray-500 mt-1 italic">{c.notes}</div>}
-                    </div>
-                    <div className="flex flex-col gap-1 flex-shrink-0 min-w-[100px]">
-                      {nextStatuses.map(ns => (
-                        <button key={ns} onClick={() => updateClaimStatus(c, ns)}
-                          className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded font-medium text-gray-700 text-left">
-                          → {STATUS_CONFIG[ns]?.label || ns}
-                        </button>
-                      ))}
-                      <button onClick={() => shareWithCA(c)}
-                        className="text-xs bg-green-50 border border-green-200 hover:bg-green-100 px-2 py-1 rounded font-medium text-green-700 text-left flex items-center gap-1">
-                        <Share2 className="w-3 h-3" /> Share with CA
-                      </button>
-                      <button onClick={() => generateDocBundle(c)}
-                        className="text-xs bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded font-medium text-blue-700 text-left flex items-center gap-1">
-                        <FileText className="w-3 h-3" /> Download Docs
-                      </button>
-                      <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        {/* Tab Navigation — Claims vs Insured Patients */}
+        <InsuranceTabsSection
+          claims={claims}
+          pending={pending}
+          pendingAmount={pendingAmount}
+          settled={settled}
+          settledAmount={settledAmount}
+          filtered={filtered}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          updateClaimStatus={updateClaimStatus}
+          shareWithCA={shareWithCA}
+          generateDocBundle={generateDocBundle}
+          inr={inr}
+          user={user}
+        />
       </div>
     </AppShell>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// InsuranceTabsSection — Combines Claims list + Insured Patients
+// ═══════════════════════════════════════════════════════════════
+
+function InsuranceTabsSection({
+  claims, pending, pendingAmount, settled, settledAmount, filtered,
+  loading, search, setSearch, statusFilter, setStatusFilter,
+  updateClaimStatus, shareWithCA, generateDocBundle, inr, user,
+}: any) {
+  const [activeTab, setActiveTab] = useState<'claims' | 'insured_patients'>('claims')
+  const [insuredPatients, setInsuredPatients] = useState<any[]>([])
+  const [insuredStats, setInsuredStats] = useState<any>(null)
+  const [insuredLoading, setInsuredLoading] = useState(false)
+  const [insuredFilter, setInsuredFilter] = useState<string>('all')
+
+  // Load insured patients from sync API
+  async function loadInsuredPatients(filter = insuredFilter) {
+    setInsuredLoading(true)
+    try {
+      const res = await fetch(`/api/insurance/sync?filter=${filter}`)
+      if (res.ok) {
+        const data = await res.json()
+        setInsuredPatients(data.patients || [])
+        setInsuredStats(data.stats || null)
+      }
+    } catch (e) {
+      console.error('[Insurance] Failed to load insured patients:', e)
+    }
+    setInsuredLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'insured_patients') {
+      loadInsuredPatients()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, insuredFilter])
+
+  // Auto-create claim for a patient
+  async function autoCreateClaim(patient: any) {
+    if (!confirm(`Create insurance claim entry for ${patient.patient_name}?`)) return
+    try {
+      const res = await fetch('/api/insurance/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: patient.patient_id,
+          trigger: 'manual',
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        alert(`Claim created for ${patient.patient_name}. Switch to Claims tab to manage it.`)
+        loadInsuredPatients()
+      } else {
+        alert(data.message || data.error || 'Failed to create claim')
+      }
+    } catch {
+      alert('Error creating claim')
+    }
+  }
+
+  return (
+    <>
+      {/* Tab buttons */}
+      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setActiveTab('claims')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5
+            ${activeTab === 'claims' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+          <FileText className="w-3.5 h-3.5" /> Claims ({claims.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('insured_patients')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5
+            ${activeTab === 'insured_patients' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+          <Shield className="w-3.5 h-3.5" /> Insured Patients
+          {insuredStats?.patients_without_claims > 0 && (
+            <span className="bg-orange-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+              {insuredStats.patients_without_claims}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ═══ CLAIMS TAB ═══ */}
+      {activeTab === 'claims' && (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            <div className="card p-4 bg-orange-50">
+              <div className="text-2xl font-bold text-orange-700">{inr(pendingAmount)}</div>
+              <div className="text-xs font-semibold text-gray-600">{pending.length} Pending Claims</div>
+            </div>
+            <div className="card p-4 bg-green-50">
+              <div className="text-2xl font-bold text-green-700">{inr(settledAmount)}</div>
+              <div className="text-xs font-semibold text-gray-600">{settled.length} Settled</div>
+            </div>
+            <div className="card p-4 bg-blue-50">
+              <div className="text-2xl font-bold text-blue-700">{claims.length}</div>
+              <div className="text-xs font-semibold text-gray-600">Total Claims</div>
+            </div>
+          </div>
+
+          {/* Search + filter */}
+          <div className="flex gap-3 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input className="input pl-9" placeholder="Search patient, MRN, TPA, claim #…" value={search} onChange={(e: any) => setSearch(e.target.value)} />
+            </div>
+            <select className="input w-48" value={statusFilter} onChange={(e: any) => setStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Claims list */}
+          {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : filtered.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400">
+              <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">{claims.length === 0 ? 'No claims yet' : 'No claims match filter'}</p>
+              {claims.length === 0 && (
+                <p className="text-sm mt-2">
+                  Patients who register with insurance will auto-appear in the <strong>Insured Patients</strong> tab.
+                  Create claims from there or click <strong>+ New Claim</strong> above.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((c: any) => {
+                const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.pre_auth_pending
+                const Icon = cfg.icon
+                const nextStatuses = STATUS_FLOW[c.status] || []
+                return (
+                  <div key={c.id} className={`card p-4 border ${cfg.color}`}>
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-semibold text-gray-900">{c.patient_name}</span>
+                          <span className="text-xs text-gray-400">{c.mrn}</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}><Icon className="w-3 h-3 inline mr-1" />{cfg.label}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {c.tpa_name && <span>{c.tpa_name}</span>}
+                          {c.insurance_company && <span className="ml-2 text-gray-400">({c.insurance_company})</span>}
+                          {c.policy_number && <span className="ml-2 text-xs text-gray-400">Policy: {c.policy_number}</span>}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {c.diagnosis && <span>Dx: {c.diagnosis}</span>}
+                          {c.surgery_name && <span className="ml-2">Surgery: {c.surgery_name}</span>}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2">
+                          <span className="text-sm font-mono font-bold text-gray-800">Claimed: {inr(c.claim_amount)}</span>
+                          {c.approved_amount != null && <span className="text-sm font-mono font-bold text-green-700">Approved: {inr(c.approved_amount)}</span>}
+                          {c.settlement_utr && <span className="text-xs text-gray-400">UTR: {c.settlement_utr}</span>}
+                        </div>
+                        {c.notes && <div className="text-xs text-gray-500 mt-1 italic">{c.notes}</div>}
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0 min-w-[100px]">
+                        {nextStatuses.map((ns: string) => (
+                          <button key={ns} onClick={() => updateClaimStatus(c, ns)}
+                            className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded font-medium text-gray-700 text-left">
+                            → {STATUS_CONFIG[ns]?.label || ns}
+                          </button>
+                        ))}
+                        <button onClick={() => shareWithCA(c)}
+                          className="text-xs bg-green-50 border border-green-200 hover:bg-green-100 px-2 py-1 rounded font-medium text-green-700 text-left flex items-center gap-1">
+                          <Share2 className="w-3 h-3" /> Share with CA
+                        </button>
+                        <button onClick={() => generateDocBundle(c)}
+                          className="text-xs bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded font-medium text-blue-700 text-left flex items-center gap-1">
+                          <FileText className="w-3 h-3" /> Download Docs
+                        </button>
+                        <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ═══ INSURED PATIENTS TAB ═══ */}
+      {activeTab === 'insured_patients' && (
+        <>
+          {/* Insured Patients Stats */}
+          {insuredStats && (
+            <div className="grid grid-cols-4 gap-3 mb-5">
+              <div className="card p-3 bg-blue-50">
+                <div className="text-xl font-bold text-blue-700">{insuredStats.total_insured_patients}</div>
+                <div className="text-xs text-gray-600">Total Insured</div>
+              </div>
+              <div className="card p-3 bg-orange-50">
+                <div className="text-xl font-bold text-orange-700">{insuredStats.patients_without_claims}</div>
+                <div className="text-xs text-gray-600">No Claims Yet</div>
+              </div>
+              <div className="card p-3 bg-yellow-50">
+                <div className="text-xl font-bold text-yellow-700">{insuredStats.patients_with_pending}</div>
+                <div className="text-xs text-gray-600">Pending</div>
+              </div>
+              <div className="card p-3 bg-green-50">
+                <div className="text-xl font-bold text-green-700">{insuredStats.patients_settled}</div>
+                <div className="text-xs text-gray-600">Settled</div>
+              </div>
+            </div>
+          )}
+
+          {/* Filter tabs */}
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: 'all', label: 'All Insured' },
+              { key: 'no_claim', label: 'No Claim' },
+              { key: 'pending', label: 'Pending' },
+              { key: 'settled', label: 'Settled' },
+            ].map(f => (
+              <button key={f.key}
+                onClick={() => setInsuredFilter(f.key)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all
+                  ${insuredFilter === f.key
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                {f.label}
+              </button>
+            ))}
+            <button onClick={() => loadInsuredPatients(insuredFilter)}
+              className="text-xs text-gray-500 hover:text-gray-700 ml-auto flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+
+          {/* Info banner */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-700">
+            <strong>Auto-Sync:</strong> This list auto-updates from patient registration. When a patient registers with
+            Mediclaim = Yes or Cashless = Yes, they appear here. Claims are auto-created when they get admitted or discharged.
+          </div>
+
+          {/* Patient list */}
+          {insuredLoading ? (
+            <div className="text-center py-12 text-gray-400">Loading insured patients…</div>
+          ) : insuredPatients.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400">
+              <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No insured patients found</p>
+              <p className="text-sm mt-1">Patients who register with Mediclaim/Cashless will appear here automatically.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {insuredPatients.map((p: any) => (
+                <div key={p.patient_id} className="card p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/patients/${p.patient_id}`} className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                        {p.patient_name}
+                      </Link>
+                      <span className="text-xs text-gray-400 font-mono">{p.mrn}</span>
+                      {p.mediclaim && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Mediclaim</span>}
+                      {p.cashless && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Cashless</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {p.policy_tpa_name && <span>TPA: <strong>{p.policy_tpa_name}</strong></span>}
+                      {p.policy_number && <span className="ml-2">Policy: {p.policy_number}</span>}
+                      {p.mobile && <span className="ml-2 font-mono">{p.mobile}</span>}
+                    </div>
+                    {p.has_claim && (
+                      <div className="text-xs mt-1">
+                        <span className="text-gray-500">{p.total_claims} claim(s)</span>
+                        {p.pending_claims > 0 && <span className="ml-2 text-orange-600">{p.pending_claims} pending</span>}
+                        {p.settled_claims > 0 && <span className="ml-2 text-green-600">{p.settled_claims} settled</span>}
+                        {p.total_claimed_amount > 0 && <span className="ml-2 font-mono">Claimed: {inr(p.total_claimed_amount)}</span>}
+                        {p.total_settled_amount > 0 && <span className="ml-2 font-mono text-green-700">Settled: {inr(p.total_settled_amount)}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0">
+                    {!p.has_claim ? (
+                      <button
+                        onClick={() => autoCreateClaim(p)}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                        <Plus className="w-3 h-3" /> Create Claim
+                      </button>
+                    ) : (
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        p.latest_claim_status === 'settled' ? 'bg-green-100 text-green-700' :
+                        p.pending_claims > 0 ? 'bg-orange-100 text-orange-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {STATUS_CONFIG[p.latest_claim_status]?.label || p.latest_claim_status || 'Active'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }
