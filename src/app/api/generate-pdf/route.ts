@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { requireAuth } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
 
-  // ── Auth gate ────────────────────────────────────────────────
-  const auth = await requireAuth(req)
-  if (auth instanceof Response) return auth
-  // ────────────────────────────────────────────────────────────
+  // NOTE: No auth required — this generates a BLANK fillable form template.
+  // It contains no patient data. Making it public allows direct download links
+  // from the registration page without requiring Bearer token in the URL.
 
   const { searchParams } = new URL(req.url)
   const hospitalName = searchParams.get('h') || 'NexMedicon Hospital'

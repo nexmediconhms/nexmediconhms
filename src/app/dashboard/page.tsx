@@ -507,14 +507,14 @@ export default function DashboardPage() {
     const [todayBills, weekBills, targetSetting] = await Promise.all([
       supabase.from('bills')
         .select('total, paid, due, status')
-        .gte('createdat', today + 'T00:00:00')
-        .lte('createdat', today + 'T23:59:59'),
+        .gte('created_at', today + 'T00:00:00')
+        .lte('created_at', today + 'T23:59:59'),
 
       supabase.from('bill_payments')
         .select('amount')
-        .gte('createdat', weekAgo + 'T00:00:00'),
+        .gte('created_at', weekAgo + 'T00:00:00'),
 
-      supabase.from('clinicsettings')
+      supabase.from('clinic_settings')
         .select('value')
         .eq('key', 'daily_revenue_target')
         .single(),
@@ -610,20 +610,20 @@ export default function DashboardPage() {
     // Encounters today
     const { data: encounters } = await supabase
       .from('encounters')
-      .select('id, patientid')
-      .eq('encounter_date', today)   // uses renamed column
+      .select('id, patient_id')
+      .eq('encounter_date', today)
 
     // Bills today
     const { data: bills } = await supabase
       .from('bills')
-      .select('patientid')
-      .gte('createdat', today + 'T00:00:00')
-      .lte('createdat', today + 'T23:59:59')
+      .select('patient_id')
+      .gte('created_at', today + 'T00:00:00')
+      .lte('created_at', today + 'T23:59:59')
 
     if (!encounters?.length) return
 
-    const billedPatients = new Set((bills || []).map(b => b.patientid))
-    const unbilled = encounters.filter(e => !billedPatients.has(e.patientid))
+    const billedPatients = new Set((bills || []).map(b => b.patient_id))
+    const unbilled = encounters.filter(e => !billedPatients.has(e.patient_id))
 
     setData(d => ({ ...d, unbilledToday: unbilled.length }))
 
@@ -647,7 +647,7 @@ export default function DashboardPage() {
     const { count } = await supabase
       .from('prescriptions')
       .select('id', { count: 'exact', head: true })
-      .eq('followupdate', today)
+      .eq('follow_up_date', today)
 
     if ((count || 0) > 0) {
       setData(d => ({ ...d, followUpsToday: count || 0 }))

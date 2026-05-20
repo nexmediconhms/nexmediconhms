@@ -6,16 +6,16 @@
  * No login required
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { todayIST } from '@/lib/business-logic'
 
 export default function QueueDisplayPage() {
-  const [current,   setCurrent]   = useState<{ queuenumber: number; patientname: string } | null>(null)
-  const [nextUp,    setNextUp]    = useState<{ queuenumber: number }[]>([])
-  const [waiting,   setWaiting]   = useState(0)
+  const [current, setCurrent] = useState<{ token_number: number; patient_id: string } | null>(null)
+  const [nextUp, setNextUp] = useState<{ token_number: number }[]>([])
+  const [waiting, setWaiting] = useState(0)
   const [lastToken, setLastToken] = useState<number | null>(null)
-  const [time,      setTime]      = useState('')
+  const [time, setTime] = useState('')
 
   // Clock update
   useEffect(() => {
@@ -27,46 +27,50 @@ export default function QueueDisplayPage() {
     return () => clearInterval(t)
   }, [])
 
-  async function loadQueue() {
+  const loadQueue = useCallback(async () => {
     const today = todayIST()
     const { data } = await supabase
-      .from('opdqueue')
-      .select('id, queuenumber, patientname, status')
-      .eq('date', today)                  // opdqueue.date — stays as 'date'
+      .from('opd_queue')
+      .select('id, token_number, patient_id, status')
+      .eq('queue_date', today)
       .neq('status', 'done')
       .neq('status', 'cancelled')
-      .order('queuenumber')
+      .order('token_number')
 
     if (!data) return
 
     const serving = data.filter(q => q.status === 'serving')
-    const waiting = data.filter(q => q.status === 'waiting')
+    const waitingList = data.filter(q => q.status === 'waiting')
 
-    setWaiting(waiting.length)
-    setNextUp(waiting.slice(0, 3))
+    setWaiting(waitingList.length)
+    
+    // Map data structure to align with types
+    setNextUp(waitingList.slice(0, 3).map(q => ({ token_number: q.token_number })))
 
     const curr = serving[0] || null
-    if (curr && curr.queuenumber !== lastToken) {
-      setLastToken(curr.queuenumber)
-      setCurrent(curr)
+    if (curr && curr.token_number !== lastToken) {
+      setLastToken(curr.token_number)
+      setCurrent({ token_number: curr.token_number, patient_id: curr.patient_id })
+      
       // Announce via text-to-speech
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         const u = new SpeechSynthesisUtterance(
-          `Token number ${curr.queuenumber}. Please proceed to the consultation room.`
+          `Token number ${curr.token_number}. Please proceed to the consultation room.`
         )
-        u.lang = 'en-IN'; u.rate = 0.9
+        u.lang = 'en-IN'
+        u.rate = 0.9
         window.speechSynthesis.speak(u)
       }
     } else if (!curr) {
       setCurrent(null)
     }
-  }
+  }, [lastToken])
 
   useEffect(() => {
     loadQueue()
     const interval = setInterval(loadQueue, 15000)
     return () => clearInterval(interval)
-  }, [])
+  }, [loadQueue])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900
@@ -86,7 +90,7 @@ export default function QueueDisplayPage() {
               className="text-[160px] font-black text-white leading-none mb-3"
               style={{ textShadow: '0 0 40px rgba(99,179,237,0.4)' }}
             >
-              {current.queuenumber}
+              {current.token_number}
             </div>
             <div className="text-2xl text-blue-200 font-light">
               Please proceed to the Consultation Room
@@ -106,12 +110,12 @@ export default function QueueDisplayPage() {
           <div className="flex gap-6 justify-center">
             {nextUp.map((q, i) => (
               <div
-                key={q.queuenumber}
+                key={q.token_number || i}
                 className="w-24 h-24 rounded-2xl border-2 border-blue-600
                            bg-blue-800/50 flex items-center justify-center"
                 style={{ opacity: 1 - i * 0.25 }}
               >
-                <span className="text-4xl font-black text-blue-200">{q.queuenumber}</span>
+                <span className="text-4xl font-black text-blue-200">{q.token_number}</span>
               </div>
             ))}
           </div>

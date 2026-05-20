@@ -94,8 +94,8 @@ export async function GET(req: NextRequest) {
     .from('campaign_logs')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'sent')
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // Industry avg: 10% of reached patients actually visit
   const patientsRecalled = Math.round((campaignsSent || 0) * 0.10)
@@ -105,15 +105,15 @@ export async function GET(req: NextRequest) {
   const { count: rxCount } = await sb
     .from('prescriptions')
     .select('*', { count: 'exact', head: true })
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // ── 4. Bills generated (time saved) ──────────────────────
   const { count: billCount } = await sb
     .from('bills')
     .select('*', { count: 'exact', head: true })
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // ── 5. Unbilled encounters caught ────────────────────────
   // Uses encounter_date (renamed from 'date' by v30 migration)
@@ -125,11 +125,11 @@ export async function GET(req: NextRequest) {
 
   const { data: bills } = await sb
     .from('bills')
-    .select('patientid')
-    .gte('createdat', from + 'T00:00:00')
-    .lte('createdat', to + 'T23:59:59')
+    .select('patient_id')
+    .gte('created_at', from + 'T00:00:00')
+    .lte('created_at', to + 'T23:59:59')
 
-  const billedPatients = new Set((bills || []).map(b => b.patientid))
+  const billedPatients = new Set((bills || []).map(b => b.patient_id))
   const unbilledCaught = (encounters || [])
     .filter(e => !billedPatients.has(e.patientid)).length
   const unbilledValue  = unbilledCaught * AVG_CONSULTATION_FEE
@@ -146,8 +146,8 @@ export async function GET(req: NextRequest) {
   const { data: paidBills } = await sb
     .from('bill_payments')
     .select('amount')
-    .gte('createdat', from + 'T00:00:00')
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from + 'T00:00:00')
+    .lte('created_at', to + 'T23:59:59')
 
   const totalRevenue = (paidBills || [])
     .reduce((s, p) => s + Number(p.amount || 0), 0)

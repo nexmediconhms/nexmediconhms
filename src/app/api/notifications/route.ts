@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       .from('clinic_notifications')
       .select('*')
       .contains('target_roles', [role])
-      .order('createdat', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(limit)
 
     if (unreadOnly) {

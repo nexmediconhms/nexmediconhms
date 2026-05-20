@@ -156,10 +156,10 @@ export async function GET(req: NextRequest) {
     doctors = d1
   } else {
     const { data: d2, error: d2Err } = await sb
-      .from('clinicusers')
-      .select('id, fullname, share_pct, earning_model')
+      .from('clinic_users')
+      .select('id, full_name, share_pct, earning_model')
       .eq('role', 'doctor')
-    if (d2Err) safeErrorLog('clinicusers', d2Err)
+    if (d2Err) safeErrorLog('clinic_users', d2Err)
     doctors = d2 || []
   }
 
