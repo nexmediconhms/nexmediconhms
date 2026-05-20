@@ -116,10 +116,10 @@ export default function RoleSwitcher() {
       if (!user) { setLoading(false); return }
 
       const { data: cu } = await supabase
-        .from('clinicusers')
+        .from('clinic_users')
         .select('role, extra_roles')
-        .eq('authid', user.id)
-        .eq('isactive', true)
+        .eq('auth_id', user.id)
+        .eq('is_active', true)
         .single()
 
       if (!cu) { setLoading(false); return }

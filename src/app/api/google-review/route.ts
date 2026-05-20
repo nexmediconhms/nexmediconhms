@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     .from('google_review_requests')
     .select('*')
     .eq('status', 'pending')
-    .order('createdat', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(50)
 
   if (error) {
@@ -116,8 +116,8 @@ export async function POST(req: NextRequest) {
   const { data: recent } = await sb
     .from('google_review_requests')
     .select('id')
-    .eq('patientid', patientId)
-    .gte('createdat', weekAgo.toISOString())
+    .eq('patient_id', patientId)
+    .gte('created_at', weekAgo.toISOString())
     .limit(1)
     .maybeSingle()
 
@@ -128,15 +128,15 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Get Google review URL from clinicsettings
+  // Get Google review URL from clinic_settings
   const { data: reviewSetting } = await sb
-    .from('clinicsettings')
+    .from('clinic_settings')
     .select('value')
     .eq('key', 'google_review_url')
     .maybeSingle()
 
   const { data: nameSetting } = await sb
-    .from('clinicsettings')
+    .from('clinic_settings')
     .select('value')
     .eq('key', 'hospital_name')
     .maybeSingle()

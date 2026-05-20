@@ -14,12 +14,12 @@ export interface TimelineEvent {
 
 export async function buildPatientTimeline(patientId: string): Promise<TimelineEvent[]> {
   const [encounters, prescriptions, labs, bills, admissions, ancVisits] = await Promise.all([
-    supabase.from('encounters').select('*').eq('patientid', patientId).order('date', { ascending: false }),
-    supabase.from('prescriptions').select('*').eq('patientid', patientId).order('createdat', { ascending: false }),
-    supabase.from('labreports').select('*').eq('patientid', patientId).order('reportdate', { ascending: false }),
-    supabase.from('bills').select('*').eq('patientid', patientId).order('createdat', { ascending: false }),
-    supabase.from('ipdadmissions').select('*').eq('patientid', patientId).order('admissiondate', { ascending: false }),
-    supabase.from('ancvisits').select('*').eq('patientid', patientId).order('visitdate', { ascending: false }),
+    supabase.from('encounters').select('*').eq('patient_id', patientId).order('encounter_date', { ascending: false }),
+    supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('lab_reports').select('*').eq('patient_id', patientId).order('report_date', { ascending: false }),
+    supabase.from('bills').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('ipd_admissions').select('*').eq('patient_id', patientId).order('admission_date', { ascending: false }),
+    supabase.from('anc_visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
   ])
 
   const events: TimelineEvent[] = []

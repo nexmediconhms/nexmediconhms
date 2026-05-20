@@ -30,12 +30,12 @@ export default function QueueDisplayPage() {
   async function loadQueue() {
     const today = todayIST()
     const { data } = await supabase
-      .from('opdqueue')
-      .select('id, queuenumber, patientname, status')
-      .eq('date', today)                  // opdqueue.date — stays as 'date'
+      .from('opd_queue')
+      .select('id, token_number, patient_id, status')
+      .eq('queue_date', today)
       .neq('status', 'done')
       .neq('status', 'cancelled')
-      .order('queuenumber')
+      .order('token_number')
 
     if (!data) return
 

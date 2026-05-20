@@ -44,8 +44,8 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from('lab_portal_users')
-      .select('id, name, email, phone, lab_partner_id, auth_token, is_active, last_used_at, token_expires_at, createdat, lab_partners(name)')
-      .order('createdat', { ascending: false })
+      .select('id, name, email, phone, lab_partner_id, auth_token, is_active, last_used_at, token_expires_at, created_at, lab_partners(name)')
+      .order('created_at', { ascending: false })
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -62,7 +62,7 @@ export async function GET() {
       is_active: u.is_active,
       last_used_at: u.last_used_at,
       token_expires_at: u.token_expires_at,
-      created_at: u.createdat,
+      created_at: u.created_at,
     }))
 
     return NextResponse.json({ users })

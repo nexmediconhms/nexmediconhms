@@ -105,8 +105,8 @@ export async function GET(req: NextRequest) {
   const { data: payments, error } = await sb
     .from('bill_payments')
     .select('*')
-    .eq('billid', billId)
-    .order('createdat', { ascending: false })
+    .eq('bill_id', billId)
+    .order('created_at', { ascending: false })
 
   if (error) {
     safeErrorLog('GET.select', billId, error)
@@ -181,9 +181,9 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await sb
       .from('bill_payments')
       .select('*')
-      .eq('billid', billId)
+      .eq('bill_id', billId)
       .eq('reference', `idem:${idempotencyKey}`)
-      .gte('createdat', since)
+      .gte('created_at', since)
       .limit(1)
       .maybeSingle()
 

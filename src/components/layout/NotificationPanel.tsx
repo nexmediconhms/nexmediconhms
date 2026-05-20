@@ -39,7 +39,7 @@ interface Notification {
   patient_name: string | null
   mrn: string | null
   is_read: boolean
-  createdat: string
+  created_at: string
   metadata: any
 }
 
@@ -278,7 +278,7 @@ export default function NotificationPanel() {
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-[10px] text-gray-400 flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
-                            {getTimeAgo(notif.createdat)}
+                            {getTimeAgo(notif.created_at)}
                           </span>
                           {notif.patient_name && (
                             <span className="text-[10px] text-gray-400">
