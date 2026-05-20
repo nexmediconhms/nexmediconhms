@@ -639,6 +639,20 @@ SELECT fix_table_permissions('billing_packages');
 DROP FUNCTION fix_table_permissions(TEXT);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- FIX SEQUENCES: Grant usage on ALL sequences (fixes "permission denied for sequence")
+-- This covers patient_mrn_seq and any other auto-increment sequences
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
+
+-- Also set default privileges so future sequences are automatically accessible
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO service_role;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- VERIFY: Count tables with RLS disabled
 -- ═══════════════════════════════════════════════════════════════════════════════
 
