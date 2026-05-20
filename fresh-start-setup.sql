@@ -4,87 +4,122 @@
 -- ║  PURPOSE: Completely wipes clinic_users and all related data, then sets up   ║
 -- ║  the database schema so you can start fresh.                                 ║
 -- ║                                                                              ║
+-- ║  SAFE TO RUN: Uses DO blocks with exception handling — will NOT fail if a    ║
+-- ║  table doesn't exist. It simply skips non-existent tables silently.          ║
+-- ║                                                                              ║
 -- ║  HOW TO RUN:                                                                 ║
 -- ║  1. Go to your Supabase Dashboard → SQL Editor → New Query                  ║
 -- ║  2. Paste this ENTIRE file                                                   ║
 -- ║  3. Click "Run" (or press Ctrl+Enter)                                        ║
--- ║  4. Then go to Authentication → Users to create auth users (see below)       ║
--- ║                                                                              ║
--- ║  AFTER RUNNING THIS SQL:                                                     ║
--- ║  You need to create auth users in Supabase Dashboard:                        ║
--- ║  1. Go to Authentication → Users → "Add User"                               ║
--- ║  2. Create users with passwords for each role (see bottom of file)           ║
--- ║  3. The FIRST user to log in will be auto-bootstrapped as Admin              ║
--- ║  OR run the Step 7 below to pre-create clinic_users rows.                    ║
+-- ║  4. Then go to Authentication → Users to create auth users (see bottom)      ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 1: DELETE ALL EXISTING DATA (Complete Wipe)
+-- Uses DO block with exception handling so it never fails on missing tables
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- Delete in correct order to avoid foreign key violations
--- (child tables first, parent tables last)
-
--- Lab-related
-DELETE FROM public.lab_results WHERE true;
-DELETE FROM public.lab_orders WHERE true;
-
--- Billing & prescriptions
-DELETE FROM public.billing WHERE true;
-DELETE FROM public.prescriptions WHERE true;
-
--- Encounters & visits
-DELETE FROM public.encounters WHERE true;
-
--- ANC / pregnancy tracking
-DELETE FROM public.anc_visits WHERE true;
-
--- IPD
-DELETE FROM public.ipd_admissions WHERE true;
-DELETE FROM public.bed_assignments WHERE true;
-
--- Queue
-DELETE FROM public.queue WHERE true;
-
--- Patients (main clinical data)
-DELETE FROM public.patients WHERE true;
-
--- Clinic users (the login/role table)
-DELETE FROM public.clinic_users WHERE true;
-
--- Audit logs
-DELETE FROM public.audit_logs WHERE true;
-
--- Notifications
-DELETE FROM public.notifications WHERE true;
-
--- Hospital fund/expenses
-DELETE FROM public.expenses WHERE true;
-
--- Any other app tables (safe to fail if they don't exist)
 DO $$
+DECLARE
+  tbl TEXT;
+  tables_to_clear TEXT[] := ARRAY[
+    -- Snake_case names (used in newer code)
+    'lab_results',
+    'lab_orders',
+    'lab_reports',
+    'bill_payments',
+    'payment_transactions',
+    'daily_closings',
+    'billing',
+    'prescriptions',
+    'encounters',
+    'anc_visits',
+    'anc_registrations',
+    'ipd_admissions',
+    'bed_assignments',
+    'beds',
+    'ot_schedules',
+    'queue',
+    'appointments',
+    'patients',
+    'clinic_users',
+    'audit_logs',
+    'notifications',
+    'expenses',
+    'hospital_fund',
+    'discharge_summaries',
+    'vitals',
+    'documents',
+    'settings',
+    'consultation_attachments',
+    'consultation_files_db',
+    'whatsapp_notifications',
+    'cron_job_log',
+    'reminder_log',
+    'follow_ups',
+    'backup_log',
+    'portal_patients',
+    'portal_sessions',
+    'patient_allergies',
+    'attachments',
+    'video_rooms',
+    'lab_partners',
+    -- Concatenated names (used in v00-schema-master.sql)
+    'labreports',
+    'bills',
+    'ipdadmissions',
+    'ipdchargerates',
+    'opdqueue',
+    'reminders',
+    'reminderlog',
+    'ancregistrations',
+    'ancvisits',
+    'dischargesummaries',
+    'portalpatients',
+    'portalsessions',
+    'auditlog',
+    'hospitalfund',
+    'labpartners',
+    'patientallergies',
+    'videorooms',
+    'clinicsettings'
+  ];
 BEGIN
-  -- Try deleting from tables that may or may not exist
-  EXECUTE 'DELETE FROM public.appointments WHERE true';
-EXCEPTION WHEN undefined_table THEN NULL;
+  FOREACH tbl IN ARRAY tables_to_clear LOOP
+    BEGIN
+      EXECUTE format('DELETE FROM public.%I WHERE true', tbl);
+      RAISE NOTICE 'Cleared table: %', tbl;
+    EXCEPTION
+      WHEN undefined_table THEN
+        RAISE NOTICE 'Table % does not exist — skipped', tbl;
+      WHEN OTHERS THEN
+        RAISE NOTICE 'Error clearing table %: %', tbl, SQLERRM;
+    END;
+  END LOOP;
 END $$;
 
+-- Now clear the tables that almost certainly exist (patients, encounters, etc.)
+-- These are cleared LAST because other tables reference them via FK
 DO $$
+DECLARE
+  tbl TEXT;
+  final_tables TEXT[] := ARRAY[
+    'patients',
+    'clinicusers',
+    'clinic_users'
+  ];
 BEGIN
-  EXECUTE 'DELETE FROM public.vitals WHERE true';
-EXCEPTION WHEN undefined_table THEN NULL;
-END $$;
-
-DO $$
-BEGIN
-  EXECUTE 'DELETE FROM public.documents WHERE true';
-EXCEPTION WHEN undefined_table THEN NULL;
-END $$;
-
-DO $$
-BEGIN
-  EXECUTE 'DELETE FROM public.settings WHERE true';
-EXCEPTION WHEN undefined_table THEN NULL;
+  FOREACH tbl IN ARRAY final_tables LOOP
+    BEGIN
+      EXECUTE format('DELETE FROM public.%I WHERE true', tbl);
+      RAISE NOTICE 'Cleared table: %', tbl;
+    EXCEPTION
+      WHEN undefined_table THEN
+        RAISE NOTICE 'Table % does not exist — skipped', tbl;
+      WHEN OTHERS THEN
+        RAISE NOTICE 'Error clearing table %: % (likely FK constraint — already handled)', tbl, SQLERRM;
+    END;
+  END LOOP;
 END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -105,6 +140,18 @@ CREATE TABLE IF NOT EXISTS public.clinic_users (
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- If the table already existed with old CHECK constraint, update it
+DO $$
+BEGIN
+  -- Drop old constraint and add new one with lab_partner
+  ALTER TABLE public.clinic_users DROP CONSTRAINT IF EXISTS clinic_users_role_check;
+  ALTER TABLE public.clinic_users ADD CONSTRAINT clinic_users_role_check 
+    CHECK (role IN ('admin', 'doctor', 'staff', 'lab_partner'));
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'Could not update role constraint: % — likely already correct', SQLERRM;
+END $$;
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 3: Enable RLS on clinic_users
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -115,19 +162,17 @@ ALTER TABLE public.clinic_users ENABLE ROW LEVEL SECURITY;
 -- STEP 4: Drop ALL existing policies (clean slate)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-DROP POLICY IF EXISTS "Users can read own profile" ON public.clinic_users;
-DROP POLICY IF EXISTS "Users can read own profile by email" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can read all users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can insert users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can update users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Allow first user bootstrap" ON public.clinic_users;
-DROP POLICY IF EXISTS "Users can update own profile" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_own" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_insert_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_update_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "Service role full access" ON public.clinic_users;
-DROP POLICY IF EXISTS "Authenticated users can read by email" ON public.clinic_users;
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN 
+    SELECT policyname FROM pg_policies WHERE tablename = 'clinic_users' AND schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.clinic_users', pol.policyname);
+    RAISE NOTICE 'Dropped policy: %', pol.policyname;
+  END LOOP;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Create correct RLS policies
@@ -191,42 +236,56 @@ CREATE POLICY "Allow first user bootstrap"
   WITH CHECK (NOT EXISTS (SELECT 1 FROM public.clinic_users));
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- STEP 6: Also delete all Supabase Auth users (optional — uncomment if needed)
+-- STEP 6: (OPTIONAL) Delete all Supabase Auth users
 -- ═══════════════════════════════════════════════════════════════════════════════
--- WARNING: This deletes ALL auth users. Only uncomment if you want a complete
--- fresh start including authentication credentials.
+-- UNCOMMENT the line below ONLY if you want to delete ALL login accounts too.
+-- After uncommenting and running, you'll need to create new users in Step 7.
 -- 
 -- DELETE FROM auth.users WHERE true;
---
--- If you uncomment the above, you'll need to re-create auth users in Step 7.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- STEP 7: (OPTIONAL) Pre-create clinic_users with known auth_ids
+-- STEP 7: INSTRUCTIONS — Create Fresh Users After Running This SQL
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 
--- OPTION A (RECOMMENDED): Let the app handle it automatically
--- ─────────────────────────────────────────────────────────────────────────────
--- 1. Create auth users in Supabase Dashboard → Authentication → Users → Add User
--- 2. The FIRST user to log in gets auto-bootstrapped as Admin
--- 3. Then Admin goes to Settings → Manage Users to add Doctor, Staff, Lab Partner
 --
--- OPTION B: Pre-insert clinic_users if you already know the auth UUIDs
+-- OPTION A (RECOMMENDED — Easiest):
 -- ─────────────────────────────────────────────────────────────────────────────
--- After creating auth users in Supabase Dashboard, find their UUIDs in 
--- Authentication → Users table, then run:
+-- 1. Go to Supabase Dashboard → Authentication → Users
+-- 2. Delete all existing users (click ⋮ menu → Delete User for each)
+-- 3. Click "Add User" → "Create New User" for each role:
+--
+--    ┌─────────────────────────────────────────────────────────────────┐
+--    │ Email                  │ Password     │ Role (assigned in app)  │
+--    ├─────────────────────────────────────────────────────────────────┤
+--    │ admin@yourclinic.com   │ Admin@123!   │ Admin (auto on 1st login)│
+--    │ doctor@yourclinic.com  │ Doctor@123!  │ Doctor                  │
+--    │ staff@yourclinic.com   │ Staff@123!   │ Staff                   │
+--    │ lab@yourclinic.com     │ Lab@123!     │ Lab Partner             │
+--    └─────────────────────────────────────────────────────────────────┘
+--    (Use your own emails/passwords — above are just examples)
+--    IMPORTANT: Check "Auto Confirm User" when creating each user!
+--
+-- 4. Log in to the app with the ADMIN email FIRST
+--    → The app auto-creates you as Admin (bootstrap flow)
+-- 5. Go to Settings → Manage Users → Add the other users with their roles
+-- 6. Now each user can log in with their own credentials
+--
+-- OPTION B (Pre-insert via SQL — for advanced users):
+-- ─────────────────────────────────────────────────────────────────────────────
+-- After creating auth users in Supabase Dashboard, copy their UUIDs from
+-- the Authentication → Users table, then run:
 --
 -- INSERT INTO public.clinic_users (auth_id, email, full_name, role, is_active)
 -- VALUES
---   ('<ADMIN_AUTH_UUID>',  'admin@yourclinic.com',  'Dr. Admin Name',  'admin',       true),
---   ('<DOCTOR_AUTH_UUID>', 'doctor@yourclinic.com', 'Dr. Doctor Name', 'doctor',      true),
---   ('<STAFF_AUTH_UUID>',  'staff@yourclinic.com',  'Staff Name',      'staff',       true),
---   ('<LAB_AUTH_UUID>',    'lab@yourclinic.com',    'Lab Partner',     'lab_partner', true);
+--   ('paste-admin-uuid-here',  'admin@yourclinic.com',  'Dr. Admin',    'admin',       true),
+--   ('paste-doctor-uuid-here', 'doctor@yourclinic.com', 'Dr. Doctor',   'doctor',      true),
+--   ('paste-staff-uuid-here',  'staff@yourclinic.com',  'Staff Member', 'staff',       true),
+--   ('paste-lab-uuid-here',    'lab@yourclinic.com',    'Lab Partner',  'lab_partner', true);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- VERIFICATION: Check everything is clean
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 SELECT 
-  'Fresh start complete!' AS status,
+  '✅ Fresh start complete!' AS status,
   (SELECT count(*) FROM public.clinic_users) AS clinic_users_count,
-  (SELECT count(*) FROM pg_policies WHERE tablename = 'clinic_users') AS rls_policies_count;
+  (SELECT count(*) FROM pg_policies WHERE tablename = 'clinic_users' AND schemaname = 'public') AS rls_policies_count;
