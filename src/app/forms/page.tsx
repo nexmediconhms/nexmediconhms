@@ -5,6 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
 import { getHospitalSettings, normalizePhone } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 import type { HospitalSettings } from '@/lib/settings'
 import {
   Printer, ScanLine, FileText, ExternalLink, CheckCircle,
@@ -69,7 +70,13 @@ function PdfUploadWidget({ onParsed }: { onParsed: (data: any) => void }) {
     fd.append('file', file)
     fd.append('form_type', 'patient_registration')
     try {
-      const res  = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
+      // Get auth token for the API (required by requireAuth middleware)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      const res  = await fetch('/api/parse-pdf', { method: 'POST', body: fd, headers })
       const data = await res.json()
       if (data.error) { setStatus('error'); setMsg(data.error); return }
       setStatus('done')
