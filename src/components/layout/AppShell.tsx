@@ -26,7 +26,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AuthContext, loadClinicUser, isFirstTimeSetup, hasPermission } from '@/lib/auth'
+import { AuthContext, loadClinicUser, hasPermission } from '@/lib/auth'
 import type { ClinicUser, AuthContextType, Permission, UserRole } from '@/lib/auth'
 import { initSettings } from '@/lib/settings'
 import { initABDMConfig } from '@/lib/abdm'
@@ -76,12 +76,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
 
-    try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) { router.push('/login'); return }
-    } catch { /* non-fatal — proceed */ }
+    // Try loading user — first via direct query, then via /api/me (bypasses RLS)
+    let user = await loadClinicUser()
 
-    const user = await loadClinicUser()
+    // If loadClinicUser() already succeeded (direct or via /api/me fallback), use it
+    if (!user) {
+      // Last resort: the /api/me endpoint also handles auto-bootstrapping
+      // (creates admin if clinic_users is empty) and fixes auth_id mismatches.
+      // This covers the case where loadClinicUser's own /api/me call failed
+      // (e.g., network timing issue on first load).
+      try {
+        const res = await fetch('/api/me', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          const body = await res.json()
+          if (body.user) {
+            user = {
+              id:          body.user.id,
+              auth_id:     body.user.auth_id,
+              email:       body.user.email,
+              full_name:   body.user.full_name,
+              role:        body.user.role,
+              is_active:   body.user.is_active,
+              phone:       body.user.phone,
+              specialty:   body.user.specialty,
+              med_reg_no:  body.user.med_reg_no,
+            }
+          }
+        } else {
+          const body = await res.json().catch(() => ({}))
+          console.error('[AppShell] /api/me returned:', res.status, body)
+        }
+      } catch (err: any) {
+        console.error('[AppShell] /api/me fetch failed:', err.message)
+      }
+    }
+
     if (!user) { setNoProfile(true); setLoading(false); return }
 
     try {
