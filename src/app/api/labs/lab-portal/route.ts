@@ -276,6 +276,27 @@ export async function POST(req: NextRequest) {
       user_role:  'lab_partner',
     })
 
+    // ── Step 5b: Create in-app notification for staff/doctor ──
+    await supabase.from('clinic_notifications').insert({
+      title: `Lab Report: ${reportName}`,
+      message: `${labName} uploaded "${reportName}" for ${resolvedName} (${mrn || 'N/A'}). Review in patient profile.`,
+      type: 'lab_report',
+      severity: 'normal',
+      source: 'lab_portal',
+      entity_type: 'lab_report',
+      entity_id: reportId,
+      patient_id: patientId,
+      patient_name: resolvedName,
+      mrn: mrn || null,
+      target_roles: ['admin', 'doctor', 'staff'],
+      metadata: JSON.stringify({
+        lab_partner: labName,
+        uploaded_by: portalUser.name,
+        report_name: reportName,
+        has_attachment: !!attachmentUrl,
+      }),
+    })
+
     // ── Step 6: Update portal user last_used_at ───────────────
     await supabase.from('lab_portal_users')
       .update({ last_used_at: new Date().toISOString() })

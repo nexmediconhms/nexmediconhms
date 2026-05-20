@@ -23,6 +23,30 @@
 -- ============================================================
 
 -- ── §1  HELPER FUNCTIONS ──────────────────────────────────────────────────────
+-- NOTE: Helper functions reference `clinicusers` table.
+-- We create the table first (forward declaration), then define the functions.
+
+-- ── §2  CORE TABLES (created before helper functions that reference them) ─────
+
+CREATE TABLE IF NOT EXISTS clinicusers (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  authid      UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email       TEXT NOT NULL,
+  fullname    TEXT NOT NULL,
+  role        TEXT NOT NULL CHECK (role IN ('admin','doctor','staff','receptionist')),
+  phone       TEXT,
+  isactive    BOOLEAN DEFAULT TRUE,
+  createdat   TIMESTAMPTZ DEFAULT NOW(),
+  updatedat   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS clinicsettings (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  updatedat   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Now that clinicusers exists, create helper functions that reference it:
 
 CREATE OR REPLACE FUNCTION is_active_user() RETURNS boolean
   LANGUAGE sql SECURITY DEFINER STABLE AS $$
@@ -74,25 +98,7 @@ BEGIN
 END;
 $$;
 
--- ── §2  CORE TABLES ───────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS clinicusers (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  authid      UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
-  email       TEXT NOT NULL,
-  fullname    TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('admin','doctor','staff','receptionist')),
-  phone       TEXT,
-  isactive    BOOLEAN DEFAULT TRUE,
-  createdat   TIMESTAMPTZ DEFAULT NOW(),
-  updatedat   TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS clinicsettings (
-  key         TEXT PRIMARY KEY,
-  value       TEXT NOT NULL,
-  updatedat   TIMESTAMPTZ DEFAULT NOW()
-);
+-- ── §2 CORE TABLES (patients) ──────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS patients (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -469,6 +475,128 @@ CREATE TABLE IF NOT EXISTS videorooms (
   createdat       TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── §12b NOTIFICATIONS (in-app notification center) ───────────────────────────
+
+CREATE TABLE IF NOT EXISTS clinic_notifications (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title           TEXT NOT NULL,
+  message         TEXT NOT NULL,
+  type            TEXT NOT NULL DEFAULT 'info',  -- 'lab_report' | 'discharge' | 'appointment' | 'billing' | 'insurance' | 'system' | 'info'
+  severity        TEXT DEFAULT 'normal',         -- 'normal' | 'warning' | 'critical'
+  source          TEXT,                          -- 'lab_portal' | 'cron' | 'ipd' | 'billing' | 'system'
+  entity_type     TEXT,                          -- 'patient' | 'lab_report' | 'bill' | 'admission' | 'claim'
+  entity_id       TEXT,                          -- UUID of related entity
+  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name    TEXT,
+  mrn             TEXT,
+  target_roles    TEXT[] DEFAULT '{admin,doctor,staff}', -- which roles can see this notification
+  is_read         BOOLEAN DEFAULT FALSE,
+  read_by         TEXT,
+  read_at         TIMESTAMPTZ,
+  metadata        JSONB,
+  createdat       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── §12c LAB PORTAL USERS (persistent tokens for lab partners) ────────────────
+
+CREATE TABLE IF NOT EXISTS lab_portal_users (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name            TEXT NOT NULL,
+  email           TEXT,
+  phone           TEXT,
+  lab_partner_id  UUID REFERENCES labpartners(id) ON DELETE CASCADE,
+  auth_token      TEXT NOT NULL UNIQUE,
+  is_active       BOOLEAN DEFAULT TRUE,
+  last_used_at    TIMESTAMPTZ,
+  token_expires_at TIMESTAMPTZ,  -- NULL = never expires
+  createdat       TIMESTAMPTZ DEFAULT NOW(),
+  updatedat       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── §12d INSURANCE CLAIMS ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS insurance_claims (
+  id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id        UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  patient_name      TEXT,
+  mrn               TEXT,
+  policy_number     TEXT,
+  tpa_name          TEXT,
+  insurance_company TEXT,
+  claim_amount      NUMERIC(12,2) DEFAULT 0,
+  approved_amount   NUMERIC(12,2),
+  status            TEXT DEFAULT 'pre_auth_pending',
+  admission_date    DATE,
+  discharge_date    DATE,
+  surgery_name      TEXT,
+  diagnosis         TEXT,
+  pre_auth_number   TEXT,
+  claim_number      TEXT,
+  settlement_utr    TEXT,
+  settlement_date   DATE,
+  documents_sent    BOOLEAN DEFAULT FALSE,
+  deduction_reason  TEXT,
+  notes             TEXT,
+  created_by        TEXT,
+  updated_at        TIMESTAMPTZ DEFAULT NOW(),
+  createdat         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS insurance_claim_history (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  claim_id    UUID NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+  old_status  TEXT,
+  new_status  TEXT NOT NULL,
+  notes       TEXT,
+  done_by     TEXT,
+  createdat   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── §12e WHATSAPP NOTIFICATIONS LOG ───────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS whatsapp_notifications (
+  id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id        UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name      TEXT,
+  mobile            TEXT,
+  notification_type TEXT,
+  message_preview   TEXT,
+  recipient_type    TEXT DEFAULT 'patient',
+  status            TEXT DEFAULT 'queued',
+  scheduled_for     TIMESTAMPTZ,
+  sent_at           TIMESTAMPTZ,
+  metadata          TEXT,
+  createdat         TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── §12f DOCTOR ALERTS ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS doctor_alerts (
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
+  patient_name    TEXT,
+  mrn             TEXT,
+  alert_type      TEXT NOT NULL,
+  severity        TEXT DEFAULT 'warning',
+  alert_data      JSONB,
+  is_read         BOOLEAN DEFAULT FALSE,
+  read_at         TIMESTAMPTZ,
+  createdat       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── §12g CRON JOB LOG ─────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS cron_job_log (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  job_name    TEXT NOT NULL,
+  status      TEXT DEFAULT 'running',
+  started_at  TIMESTAMPTZ DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  result      JSONB,
+  error       TEXT,
+  createdat   TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── §13 ROW LEVEL SECURITY ─────────────────────────────────────────────────────
 
 ALTER TABLE clinicusers       ENABLE ROW LEVEL SECURITY;
@@ -496,6 +624,13 @@ ALTER TABLE portalsessions    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auditlog          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attachments       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE videorooms        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clinic_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lab_portal_users  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE insurance_claims  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE insurance_claim_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE doctor_alerts     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cron_job_log      ENABLE ROW LEVEL SECURITY;
 
 -- clinicusers: active users read all; admin full write
 CREATE POLICY cu_select ON clinicusers FOR SELECT TO authenticated USING (is_active_user());
@@ -612,6 +747,39 @@ CREATE POLICY att_all ON attachments FOR ALL TO authenticated USING (is_active_u
 -- video rooms: all active
 CREATE POLICY vid_all ON videorooms FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
 
+-- clinic_notifications: all active read; insert from any; delete admin
+CREATE POLICY notif_select ON clinic_notifications FOR SELECT TO authenticated USING (is_active_user());
+CREATE POLICY notif_insert ON clinic_notifications FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY notif_update ON clinic_notifications FOR UPDATE TO authenticated USING (is_active_user());
+CREATE POLICY notif_delete ON clinic_notifications FOR DELETE TO authenticated USING (is_admin());
+
+-- lab_portal_users: admin only for management; service role for token verify
+CREATE POLICY lpu_select ON lab_portal_users FOR SELECT TO authenticated USING (is_active_user());
+CREATE POLICY lpu_insert ON lab_portal_users FOR INSERT TO authenticated WITH CHECK (is_admin());
+CREATE POLICY lpu_update ON lab_portal_users FOR UPDATE TO authenticated USING (is_admin());
+CREATE POLICY lpu_delete ON lab_portal_users FOR DELETE TO authenticated USING (is_admin());
+
+-- insurance_claims: all active read; staff/admin insert; update active users
+CREATE POLICY ic_select ON insurance_claims FOR SELECT TO authenticated USING (is_active_user());
+CREATE POLICY ic_insert ON insurance_claims FOR INSERT TO authenticated WITH CHECK (is_active_user());
+CREATE POLICY ic_update ON insurance_claims FOR UPDATE TO authenticated USING (is_active_user());
+CREATE POLICY ic_delete ON insurance_claims FOR DELETE TO authenticated USING (is_admin());
+
+-- insurance_claim_history: all active read; insert from any
+CREATE POLICY ich_select ON insurance_claim_history FOR SELECT TO authenticated USING (is_active_user());
+CREATE POLICY ich_insert ON insurance_claim_history FOR INSERT TO authenticated WITH CHECK (true);
+
+-- whatsapp_notifications: all active
+CREATE POLICY wn_all ON whatsapp_notifications FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
+
+-- doctor_alerts: all active
+CREATE POLICY da_all ON doctor_alerts FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
+
+-- cron_job_log: admin only
+CREATE POLICY cjl_select ON cron_job_log FOR SELECT TO authenticated USING (is_admin());
+CREATE POLICY cjl_insert ON cron_job_log FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY cjl_update ON cron_job_log FOR UPDATE TO authenticated USING (is_admin());
+
 -- ── §14 INDEXES ────────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_patients_mrn         ON patients (mrn);
@@ -656,6 +824,26 @@ CREATE INDEX IF NOT EXISTS idx_audit_action         ON auditlog (action);
 
 CREATE INDEX IF NOT EXISTS idx_portal_token         ON portalsessions (token);
 CREATE INDEX IF NOT EXISTS idx_portal_expiry        ON portalsessions (expiresat);
+
+-- New table indexes
+CREATE INDEX IF NOT EXISTS idx_notif_createdat      ON clinic_notifications (createdat DESC);
+CREATE INDEX IF NOT EXISTS idx_notif_type           ON clinic_notifications (type);
+CREATE INDEX IF NOT EXISTS idx_notif_unread         ON clinic_notifications (is_read) WHERE is_read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notif_patient        ON clinic_notifications (patient_id) WHERE patient_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_lpu_token            ON lab_portal_users (auth_token);
+CREATE INDEX IF NOT EXISTS idx_lpu_partner          ON lab_portal_users (lab_partner_id);
+
+CREATE INDEX IF NOT EXISTS idx_ic_patient           ON insurance_claims (patient_id);
+CREATE INDEX IF NOT EXISTS idx_ic_status            ON insurance_claims (status);
+CREATE INDEX IF NOT EXISTS idx_ic_createdat         ON insurance_claims (createdat DESC);
+
+CREATE INDEX IF NOT EXISTS idx_wn_patient           ON whatsapp_notifications (patient_id);
+CREATE INDEX IF NOT EXISTS idx_wn_status            ON whatsapp_notifications (status);
+CREATE INDEX IF NOT EXISTS idx_wn_type              ON whatsapp_notifications (notification_type);
+
+CREATE INDEX IF NOT EXISTS idx_da_unread            ON doctor_alerts (is_read) WHERE is_read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_da_patient           ON doctor_alerts (patient_id);
 
 -- ── DONE ──────────────────────────────────────────────────────────────────────
 SELECT 'v00-schema-master: fresh database bootstrap complete' AS result;

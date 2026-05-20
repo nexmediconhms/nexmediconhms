@@ -435,6 +435,24 @@ export default function NewPatientPage() {
     // Clear draft after successful registration
     clearDraft()
     generatePayLink(data.id, data.full_name, form.mobile.trim())
+
+    // ── Auto-sync insurance: if patient has mediclaim/cashless, create claim entry ──
+    if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
+      try {
+        await fetch('/api/insurance/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: data.id,
+            trigger: 'registration',
+            claim_amount: 0,  // Will be updated when bill is generated
+            diagnosis: null,
+          }),
+        })
+      } catch {
+        // Non-fatal: insurance sync failure should not block registration
+      }
+    }
   }
 
   // ── Helper: input class ────────────────────────────────────────

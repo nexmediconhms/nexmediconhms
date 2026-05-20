@@ -36,6 +36,7 @@ import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
+import NotificationPanel from './NotificationPanel';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -276,7 +277,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Role badge with sign-out — clicking shows a small dropdown */}
           {effectiveUser && (
-            <div className="no-print fixed top-2 right-4 z-40 hidden md:block">
+            <div className="no-print fixed top-2 right-4 z-40 hidden md:flex items-center gap-2">
+              {/* Notification Bell */}
+              <NotificationPanel />
+
               <div className="relative group">
                 {/* Badge button */}
                 <button

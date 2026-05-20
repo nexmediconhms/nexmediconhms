@@ -173,7 +173,7 @@ async function processReminders(dryRun: boolean) {
         .lte('follow_up_date', today)
 
       // Get patient details
-      const patientIds = [new Set((rxs || []).map(r => r.patient_id).filter(Boolean))]
+      const patientIds = [...new Set((rxs || []).map(r => r.patient_id).filter(Boolean))]
       const patientMap = new Map<string, any>()
       if (patientIds.length > 0) {
         const { data: patients } = await supabase
@@ -365,7 +365,7 @@ async function processReminders(dryRun: boolean) {
         if (!latestRx.has(rx.patient_id)) latestRx.set(rx.patient_id, rx)
       }
 
-      const patientIds = [latestRx.keys()]
+      const patientIds = [...latestRx.keys()]
       const patientMap = new Map<string, any>()
       if (patientIds.length > 0) {
         const { data: patients } = await supabase
@@ -406,7 +406,7 @@ async function processReminders(dryRun: boolean) {
         .eq('surgery_date', tomorrow)
         .eq('status', 'scheduled')
 
-      const otPatientIds = [new Set((otSchedules || []).map(s => s.patient_id).filter(Boolean))]
+      const otPatientIds = [...new Set((otSchedules || []).map(s => s.patient_id).filter(Boolean))]
       const otMobileMap = new Map<string, string>()
       if (otPatientIds.length > 0) {
         const { data: pats } = await supabase
@@ -473,7 +473,7 @@ async function processReminders(dryRun: boolean) {
         .lt('created_at', threeDaysAgo + 'T00:00:00')
         .limit(50)
 
-      const billPatientIds = [new Set((bills || []).map(b => b.patient_id).filter(Boolean))]
+      const billPatientIds = [...new Set((bills || []).map(b => b.patient_id).filter(Boolean))]
       const billMobileMap = new Map<string, string>()
       if (billPatientIds.length > 0) {
         const { data: pats } = await supabase
