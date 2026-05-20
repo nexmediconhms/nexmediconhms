@@ -207,17 +207,21 @@ function NextOPDPatientCard() {
       const today = todayIST()
 
       // 1. Check OPD Queue for current (in_progress) and next (waiting) patients
-      const { data: queueData } = await supabase
+      const { data: queueData, error: queueError } = await supabase
         .from('opd_queue')
         .select(`
           id, token_number, status, priority, notes, called_at,
-          patient_id, patients!inner(full_name, mrn, mobile)
+          patient_id, patients(full_name, mrn, mobile)
         `)
         .eq('queue_date', today)
         .in('status', ['in_progress', 'waiting'])
         .order('status', { ascending: false })  // in_progress first
         .order('token_number', { ascending: true })
         .limit(5)
+
+      if (queueError) {
+        console.warn('[Dashboard] OPD queue query error:', queueError.message)
+      }
 
       if (queueData && queueData.length > 0) {
         // Find current (in_progress) and next (first waiting)
