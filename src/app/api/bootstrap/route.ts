@@ -25,9 +25,17 @@ export async function POST(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    if (!supabaseUrl || !serviceKey || !anonKey) {
+    // Detailed error for missing config
+    if (!supabaseUrl || !anonKey) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete' },
+        { error: 'Supabase URL or Anon Key not configured. Check Vercel environment variables.' },
+        { status: 500 }
+      )
+    }
+
+    if (!serviceKey) {
+      return NextResponse.json(
+        { error: 'SUPABASE_SERVICE_ROLE_KEY is missing. Add it in Vercel → Settings → Environment Variables. Find it in Supabase → Project Settings → API → service_role (secret).' },
         { status: 500 }
       )
     }
@@ -80,9 +88,15 @@ export async function POST(req: NextRequest) {
       .select('id', { count: 'exact', head: true })
 
     if (countError) {
-      console.error('[/api/bootstrap] Count query failed:', countError.message)
+      console.error('[/api/bootstrap] Count query failed:', countError.message, countError.code)
       return NextResponse.json(
-        { error: 'Failed to check existing users', details: countError.message },
+        { 
+          error: 'Failed to check existing users', 
+          details: countError.message,
+          hint: countError.message.includes('does not exist') 
+            ? 'The clinic_users table does not exist. Run the fresh-start-setup.sql in Supabase SQL Editor first.'
+            : 'The SUPABASE_SERVICE_ROLE_KEY might be incorrect. Re-copy it from Supabase → Project Settings → API → service_role key.'
+        },
         { status: 500 }
       )
     }
@@ -151,7 +165,12 @@ export async function GET() {
 
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete' },
+        { 
+          error: 'Server configuration incomplete',
+          hint: !serviceKey 
+            ? 'SUPABASE_SERVICE_ROLE_KEY is missing from environment variables. Add it in Vercel → Settings → Environment Variables.'
+            : 'NEXT_PUBLIC_SUPABASE_URL is missing.'
+        },
         { status: 500 }
       )
     }

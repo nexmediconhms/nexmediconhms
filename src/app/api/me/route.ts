@@ -27,9 +27,14 @@ export async function GET(req: NextRequest) {
 
     if (!supabaseUrl || !anonKey) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete (missing SUPABASE_URL or ANON_KEY)' },
+        { error: 'Server configuration incomplete (missing SUPABASE_URL or ANON_KEY). Check Vercel environment variables.' },
         { status: 500 }
       )
+    }
+
+    // Warn if service_role key is missing (fallback will be attempted)
+    if (!serviceKey) {
+      console.warn('[/api/me] SUPABASE_SERVICE_ROLE_KEY is not set — falling back to user token (may fail due to RLS)')
     }
 
     // Extract the access token from the Authorization header
