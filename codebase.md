@@ -4672,268 +4672,6 @@ index 0000000..d2898f4
 
 ```
 
-# DEPLOY.md
-
-```md
-# NexMedicon HMS — Complete Deployment Guide
-# Deploy from localhost to Vercel production (shareable URL for doctors)
-
----
-
-## PREREQUISITES (do these once)
-
-1. Create accounts (free):
-   - https://github.com       — stores your code
-   - https://vercel.com       — hosts your app
-   - https://supabase.com     — your database
-
-2. Install on your computer:
-   - Node.js 20+ → https://nodejs.org (click "LTS" download)
-   - Git → https://git-scm.com/downloads
-   - Verify: open Terminal/Command Prompt and run:
-     node --version    # should show v20.x.x
-     git --version     # should show git version 2.x.x
-
----
-
-## STEP 1 — SET UP SUPABASE (your database)
-
-1. Go to https://supabase.com → Sign up → New Project
-2. Give it a name (e.g. "nexmedicon-clinic"), choose a region close to India (Singapore)
-3. **IMPORTANT**: Save the database password — you'll need it later
-4. Wait ~2 minutes for it to start
-
-5. Go to SQL Editor (left sidebar) and run these files IN ORDER:
-   - Paste contents of `supabase_setup.sql` → Run
-   - Paste contents of `supabase_add_discharge.sql` → Run
-   - Paste contents of `supabase_add_billing.sql` → Run
-   - Paste contents of `supabase_v5_updates.sql` → Run
-   - Paste contents of `supabase_v6_updates.sql` → Run
-   - Paste contents of `supabase_v7_abdm_fhir.sql` → Run
-   - Paste contents of `supabase_add_aadhaar.sql` → Run
-   - Paste contents of `supabase_v8_roles.sql` → Run ← **NEW: roles & user management**
-   - Paste contents of `supabase_v9_appointments.sql` → Run ← **NEW: appointments in database**
-   - Paste contents of `supabase_v10_procedures.sql` → Run ← **NEW: procedure tracking**
-
-   ⚠️ Do NOT run `seed_demo_data.sql` on a production database!
-
-6. Get your Supabase credentials:
-   - Go to Project Settings → API
-   - Copy "Project URL" → this is your `SUPABASE_URL`
-   - Copy "anon public" key → this is your `SUPABASE_ANON_KEY`
-   - Copy "service_role" key → this is your `SUPABASE_SERVICE_ROLE_KEY`
-     ⚠️ Keep the service_role key secret — never expose it in frontend code
-
----
-
-## STEP 2 — GET AI API KEY (for PDF/photo scanning)
-
-You only need ONE of these:
-
-**Option A: OpenAI (easiest, $5 credit lasts months)**
-1. Go to https://platform.openai.com → Sign up
-2. Go to API Keys → Create new secret key
-3. Copy the key (starts with sk-)
-
-**Option B: Anthropic Claude**
-1. Go to https://console.anthropic.com → Sign up
-2. Go to API Keys → Create Key
-3. Copy the key (starts with sk-ant-)
-
----
-
-## STEP 3 — SET UP YOUR CODE ON GITHUB
-
-Open Terminal in the `hms-mvp` folder:
-
-\`\`\`bash
-# Install dependencies
-npm install
-
-# Initialise git (if not already done)
-git init
-git add .
-git commit -m "NexMedicon HMS v1"
-
-# Create a new repo on GitHub (go to github.com → New Repository)
-# Then connect:
-git remote add origin https://github.com/YOUR_USERNAME/nexmedicon-hms.git
-git branch -M main
-git push -u origin main
-\`\`\`
-
----
-
-## STEP 4 — DEPLOY TO VERCEL
-
-1. Go to https://vercel.com → Sign up with GitHub → click "Import"
-2. Find your `nexmedicon-hms` repo → Import
-3. Framework: Next.js (auto-detected)
-4. Click **Environment Variables** and add EACH of these:
-
-| Variable Name | Value | Required? |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL | ✅ Yes |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key | ✅ Yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service_role key | ✅ Yes (for user management) |
-| `OPENAI_API_KEY` | Your OpenAI key (sk-...) | ✅ Yes (or use Anthropic) |
-| `ANTHROPIC_API_KEY` | Your Anthropic key (sk-ant-...) | Alternative to OpenAI |
-| `NEXT_PUBLIC_HOSPITAL_NAME` | e.g. Dr. Patel Gynecology Clinic | ✅ Yes |
-| `NEXT_PUBLIC_SITE_URL` | Leave blank for now (fill after deploy) | Fill after deploy |
-
-Optional (for payments):
-| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | rzp_live_... | Optional |
-| `RAZORPAY_KEY_ID` | rzp_live_... | Optional |
-| `RAZORPAY_KEY_SECRET` | Your Razorpay secret | Optional |
-| `NEXT_PUBLIC_UPI_ID` | yourname@bankname | Optional |
-
-5. Click **Deploy** → wait 3-4 minutes
-
-6. After deploy: copy your production URL (e.g. https://nexmedicon.vercel.app)
-   Go back to Vercel → Settings → Environment Variables
-   Update `NEXT_PUBLIC_SITE_URL` = `https://nexmedicon.vercel.app`
-   Then redeploy: Deployments → three dots → Redeploy
-
----
-
-## STEP 5 — CREATE YOUR FIRST LOGIN (Admin Account)
-
-1. Go to Supabase → Authentication → Users → **Add User**
-2. Enter the **doctor/admin email** and a **password**
-3. Open your production URL → log in with that email/password
-4. The system will detect this is the first login and show a **"Set Up Admin Account"** screen
-5. Enter the admin's full name → click "Create Admin Account"
-6. You're now the admin with full access!
-
----
-
-## STEP 6 — INVITE STAFF (Doctor & Receptionist)
-
-1. Log in as admin → go to **Settings** (sidebar)
-2. Scroll down to **"Manage Users"** section
-3. Click **"Invite New User"**
-4. Enter the staff member's:
-   - Full name
-   - Email address
-   - Role: **Doctor** or **Staff**
-5. Click "Create User" → a temporary password is generated
-6. **Share the temporary password** with the staff member
-7. They can log in and should change their password
-
-### Role Permissions
-
-| Feature | Admin | Doctor | Staff |
-|---------|-------|--------|-------|
-| View patients | ✅ | ✅ | ✅ |
-| Register patients | ✅ | ✅ | ✅ |
-| OPD consultations | ✅ | ✅ | View only |
-| Write prescriptions | ✅ | ✅ | ❌ |
-| Billing | ✅ | View | ✅ |
-| Financial reports | ✅ | ❌ | ❌ |
-| Manage users | ✅ | ❌ | ❌ |
-| Settings | ✅ | ✅ | View only |
-| Delete patients | ✅ | ❌ | ❌ |
-
----
-
-## STEP 7 — CONFIGURE THE APP
-
-1. Open your production URL → log in as admin
-2. Go to **Settings** (sidebar) → fill in:
-   - Hospital Name
-   - Doctor Name & Qualifications
-   - Address, Phone
-   - Consultation fees
-   - UPI ID (for payment links)
-3. Click **Save**
-
----
-
-## EVERY TIME YOU MAKE CHANGES
-
-\`\`\`bash
-# In your hms-mvp folder:
-git add .
-git commit -m "describe what you changed"
-git push
-\`\`\`
-
-Vercel automatically redeploys in ~2 minutes after every push. 
-No manual action needed — just push to GitHub.
-
----
-
-## TROUBLESHOOTING
-
-**"Invalid email or password"** → Check the email/password in Supabase → Authentication → Users
-
-**"Access Not Configured"** → The user exists in Supabase Auth but doesn't have a clinic_users record. Admin needs to invite them from Settings → Manage Users.
-
-**"Invalid API key"** → Check Vercel env vars, make sure no extra spaces, redeploy
-
-**"Cannot connect to database"** → Check SUPABASE_URL and SUPABASE_ANON_KEY in Vercel env vars
-
-**"PDF upload fails"** → 
-  - Scanned image PDFs: use the Camera button to photograph instead
-  - Fillable PDFs: should work without AI key
-  - Check AI Status page in the app (/ai-setup)
-
-**"Page not found" after changes** → Vercel may still be deploying, wait 2 min
-
-**WhatsApp links not working** → Set NEXT_PUBLIC_SITE_URL to your full production URL
-
-**Patient self-registration QR not working** → Same as above — NEXT_PUBLIC_SITE_URL must be set
-
-**"Forgot password" not sending email** → Check Supabase → Authentication → Email Templates. Supabase sends emails via their built-in SMTP (free tier: 4 emails/hour).
-
-**User management "Failed to create"** → Make sure SUPABASE_SERVICE_ROLE_KEY is set in Vercel env vars
-
----
-
-## SHARE WITH THE CLINIC
-
-Once deployed, share:
-- **Doctor/Staff login URL**: `https://your-app.vercel.app` (they use their email/password)
-- **Patient self-registration**: `https://your-app.vercel.app/intake?h=HospitalName`
-  (shown as QR in app → Patient Intake → Digital Form tab)
-- **Patient self-registration (Gujarati)**: `https://your-app.vercel.app/intake?h=HospitalName&lang=gu`
-
----
-
-## ENVIRONMENT VARIABLES REFERENCE
-
-\`\`\`
-# Required
-NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...  ← NEW (for user management)
-NEXT_PUBLIC_HOSPITAL_NAME=Your Hospital Name
-NEXT_PUBLIC_SITE_URL=https://your-app.vercel.app
-
-# Required for PDF/photo scanning (add at least one)
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Optional — payments
-NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_...
-RAZORPAY_KEY_ID=rzp_live_...
-RAZORPAY_KEY_SECRET=...
-NEXT_PUBLIC_UPI_ID=hospital@bankname
-\`\`\`
-
----
-
-## DATA SAFETY
-
-- All patient data is stored in Supabase (PostgreSQL) with Row Level Security
-- Only authenticated clinic staff can access patient records
-- Role-based access: staff can't edit prescriptions, only admins can delete patients
-- Supabase provides automatic daily backups (on Pro plan)
-- Data is stored in SOC2-certified infrastructure
-- The `/intake` page (patient self-registration) only allows inserting new patients — no read/update access
-
-```
-
 # docs\BAA-COMPLIANCE.md
 
 ```md
@@ -5084,240 +4822,287 @@ Storage and processing of patient health information for the NexMedicon Hospital
 
 ```
 
-# INTEGRATION_GUIDE.md
+# LAB_PARTNER_GUIDE.md
 
 ```md
-# NexMedicon HMS — v11 Integration Guide
+# Lab Partner Access Guide — NexMedicon HMS
 
-## What's in this patch
+## Overview
 
-| Feature | Files |
-|---------|-------|
-| **A. Lab Results → Supabase** | `supabase_v11_improvements.sql` · `src/app/labs/page.tsx` |
-| **B. OPD Queue → Realtime** | `supabase_v11_improvements.sql` · `src/app/queue/page.tsx` |
-| **D. Billing → GST + Packages** | `supabase_v11_improvements.sql` · `src/lib/billing-gst.ts` · `src/components/billing/BillingExtras.tsx` |
-| **E. Audit Log** | `supabase_v11_improvements.sql` · `src/lib/audit.ts` · `src/app/audit-log/page.tsx` |
-| **F. API Route Auth Middleware** | `src/lib/api-auth.ts` |
-| **Doctor Note Handwriting OCR** | `src/app/api/doctor-note-ocr/route.ts` · `src/components/shared/ConsultationAttachments.tsx` |
+Lab partners (external pathology labs like SRL, Thyrocare, local labs) can upload patient reports directly to the portal without needing a Supabase account.
 
 ---
 
-## Step 1 — Run the SQL migration
+## Setup Steps (Admin)
 
-In Supabase → SQL Editor, paste and run:
+### 1. Create Lab Partner Record
 
-\`\`\`
-supabase_v11_improvements.sql
-\`\`\`
+Run in **Supabase SQL Editor**:
 
-This creates:
-- `lab_reports` table
-- `opd_queue` table (or adds to it if it exists)
-- `billing_packages` table + adds GST columns to `bills`
-- `audit_log` table
-- `v_active_users` view
-- Triggers for auto invoice numbers, audit on patient delete, updated_at
+\`\`\`sql
+-- Create lab partner
+INSERT INTO lab_partners (name) VALUES ('City Pathology Lab');
 
----
+-- Create portal user with auth token
+INSERT INTO lab_portal_users (name, email, lab_partner_id, auth_token, is_active)
+VALUES (
+  'Ramesh (City Pathology)',
+  'ramesh@citypathlab.com',
+  (SELECT id FROM lab_partners WHERE name = 'City Pathology Lab'),
+  'LP-' || encode(gen_random_bytes(16), 'hex'),
+  true
+);
 
-## Step 2 — Enable Supabase Realtime for OPD Queue
-
-1. Supabase Dashboard → **Database → Replication**
-2. Find `opd_queue` in the table list
-3. Toggle it **ON**
-
-The queue page will now show a **⚡ Live** badge and update instantly when any token status changes.
-
----
-
-## Step 3 — Copy/replace files
-
-Replace these files in your project:
-
-\`\`\`
-src/app/labs/page.tsx                         ← full replacement
-src/app/queue/page.tsx                        ← full replacement
-src/components/shared/ConsultationAttachments.tsx ← full replacement
+-- Get the generated token to share with the lab
+SELECT auth_token FROM lab_portal_users WHERE email = 'ramesh@citypathlab.com';
 \`\`\`
 
-Add these new files:
+### 2. Share the Portal URL with Lab Partner
 
-\`\`\`
-src/lib/audit.ts
-src/lib/api-auth.ts
-src/lib/billing-gst.ts
-src/components/billing/BillingExtras.tsx
-src/app/api/doctor-note-ocr/route.ts
-src/app/audit-log/page.tsx
+Give the lab partner:
+- **URL**: `https://your-app.vercel.app/lab-partner-portal`
+- **Token**: The `auth_token` from step 1
+
+### 3. Create Required Tables (if not exists)
+
+\`\`\`sql
+-- Already included in migrations/001-fix-beds-schema.sql
+-- Run that migration if you haven't already
 \`\`\`
 
 ---
 
-## Step 4 — Migrate existing localStorage lab data (one-time)
+## Lab Partner Workflow
 
-If users have lab reports stored in localStorage, they can migrate manually:
-run this in the browser console on the labs page to export and re-import,
-OR add a one-time migration button to the labs page.
+### Step 1: Login
+1. Open the Lab Partner Portal URL
+2. Enter the auth token provided by the hospital
+3. Click "Verify Token"
 
-The new Supabase-backed labs page is a **drop-in replacement** — all new reports
-go to Supabase. Old localStorage reports won't disappear until the user
-clears their browser storage.
+### Step 2: Upload Report
+1. Enter patient **MRN** (e.g., P-042) — the system auto-searches
+2. Select the **report type** (e.g., "CBC Report", "Thyroid Profile")
+3. Enter the **report date**
+4. Add any **notes** (e.g., "Sample collected yesterday")
+5. Attach the **PDF file** of the lab report
+6. Click **Upload Report**
 
----
+### Step 3: What Happens Automatically
+- Report is stored in `lab_reports` table with link to patient
+- Doctor gets an **in-app alert** (dashboard) about the new report
+- Patient gets a **WhatsApp notification** that report is ready
+- If **AI extraction is enabled** (OPENAI_API_KEY configured):
+  - All test values are extracted from the PDF
+  - Abnormal values are flagged
+  - Doctor gets a **critical alert** for abnormal values
+- Report appears in the patient's profile under "Lab Reports"
 
-## Step 5 — Wire Audit Log into existing pages (recommended places)
-
-Add `import { audit } from '@/lib/audit'` and call `audit(...)` in:
-
-| Page | Where to call audit |
-|------|---------------------|
-| `patients/new/page.tsx` | After successful patient create |
-| `patients/[id]/edit/page.tsx` | After save |
-| `patients/[id]/page.tsx` | On delete |
-| `opd/[id]/page.tsx` | On encounter save |
-| `billing/page.tsx` | On bill create, mark paid |
-| `login/page.tsx` | After successful login: `auditLogin(email)` |
-| `AppShell.tsx` | On signOut: `auditLogout(email)` |
-| `[id]/prescription/page.tsx` | On print |
-| `[id]/discharge/page.tsx` | On discharge save |
-
-The `audit()` function is **fire-and-forget** — it never throws or blocks the UI.
-
----
-
-## Step 6 — Wire API Route Auth into existing API routes
-
-Replace unprotected routes one by one. Example for `api/discharge-ai/route.ts`:
-
-\`\`\`ts
-// OLD:
-export async function POST(req: NextRequest) {
-  // ... no auth check
-
-// NEW:
-import { requireAuth } from '@/lib/api-auth'
-
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req)
-  if (auth instanceof Response) return auth   // 401 if not logged in
-  // ... rest unchanged
-\`\`\`
-
-For admin-only routes (e.g. user management):
-\`\`\`ts
-const auth = await requireRole(req, 'admin')
-if (auth instanceof Response) return auth
-\`\`\`
-
-**Important:** The frontend must pass the token. Update `fetch()` calls to include:
-\`\`\`ts
-const { data: { session } } = await supabase.auth.getSession()
-headers: { Authorization: `Bearer ${session?.access_token}` }
-\`\`\`
-
-The new `/api/doctor-note-ocr` route already demonstrates this pattern.
+### Step 4: View Upload History
+- The portal shows all previously uploaded reports
+- Status tracking: uploaded → processing → completed
 
 ---
 
-## Step 7 — Add billing GST to billing/page.tsx
+## Doctor/Staff Workflow
 
-1. Import the new components:
-\`\`\`ts
-import { GSTSelector, PackageSelector, BillTotalSummary } from '@/components/billing/BillingExtras'
-import { calculateTotals } from '@/lib/billing-gst'
-\`\`\`
+### Viewing Lab Reports
+1. Go to **Patient Profile** → Lab Reports section
+2. Reports uploaded by lab partners show "Portal Upload" badge
+3. Click on any report to see:
+   - PDF attachment
+   - AI-extracted values (if available)
+   - Abnormal value alerts
 
-2. Add state:
-\`\`\`ts
-const [gstPercent, setGstPercent] = useState(0)
-const [gstAmount,  setGstAmount]  = useState(0)
-const [packageId,  setPackageId]  = useState('')
-const [packageName,setPackageName]= useState('')
-\`\`\`
-
-3. Replace total calculation:
-\`\`\`ts
-const { afterDiscount, gstAmount: gst, netAmount } = calculateTotals(subtotal, discount, gstPercent)
-\`\`\`
-
-4. Add to form JSX (beside discount field):
-\`\`\`tsx
-<GSTSelector
-  gstPercent={gstPercent}
-  subtotalAfterDiscount={subtotal - discount}
-  onChange={(pct, amt) => { setGstPercent(pct); setGstAmount(amt) }}
-/>
-<PackageSelector
-  onSelect={(pkg) => {
-    setItems(pkg.items)
-    setPackageId(pkg.id)
-    setPackageName(pkg.name)
-  }}
-/>
-\`\`\`
-
-5. Add to Supabase insert:
-\`\`\`ts
-gst_percent: gstPercent,
-gst_amount:  gstAmount,
-package_id:  packageId   || null,
-package_name:packageName || null,
-\`\`\`
+### Dashboard Alerts
+- Abnormal lab values appear as **red/orange alerts** on the Dashboard
+- Click "Done" to dismiss after reviewing
 
 ---
 
-## Step 8 — Add Audit Log to Admin sidebar
+## API Endpoints
 
-In `src/components/layout/Sidebar.tsx`, add to the admin-only nav items:
-
-\`\`\`ts
-{ href: '/audit-log', label: 'Audit Log', icon: Shield, roles: ['admin'] }
-\`\`\`
-
----
-
-## Step 9 — Doctor Note Handwriting OCR
-
-**No setup needed** — it uses the same `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` already in your `.env`.
-
-The new `ConsultationAttachments.tsx` adds a **📖 Read Handwriting** button (purple book icon) on every uploaded image. It:
-- Works with cursive, block, mixed handwriting
-- Understands Indian medical abbreviations (c/o, h/o, P/A, P/V, etc.)
-- Shows a transcription + structured extraction modal
-- Falls back gracefully if no AI key configured
-
-**Tips for best results:**
-- Good lighting, no shadows
-- Camera directly above the note (not at an angle)
-- If still unreadable, try enhancing contrast in phone photo editor before upload
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/labs/lab-portal` | GET | Verify token, get partner info |
+| `/api/labs/lab-portal` | POST | Upload lab report (multipart) |
+| `/api/labs/extract` | POST | AI extraction from report PDF |
+| `/api/labs/notify` | POST | Send notifications to doctor/patient |
 
 ---
 
-## Environment variables (no new ones needed)
+## Security
 
-All features use existing env vars:
-\`\`\`
-NEXT_PUBLIC_SUPABASE_URL     ← already set
-NEXT_PUBLIC_SUPABASE_ANON_KEY ← already set
-SUPABASE_SERVICE_ROLE_KEY    ← already set (needed for api-auth.ts)
-ANTHROPIC_API_KEY            ← already set (for doctor note OCR)
-\`\`\`
+- **Token-based auth**: No Supabase credentials needed by lab
+- **Token rotation**: Admin can regenerate tokens anytime
+- **Audit trail**: Every upload is logged with timestamp and token used
+- **MRN validation**: Reports are linked to verified patient records
+- **Rate limiting**: Consider adding rate limiting in production
 
 ---
 
 ## Troubleshooting
 
-**"audit_log: permission denied"** → User is not admin. The RLS policy on audit_log allows SELECT only for admins.
+| Issue | Solution |
+|-------|----------|
+| "Invalid token" | Check token is correct, check `is_active = true` |
+| "Patient not found" | Verify MRN format (P-042 or P042 both work) |
+| "Upload failed" | Check file size < 10MB, must be PDF |
+| "AI extraction not working" | Set `OPENAI_API_KEY` in environment variables |
 
-**"opd_queue: column not found"** → Run `supabase_v11_improvements.sql` first.
+---
 
-**"lab_reports: relation does not exist"** → Run the SQL migration.
+## Environment Variables Required
 
-**Doctor note OCR returns low confidence** → Image quality issue. Ensure: (1) good lighting, (2) camera perpendicular to paper, (3) no motion blur.
+\`\`\`env
+# For lab portal
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-**Realtime not working** → Check Supabase Dashboard → Database → Replication → opd_queue is toggled ON.
+# For AI extraction (optional but recommended)
+OPENAI_API_KEY=sk-your-openai-key
+\`\`\`
 
-**Billing packages not showing** → The SQL migration seeds 4 default packages. Check `billing_packages` table in Supabase.
+```
+
+# LOGIN_SETUP_GUIDE.md
+
+```md
+# Login OTP / Magic Link Setup Guide
+
+## Problem: "Not receiving OTP email" or "Login button in email doesn't work"
+
+### Root Causes & Fixes
+
+---
+
+## 1. Supabase Email Configuration (MOST COMMON ISSUE)
+
+Go to **Supabase Dashboard → Authentication → Email Templates** and configure:
+
+### Magic Link Template
+
+The email template MUST contain a proper link. Supabase by default sends both:
+- A **6-digit OTP code** (user types it on the login page)
+- A **magic link button** (user clicks it and gets auto-logged in)
+
+**Recommended Email Template** (paste in Supabase → Auth → Email Templates → Magic Link):
+
+\`\`\`html
+<h2>Your Login Code</h2>
+<p>Hello,</p>
+<p>Your login code for NexMedicon HMS is:</p>
+<h1 style="font-size: 36px; letter-spacing: 8px; font-family: monospace; background: #f0f0f0; padding: 16px; text-align: center; border-radius: 8px;">{{ .Token }}</h1>
+<p>Or click the button below to sign in directly:</p>
+<a href="{{ .ConfirmationURL }}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Sign In to NexMedicon HMS</a>
+<p style="margin-top: 20px; color: #666; font-size: 12px;">This code expires in 1 hour. If you didn't request this, ignore this email.</p>
+\`\`\`
+
+### Important Settings in Supabase → Auth → Email
+
+| Setting | Recommended Value |
+|---------|-------------------|
+| Enable email confirmations | OFF (for OTP login flow) |
+| Secure email change | ON |
+| OTP Expiry | 3600 (1 hour) |
+| Mailer OTP Length | 6 |
+
+---
+
+## 2. Supabase URL Configuration
+
+Go to **Supabase Dashboard → Authentication → URL Configuration**:
+
+| Field | Value |
+|-------|-------|
+| Site URL | `https://your-app.vercel.app` (your production URL) |
+| Redirect URLs | Add ALL of these: |
+| | `https://your-app.vercel.app/auth/callback` |
+| | `https://your-app.vercel.app/login` |
+| | `http://localhost:3000/auth/callback` (for local dev) |
+| | `http://localhost:3000/login` (for local dev) |
+
+**⚠️ CRITICAL**: If the redirect URL is not in the allow-list, Supabase will silently fail to send the email or the link won't work.
+
+---
+
+## 3. Email Delivery Issues
+
+### Supabase Free Tier (Development)
+- Supabase uses its own SMTP on free tier
+- Emails may go to **spam/junk** folder
+- Rate limit: ~4 emails/hour to same address
+- Sender: `noreply@mail.app.supabase.io`
+
+### Production (Recommended)
+Set up custom SMTP in **Supabase → Project Settings → Auth → SMTP**:
+- Use **Resend**, **SendGrid**, **Mailgun**, or your clinic's email provider
+- Set a recognizable sender like `noreply@yourclinic.com`
+- This prevents spam folder issues
+
+---
+
+## 4. How the Login Flow Works
+
+\`\`\`
+User enters email
+    ↓
+Clicks "Send Login Code"
+    ↓
+supabase.auth.signInWithOtp({
+  email,
+  options: { emailRedirectTo: '/auth/callback' }
+})
+    ↓
+Supabase sends email with:
+  - 6-digit OTP code (user types on login page)
+  - Magic link button (redirects to /auth/callback?code=XXX)
+    ↓
+Option A: User types OTP → supabase.auth.verifyOtp() → success → dashboard
+Option B: User clicks magic link → /auth/callback → exchangeCodeForSession → dashboard
+\`\`\`
+
+---
+
+## 5. Troubleshooting Checklist
+
+| Symptom | Fix |
+|---------|-----|
+| No email received | Check spam folder; verify email exists in Supabase Auth → Users |
+| Email received but OTP doesn't work | Check if OTP has expired (>1 hour); verify correct email was used |
+| Magic link button doesn't work | Check Supabase → Auth → URL Configuration → Redirect URLs |
+| "No account found" error | User needs to be created first. Admin must invite them via Settings → User Management |
+| Link says "expired" | OTP validity window passed. Click "Resend code" |
+| Multiple login tabs open | Close other tabs — auth state can conflict |
+
+---
+
+## 6. For Development (localhost)
+
+Add to `.env.local`:
+\`\`\`
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+\`\`\`
+
+In Supabase → Auth → URL Configuration, add:
+\`\`\`
+http://localhost:3000/auth/callback
+http://localhost:3000/login
+\`\`\`
+
+---
+
+## 7. Password Login Fallback
+
+If OTP/magic link isn't working, users can:
+1. Click "Sign in with password instead" on the login page
+2. Enter email + password
+3. If they forgot password, click "Forgot password?" to get a reset link
+
+**To set a password for a user** (as admin):
+- Go to Supabase Dashboard → Authentication → Users
+- Find the user → Click "Reset password"
+- This sends them a password reset email
 
 ```
 
@@ -10629,8 +10414,8 @@ export async function GET(req: NextRequest) {
   const { data: payments, error } = await sb
     .from('bill_payments')
     .select('*')
-    .eq('billid', billId)
-    .order('createdat', { ascending: false })
+    .eq('bill_id', billId)
+    .order('created_at', { ascending: false })
 
   if (error) {
     safeErrorLog('GET.select', billId, error)
@@ -10705,9 +10490,9 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await sb
       .from('bill_payments')
       .select('*')
-      .eq('billid', billId)
+      .eq('bill_id', billId)
       .eq('reference', `idem:${idempotencyKey}`)
-      .gte('createdat', since)
+      .gte('created_at', since)
       .limit(1)
       .maybeSingle()
 
@@ -10809,7 +10594,294 @@ export async function POST(req: NextRequest) {
       : `₹${amountNum} recorded. Remaining due: ₹${updatedBill?.due || 0}`,
   })
 }
+```
 
+# src\app\api\billing\send-email\route.ts
+
+```ts
+/**
+ * src/app/api/billing/send-email/route.ts
+ *
+ * Send CA Revenue Report via Email with PDF attachment.
+ * 
+ * Uses Resend API (or falls back to generating a downloadable PDF URL).
+ * In production, configure RESEND_API_KEY in environment.
+ * If not configured, returns the PDF HTML for client-side download.
+ *
+ * POST body:
+ * {
+ *   recipientEmail: string,
+ *   recipientName?: string,
+ *   reportData: CAReportData,
+ *   hospitalSettings: object,
+ * }
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/api-auth'
+
+function generatePDFHtml(r: any, hs: any): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Inter', Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; font-size: 12px; }
+    .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 16px; margin-bottom: 24px; }
+    .header h1 { font-size: 22px; color: #1e293b; margin: 0 0 4px; }
+    .header p { font-size: 11px; color: #64748b; margin: 2px 0; }
+    .title { font-size: 16px; font-weight: bold; color: #1e293b; margin-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #64748b; margin-bottom: 20px; }
+    .summary-grid { display: flex; gap: 12px; margin-bottom: 24px; }
+    .summary-box { flex: 1; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; text-align: center; }
+    .summary-box .value { font-size: 18px; font-weight: 700; color: #1e293b; font-family: monospace; }
+    .summary-box .label { font-size: 9px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .net-box { background: #ecfdf5 !important; border-color: #86efac !important; }
+    .net-box .value { color: #15803d !important; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th { background: #f1f5f9; text-align: left; padding: 8px 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; font-size: 10px; text-transform: uppercase; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+    .section-title { font-size: 13px; font-weight: 700; color: #334155; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+    .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 9px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .amount { font-family: monospace; font-weight: 600; }
+    .pending-alert { background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 11px; color: #92400e; }
+    .gst-note { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 12px; margin: 12px 0; font-size: 10px; color: #1e40af; }
+    @media print {
+      body { padding: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${hs.hospitalName || 'NexMedicon Hospital'}</h1>
+    ${hs.address ? `<p>${hs.address}</p>` : ''}
+    ${hs.phone ? `<p>Tel: ${hs.phone} ${hs.gstin ? ' | GSTIN: ' + hs.gstin : ''}</p>` : ''}
+  </div>
+
+  <div class="title">Revenue Report for Chartered Accountant</div>
+  <div class="subtitle">Period: ${r.period} (${r.fromDate} to ${r.toDate})</div>
+
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="value">&#8377;${Number(r.totalGross).toLocaleString('en-IN')}</div>
+      <div class="label">Gross Revenue</div>
+    </div>
+    <div class="summary-box">
+      <div class="value">&#8377;${Number(r.totalDiscount).toLocaleString('en-IN')}</div>
+      <div class="label">Discounts Given</div>
+    </div>
+    <div class="summary-box net-box">
+      <div class="value">&#8377;${Number(r.totalNet).toLocaleString('en-IN')}</div>
+      <div class="label">Net Collected</div>
+    </div>
+    <div class="summary-box">
+      <div class="value">${r.billCount}</div>
+      <div class="label">Bills Paid</div>
+    </div>
+  </div>
+
+  ${r.pendingCount > 0 ? `
+  <div class="pending-alert">
+    &#9888; ${r.pendingCount} pending bill(s) &mdash; &#8377;${Number(r.pendingAmount).toLocaleString('en-IN')} not yet collected (excluded from Net)
+  </div>` : ''}
+
+  <div class="section-title">Payment Mode Breakdown</div>
+  <table>
+    <thead><tr><th>Mode</th><th style="text-align:right">Amount (&#8377;)</th><th style="text-align:right">Count</th><th style="text-align:right">%</th></tr></thead>
+    <tbody>
+      ${(r.paymentBreakdown || []).map((m: any) => `
+        <tr>
+          <td style="text-transform:capitalize">${m.mode === 'cash' ? '&#128181; Cash' : m.mode === 'upi' ? '&#128241; UPI' : m.mode === 'card' ? '&#128179; Card' : m.mode}</td>
+          <td class="amount" style="text-align:right">&#8377;${Number(m.amount).toLocaleString('en-IN')}</td>
+          <td style="text-align:right">${m.count}</td>
+          <td style="text-align:right">${r.totalNet > 0 ? Math.round((m.amount / r.totalNet) * 100) : 0}%</td>
+        </tr>
+      `).join('')}
+      <tr style="font-weight:bold;border-top:2px solid #e2e8f0">
+        <td>Total</td>
+        <td class="amount" style="text-align:right">&#8377;${Number(r.totalNet).toLocaleString('en-IN')}</td>
+        <td style="text-align:right">${r.billCount}</td>
+        <td style="text-align:right">100%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Service-wise Revenue</div>
+  <table>
+    <thead><tr><th>Service</th><th style="text-align:right">Revenue (&#8377;)</th><th style="text-align:right">Count</th></tr></thead>
+    <tbody>
+      ${(r.serviceBreakdown || []).slice(0, 20).map((s: any) => `
+        <tr>
+          <td>${s.label}</td>
+          <td class="amount" style="text-align:right">&#8377;${Number(s.amount).toLocaleString('en-IN')}</td>
+          <td style="text-align:right">${s.count}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="gst-note">
+    <strong>Note:</strong> Most medical consultation services are GST-exempt under SAC 9993.
+    Services attracting GST (if any) are tagged at bill level. Please cross-reference with actual GST returns.
+  </div>
+
+  <div class="footer">
+    <span>Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+    <span>${hs.hospitalName || 'NexMedicon HMS'} ${hs.doctorName ? '| ' + hs.doctorName : ''}</span>
+  </div>
+</body>
+</html>`
+}
+
+function generateEmailHtml(r: any, hs: any, recipientName: string): string {
+  return `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;">
+  <p>Dear ${recipientName || 'CA'},</p>
+  
+  <p>Please find attached the <strong>Revenue Report</strong> for <strong>${r.period}</strong> from ${hs.hospitalName || 'our clinic'}.</p>
+  
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;">
+    <tr style="background:#f8fafc;">
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;"><strong>Gross Revenue</strong></td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;font-family:monospace;">&#8377;${Number(r.totalGross).toLocaleString('en-IN')}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;">Total Discounts</td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;font-family:monospace;">&#8377;${Number(r.totalDiscount).toLocaleString('en-IN')}</td>
+    </tr>
+    <tr style="background:#ecfdf5;">
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;"><strong>Net Collected</strong></td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;font-family:monospace;font-weight:bold;color:#15803d;">&#8377;${Number(r.totalNet).toLocaleString('en-IN')}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;">Bills Paid</td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;">${r.billCount}</td>
+    </tr>
+    ${r.pendingCount > 0 ? `
+    <tr style="background:#fef3c7;">
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;">Pending (not collected)</td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;font-family:monospace;">&#8377;${Number(r.pendingAmount).toLocaleString('en-IN')} (${r.pendingCount} bills)</td>
+    </tr>` : ''}
+  </table>
+  
+  <p style="font-size:12px;color:#64748b;">
+    The detailed PDF report is attached with service-wise and payment mode breakdowns.
+  </p>
+  
+  <p style="font-size:12px;color:#64748b;">Period: ${r.fromDate} to ${r.toDate}</p>
+  
+  <p style="margin-top:24px;">Regards,<br/>${hs.doctorName || 'Doctor'}<br/>${hs.hospitalName || ''}<br/>${hs.phone || ''}</p>
+  
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+  <p style="font-size:10px;color:#94a3b8;">This is an automated report from NexMedicon HMS. The attached PDF can be used for accounting and tax filing purposes.</p>
+</div>`
+}
+
+export async function POST(req: NextRequest) {
+  // Require admin or doctor role to send financial reports
+  const auth = await requireRole(req, ['admin', 'doctor'])
+  if (auth instanceof Response) return auth
+
+  try {
+    const body = await req.json()
+    const { recipientEmail, recipientName, reportData, hospitalSettings } = body
+
+    if (!reportData) {
+      return NextResponse.json({ error: 'Report data is required' }, { status: 400 })
+    }
+
+    const hs = hospitalSettings || {}
+    const r = reportData
+
+    // Generate the PDF HTML
+    const pdfHtml = generatePDFHtml(r, hs)
+    const emailBodyHtml = generateEmailHtml(r, hs, recipientName || 'CA')
+
+    // Check if Resend API is configured
+    const resendApiKey = process.env.RESEND_API_KEY
+    const fromEmail = process.env.RESEND_FROM_EMAIL || `reports@${hs.hospitalName?.toLowerCase().replace(/[^a-z]/g, '') || 'clinic'}.nexmedicon.com`
+
+    if (resendApiKey && recipientEmail) {
+      // Send via Resend with HTML email body
+      // The PDF is embedded as an HTML attachment that the recipient can print-to-PDF
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: recipientEmail,
+            subject: `Revenue Report - ${r.period} | ${hs.hospitalName || 'Clinic'}`,
+            html: emailBodyHtml,
+            attachments: [
+              {
+                filename: `Revenue-Report-${r.period.replace(/[^a-zA-Z0-9]/g, '-')}.html`,
+                content: Buffer.from(pdfHtml).toString('base64'),
+                type: 'text/html',
+              },
+            ],
+          }),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          return NextResponse.json({
+            success: true,
+            method: 'email',
+            message: `Report sent to ${recipientEmail} successfully.`,
+            emailId: data.id,
+          })
+        } else {
+          const errData = await res.json().catch(() => ({}))
+          console.error('[send-email] Resend API error:', errData)
+          // Fall through to client-side fallback
+        }
+      } catch (e) {
+        console.error('[send-email] Resend fetch error:', e)
+        // Fall through to client-side fallback
+      }
+    }
+
+    // Fallback: Return the PDF HTML + mailto link for client-side handling
+    // This works even without Resend configured — the client can:
+    // 1. Download the PDF HTML and attach manually to email
+    // 2. Open mailto: with summary text
+    const subject = encodeURIComponent(`Revenue Report - ${r.period} | ${hs.hospitalName || 'Clinic'}`)
+    const plainBody = encodeURIComponent(
+      `Dear ${recipientName || 'CA'},\n\n` +
+      `Please find the revenue report for ${r.period} from ${hs.hospitalName || 'our clinic'}.\n\n` +
+      `Summary:\n` +
+      `- Gross Revenue: Rs.${Number(r.totalGross).toLocaleString('en-IN')}\n` +
+      `- Total Discounts: Rs.${Number(r.totalDiscount).toLocaleString('en-IN')}\n` +
+      `- Net Collected: Rs.${Number(r.totalNet).toLocaleString('en-IN')}\n` +
+      `- Bills Paid: ${r.billCount}\n` +
+      (r.pendingCount > 0 ? `- Pending: Rs.${Number(r.pendingAmount).toLocaleString('en-IN')} (${r.pendingCount} bills)\n` : '') +
+      `\nPeriod: ${r.fromDate} to ${r.toDate}\n\n` +
+      `The detailed PDF report is attached.\n\n` +
+      `Regards,\n${hs.doctorName || 'Doctor'}\n${hs.hospitalName || ''}\n${hs.phone || ''}`
+    )
+
+    return NextResponse.json({
+      success: true,
+      method: 'client_fallback',
+      message: recipientEmail
+        ? 'Resend API not configured. Use the download button to save PDF and attach manually to email.'
+        : 'No recipient email provided. PDF generated for download.',
+      pdfHtml,
+      fileName: `Revenue-Report-${r.period.replace(/[^a-zA-Z0-9]/g, '-')}.html`,
+      mailtoUrl: recipientEmail
+        ? `mailto:${recipientEmail}?subject=${subject}&body=${plainBody}`
+        : null,
+    })
+  } catch (err: any) {
+    console.error('[send-email] error:', err)
+    return NextResponse.json({ error: err.message || 'Failed to send email' }, { status: 500 })
+  }
+}
 ```
 
 # src\app\api\billing\webhook\route.ts
@@ -11430,6 +11502,601 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('dryRun', 'true')
   const modifiedReq = new NextRequest(url, { headers: req.headers })
   return POST(modifiedReq)
+}
+```
+
+# src\app\api\cron\reminders\route.ts
+
+```ts
+/**
+ * src/app/api/cron/reminders/route.ts
+ *
+ * MASTER CRON: Automated Clinical Reminders
+ *
+ * Runs daily (recommended: 8:00 AM IST via Vercel Cron / Supabase Edge Function / external cron).
+ * Handles ALL automated reminder types:
+ *
+ *   1. Appointment reminders (day before + morning of)
+ *   2. Follow-up reminders (due today + 1-day overdue)
+ *   3. ANC visit reminders (based on LMP schedule)
+ *   4. Post-delivery 42-day follow-up
+ *   5. Newborn vaccination reminders
+ *   6. Medication reminders (active prescriptions)
+ *   7. OT Surgery pre-op reminders (day before)
+ *   8. Post-discharge insurance document readiness
+ *   9. Pending bill reminders (>3 days unpaid)
+ *   10. IPD discharge follow-up
+ *
+ * Auth: CRON_SECRET header or query parameter
+ *
+ * GET  /api/cron/reminders?dryRun=true   → preview without sending
+ * POST /api/cron/reminders               → execute and log
+ *
+ * All generated reminders are logged to `whatsapp_notifications` table
+ * and can be viewed in the Reminder Queue UI.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+const IST = 'Asia/Kolkata'
+
+function todayIST(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: IST })
+}
+function tomorrowIST(): string {
+  const d = new Date(); d.setDate(d.getDate() + 1)
+  return d.toLocaleDateString('en-CA', { timeZone: IST })
+}
+function daysFromNowIST(n: number): string {
+  const d = new Date(); d.setDate(d.getDate() + n)
+  return d.toLocaleDateString('en-CA', { timeZone: IST })
+}
+function daysUntil(dateStr: string): number {
+  const today = new Date(todayIST() + 'T00:00:00+05:30')
+  const target = new Date(dateStr + 'T00:00:00+05:30')
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// Auth validation
+function validateCronAuth(req: NextRequest): boolean {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    if (process.env.NODE_ENV === 'production') return false
+    return true // Allow in dev without secret
+  }
+  const authHeader = req.headers.get('authorization') ?? ''
+  const querySecret = new URL(req.url).searchParams.get('secret') ?? ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim()
+  return token === cronSecret || querySecret === cronSecret
+}
+
+// Prevent duplicate reminders — check if already sent today for same patient+type
+async function alreadySentToday(patientId: string, notificationType: string): Promise<boolean> {
+  const today = todayIST()
+  const { count } = await supabase
+    .from('whatsapp_notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patientId)
+    .eq('notification_type', notificationType)
+    .gte('created_at', today + 'T00:00:00+05:30')
+    .lte('created_at', today + 'T23:59:59+05:30')
+
+  return (count || 0) > 0
+}
+
+interface ReminderGenerated {
+  patientId: string
+  patientName: string
+  mobile: string
+  type: string
+  message: string
+  scheduledFor?: string
+}
+
+export async function GET(req: NextRequest) {
+  if (!validateCronAuth(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const dryRun = req.nextUrl.searchParams.get('dryRun') === 'true'
+  return await processReminders(dryRun)
+}
+
+export async function POST(req: NextRequest) {
+  if (!validateCronAuth(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  return await processReminders(false)
+}
+
+async function processReminders(dryRun: boolean) {
+  const startTime = Date.now()
+  const reminders: ReminderGenerated[] = []
+  const errors: string[] = []
+  const today = todayIST()
+  const tomorrow = tomorrowIST()
+
+  // Log the cron job start
+  let cronLogId: string | null = null
+  if (!dryRun) {
+    const { data: logEntry } = await supabase
+      .from('cron_job_log')
+      .insert({ job_name: 'daily_reminders', status: 'running' })
+      .select('id')
+      .single()
+    cronLogId = logEntry?.id || null
+  }
+
+  try {
+    // ═══════════════════════════════════════════════════════════
+    // 1. APPOINTMENT REMINDERS (tomorrow + today unconfirmed)
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const { data: appts } = await supabase
+        .from('appointments')
+        .select('id, patient_id, patient_name, mobile, date, time, type, status')
+        .in('date', [today, tomorrow])
+        .neq('status', 'cancelled')
+        .neq('status', 'completed')
+
+      for (const a of appts || []) {
+        if (!a.mobile || !a.patient_id) continue
+        if (await alreadySentToday(a.patient_id, `appointment_${a.date}`)) continue
+
+        const isToday = a.date === today
+        const msg = isToday
+          ? `Reminder: Your appointment is TODAY at ${a.time || 'scheduled time'}. Please arrive 10 min early.`
+          : `Reminder: Your appointment is TOMORROW (${a.date}) at ${a.time || 'scheduled time'}. Please bring previous reports.`
+
+        reminders.push({
+          patientId: a.patient_id,
+          patientName: a.patient_name || '',
+          mobile: a.mobile,
+          type: `appointment_${a.date}`,
+          message: msg,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`appointments: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 2. FOLLOW-UP REMINDERS (due today + 1-3 days overdue)
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const threeDaysAgo = daysFromNowIST(-3)
+      const { data: rxs } = await supabase
+        .from('prescriptions')
+        .select('id, patient_id, follow_up_date, diagnosis, medications')
+        .gte('follow_up_date', threeDaysAgo)
+        .lte('follow_up_date', today)
+
+      // Get patient details — FIX: Flatten Set into Array using Array.from()
+      const patientIds = Array.from(new Set((rxs || []).map(r => r.patient_id).filter(Boolean)))
+      const patientMap = new Map<string, any>()
+      if (patientIds.length > 0) {
+        const { data: patients } = await supabase
+          .from('patients').select('id, full_name, mobile').in('id', patientIds)
+        for (const p of patients || []) patientMap.set(p.id, p)
+      }
+
+      for (const rx of rxs || []) {
+        if (!rx.patient_id || !rx.follow_up_date) continue
+        const patient = patientMap.get(rx.patient_id)
+        if (!patient?.mobile) continue
+        if (await alreadySentToday(rx.patient_id, 'follow_up')) continue
+
+        const daysAway = daysUntil(rx.follow_up_date)
+        const medNames = Array.isArray(rx.medications)
+          ? rx.medications.map((m: any) => m.drug || m.name || '').filter(Boolean).slice(0, 3).join(', ')
+          : ''
+
+        const msg = daysAway < 0
+          ? `Your follow-up was due ${Math.abs(daysAway)} days ago. Please visit at the earliest.${medNames ? ` Meds: ${medNames}` : ''}${rx.diagnosis ? ` For: ${rx.diagnosis}` : ''}`
+          : `Your follow-up visit is due TODAY.${medNames ? ` Current medications: ${medNames}` : ''}${rx.diagnosis ? ` For: ${rx.diagnosis}` : ''} Please bring your previous prescription.`
+
+        reminders.push({
+          patientId: rx.patient_id,
+          patientName: patient.full_name || '',
+          mobile: patient.mobile,
+          type: 'follow_up',
+          message: msg,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`follow_up: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 3. ANC VISIT REMINDERS
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const ANC_WEEKS = [16, 20, 24, 28, 32, 36, 38, 40]
+      const ancLookback = new Date()
+      ancLookback.setMonth(ancLookback.getMonth() - 10)
+      const ancFrom = ancLookback.toLocaleDateString('en-CA', { timeZone: IST })
+
+      const { data: encs } = await supabase
+        .from('encounters')
+        .select('id, patient_id, ob_data, patients!inner(full_name, mobile, mrn)')
+        .not('ob_data', 'is', null)
+        .gte('encounter_date', ancFrom)
+        .order('encounter_date', { ascending: false })
+        .limit(500)
+
+      const latestByPatient = new Map<string, any>()
+      for (const enc of encs || []) {
+        if (!latestByPatient.has(enc.patient_id)) {
+          latestByPatient.set(enc.patient_id, enc)
+        }
+      }
+
+      // FIX: Wrap Map values iterator into Array.from() for safe downlevel iteration
+      const encountersToProcess = Array.from(latestByPatient.values())
+      for (const enc of encountersToProcess) {
+        const ob = enc.ob_data
+        const pat = enc.patients as any
+        if (!ob?.lmp || !pat?.mobile) continue
+
+        const lmpDate = new Date(ob.lmp + 'T00:00:00+05:30')
+        const nowMs = Date.now()
+        const weeksNow = (nowMs - lmpDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
+        if (weeksNow > 42) continue
+
+        for (const targetWeek of ANC_WEEKS) {
+          const targetMs = lmpDate.getTime() + targetWeek * 7 * 24 * 60 * 60 * 1000
+          const targetStr = new Date(targetMs).toLocaleDateString('en-CA', { timeZone: IST })
+          const daysAway = daysUntil(targetStr)
+
+          if (daysAway >= 0 && daysAway <= 2) {
+            if (await alreadySentToday(enc.patient_id, `anc_week_${targetWeek}`)) continue
+
+            reminders.push({
+              patientId: enc.patient_id,
+              patientName: pat.full_name || '',
+              mobile: pat.mobile,
+              type: `anc_week_${targetWeek}`,
+              message: `ANC check-up reminder: Your Week ${targetWeek} visit is ${daysAway === 0 ? 'TODAY' : `in ${daysAway} day(s)`}. Current GA: ${Math.floor(weeksNow)} weeks. Please bring ANC card, urine sample, and previous reports.`,
+            })
+            break
+          }
+        }
+      }
+    } catch (e: any) {
+      errors.push(`anc: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 4. POST-DELIVERY 42-DAY FOLLOW-UP
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const { data: dsList } = await supabase
+        .from('discharge_summaries')
+        .select('id, patient_id, delivery_date, patients!inner(full_name, mobile)')
+        .not('delivery_date', 'is', null)
+        .limit(200)
+
+      for (const ds of dsList || []) {
+        const pat = ds.patients as any
+        if (!ds.delivery_date || !pat?.mobile) continue
+
+        const followUpMs = new Date(ds.delivery_date).getTime() + 42 * 24 * 60 * 60 * 1000
+        const followUpStr = new Date(followUpMs).toLocaleDateString('en-CA', { timeZone: IST })
+        const daysAway = daysUntil(followUpStr)
+
+        if (daysAway >= 0 && daysAway <= 2) {
+          if (await alreadySentToday(ds.patient_id, 'post_delivery_42')) continue
+
+          reminders.push({
+            patientId: ds.patient_id,
+            patientName: pat.full_name || '',
+            mobile: pat.mobile,
+            type: 'post_delivery_42',
+            message: `Post-delivery follow-up reminder: Your 6-week (42-day) check-up is ${daysAway === 0 ? 'due TODAY' : `due in ${daysAway} day(s)`}. Please bring discharge summary and baby's vaccination card.`,
+          })
+        }
+      }
+    } catch (e: any) {
+      errors.push(`post_delivery: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 5. VACCINATION REMINDERS
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const VAX_SCHEDULE = [
+        { name: 'OPV/DPT/Hep-B (6 weeks)', days: 42 },
+        { name: 'OPV/DPT/Hep-B (10 weeks)', days: 70 },
+        { name: 'OPV/DPT/Hep-B (14 weeks)', days: 98 },
+        { name: 'Measles/MMR (9 months)', days: 270 },
+        { name: 'DPT Booster (16 months)', days: 480 },
+      ]
+
+      const { data: dsList } = await supabase
+        .from('discharge_summaries')
+        .select('id, patient_id, delivery_date, patients!inner(full_name, mobile)')
+        .not('delivery_date', 'is', null)
+        .limit(200)
+
+      for (const ds of dsList || []) {
+        const pat = ds.patients as any
+        if (!ds.delivery_date || !pat?.mobile) continue
+        const delivMs = new Date(ds.delivery_date).getTime()
+
+        for (const vax of VAX_SCHEDULE) {
+          const vaxDueStr = new Date(delivMs + vax.days * 24 * 60 * 60 * 1000)
+            .toLocaleDateString('en-CA', { timeZone: IST })
+          const daysAway = daysUntil(vaxDueStr)
+
+          if (daysAway >= 0 && daysAway <= 3) {
+            if (await alreadySentToday(ds.patient_id, `vax_${vax.days}`)) continue
+
+            reminders.push({
+              patientId: ds.patient_id,
+              patientName: pat.full_name || '',
+              mobile: pat.mobile,
+              type: `vax_${vax.days}`,
+              message: `Vaccination reminder: Your baby's ${vax.name} vaccination is ${daysAway === 0 ? 'due TODAY' : `due in ${daysAway} day(s)`}. Please bring the vaccination card. Do NOT skip vaccinations — they protect your baby from serious diseases.`,
+            })
+            break
+          }
+        }
+      }
+    } catch (e: any) {
+      errors.push(`vaccination: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 6. MEDICATION REMINDERS (for patients with active prescriptions)
+    // ═══════════════════════════════════════════════════════════
+    try {
+      // Get recent prescriptions (last 30 days) that have medications
+      const thirtyDaysAgo = daysFromNowIST(-30)
+      const { data: rxs } = await supabase
+        .from('prescriptions')
+        .select('id, patient_id, medications, created_at')
+        .gte('created_at', thirtyDaysAgo + 'T00:00:00')
+        .not('medications', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      // Latest prescription per patient
+      const latestRx = new Map<string, any>()
+      for (const rx of rxs || []) {
+        if (!latestRx.has(rx.patient_id)) latestRx.set(rx.patient_id, rx)
+      }
+
+      // FIX: Convert Map keys to flat Array with Array.from()
+      const rxPatientIds = Array.from(latestRx.keys())
+      const patientMap = new Map<string, any>()
+      if (rxPatientIds.length > 0) {
+        const { data: patients } = await supabase
+          .from('patients').select('id, full_name, mobile').in('id', rxPatientIds)
+        for (const p of patients || []) patientMap.set(p.id, p)
+      }
+
+      // FIX: Convert Map entries to sequential Array for ES5-safe downlevel iteration
+      const rxEntries = Array.from(latestRx.entries())
+      for (const [pid, rx] of rxEntries) {
+        const patient = patientMap.get(pid)
+        if (!patient?.mobile) continue
+        if (await alreadySentToday(pid, 'medication')) continue
+
+        const meds = Array.isArray(rx.medications)
+          ? rx.medications.map((m: any) => `${m.drug || ''} ${m.dose || ''} (${m.frequency || ''})`).filter((s: string) => s.trim().length > 3).slice(0, 4)
+          : []
+
+        if (meds.length === 0) continue
+
+        reminders.push({
+          patientId: pid,
+          patientName: patient.full_name || '',
+          mobile: patient.mobile,
+          type: 'medication',
+          message: `Medication reminder:\n${meds.map((m: string, i: number) => `${i + 1}. ${m}`).join('\n')}\n\nPlease take your medicines on time as prescribed. Contact us for any side effects.`,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`medication: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 7. OT SURGERY PRE-OP REMINDERS (day before)
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const { data: otSchedules } = await supabase
+        .from('ot_schedules')
+        .select('id, patient_id, patient_name, mrn, surgery_name, surgery_date, start_time, surgeon')
+        .eq('surgery_date', tomorrow)
+        .eq('status', 'scheduled')
+
+      // FIX: Flatten Set into Array using Array.from()
+      const otPatientIds = Array.from(new Set((otSchedules || []).map(s => s.patient_id).filter(Boolean)))
+      const otMobileMap = new Map<string, string>()
+      if (otPatientIds.length > 0) {
+        const { data: pats } = await supabase
+          .from('patients').select('id, mobile').in('id', otPatientIds)
+        for (const p of pats || []) if (p.mobile) otMobileMap.set(p.id, p.mobile)
+      }
+
+      for (const ot of otSchedules || []) {
+        const mobile = otMobileMap.get(ot.patient_id)
+        if (!mobile) continue
+        if (await alreadySentToday(ot.patient_id, `ot_preop_${ot.id}`)) continue
+
+        reminders.push({
+          patientId: ot.patient_id,
+          patientName: ot.patient_name || '',
+          mobile,
+          type: `ot_preop_${ot.id}`,
+          message: `Surgery reminder: Your surgery "${ot.surgery_name}" is scheduled for TOMORROW at ${ot.start_time}. Pre-op instructions:\n• Nothing to eat/drink after midnight (NPO)\n• Bring all previous reports\n• Arrive 2 hours before scheduled time\n• Bring one attendant\nSurgeon: Dr. ${ot.surgeon}`,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`ot_surgery: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 8. POST-DISCHARGE INSURANCE DOCUMENT NOTIFICATION
+    // ═══════════════════════════════════════════════════════════
+    try {
+      // Patients discharged in last 7 days who have insurance_details
+      const sevenDaysAgo = daysFromNowIST(-7)
+      const { data: recentDischarges } = await supabase
+        .from('ipd_admissions')
+        .select('id, patient_id, patient_name, mobile, insurance_details, updated_at')
+        .eq('status', 'discharged')
+        .not('insurance_details', 'is', null)
+        .neq('insurance_details', '')
+        .gte('updated_at', sevenDaysAgo + 'T00:00:00')
+
+      for (const adm of recentDischarges || []) {
+        if (!adm.mobile || !adm.insurance_details) continue
+        if (await alreadySentToday(adm.patient_id, 'insurance_docs')) continue
+
+        reminders.push({
+          patientId: adm.patient_id,
+          patientName: adm.patient_name || '',
+          mobile: adm.mobile,
+          type: 'insurance_docs',
+          message: `Insurance claim update: Your insurance documents for ${adm.insurance_details} are being processed. Please visit the hospital billing counter with:\n• Original discharge summary\n• Insurance card\n• ID proof\n• Claim form (if received)\nTimely submission ensures faster claim settlement.`,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`insurance_docs: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 9. PENDING BILL REMINDERS (> 3 days unpaid)
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const threeDaysAgo = daysFromNowIST(-3)
+      const { data: bills } = await supabase
+        .from('bills')
+        .select('id, patient_id, patient_name, total, paid, due, created_at')
+        .in('status', ['pending', 'unpaid', 'partial'])
+        .lt('created_at', threeDaysAgo + 'T00:00:00')
+        .limit(50)
+
+      // FIX: Flatten Set into Array using Array.from()
+      const billPatientIds = Array.from(new Set((bills || []).map(b => b.patient_id).filter(Boolean)))
+      const billMobileMap = new Map<string, string>()
+      if (billPatientIds.length > 0) {
+        const { data: pats } = await supabase
+          .from('patients').select('id, mobile').in('id', billPatientIds)
+        for (const p of pats || []) if (p.mobile) billMobileMap.set(p.id, p.mobile)
+      }
+
+      for (const bill of bills || []) {
+        const mobile = billMobileMap.get(bill.patient_id)
+        if (!mobile) continue
+        if (await alreadySentToday(bill.patient_id, 'pending_bill')) continue
+
+        const dueAmt = Number(bill.due || (Number(bill.total || 0) - Number(bill.paid || 0)))
+        if (dueAmt <= 0) continue
+
+        reminders.push({
+          patientId: bill.patient_id,
+          patientName: bill.patient_name || '',
+          mobile,
+          type: 'pending_bill',
+          message: `Payment reminder: Your pending bill of ₹${dueAmt.toLocaleString('en-IN')} is overdue. Please visit the billing counter or contact us to arrange payment. We accept Cash, UPI, Card, and Insurance.`,
+        })
+      }
+    } catch (e: any) {
+      errors.push(`pending_bill: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SAVE ALL REMINDERS TO DB (unless dry run)
+    // ═══════════════════════════════════════════════════════════
+    if (!dryRun && reminders.length > 0) {
+      const records = reminders.map(r => ({
+        patient_id: r.patientId,
+        patient_name: r.patientName,
+        mobile: r.mobile,
+        notification_type: r.type,
+        message_preview: r.message.slice(0, 300),
+        recipient_type: 'patient',
+        status: 'queued',
+        scheduled_for: new Date().toISOString(),
+        metadata: JSON.stringify({ auto_generated: true, cron_run: todayIST() }),
+      }))
+
+      const { error: insertErr } = await supabase
+        .from('whatsapp_notifications')
+        .insert(records)
+
+      if (insertErr) {
+        errors.push(`insert: ${insertErr.message}`)
+      }
+
+      // Also log to reminder_log for history tracking
+      const logRecords = reminders.map(r => ({
+        patient_id: r.patientId,
+        patient_name: r.patientName,
+        mobile: r.mobile,
+        reminder_type: r.type.replace(/_\d+$/, '').replace(/^(appointment|vax|anc_week|ot_preop).*/, '$1'),
+        message_preview: r.message.slice(0, 200),
+        channel: 'whatsapp',
+        status: 'queued',
+        sent_by: 'auto',
+        batch_id: `cron-${todayIST()}`,
+      }))
+
+      await supabase.from('reminder_log').insert(logRecords)
+    }
+
+    // Update cron log
+    if (cronLogId && !dryRun) {
+      await supabase.from('cron_job_log').update({
+        status: errors.length > 0 ? 'completed_with_errors' : 'completed',
+        finished_at: new Date().toISOString(),
+        result: {
+          total: reminders.length,
+          errors: errors.length,
+          error_details: errors,
+          duration_ms: Date.now() - startTime,
+        },
+      }).eq('id', cronLogId)
+    }
+
+  } catch (err: any) {
+    errors.push(`fatal: ${err.message}`)
+    if (cronLogId && !dryRun) {
+      await supabase.from('cron_job_log').update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error: err.message,
+      }).eq('id', cronLogId)
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    dryRun,
+    total: reminders.length,
+    reminders: reminders.map(r => ({
+      patientName: r.patientName,
+      mobile: r.mobile,
+      type: r.type,
+      message: r.message.slice(0, 150) + (r.message.length > 150 ? '...' : ''),
+    })),
+    errors: errors.length > 0 ? errors : undefined,
+    duration_ms: Date.now() - startTime,
+    generatedAt: new Date().toISOString(),
+  })
 }
 ```
 
@@ -12175,10 +12842,10 @@ export async function GET(req: NextRequest) {
     doctors = d1
   } else {
     const { data: d2, error: d2Err } = await sb
-      .from('clinicusers')
-      .select('id, fullname, share_pct, earning_model')
+      .from('clinic_users')
+      .select('id, full_name, share_pct, earning_model')
       .eq('role', 'doctor')
-    if (d2Err) safeErrorLog('clinicusers', d2Err)
+    if (d2Err) safeErrorLog('clinic_users', d2Err)
     doctors = d2 || []
   }
 
@@ -12274,7 +12941,6 @@ export async function GET(req: NextRequest) {
     },
   })
 }
-
 ```
 
 # src\app\api\export\route.ts
@@ -12565,14 +13231,12 @@ export async function GET(
 ```ts
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { requireAuth } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
 
-  // ── Auth gate ────────────────────────────────────────────────
-  const auth = await requireAuth(req)
-  if (auth instanceof Response) return auth
-  // ────────────────────────────────────────────────────────────
+  // NOTE: No auth required — this generates a BLANK fillable form template.
+  // It contains no patient data. Making it public allows direct download links
+  // from the registration page without requiring Bearer token in the URL.
 
   const { searchParams } = new URL(req.url)
   const hospitalName = searchParams.get('h') || 'NexMedicon Hospital'
@@ -12718,7 +13382,6 @@ export async function GET(req: NextRequest) {
     },
   })
 }
-
 ```
 
 # src\app\api\generate-qr\route.ts
@@ -12918,7 +13581,7 @@ export async function GET(req: NextRequest) {
     .from('google_review_requests')
     .select('*')
     .eq('status', 'pending')
-    .order('createdat', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(50)
 
   if (error) {
@@ -12961,8 +13624,8 @@ export async function POST(req: NextRequest) {
   const { data: recent } = await sb
     .from('google_review_requests')
     .select('id')
-    .eq('patientid', patientId)
-    .gte('createdat', weekAgo.toISOString())
+    .eq('patient_id', patientId)
+    .gte('created_at', weekAgo.toISOString())
     .limit(1)
     .maybeSingle()
 
@@ -12973,15 +13636,15 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Get Google review URL from clinicsettings
+  // Get Google review URL from clinic_settings
   const { data: reviewSetting } = await sb
-    .from('clinicsettings')
+    .from('clinic_settings')
     .select('value')
     .eq('key', 'google_review_url')
     .maybeSingle()
 
   const { data: nameSetting } = await sb
-    .from('clinicsettings')
+    .from('clinic_settings')
     .select('value')
     .eq('key', 'hospital_name')
     .maybeSingle()
@@ -13068,7 +13731,6 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ success: true })
 }
-
 ```
 
 # src\app\api\insurance-bundle\[patientId]\route.ts
@@ -13627,6 +14289,952 @@ export async function GET(
 
 ```
 
+# src\app\api\insurance\sync\route.ts
+
+```ts
+/**
+ * src/app/api/insurance/sync/route.ts
+ *
+ * Insurance Claims Auto-Sync API
+ *
+ * This endpoint automatically syncs insurance data from patient registration
+ * to the insurance claims module. It handles:
+ *
+ *   1. GET /api/insurance/sync — Returns all patients with insurance who don't
+ *      have active claims yet (potential claims list)
+ *
+ *   2. POST /api/insurance/sync — Auto-creates a claim entry when a patient
+ *      with insurance is admitted/discharged (called by IPD admission/discharge flows)
+ *
+ *   3. PATCH /api/insurance/sync — Updates claim status based on patient events
+ *      (e.g., discharge → claim_submitted, bill paid → settled)
+ *
+ * In Indian clinic context:
+ *   - Patient registers with mediclaim=true, cashless=true, policy details
+ *   - When admitted for surgery/treatment, pre-auth is initiated
+ *   - After discharge, claim documents are submitted
+ *   - TPA reviews → approves/rejects → settlement
+ *   - This API keeps the insurance module in sync with all of this automatically
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// ── GET: Fetch all insured patients and their claim status ────
+export async function GET(req: NextRequest) {
+  try {
+    const filter = req.nextUrl.searchParams.get('filter') // 'no_claim' | 'all' | 'pending' | 'settled'
+
+    // Get all patients with insurance (mediclaim = true OR cashless = true OR policy_tpa_name is not null)
+    const { data: insuredPatients, error: pErr } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at')
+      .or('mediclaim.eq.true,cashless.eq.true,policy_tpa_name.neq.')
+      .order('created_at', { ascending: false })
+
+    if (pErr) {
+      return NextResponse.json({ error: pErr.message }, { status: 500 })
+    }
+
+    // Get all existing claims
+    const { data: existingClaims, error: cErr } = await supabase
+      .from('insurance_claims')
+      .select('id, patient_id, status, claim_amount, approved_amount, created_at, updated_at')
+
+    if (cErr) {
+      return NextResponse.json({ error: cErr.message }, { status: 500 })
+    }
+
+    // Build a map of patient_id → claims
+    const claimsByPatient = new Map<string, any[]>()
+    for (const claim of existingClaims || []) {
+      const existing = claimsByPatient.get(claim.patient_id) || []
+      existing.push(claim)
+      claimsByPatient.set(claim.patient_id, existing)
+    }
+
+    // Categorize patients
+    const result = (insuredPatients || []).map(p => {
+      const patientClaims = claimsByPatient.get(p.id) || []
+      const hasClaim = patientClaims.length > 0
+      const latestClaim = patientClaims.sort((a: any, b: any) =>
+        new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+      )[0] || null
+
+      const pendingClaims = patientClaims.filter((c: any) =>
+        ['pre_auth_pending', 'claim_submitted', 'under_review', 'query_raised', 'query_resolved'].includes(c.status)
+      )
+      const settledClaims = patientClaims.filter((c: any) => c.status === 'settled')
+      const totalClaimed = patientClaims.reduce((s: number, c: any) => s + (Number(c.claim_amount) || 0), 0)
+      const totalSettled = settledClaims.reduce((s: number, c: any) => s + (Number(c.approved_amount) || 0), 0)
+
+      return {
+        patient_id: p.id,
+        patient_name: p.full_name,
+        mrn: p.mrn,
+        mobile: p.mobile,
+        mediclaim: p.mediclaim,
+        cashless: p.cashless,
+        policy_tpa_name: p.policy_tpa_name,
+        policy_number: p.policy_number,
+        registered_at: p.created_at,
+        has_claim: hasClaim,
+        total_claims: patientClaims.length,
+        pending_claims: pendingClaims.length,
+        settled_claims: settledClaims.length,
+        total_claimed_amount: totalClaimed,
+        total_settled_amount: totalSettled,
+        latest_claim_status: latestClaim?.status || null,
+        latest_claim_id: latestClaim?.id || null,
+      }
+    })
+
+    // Apply filter
+    let filtered = result
+    if (filter === 'no_claim') {
+      filtered = result.filter(r => !r.has_claim)
+    } else if (filter === 'pending') {
+      filtered = result.filter(r => r.pending_claims > 0)
+    } else if (filter === 'settled') {
+      filtered = result.filter(r => r.settled_claims > 0)
+    }
+
+    // Summary stats
+    const stats = {
+      total_insured_patients: result.length,
+      patients_without_claims: result.filter(r => !r.has_claim).length,
+      patients_with_pending: result.filter(r => r.pending_claims > 0).length,
+      patients_settled: result.filter(r => r.settled_claims > 0).length,
+      total_pending_amount: result.reduce((s, r) => s + r.total_claimed_amount - r.total_settled_amount, 0),
+      total_settled_amount: result.reduce((s, r) => s + r.total_settled_amount, 0),
+    }
+
+    return NextResponse.json({
+      patients: filtered,
+      stats,
+      total: filtered.length,
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── POST: Auto-create insurance claim from patient event ──────
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const {
+      patient_id,
+      trigger,         // 'admission' | 'discharge' | 'manual' | 'registration'
+      admission_id,    // IPD admission ID (optional)
+      claim_amount,    // Pre-filled amount (optional)
+      diagnosis,       // From IPD admission (optional)
+      surgery_name,    // From OT schedule (optional)
+      admission_date,
+      discharge_date,
+    } = body
+
+    if (!patient_id) {
+      return NextResponse.json({ error: 'patient_id is required' }, { status: 400 })
+    }
+
+    // Fetch patient details
+    const { data: patient, error: pErr } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number')
+      .eq('id', patient_id)
+      .single()
+
+    if (pErr || !patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
+    }
+
+    // Verify patient actually has insurance
+    if (!patient.mediclaim && !patient.cashless && !patient.policy_tpa_name) {
+      return NextResponse.json({
+        ok: false,
+        message: 'Patient does not have insurance/mediclaim. No claim created.',
+        skip: true,
+      })
+    }
+
+    // Check if there's already an active (non-settled) claim for this patient
+    const { data: existingActive } = await supabase
+      .from('insurance_claims')
+      .select('id, status')
+      .eq('patient_id', patient_id)
+      .not('status', 'in', '("settled","rejected")')
+      .limit(1)
+
+    // If triggered by admission and there's already an active claim, don't create duplicate
+    if (trigger === 'admission' && existingActive && existingActive.length > 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'Active claim already exists for this patient.',
+        existing_claim_id: existingActive[0].id,
+        skip: true,
+      })
+    }
+
+    // Create the claim
+    const claimData: any = {
+      patient_id: patient.id,
+      patient_name: patient.full_name,
+      mrn: patient.mrn || '',
+      policy_number: patient.policy_number || null,
+      tpa_name: patient.policy_tpa_name || null,
+      insurance_company: null,
+      claim_amount: Number(claim_amount) || 0,
+      status: trigger === 'admission' ? 'pre_auth_pending' : 'pre_auth_pending',
+      diagnosis: diagnosis || null,
+      surgery_name: surgery_name || null,
+      admission_date: admission_date || null,
+      discharge_date: discharge_date || null,
+      notes: `Auto-created from ${trigger} on ${new Date().toLocaleDateString('en-IN')}`,
+      created_by: 'system',
+      documents_sent: false,
+    }
+
+    // If triggered by discharge, set claim_submitted status
+    if (trigger === 'discharge') {
+      claimData.status = 'claim_submitted'
+      claimData.notes = `Claim auto-submitted after discharge on ${new Date().toLocaleDateString('en-IN')}`
+    }
+
+    const { data: newClaim, error: insertErr } = await supabase
+      .from('insurance_claims')
+      .insert(claimData)
+      .select('id')
+      .single()
+
+    if (insertErr) {
+      return NextResponse.json({ error: insertErr.message }, { status: 500 })
+    }
+
+    // Log to history
+    await supabase.from('insurance_claim_history').insert({
+      claim_id: newClaim.id,
+      old_status: null,
+      new_status: claimData.status,
+      notes: claimData.notes,
+      done_by: 'system',
+    }).then(() => {})
+
+    return NextResponse.json({
+      ok: true,
+      claim_id: newClaim.id,
+      message: `Insurance claim auto-created for ${patient.full_name}`,
+      trigger,
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── PATCH: Update claim based on patient events ───────────────
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { claim_id, patient_id, event, data: eventData } = body
+
+    // Find the claim
+    let claimQuery = supabase.from('insurance_claims').select('*')
+    if (claim_id) {
+      claimQuery = claimQuery.eq('id', claim_id)
+    } else if (patient_id) {
+      claimQuery = claimQuery.eq('patient_id', patient_id).not('status', 'in', '("settled","rejected")').order('created_at', { ascending: false }).limit(1)
+    }
+    const { data: claims } = await claimQuery
+    const claim = claims?.[0]
+    if (!claim) {
+      return NextResponse.json({ ok: false, message: 'No active claim found' })
+    }
+
+    // Handle different events
+    let updates: any = { updated_at: new Date().toISOString() }
+
+    switch (event) {
+      case 'bill_generated':
+        // When bill is generated, update claim amount
+        if (eventData?.bill_amount) {
+          updates.claim_amount = Number(eventData.bill_amount)
+        }
+        break
+
+      case 'bill_paid':
+        // When patient pays (reimbursement case), mark as settled
+        if (!claim.cashless) {
+          updates.status = 'settled'
+          updates.approved_amount = Number(eventData?.paid_amount) || claim.claim_amount
+          updates.settlement_date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+        }
+        break
+
+      case 'discharge':
+        // Auto-advance to claim_submitted after discharge
+        if (['pre_auth_pending', 'pre_auth_approved'].includes(claim.status)) {
+          updates.status = 'claim_submitted'
+          updates.discharge_date = eventData?.discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+        }
+        break
+
+      case 'documents_submitted':
+        updates.documents_sent = true
+        break
+
+      default:
+        return NextResponse.json({ ok: false, message: `Unknown event: ${event}` })
+    }
+
+    await supabase.from('insurance_claims').update(updates).eq('id', claim.id)
+
+    // Log history
+    if (updates.status && updates.status !== claim.status) {
+      await supabase.from('insurance_claim_history').insert({
+        claim_id: claim.id,
+        old_status: claim.status,
+        new_status: updates.status,
+        notes: `Auto-updated from event: ${event}`,
+        done_by: 'system',
+      }).then(() => {})
+    }
+
+    return NextResponse.json({ ok: true, claim_id: claim.id, updates })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+```
+
+# src\app\api\ipd\discharge\route.ts
+
+```ts
+/**
+ * src/app/api/ipd/discharge/route.ts
+ *
+ * IPD Discharge API — Complete discharge workflow
+ *
+ * When a patient is discharged:
+ *   1. Updates IPD admission status → 'discharged'
+ *   2. Frees the bed (status → 'cleaning' → 'available' after 5 min)
+ *   3. Creates/updates discharge summary
+ *   4. Updates patient profile with discharge details
+ *   5. Creates follow-up appointment if specified
+ *   6. Generates WhatsApp notification to patient
+ *   7. Generates insurance document reminder if applicable
+ *   8. Logs audit trail
+ *   9. Returns redirect URL to patient profile
+ *
+ * POST /api/ipd/discharge
+ *   Body: {
+ *     admission_id: string (UUID)
+ *     discharge_date: string (YYYY-MM-DD)
+ *     discharge_time: string (HH:MM)
+ *     condition_at_discharge: string
+ *     final_diagnosis: string
+ *     discharge_advice: string
+ *     medications_at_discharge: string (JSON array or text)
+ *     follow_up_date: string (YYYY-MM-DD) | null
+ *     follow_up_note: string | null
+ *     discharged_by: string (doctor name)
+ *   }
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const {
+      admission_id,
+      discharge_date,
+      discharge_time,
+      condition_at_discharge,
+      final_diagnosis,
+      discharge_advice,
+      medications_at_discharge,
+      follow_up_date,
+      follow_up_note,
+      discharged_by,
+      delivery_type,
+      baby_sex,
+      baby_weight,
+      baby_birth_time,
+      apgar_score,
+      delivery_date,
+      complications,
+      lactation_advice,
+    } = body
+
+    if (!admission_id) {
+      return NextResponse.json({ error: 'admission_id is required' }, { status: 400 })
+    }
+
+    // 1. Get the admission record
+    const { data: admission, error: admErr } = await supabase
+      .from('ipd_admissions')
+      .select('*')
+      .eq('id', admission_id)
+      .single()
+
+    if (admErr || !admission) {
+      return NextResponse.json({ error: 'Admission not found' }, { status: 404 })
+    }
+
+    if (admission.status === 'discharged') {
+      return NextResponse.json({
+        error: 'Patient is already discharged',
+        redirect: `/patients/${admission.patient_id}`,
+      }, { status: 400 })
+    }
+
+    const now = new Date().toISOString()
+    const patientId = admission.patient_id
+
+    // 2. Update IPD admission status
+    const { error: updAdmErr } = await supabase
+      .from('ipd_admissions')
+      .update({
+        status: 'discharged',
+        updated_at: now,
+      })
+      .eq('id', admission_id)
+
+    if (updAdmErr) {
+      return NextResponse.json({ error: 'Failed to update admission: ' + updAdmErr.message }, { status: 500 })
+    }
+
+    // 3. Free the bed
+    if (admission.bed_id) {
+      await supabase.from('beds').update({
+        status: 'cleaning',
+        patient_id: null,
+        patient_name: null,
+        admission_date: null,
+        expected_discharge: null,
+        updated_at: now,
+      }).eq('id', admission.bed_id)
+
+      // Mark available after 5 minutes (simulated cleaning time)
+      // In production, this would be handled by a separate cron or database trigger
+      // For now, we set it directly as 'available' with a note
+      setTimeout(async () => {
+        try {
+          await supabase.from('beds').update({
+            status: 'available',
+            updated_at: new Date().toISOString(),
+          }).eq('id', admission.bed_id).eq('status', 'cleaning')
+        } catch (e) {
+          console.error('[discharge] bed cleanup error:', e)
+        }
+      }, 5 * 60 * 1000)
+    }
+
+    // 4. Create discharge summary
+    const dischargeSummary = {
+      patient_id: patientId,
+      admission_date: admission.admission_date,
+      discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+      final_diagnosis: final_diagnosis || admission.diagnosis_on_admission || '',
+      clinical_summary: `Admitted for: ${admission.chief_complaint || admission.diagnosis_on_admission || 'Treatment'}. Doctor: ${admission.admitting_doctor}`,
+      condition_at_discharge: condition_at_discharge || 'Satisfactory',
+      discharge_advice: discharge_advice || '',
+      medications_at_discharge: medications_at_discharge || '',
+      follow_up_date: follow_up_date || null,
+      follow_up_note: follow_up_note || '',
+      signed_by: discharged_by || admission.admitting_doctor || '',
+      is_final: false,
+      version: 1,
+      // OB/GYN delivery fields
+      delivery_type: delivery_type || null,
+      baby_sex: baby_sex || null,
+      baby_weight: baby_weight || null,
+      baby_birth_time: baby_birth_time || null,
+      apgar_score: apgar_score || null,
+      delivery_date: delivery_date || null,
+      complications: complications || null,
+      lactation_advice: lactation_advice || null,
+      updated_at: now,
+    }
+
+    const { data: dsRecord, error: dsErr } = await supabase
+      .from('discharge_summaries')
+      .insert(dischargeSummary)
+      .select('id')
+      .single()
+
+    // Don't fail if discharge_summaries table doesn't exist — just log
+    if (dsErr) {
+      console.error('[discharge] discharge_summaries insert error:', dsErr.message)
+    }
+
+    // 5. Create follow-up appointment if date specified
+    if (follow_up_date) {
+      await supabase.from('appointments').insert({
+        patient_id: patientId,
+        patient_name: admission.patient_name,
+        mrn: admission.mrn,
+        mobile: admission.mobile,
+        date: follow_up_date,
+        time: '10:00',
+        type: 'Follow-up (Post-Discharge)',
+        status: 'scheduled',
+        notes: follow_up_note || `Post-discharge follow-up. Admitted: ${admission.admission_date}. Diagnosis: ${admission.diagnosis_on_admission || '—'}`,
+      })
+    }
+
+    // 6. Queue WhatsApp notification
+    const patientNotification = {
+      patient_id: patientId,
+      patient_name: admission.patient_name,
+      mobile: admission.mobile,
+      notification_type: 'discharge',
+      message_preview: `You have been discharged from ${admission.ward} (Bed ${admission.bed_number}). ${follow_up_date ? `Follow-up on ${follow_up_date}.` : ''} ${discharge_advice ? `Advice: ${discharge_advice.slice(0, 100)}` : ''}`,
+      recipient_type: 'patient',
+      status: 'queued',
+      metadata: JSON.stringify({
+        admission_id,
+        bed_number: admission.bed_number,
+        ward: admission.ward,
+        discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+        follow_up_date,
+      }),
+    }
+
+    await supabase.from('whatsapp_notifications').insert(patientNotification)
+
+    // 7. If patient has insurance, queue insurance doc reminder (3 days later)
+    if (admission.insurance_details) {
+      await supabase.from('whatsapp_notifications').insert({
+        patient_id: patientId,
+        patient_name: admission.patient_name,
+        mobile: admission.mobile,
+        notification_type: 'insurance_docs_ready',
+        message_preview: `Your insurance documents for ${admission.insurance_details} are ready for pickup. Please visit billing counter.`,
+        recipient_type: 'patient',
+        status: 'scheduled',
+        scheduled_for: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        metadata: JSON.stringify({
+          insurance_details: admission.insurance_details,
+          admission_id,
+        }),
+      })
+
+      // Auto-sync insurance claim: advance status to 'claim_submitted' on discharge
+      try {
+        await supabase.rpc('http_post', {}) // fallback: direct DB update
+      } catch { /* fallback below */ }
+
+      // Direct insurance claim status update on discharge
+      const { data: activeClaims } = await supabase
+        .from('insurance_claims')
+        .select('id, status')
+        .eq('patient_id', patientId)
+        .not('status', 'in', '("settled","rejected")')
+        .limit(1)
+
+      if (activeClaims && activeClaims.length > 0) {
+        const claim = activeClaims[0]
+        if (['pre_auth_pending', 'pre_auth_approved'].includes(claim.status)) {
+          await supabase.from('insurance_claims').update({
+            status: 'claim_submitted',
+            discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+            updated_at: now,
+          }).eq('id', claim.id)
+
+          await supabase.from('insurance_claim_history').insert({
+            claim_id: claim.id,
+            old_status: claim.status,
+            new_status: 'claim_submitted',
+            notes: `Auto-advanced on discharge (${discharge_date || 'today'})`,
+            done_by: discharged_by || 'system',
+          })
+        }
+      } else {
+        // No existing claim — create one automatically
+        await supabase.from('insurance_claims').insert({
+          patient_id: patientId,
+          patient_name: admission.patient_name,
+          mrn: admission.mrn || '',
+          status: 'claim_submitted',
+          diagnosis: final_diagnosis || admission.diagnosis_on_admission || null,
+          admission_date: admission.admission_date || null,
+          discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+          notes: `Auto-created on discharge. Insurance: ${admission.insurance_details}`,
+          created_by: 'system',
+          documents_sent: false,
+        })
+      }
+    }
+
+    // 8. Audit log
+    await supabase.from('audit_log').insert({
+      action: 'discharge',
+      entity_type: 'ipd_admission',
+      entity_id: admission_id,
+      entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
+      changes: JSON.stringify({
+        discharge_date,
+        discharge_time,
+        condition_at_discharge,
+        final_diagnosis,
+        follow_up_date,
+        discharged_by,
+      }),
+    }).then(() => {}) // Non-blocking
+
+    // 8b. Create in-app notification for all staff
+    await supabase.from('clinic_notifications').insert({
+      title: `Discharge: ${admission.patient_name}`,
+      message: `${admission.patient_name} (Bed ${admission.bed_number}, ${admission.ward}) discharged by Dr. ${discharged_by || admission.admitting_doctor}. Condition: ${condition_at_discharge || 'Satisfactory'}.${follow_up_date ? ` Follow-up: ${follow_up_date}` : ''}`,
+      type: 'discharge',
+      severity: 'normal',
+      source: 'ipd',
+      entity_type: 'admission',
+      entity_id: admission_id,
+      patient_id: patientId,
+      patient_name: admission.patient_name,
+      mrn: admission.mrn || null,
+      target_roles: ['admin', 'doctor', 'staff'],
+      metadata: JSON.stringify({
+        bed_number: admission.bed_number,
+        ward: admission.ward,
+        discharged_by,
+        condition_at_discharge,
+      }),
+    }).then(() => {}) // Non-blocking
+
+    // 9. Return success with redirect
+    return NextResponse.json({
+      ok: true,
+      message: `${admission.patient_name} discharged successfully from Bed ${admission.bed_number}`,
+      redirect: `/patients/${patientId}`,
+      discharge_summary_id: dsRecord?.id || null,
+      patient_id: patientId,
+      notifications: {
+        patient_whatsapp: 'queued',
+        insurance_reminder: admission.insurance_details ? 'scheduled_3_days' : 'n/a',
+        follow_up_appointment: follow_up_date ? 'created' : 'n/a',
+      },
+    })
+  } catch (err: any) {
+    console.error('[IPD Discharge] Error:', err)
+    return NextResponse.json({ error: err.message || 'Discharge failed' }, { status: 500 })
+  }
+}
+```
+
+# src\app\api\ipd\files\route.ts
+
+```ts
+/**
+ * src/app/api/ipd/files/route.ts
+ *
+ * IPD File Management API — Upload photos/documents for IPD patients
+ * 
+ * Features:
+ *  - Upload photos (wound photos, consent forms, etc.)
+ *  - Upload documents (reports, prescriptions, etc.)
+ *  - AI extraction of data from uploaded images/PDFs
+ *  - List all files for an IPD admission
+ *  - Delete files (admin/doctor only)
+ *
+ * POST /api/ipd/files — Upload a file
+ *   Body (multipart/form-data):
+ *     file: File
+ *     ipd_admission_id: string (UUID)
+ *     patient_id: string (UUID)
+ *     category: string ('wound'|'report'|'xray'|'consent'|'prescription'|'nursing'|'general')
+ *     description: string (optional)
+ *     uploaded_by: string
+ *     uploaded_by_role: string ('doctor'|'nurse'|'staff')
+ *     extract_ai: string ('true'|'false') — whether to run AI extraction
+ *
+ * GET /api/ipd/files?admission_id=XXX — Get all files for an admission
+ * DELETE /api/ipd/files?file_id=XXX — Delete a file
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// MIME type detection by extension
+const MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
+  pdf: 'application/pdf', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
+function getMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  return MIME_MAP[ext] || 'application/octet-stream'
+}
+
+// ── AI Extraction Helper ──────────────────────────────────────
+// Uses OpenAI Vision API to extract structured data from medical images/docs
+async function extractDataFromImage(
+  base64Data: string,
+  mimeType: string,
+  category: string
+): Promise<Record<string, any>> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    return { _note: 'AI extraction skipped — OPENAI_API_KEY not configured' }
+  }
+
+  try {
+    const systemPrompt = `You are a medical data extraction AI for an Indian hospital.
+Extract structured data from this medical image/document.
+Category: ${category}
+
+Based on the category, extract relevant fields:
+- wound: wound_size, wound_location, wound_type, healing_status, dressing_notes
+- report: test_name, test_values (array of {name, value, unit, reference_range}), conclusion, date
+- xray: findings, impression, area_examined
+- consent: procedure_name, patient_consent_given, witness_name, date
+- prescription: medications (array of {drug, dose, frequency, duration}), doctor_name
+- nursing: observation, vitals_noted, action_taken
+- general: description, key_findings
+
+Return a JSON object with the extracted fields. If a field cannot be determined, omit it.
+Be accurate and concise. Use Indian medical terminology where appropriate.`
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Extract medical data from this ${category} image/document.` },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Data}`,
+                  detail: 'high',
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1000,
+        temperature: 0.1,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[AI Extract] OpenAI error:', response.status)
+      return { _error: 'AI extraction failed', _status: response.status }
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content || ''
+
+    // Try to parse JSON from the response
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0])
+      } catch {
+        return { raw_extraction: content }
+      }
+    }
+
+    return { raw_extraction: content }
+  } catch (err: any) {
+    console.error('[AI Extract] Error:', err.message)
+    return { _error: err.message }
+  }
+}
+
+// ── GET — List files for an admission ─────────────────────────
+export async function GET(req: NextRequest) {
+  const admissionId = req.nextUrl.searchParams.get('admission_id')
+  const patientId = req.nextUrl.searchParams.get('patient_id')
+
+  if (!admissionId && !patientId) {
+    return NextResponse.json({ error: 'admission_id or patient_id required' }, { status: 400 })
+  }
+
+  let query = supabase.from('ipd_files').select('*').order('created_at', { ascending: false })
+
+  if (admissionId) {
+    query = query.eq('ipd_admission_id', admissionId)
+  } else if (patientId) {
+    query = query.eq('patient_id', patientId)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ files: data || [], total: (data || []).length })
+}
+
+// ── POST — Upload a file ──────────────────────────────────────
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData()
+    const file = formData.get('file') as File | null
+    const ipdAdmissionId = formData.get('ipd_admission_id') as string
+    const patientId = formData.get('patient_id') as string
+    const category = (formData.get('category') as string) || 'general'
+    const description = (formData.get('description') as string) || ''
+    const uploadedBy = (formData.get('uploaded_by') as string) || 'Staff'
+    const uploadedByRole = (formData.get('uploaded_by_role') as string) || 'nurse'
+    const extractAI = formData.get('extract_ai') === 'true'
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    }
+    if (!ipdAdmissionId || !patientId) {
+      return NextResponse.json({ error: 'ipd_admission_id and patient_id required' }, { status: 400 })
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const base64 = buffer.toString('base64')
+    const mimeType = getMimeType(file.name) || file.type || 'application/octet-stream'
+    const fileSize = buffer.length
+
+    // Try to upload to Supabase Storage first
+    let storageKey: string | null = null
+    let fileUrl: string | null = null
+    let fileData: string | null = null
+
+    const storagePath = `ipd/${patientId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('ipd-files')
+      .upload(storagePath, buffer, {
+        contentType: mimeType,
+        upsert: false,
+      })
+
+    if (!uploadError) {
+      storageKey = storagePath
+      const { data: urlData } = supabase.storage.from('ipd-files').getPublicUrl(storagePath)
+      fileUrl = urlData?.publicUrl || null
+    } else {
+      // Fallback: store as base64 in DB (for files < 5MB)
+      if (fileSize <= 5 * 1024 * 1024) {
+        fileData = `data:${mimeType};base64,${base64}`
+      } else {
+        return NextResponse.json(
+          { error: 'File too large for DB storage and Supabase Storage unavailable' },
+          { status: 413 }
+        )
+      }
+    }
+
+    // AI extraction (if requested and file is an image or PDF)
+    let aiExtractedData: Record<string, any> = {}
+    if (extractAI && (mimeType.startsWith('image/') || mimeType === 'application/pdf')) {
+      aiExtractedData = await extractDataFromImage(base64, mimeType, category)
+    }
+
+    // Save record to database
+    const { data: record, error: insertError } = await supabase
+      .from('ipd_files')
+      .insert({
+        ipd_admission_id: ipdAdmissionId,
+        patient_id: patientId,
+        file_name: file.name,
+        file_type: mimeType,
+        file_size: fileSize,
+        storage_key: storageKey,
+        file_url: fileUrl,
+        file_data: fileData,
+        category,
+        description,
+        ai_extracted_data: aiExtractedData,
+        uploaded_by: uploadedBy,
+        uploaded_by_role: uploadedByRole,
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      ok: true,
+      file: record,
+      ai_data: aiExtractedData,
+      message: 'File uploaded successfully',
+    })
+  } catch (err: any) {
+    console.error('[IPD Files POST] Error:', err)
+    return NextResponse.json({ error: err.message || 'Upload failed' }, { status: 500 })
+  }
+}
+
+// ── DELETE — Remove a file ────────────────────────────────────
+export async function DELETE(req: NextRequest) {
+  const fileId = req.nextUrl.searchParams.get('file_id')
+  if (!fileId) {
+    return NextResponse.json({ error: 'file_id required' }, { status: 400 })
+  }
+
+  // Get the file record first
+  const { data: file } = await supabase
+    .from('ipd_files')
+    .select('storage_key')
+    .eq('id', fileId)
+    .single()
+
+  // Delete from storage if key exists
+  if (file?.storage_key) {
+    await supabase.storage.from('ipd-files').remove([file.storage_key])
+  }
+
+  // Delete DB record
+  const { error } = await supabase.from('ipd_files').delete().eq('id', fileId)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, message: 'File deleted' })
+}
+```
+
 # src\app\api\labs\extract-values\route.ts
 
 ```ts
@@ -13750,6 +15358,251 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[labs/extract-values] error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+```
+
+# src\app\api\labs\extract\route.ts
+
+```ts
+/**
+ * src/app/api/labs/extract/route.ts
+ *
+ * Lab Report AI Extraction API
+ *
+ * When a lab partner uploads a PDF report, this endpoint extracts:
+ *  - Test name
+ *  - Test values (name, value, unit, reference range)
+ *  - Patient name (if visible)
+ *  - Date
+ *  - Lab name
+ *  - Conclusion/impression
+ *
+ * The extracted data is:
+ *  1. Saved to lab_reports.ai_extracted_data
+ *  2. Saved to lab_reports.results_data (structured test values)
+ *  3. Checked for abnormal values → creates doctor_alert
+ *  4. Auto-attached to patient profile
+ *
+ * POST /api/labs/extract
+ *   Body: { report_id: UUID, base64_data: string, mime_type: string }
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// Reference ranges for common Indian lab tests
+const REFERENCE_RANGES: Record<string, { low: number; high: number; unit: string }> = {
+  'haemoglobin': { low: 11.5, high: 16.5, unit: 'g/dL' },
+  'hb': { low: 11.5, high: 16.5, unit: 'g/dL' },
+  'wbc': { low: 4000, high: 11000, unit: 'cells/µL' },
+  'rbc': { low: 3.8, high: 5.8, unit: 'million/µL' },
+  'platelet': { low: 150000, high: 400000, unit: '/µL' },
+  'platelets': { low: 150000, high: 400000, unit: '/µL' },
+  'esr': { low: 0, high: 20, unit: 'mm/hr' },
+  'blood sugar fasting': { low: 70, high: 100, unit: 'mg/dL' },
+  'fbs': { low: 70, high: 100, unit: 'mg/dL' },
+  'blood sugar pp': { low: 70, high: 140, unit: 'mg/dL' },
+  'ppbs': { low: 70, high: 140, unit: 'mg/dL' },
+  'hba1c': { low: 4.0, high: 5.7, unit: '%' },
+  'tsh': { low: 0.4, high: 4.0, unit: 'mIU/L' },
+  't3': { low: 80, high: 200, unit: 'ng/dL' },
+  't4': { low: 4.5, high: 12.5, unit: 'µg/dL' },
+  'creatinine': { low: 0.6, high: 1.2, unit: 'mg/dL' },
+  'urea': { low: 15, high: 40, unit: 'mg/dL' },
+  'uric acid': { low: 2.4, high: 7.0, unit: 'mg/dL' },
+  'sgpt': { low: 7, high: 56, unit: 'U/L' },
+  'alt': { low: 7, high: 56, unit: 'U/L' },
+  'sgot': { low: 10, high: 40, unit: 'U/L' },
+  'ast': { low: 10, high: 40, unit: 'U/L' },
+  'bilirubin total': { low: 0.1, high: 1.2, unit: 'mg/dL' },
+  'bilirubin direct': { low: 0, high: 0.3, unit: 'mg/dL' },
+  'cholesterol': { low: 0, high: 200, unit: 'mg/dL' },
+  'triglycerides': { low: 0, high: 150, unit: 'mg/dL' },
+  'hdl': { low: 40, high: 100, unit: 'mg/dL' },
+  'ldl': { low: 0, high: 100, unit: 'mg/dL' },
+  'vitamin d': { low: 30, high: 100, unit: 'ng/mL' },
+  'vitamin b12': { low: 200, high: 900, unit: 'pg/mL' },
+  'iron': { low: 60, high: 170, unit: 'µg/dL' },
+  'ferritin': { low: 12, high: 300, unit: 'ng/mL' },
+  'calcium': { low: 8.5, high: 10.5, unit: 'mg/dL' },
+}
+
+function detectAbnormalValues(results: Array<{ name: string; value: string | number; unit?: string }>): string[] {
+  const abnormals: string[] = []
+  for (const result of results) {
+    const numVal = parseFloat(String(result.value))
+    if (isNaN(numVal)) continue
+    const nameKey = result.name.toLowerCase().trim()
+    for (const [refKey, range] of Object.entries(REFERENCE_RANGES)) {
+      if (nameKey.includes(refKey)) {
+        if (numVal < range.low || numVal > range.high) {
+          const status = numVal < range.low ? 'LOW' : 'HIGH'
+          abnormals.push(`${result.name}: ${result.value} ${result.unit || range.unit} [${status}] (Normal: ${range.low}–${range.high})`)
+        }
+        break
+      }
+    }
+  }
+  return abnormals
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { report_id, base64_data, mime_type } = body
+
+    if (!report_id) {
+      return NextResponse.json({ error: 'report_id required' }, { status: 400 })
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({
+        ok: false,
+        error: 'AI extraction not available — OPENAI_API_KEY not configured',
+        suggestion: 'Set OPENAI_API_KEY in your environment variables to enable AI lab report extraction',
+      }, { status: 503 })
+    }
+
+    if (!base64_data) {
+      return NextResponse.json({ error: 'base64_data required for extraction' }, { status: 400 })
+    }
+
+    // Call OpenAI Vision to extract lab data
+    const systemPrompt = `You are a medical lab report data extraction AI for an Indian hospital.
+Extract ALL test values from this lab report image/PDF.
+
+Return a JSON object with:
+{
+  "patient_name": "if visible",
+  "report_date": "YYYY-MM-DD if visible",
+  "lab_name": "if visible",
+  "test_name": "main test name (e.g. Complete Blood Count, Thyroid Profile)",
+  "results": [
+    { "name": "Test Parameter Name", "value": "numeric value", "unit": "unit", "reference_range": "normal range if shown" }
+  ],
+  "conclusion": "doctor's impression if any",
+  "notes": "any additional observations"
+}
+
+Be thorough — extract ALL numeric values you can see. Use exact parameter names as shown in the report.`
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract all test values from this lab report:' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mime_type || 'application/pdf'};base64,${base64_data}`,
+                  detail: 'high',
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 2000,
+        temperature: 0.1,
+      }),
+    })
+
+    if (!response.ok) {
+      return NextResponse.json({ error: 'AI extraction failed', status: response.status }, { status: 500 })
+    }
+
+    const aiData = await response.json()
+    const content = aiData.choices?.[0]?.message?.content || ''
+
+    // Parse the JSON response
+    let extracted: any = {}
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        extracted = JSON.parse(jsonMatch[0])
+      } catch {
+        extracted = { raw_extraction: content }
+      }
+    } else {
+      extracted = { raw_extraction: content }
+    }
+
+    // Check for abnormal values
+    const results = extracted.results || []
+    const abnormals = detectAbnormalValues(results)
+
+    // Update the lab_reports record with extracted data
+    await supabase.from('lab_reports').update({
+      ai_extracted_data: extracted,
+      results_data: results,
+      report_name: extracted.test_name || undefined,
+      updated_at: new Date().toISOString(),
+    }).eq('id', report_id)
+
+    // If abnormal values found, create doctor alert
+    if (abnormals.length > 0) {
+      // Get patient info from the report
+      const { data: report } = await supabase
+        .from('lab_reports')
+        .select('patient_id, report_name')
+        .eq('id', report_id)
+        .single()
+
+      if (report?.patient_id) {
+        const { data: patient } = await supabase
+          .from('patients')
+          .select('full_name, mrn')
+          .eq('id', report.patient_id)
+          .single()
+
+        if (patient) {
+          await supabase.from('doctor_alerts').insert({
+            patient_id: report.patient_id,
+            patient_name: patient.full_name,
+            mrn: patient.mrn,
+            alert_type: 'abnormal_lab',
+            severity: abnormals.length >= 3 ? 'critical' : 'warning',
+            alert_data: {
+              report_name: report.report_name || extracted.test_name,
+              abnormal_values: abnormals,
+              report_id,
+              extracted_at: new Date().toISOString(),
+            },
+            source: 'ai_extraction',
+          })
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      extracted,
+      results,
+      abnormal_values: abnormals,
+      has_abnormals: abnormals.length > 0,
+    })
+  } catch (err: any) {
+    console.error('[Lab Extract] Error:', err)
+    return NextResponse.json({ error: err.message || 'Extraction failed' }, { status: 500 })
   }
 }
 ```
@@ -14291,6 +16144,27 @@ export async function POST(req: NextRequest) {
       user_role:  'lab_partner',
     })
 
+    // ── Step 5b: Create in-app notification for staff/doctor ──
+    await supabase.from('clinic_notifications').insert({
+      title: `Lab Report: ${reportName}`,
+      message: `${labName} uploaded "${reportName}" for ${resolvedName} (${mrn || 'N/A'}). Review in patient profile.`,
+      type: 'lab_report',
+      severity: 'normal',
+      source: 'lab_portal',
+      entity_type: 'lab_report',
+      entity_id: reportId,
+      patient_id: patientId,
+      patient_name: resolvedName,
+      mrn: mrn || null,
+      target_roles: ['admin', 'doctor', 'staff'],
+      metadata: JSON.stringify({
+        lab_partner: labName,
+        uploaded_by: portalUser.name,
+        report_name: reportName,
+        has_attachment: !!attachmentUrl,
+      }),
+    })
+
     // ── Step 6: Update portal user last_used_at ───────────────
     await supabase.from('lab_portal_users')
       .update({ last_used_at: new Date().toISOString() })
@@ -14537,6 +16411,219 @@ Please update the patient file.`
 }
 ```
 
+# src\app\api\labs\portal-users\route.ts
+
+```ts
+/**
+ * src/app/api/labs/portal-users/route.ts
+ *
+ * Lab Portal User Management API — Admin creates persistent portal accounts.
+ *
+ * Instead of generating a new token every time, this creates a PERMANENT
+ * portal user account for the lab partner. The token never expires unless
+ * explicitly revoked by admin. Lab partners save it in localStorage once
+ * and never need to ask for it again.
+ *
+ * GET    /api/labs/portal-users           — List all portal users
+ * POST   /api/labs/portal-users           — Create new portal user (generates permanent token)
+ * PATCH  /api/labs/portal-users           — Toggle active/inactive, regenerate token
+ * DELETE /api/labs/portal-users?id=XXX    — Deactivate portal user
+ *
+ * EFFICIENCY:
+ *  - Token is stored in lab partner's browser (localStorage) permanently
+ *  - Token only needs to be shared ONCE via WhatsApp/SMS link
+ *  - If lab partner loses token, admin can regenerate + re-share
+ *  - Token can be revoked without deleting the account (set is_active = false)
+ *  - Shareable URL format: /lab-partner-portal?token=XXXXX (bookmarkable)
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+/** Generate a URL-safe token — short enough to share via WhatsApp */
+function generateToken(): string {
+  return crypto.randomBytes(24).toString('base64url')
+}
+
+// ── GET: List portal users ────────────────────────────────────
+export async function GET() {
+  try {
+    const { data, error } = await supabase
+      .from('lab_portal_users')
+      .select('id, name, email, phone, lab_partner_id, auth_token, is_active, last_used_at, token_expires_at, created_at, lab_partners(name)')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const users = (data || []).map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      phone: u.phone,
+      lab_partner_id: u.lab_partner_id,
+      lab_name: (u.lab_partners as any)?.name || 'Unknown',
+      auth_token: u.auth_token,
+      is_active: u.is_active,
+      last_used_at: u.last_used_at,
+      token_expires_at: u.token_expires_at,
+      created_at: u.created_at,
+    }))
+
+    return NextResponse.json({ users })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── POST: Create new portal user ──────────────────────────────
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { name, email, phone, lab_partner_id, never_expires = true } = body
+
+    if (!name || !lab_partner_id) {
+      return NextResponse.json({ error: 'name and lab_partner_id are required' }, { status: 400 })
+    }
+
+    const token = generateToken()
+    const expiresAt = never_expires ? null : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data, error } = await supabase
+      .from('lab_portal_users')
+      .insert({
+        name,
+        email: email || null,
+        phone: phone || null,
+        lab_partner_id,
+        auth_token: token,
+        is_active: true,
+        token_expires_at: expiresAt,
+      })
+      .select('id, name, auth_token')
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Generate shareable URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+    const shareableUrl = `${baseUrl}/lab-partner-portal?token=${token}`
+
+    return NextResponse.json({
+      ok: true,
+      user: data,
+      token,
+      shareable_url: shareableUrl,
+      message: `Portal access created for ${name}. Share the link — it never expires unless revoked.`,
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── PATCH: Update portal user (toggle active, regenerate token) ──
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, action } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+    }
+
+    if (action === 'regenerate_token') {
+      const newToken = generateToken()
+      const { error } = await supabase
+        .from('lab_portal_users')
+        .update({ auth_token: newToken, updatedat: new Date().toISOString() })
+        .eq('id', id)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : 'http://localhost:3000'
+
+      return NextResponse.json({
+        ok: true,
+        new_token: newToken,
+        shareable_url: `${baseUrl}/lab-partner-portal?token=${newToken}`,
+        message: 'Token regenerated. Old token is now invalid. Share the new link with the lab partner.',
+      })
+    }
+
+    if (action === 'toggle_active') {
+      // Get current state
+      const { data: current } = await supabase
+        .from('lab_portal_users')
+        .select('is_active')
+        .eq('id', id)
+        .single()
+
+      const newState = !current?.is_active
+      const { error } = await supabase
+        .from('lab_portal_users')
+        .update({ is_active: newState, updatedat: new Date().toISOString() })
+        .eq('id', id)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        ok: true,
+        is_active: newState,
+        message: newState ? 'Portal access reactivated.' : 'Portal access revoked. Lab partner can no longer upload.',
+      })
+    }
+
+    return NextResponse.json({ error: 'Unknown action. Use "regenerate_token" or "toggle_active"' }, { status: 400 })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── DELETE: Remove portal user ────────────────────────────────
+export async function DELETE(req: NextRequest) {
+  try {
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ error: 'id query param is required' }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from('lab_portal_users')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, message: 'Portal user deleted permanently.' })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+```
+
 # src\app\api\medicines\import\route.ts
 
 ```ts
@@ -14777,6 +16864,175 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+```
+
+# src\app\api\notifications\route.ts
+
+```ts
+/**
+ * src/app/api/notifications/route.ts
+ *
+ * In-App Notification Center API
+ *
+ * GET  /api/notifications          — Fetch unread + recent notifications for the logged-in user
+ * POST /api/notifications          — Create a new notification (system/internal use)
+ * PATCH /api/notifications         — Mark notification(s) as read
+ *
+ * Notifications are role-targeted: a lab report upload creates a notification
+ * visible to staff + doctor roles. Insurance updates go to admin + staff.
+ *
+ * This solves the "how will staff know when lab partner uploads report?" problem.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
+)
+
+// ── GET: Fetch notifications ──────────────────────────────────
+export async function GET(req: NextRequest) {
+  try {
+    const role = req.nextUrl.searchParams.get('role') || 'staff'
+    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '30', 10)
+    const unreadOnly = req.nextUrl.searchParams.get('unread') === 'true'
+
+    let query = supabase
+      .from('clinic_notifications')
+      .select('*')
+      .contains('target_roles', [role])
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (unreadOnly) {
+      query = query.eq('is_read', false)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Also get unread count
+    const { count: unreadCount } = await supabase
+      .from('clinic_notifications')
+      .select('id', { count: 'exact', head: true })
+      .contains('target_roles', [role])
+      .eq('is_read', false)
+
+    return NextResponse.json({
+      notifications: data || [],
+      unread_count: unreadCount || 0,
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── POST: Create notification ─────────────────────────────────
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const {
+      title,
+      message,
+      type = 'info',
+      severity = 'normal',
+      source,
+      entity_type,
+      entity_id,
+      patient_id,
+      patient_name,
+      mrn,
+      target_roles = ['admin', 'doctor', 'staff'],
+      metadata,
+    } = body
+
+    if (!title || !message) {
+      return NextResponse.json({ error: 'title and message are required' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('clinic_notifications')
+      .insert({
+        title,
+        message,
+        type,
+        severity,
+        source,
+        entity_type,
+        entity_id,
+        patient_id: patient_id || null,
+        patient_name: patient_name || null,
+        mrn: mrn || null,
+        target_roles,
+        metadata: metadata ? JSON.stringify(metadata) : null,
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, id: data.id })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── PATCH: Mark notifications as read ─────────────────────────
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { ids, mark_all, role, read_by } = body
+
+    if (mark_all && role) {
+      // Mark all unread for this role as read
+      const { error } = await supabase
+        .from('clinic_notifications')
+        .update({
+          is_read: true,
+          read_by: read_by || role,
+          read_at: new Date().toISOString(),
+        })
+        .contains('target_roles', [role])
+        .eq('is_read', false)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, message: 'All notifications marked as read' })
+    }
+
+    if (ids && Array.isArray(ids) && ids.length > 0) {
+      const { error } = await supabase
+        .from('clinic_notifications')
+        .update({
+          is_read: true,
+          read_by: read_by || 'user',
+          read_at: new Date().toISOString(),
+        })
+        .in('id', ids)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, marked: ids.length })
+    }
+
+    return NextResponse.json({ error: 'Provide ids[] or mark_all=true with role' }, { status: 400 })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
 ```
 
 # src\app\api\ocr-free\route.ts
@@ -17550,7 +19806,7 @@ function buildMessage(
     case 'appointment':
       return `Namaste ${patientName} ji,\n\nYour appointment is scheduled on ${ctx.apptDate || ''}${ctx.apptTime ? ' at ' + ctx.apptTime : ''}.\n\nPlease arrive 10 minutes early.\n\nThank you!`
     case 'follow_up':
-      return `Namaste ${patientName} ji,\n\nYour follow-up visit is due on ${ctx.followUpDate || ''}.${ctx.diagnosis ? '\nDiagnosis: ' + ctx.diagnosis : ''}\n\nPlease don't miss your follow-up.\n\nThank you!`
+      return `Namaste ${patientName} ji,\n\nYour follow-up visit is due on ${ctx.followUpDate || ''}.${ctx.diagnosis ? '\nDiagnosis: ' + ctx.diagnosis : ''}${ctx.medications ? '\n\nMedications to continue:\n' + ctx.medications : ''}\n\nPlease don't miss your follow-up.\n\nThank you!`
     case 'anc':
       return `Namaste ${patientName} ji,\n\nYour antenatal check-up is due (GA: ${ctx.weeksGA || ''}).\n\nPlease visit the clinic for your ANC visit.\n\nThank you!`
     case 'post_delivery':
@@ -17622,8 +19878,19 @@ interface AutoReminder {
 
 // ─────────────────────────────────────────────────────────────
 // POST — Vercel cron handler
+// GET  — Manual trigger from Reminders page "Auto-Send" button
 // ─────────────────────────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  // GET handler is called from the UI "Auto-Send Today's Reminders" button.
+  // No CRON_SECRET needed — just let it through (the page is behind auth anyway).
+  return handleAutoGenerate(req)
+}
+
 export async function POST(req: NextRequest) {
+  return handleAutoGenerate(req)
+}
+
+async function handleAutoGenerate(req: NextRequest) {
   // ── FIX A: Cron secret validation ────────────────────────────
   // Vercel cron passes the secret in Authorization header.
   // We also accept ?secret= for testing via browser/curl.
@@ -17716,7 +19983,7 @@ export async function POST(req: NextRequest) {
 
       const { data: rxs } = await supabase
         .from('prescriptions')
-        .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, reminder_sent_at')
+        .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, medications, reminder_sent_at')
         .gte('follow_up_date', tod)
         .lte('follow_up_date', in2)
         .order('follow_up_date', { ascending: true })
@@ -17727,6 +19994,16 @@ export async function POST(req: NextRequest) {
 
         const daysAway = daysUntil(rx.follow_up_date)
         const priority = daysAway === 0 ? 'today' : 'tomorrow'
+
+        // Extract medication names for the reminder message
+        let medNames = ''
+        if (Array.isArray(rx.medications) && rx.medications.length > 0) {
+          medNames = rx.medications
+            .map((m: any) => `- ${m.drug || m.name || ''}${m.dose ? ' (' + m.dose + ')' : ''}`)
+            .filter((s: string) => s.length > 2)
+            .slice(0, 5)
+            .join('\n')
+        }
 
         autoReminders.push({
           patientId:   rx.patient_id ?? '',
@@ -17739,6 +20016,7 @@ export async function POST(req: NextRequest) {
           message:     buildMessage('follow_up', rx.patient_name ?? '', {
             followUpDate: rx.follow_up_date,
             diagnosis:    rx.diagnosis ?? '',
+            medications:  medNames,
           }),
         })
       }
@@ -18160,7 +20438,7 @@ const VAX_SCHEDULE: { name: string; days: number }[] = [
 
 export interface ReminderItem {
   id: string
-  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc' | 'ot_surgery'
   priority: 'urgent' | 'today' | 'tomorrow' | 'upcoming'
   patientId: string
   patientName: string
@@ -18188,6 +20466,7 @@ export interface ReminderItem {
     daysOverdue?: number
     weeksGA?: string
     riskReasons?: string[]
+    medications?: string[]
   }
 }
 
@@ -18263,7 +20542,7 @@ export async function GET(req: NextRequest) {
     const fourteenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA', { timeZone: IST }) })()
     const { data: rxs } = await supabase
       .from('prescriptions')
-      .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, reminder_sent_at')
+      .select('id, patient_id, patient_name, mrn, mobile, follow_up_date, diagnosis, lab_tests, medications, reminder_sent_at')
       .gte('follow_up_date', fourteenDaysAgo)
       .lte('follow_up_date', in7)
       .order('follow_up_date', { ascending: true })
@@ -18277,6 +20556,15 @@ export async function GET(req: NextRequest) {
       else if (daysAway === 1) priority = 'tomorrow'
       else priority = 'upcoming'
 
+      // Extract medication names for follow-up reminders
+      let medNames: string[] = []
+      if (Array.isArray(rx.medications) && rx.medications.length > 0) {
+        medNames = rx.medications
+          .map((m: any) => m.drug || m.name || '')
+          .filter((s: string) => s.length > 0)
+          .slice(0, 5)
+      }
+
       reminders.push({
         id: `rx-${rx.id}`,
         type: 'follow_up',
@@ -18288,7 +20576,7 @@ export async function GET(req: NextRequest) {
         sourceId: rx.id,
         sourceTable: 'prescriptions',
         title: daysAway < 0 ? `Follow-up OVERDUE (${Math.abs(daysAway)}d)` : 'Follow-up Due',
-        subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}`,
+        subtitle: `${rx.follow_up_date}${rx.diagnosis ? ` — ${rx.diagnosis}` : ''}${medNames.length > 0 ? ` | Meds: ${medNames.join(', ')}` : ''}`,
         dueDate: rx.follow_up_date,
         reminderSentAt: rx.reminder_sent_at ?? null,
         context: {
@@ -18296,6 +20584,7 @@ export async function GET(req: NextRequest) {
           diagnosis: rx.diagnosis,
           labTests: rx.lab_tests,
           daysOverdue: daysAway < 0 ? Math.abs(daysAway) : undefined,
+          medications: medNames,
         },
       })
     }
@@ -18566,7 +20855,7 @@ export async function GET(req: NextRequest) {
 
       reminders.push({
         id: `ot-${ot.id}`,
-        type: 'appointment',
+        type: 'ot_surgery',
         priority,
         patientId: ot.patient_id ?? '',
         patientName: ot.patient_name ?? '',
@@ -18849,16 +21138,20 @@ export async function GET(req: NextRequest) {
 
 ```ts
 /**
- * src/app/api/users/invite/route.ts  — UPDATED
+ * src/app/api/users/invite/route.ts — OTP-FIRST
  *
- * CHANGE: Replaced the manual inline caller-role check with requireRole('admin').
- * Everything else — temp password generator, auth.admin.createUser, duplicate
- * email handling, rollback on profile insert failure, response shape — is
- * preserved from the original exactly.
+ * Creates a new clinic user (admin/doctor/staff/lab_partner).
+ *
+ * With OTP-first login, the flow is simplified:
+ *   1. Admin enters email + name + role
+ *   2. We create the Supabase auth user (with a random internal password they'll never use)
+ *   3. We create the clinic_users profile
+ *   4. Done — user can immediately login via email OTP (no temp password to share!)
+ *
+ * The old "temp password" flow is kept as a fallback option if admin explicitly requests it.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { getAdminClient } from '@/lib/supabase'
 import { requireRole } from '@/lib/api-auth'
 
@@ -18869,18 +21162,16 @@ export async function POST(req: NextRequest) {
   // ────────────────────────────────────────────────────────────
 
   try {
-    // Parse request body
     const body = await req.json()
-    const { email, full_name, role, phone } = body
+    const { email, full_name, role, phone, generatePassword } = body
 
     if (!email || !full_name || !role) {
       return NextResponse.json({ error: 'email, full_name, and role are required' }, { status: 400 })
     }
-    if (!['admin', 'doctor', 'staff'].includes(role)) {
-      return NextResponse.json({ error: 'role must be admin, doctor, or staff' }, { status: 400 })
+    if (!['admin', 'doctor', 'staff', 'lab_partner'].includes(role)) {
+      return NextResponse.json({ error: 'role must be admin, doctor, staff, or lab_partner' }, { status: 400 })
     }
 
-    // Use admin client for privileged operations
     let adminClient: ReturnType<typeof getAdminClient>
     try {
       adminClient = getAdminClient()
@@ -18904,14 +21195,17 @@ export async function POST(req: NextRequest) {
       }, { status: 409 })
     }
 
-    // Generate a temporary password
-    const tempPassword = generateTempPassword()
+    // Generate internal password — user won't need to know this (they use OTP)
+    // Only generate a sharable temp password if admin explicitly asks for it
+    const internalPassword = generatePassword
+      ? generateTempPassword()
+      : generateRandomPassword()
 
-    // Create auth user
+    // Create auth user with email auto-confirmed
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: email.toLowerCase(),
-      password: tempPassword,
-      email_confirm: true,  // auto-confirm email
+      password: internalPassword,
+      email_confirm: true,
       user_metadata: { full_name, role },
     })
 
@@ -18922,7 +21216,6 @@ export async function POST(req: NextRequest) {
         const existingAuth = (users as any[])?.find((u: any) => u.email === email.toLowerCase())
 
         if (existingAuth) {
-          // Create clinic_users record for existing auth user
           const { error: insertError } = await adminClient
             .from('clinic_users')
             .insert({
@@ -18940,8 +21233,8 @@ export async function POST(req: NextRequest) {
 
           return NextResponse.json({
             success: true,
-            message: `User ${email} already had an auth account. Created clinic profile with role "${role}". They can log in with their existing password.`,
-            tempPassword: null,
+            message: `User ${email} already had an auth account. Created clinic profile with role "${role}". They can login immediately using email OTP.`,
+            loginMethod: 'otp',
           })
         }
       }
@@ -18966,11 +21259,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Failed to create user profile: ${profileError.message}` }, { status: 500 })
     }
 
+    // Response depends on whether admin requested a password
+    if (generatePassword) {
+      return NextResponse.json({
+        success: true,
+        message: `User ${full_name} (${email}) created with role "${role}".`,
+        loginMethod: 'password',
+        tempPassword: internalPassword,
+        _note: 'Share this password with the user. They can also login via email OTP without it.',
+      })
+    }
+
     return NextResponse.json({
       success: true,
-      message: `User ${full_name} (${email}) created with role "${role}".`,
-      tempPassword,
-      _note: 'Share this temporary password with the user. They should change it after first login.',
+      message: `User ${full_name} (${email}) created with role "${role}". They can login immediately using their email — no password needed!`,
+      loginMethod: 'otp',
     })
 
   } catch (err: any) {
@@ -18981,13 +21284,124 @@ export async function POST(req: NextRequest) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
+/** Readable temp password (for when admin explicitly wants to share one) */
 function generateTempPassword(): string {
-  const words    = ['Welcome', 'Clinic', 'Health', 'Doctor', 'Staff', 'NexMed', 'Hospital']
-  const word     = words[Math.floor(Math.random() * words.length)]
-  const digits   = Math.floor(1000 + Math.random() * 9000)
+  const words = ['Welcome', 'Clinic', 'Health', 'Doctor', 'Staff', 'NexMed', 'Hospital']
+  const word = words[Math.floor(Math.random() * words.length)]
+  const digits = Math.floor(1000 + Math.random() * 9000)
   const specials = ['!', '@', '#', '$']
-  const special  = specials[Math.floor(Math.random() * specials.length)]
+  const special = specials[Math.floor(Math.random() * specials.length)]
   return `${word}${digits}${special}`
+}
+
+/** Strong random password (user never sees this — just for Supabase auth requirement) */
+function generateRandomPassword(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%'
+  let pwd = ''
+  for (let i = 0; i < 24; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return pwd
+}
+```
+
+# src\app\api\users\reset-mfa\route.ts
+
+```ts
+/**
+ * src/app/api/users/reset-mfa/route.ts
+ *
+ * Admin-only endpoint to reset/disable MFA for a user who is locked out.
+ * This allows the admin to unenroll all TOTP factors for a specified user.
+ *
+ * POST body: { userId: string } — the clinic_users.id (not auth_id)
+ *
+ * Use case: A doctor or staff member lost their phone or authenticator app
+ * and cannot complete MFA verification. Admin resets their MFA so they can
+ * login with just email+password and re-enroll MFA later.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/api-auth'
+import { getAdminClient } from '@/lib/supabase'
+
+export async function POST(req: NextRequest) {
+  // Only admin can reset MFA for others
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
+  try {
+    const body = await req.json()
+    const { userId } = body
+
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 })
+    }
+
+    let adminClient: ReturnType<typeof getAdminClient>
+    try {
+      adminClient = getAdminClient()
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 })
+    }
+
+    // Look up the user's auth_id from clinic_users
+    const { data: clinicUser, error: lookupErr } = await adminClient
+      .from('clinic_users')
+      .select('auth_id, full_name, email')
+      .eq('id', userId)
+      .single()
+
+    if (lookupErr || !clinicUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // List all MFA factors for this auth user using admin API
+    // Note: supabase-js v2.x uses auth.admin.mfa.listFactors
+    // If that doesn't exist, fall back to updating clinic_users only
+    let unenrolled = 0
+    try {
+      const { data: factorsData, error: factorsErr } = await (adminClient.auth.admin as any).mfa.listFactors({
+        userId: clinicUser.auth_id,
+      })
+
+      if (!factorsErr && factorsData?.factors?.length > 0) {
+        for (const factor of factorsData.factors) {
+          try {
+            await (adminClient.auth.admin as any).mfa.deleteFactor({
+              userId: clinicUser.auth_id,
+              factorId: factor.id,
+            })
+            unenrolled++
+          } catch {
+            // Continue even if one factor fails to delete
+          }
+        }
+      }
+    } catch (mfaErr: any) {
+      // If admin MFA API is not available (older Supabase version),
+      // we still update clinic_users to disable MFA flag.
+      // The user will need to contact Supabase support for factor removal
+      // OR the next login will work if their session is cleared.
+      console.warn('[reset-mfa] Admin MFA API not available:', mfaErr.message || mfaErr)
+    }
+
+    // Update clinic_users to reflect MFA disabled
+    await adminClient
+      .from('clinic_users')
+      .update({ mfa_enabled: false, mfa_enrolled_at: null })
+      .eq('id', userId)
+
+    return NextResponse.json({
+      success: true,
+      message: unenrolled > 0
+        ? `MFA reset for ${clinicUser.full_name} (${clinicUser.email}). ${unenrolled} factor(s) removed. They can now login with email + password only.`
+        : `MFA flag cleared for ${clinicUser.full_name} (${clinicUser.email}). They should be able to login without MFA on next attempt.`,
+    })
+  } catch (err: any) {
+    console.error('[reset-mfa]', err)
+    return NextResponse.json({ error: err.message || 'Failed to reset MFA' }, { status: 500 })
+  }
 }
 ```
 
@@ -19203,8 +21617,8 @@ export async function GET(req: NextRequest) {
     .from('campaign_logs')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'sent')
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // Industry avg: 10% of reached patients actually visit
   const patientsRecalled = Math.round((campaignsSent || 0) * 0.10)
@@ -19214,15 +21628,15 @@ export async function GET(req: NextRequest) {
   const { count: rxCount } = await sb
     .from('prescriptions')
     .select('*', { count: 'exact', head: true })
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // ── 4. Bills generated (time saved) ──────────────────────
   const { count: billCount } = await sb
     .from('bills')
     .select('*', { count: 'exact', head: true })
-    .gte('createdat', from)
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from)
+    .lte('created_at', to + 'T23:59:59')
 
   // ── 5. Unbilled encounters caught ────────────────────────
   // Uses encounter_date (renamed from 'date' by v30 migration)
@@ -19234,11 +21648,11 @@ export async function GET(req: NextRequest) {
 
   const { data: bills } = await sb
     .from('bills')
-    .select('patientid')
-    .gte('createdat', from + 'T00:00:00')
-    .lte('createdat', to + 'T23:59:59')
+    .select('patient_id')
+    .gte('created_at', from + 'T00:00:00')
+    .lte('created_at', to + 'T23:59:59')
 
-  const billedPatients = new Set((bills || []).map(b => b.patientid))
+  const billedPatients = new Set((bills || []).map(b => b.patient_id))
   const unbilledCaught = (encounters || [])
     .filter(e => !billedPatients.has(e.patientid)).length
   const unbilledValue  = unbilledCaught * AVG_CONSULTATION_FEE
@@ -19255,8 +21669,8 @@ export async function GET(req: NextRequest) {
   const { data: paidBills } = await sb
     .from('bill_payments')
     .select('amount')
-    .gte('createdat', from + 'T00:00:00')
-    .lte('createdat', to + 'T23:59:59')
+    .gte('created_at', from + 'T00:00:00')
+    .lte('created_at', to + 'T23:59:59')
 
   const totalRevenue = (paidBills || [])
     .reduce((s, p) => s + Number(p.amount || 0), 0)
@@ -19300,7 +21714,6 @@ export async function GET(req: NextRequest) {
     },
   })
 }
-
 ```
 
 # src\app\api\video\room\route.ts
@@ -19594,6 +22007,31 @@ Return ONLY the corrected text. No explanations.`,
   } catch {
     return NextResponse.json({ corrected: text, error: 'AI correction unavailable.' })
   }
+}
+```
+
+# src\app\appointments\new\page.tsx
+
+```tsx
+'use client'
+/**
+ * /appointments/new — Redirects to the appointments page.
+ * The appointments page has inline booking functionality.
+ */
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function AppointmentNewRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/appointments')
+  }, [router])
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
 }
 ```
 
@@ -20692,8 +23130,10 @@ export default function AuditLogPage() {
  * src/app/auth/callback/page.tsx
  *
  * Client-side auth callback handler.
- * Processes the `code` query parameter from Supabase auth redirects (PKCE flow).
- * Exchanges the code for a session, then redirects to /reset-password.
+ * Processes auth redirects from Supabase:
+ *   - Password recovery (code exchange → /reset-password)
+ *   - Magic link / OTP verification (code exchange → /dashboard)
+ *   - Email confirmation (code exchange → /dashboard)
  *
  * Uses window.location.search instead of useSearchParams() to avoid
  * Next.js 14 Suspense boundary requirement.
@@ -20717,6 +23157,10 @@ export default function AuthCallbackPage() {
         if (event === 'PASSWORD_RECOVERY') {
           redirected = true
           router.push('/reset-password')
+        } else if (event === 'SIGNED_IN' && session) {
+          // Magic link / OTP sign-in via link click
+          redirected = true
+          router.push('/dashboard')
         }
       }
     )
@@ -20726,26 +23170,33 @@ export default function AuthCallbackPage() {
 
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
+      const type = params.get('type')
       const hash = window.location.hash
 
       if (code) {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
         if (exchangeError) {
-          setError('Failed to verify the link. It may have expired. Please request a new one.')
+          console.error('[auth/callback] Code exchange failed:', exchangeError.message)
+          setError('Failed to verify the link. It may have expired or already been used. Please request a new login code.')
           setTimeout(() => {
             if (!redirected) {
               redirected = true
               router.push('/login')
             }
-          }, 3000)
+          }, 4000)
           return
         }
 
-        // Code exchanged successfully — redirect to reset password
+        // Determine redirect based on type
         if (!redirected) {
           redirected = true
-          router.push('/reset-password')
+          if (type === 'recovery') {
+            router.push('/reset-password')
+          } else {
+            // Magic link login or email confirmation → dashboard
+            router.push('/dashboard')
+          }
         }
       } else if (hash && hash.includes('type=recovery')) {
         // Implicit flow — wait for PASSWORD_RECOVERY event from onAuthStateChange
@@ -20755,8 +23206,23 @@ export default function AuthCallbackPage() {
             router.push('/reset-password')
           }
         }, 3000)
+      } else if (hash && (hash.includes('access_token') || hash.includes('type=magiclink'))) {
+        // Magic link via hash fragment — Supabase will process and fire SIGNED_IN
+        setTimeout(() => {
+          if (!redirected) {
+            redirected = true
+            router.push('/dashboard')
+          }
+        }, 3000)
       } else {
-        // No code, no hash — redirect to login
+        // No code, no hash — check if already signed in (token refresh may have happened)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session && !redirected) {
+          redirected = true
+          router.push('/dashboard')
+          return
+        }
+        // No code and no session — redirect to login
         if (!redirected) {
           redirected = true
           router.push('/login')
@@ -20790,7 +23256,6 @@ export default function AuthCallbackPage() {
     </div>
   )
 }
-
 ```
 
 # src\app\beds\page.tsx
@@ -20834,7 +23299,16 @@ export default function BedsPage() {
   }, [])
 
   async function loadBeds() {
-    const { data } = await supabase.from('beds').select('*').order('bed_number')
+    // Try with 'bed_number' first (new schema), fallback to handle schema cache error
+    let { data, error: err } = await supabase.from('beds').select('*').order('bed_number')
+    if (err && err.message.includes('schema cache')) {
+      // Old schema has 'bednumber' instead of 'bed_number'
+      const { data: oldData } = await supabase.from('beds').select('*')
+      data = (oldData || []).map((b: any) => ({
+        ...b,
+        bed_number: b.bed_number || b.bednumber,
+      }))
+    }
     setBeds((data as Bed[]) || [])
     setLoading(false)
   }
@@ -20853,6 +23327,8 @@ export default function BedsPage() {
   async function handleAdmit() {
     if (!modal || !selectedPatient) return
     setActionLoading(true)
+
+    // Update bed status
     await supabase.from('beds').update({
       status: 'occupied',
       patient_id: selectedPatient.id,
@@ -20861,6 +23337,23 @@ export default function BedsPage() {
       expected_discharge: expectedDischarge || null,
       updated_at: new Date().toISOString(),
     }).eq('id', modal.bed.id)
+
+    // Also create an IPD admission record to keep things in sync
+    await supabase.from('ipd_admissions').insert({
+      patient_id: selectedPatient.id,
+      patient_name: selectedPatient.full_name,
+      mrn: selectedPatient.mrn || '',
+      age: selectedPatient.age,
+      gender: selectedPatient.gender,
+      bed_id: modal.bed.id,
+      bed_number: modal.bed.bed_number,
+      ward: modal.bed.ward,
+      admission_date: getIndiaToday(),
+      admission_time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }),
+      admitting_doctor: '',
+      status: 'active',
+    }).then(() => {}) // Non-blocking — IPD table may not exist in all setups
+
     setActionLoading(false)
     closeModal()
     loadBeds()
@@ -20869,23 +23362,67 @@ export default function BedsPage() {
   async function handleDischarge() {
     if (!modal) return
     setActionLoading(true)
-    await supabase.from('beds').update({
-      status: 'cleaning',
-      patient_id: null,
-      patient_name: null,
-      admission_date: null,
-      expected_discharge: null,
-      updated_at: new Date().toISOString(),
-    }).eq('id', modal.bed.id)
+
+    // Use the enhanced discharge API
+    try {
+      const res = await fetch('/api/ipd/discharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admission_id: null, // Will be looked up by bed
+          discharge_date: getIndiaToday(),
+          condition_at_discharge: 'Satisfactory',
+          final_diagnosis: '',
+          discharge_advice: '',
+          discharged_by: '',
+        }),
+      })
+
+      // If the API doesn't find an admission (e.g. direct bed admission without IPD record),
+      // fall back to direct bed update
+      if (!res.ok) {
+        await supabase.from('beds').update({
+          status: 'cleaning',
+          patient_id: null,
+          patient_name: null,
+          admission_date: null,
+          expected_discharge: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', modal.bed.id)
+
+        // Also update ipd_admissions if exists
+        if (modal.bed.patient_id) {
+          await supabase.from('ipd_admissions')
+            .update({ status: 'discharged', updated_at: new Date().toISOString() })
+            .eq('bed_id', modal.bed.id)
+            .eq('status', 'active')
+        }
+
+        // Auto-mark as available after short delay
+        setTimeout(async () => {
+          await supabase.from('beds').update({ status: 'available', updated_at: new Date().toISOString() })
+            .eq('id', modal.bed.id).eq('status', 'cleaning')
+          loadBeds()
+        }, 3000)
+      }
+    } catch {
+      // Fallback to direct update
+      await supabase.from('beds').update({
+        status: 'cleaning',
+        patient_id: null,
+        patient_name: null,
+        admission_date: null,
+        expected_discharge: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', modal.bed.id)
+    }
+
     setActionLoading(false)
     closeModal()
     loadBeds()
-    // Auto-mark as available after 2 seconds (simulating cleaning)
-    setTimeout(async () => {
-      await supabase.from('beds').update({ status: 'available', updated_at: new Date().toISOString() })
-        .eq('id', modal.bed.id).eq('status', 'cleaning')
-      loadBeds()
-    }, 2000)
+
+    // Show success notification
+    alert(`Patient discharged successfully from Bed ${modal.bed.bed_number}. Bed is now being cleaned.`)
   }
 
   async function toggleReserve(bed: Bed) {
@@ -21124,6 +23661,32 @@ export default function BedsPage() {
         </div>
       )}
     </AppShell>
+  )
+}
+```
+
+# src\app\billing\new\page.tsx
+
+```tsx
+'use client'
+/**
+ * /billing/new — Redirects to the billing page with the "new bill" view active.
+ * The billing page uses an internal state `view` to show the new bill form.
+ * We pass a URL param to trigger it.
+ */
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function BillingNewRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/billing?view=new')
+  }, [router])
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
   )
 }
 ```
@@ -21506,6 +24069,15 @@ function BillingContent() {
   }, [])
 
   useEffect(() => { loadBills() }, [loadBills])
+
+  // Auto-open "new bill" form if view=new in URL
+  useEffect(() => {
+    const viewParam = searchParams.get('view')
+    if (viewParam === 'new' && view === 'list') {
+      setView('new')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Auto-add fee from encounter type URL param
   useEffect(() => {
@@ -22360,13 +24932,56 @@ function BillingContent() {
                       </a>
                     )}
 
-                    {/* Email share */}
-                    <a
-                      href={`mailto:${caSettings.caEmail || ''}?subject=${encodeURIComponent(`Revenue Report — ${caReport.period} | ${hs.hospitalName || 'Clinic'}`)}&body=${buildEmailBody(caReport, { ...hs, caName: caSettings.caName })}`}
+                    {/* Email share — sends PDF via Resend or falls back to download */}
+                    <button onClick={async () => {
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession()
+                        if (!session?.access_token) {
+                          alert('Your session has expired. Please log in again.')
+                          return
+                        }
+                        const res = await fetch('/api/billing/send-email', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({
+                            recipientEmail: caSettings.caEmail || '',
+                            recipientName: caSettings.caName || 'CA',
+                            reportData: caReport,
+                            hospitalSettings: hs,
+                          }),
+                        })
+                        const data = await res.json()
+                        if (data.success) {
+                          if (data.method === 'email') {
+                            alert(`Report sent successfully to ${caSettings.caEmail}!`)
+                          } else {
+                            // Client fallback: open PDF in new window for download
+                            const w = window.open('', '_blank')
+                            if (w && data.pdfHtml) {
+                              w.document.write(data.pdfHtml)
+                              w.document.close()
+                              setTimeout(() => w.print(), 500)
+                            }
+                            // Also open mailto if available
+                            if (data.mailtoUrl) {
+                              window.location.href = data.mailtoUrl
+                            }
+                          }
+                        } else {
+                          alert(data.error || 'Failed to send email.')
+                        }
+                      } catch (e) {
+                        console.error(e)
+                        alert('Failed to send email. Please try again.')
+                      }
+                    }}
                       className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
                       <Mail className="w-4 h-4" />
-                      {caSettings.caEmail ? `Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
-                    </a>
+                      {caSettings.caEmail ? `Send Email — ${caSettings.caName || caSettings.caEmail}` : 'Send Email'}
+                    </button>
 
                     {/* Print — uses PDF generator for clean output */}
                     <button onClick={async () => {
@@ -22830,6 +25445,193 @@ function ActionItem({ item, onClick }: { item: ActionItem; onClick?: () => void 
 
 // ── Main Page ─────────────────────────────────────────────────
 
+// ── Next OPD Patient Widget ───────────────────────────────────
+function NextOPDPatientCard() {
+  const [currentPatient, setCurrentPatient] = useState<any>(null)
+  const [nextPatient, setNextPatient] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+
+  useEffect(() => {
+    async function loadOPDStatus() {
+      const today = todayIST()
+
+      // 1. Check OPD Queue for current (in_progress) and next (waiting) patients
+      const { data: queueData } = await supabase
+        .from('opd_queue')
+        .select(`
+          id, token_number, status, priority, notes, called_at,
+          patient_id, patients!inner(full_name, mrn, mobile)
+        `)
+        .eq('queue_date', today)
+        .in('status', ['in_progress', 'waiting'])
+        .order('status', { ascending: false })  // in_progress first
+        .order('token_number', { ascending: true })
+        .limit(5)
+
+      if (queueData && queueData.length > 0) {
+        // Find current (in_progress) and next (first waiting)
+        const inProgress = queueData.find((q: any) => q.status === 'in_progress')
+        const waiting = queueData.filter((q: any) => q.status === 'waiting')
+
+        if (inProgress) {
+          setCurrentPatient({
+            ...inProgress,
+            patient_name: (inProgress.patients as any)?.full_name,
+            mrn: (inProgress.patients as any)?.mrn,
+            mobile: (inProgress.patients as any)?.mobile,
+            source: 'queue',
+          })
+        }
+        if (waiting.length > 0) {
+          const next = waiting[0]
+          setNextPatient({
+            ...next,
+            patient_name: (next.patients as any)?.full_name,
+            mrn: (next.patients as any)?.mrn,
+            mobile: (next.patients as any)?.mobile,
+            source: 'queue',
+          })
+        }
+        setLoading(false)
+        return
+      }
+
+      // 2. Fallback: check appointments if no queue entries
+      const nowTime = new Date().toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+
+      const { data: apptData } = await supabase
+        .from('appointments')
+        .select('id, patient_id, patient_name, mrn, mobile, date, time, type, status, notes')
+        .eq('date', today)
+        .neq('status', 'cancelled')
+        .neq('status', 'completed')
+        .order('time', { ascending: true })
+        .limit(5)
+
+      if (apptData && apptData.length > 0) {
+        // Find the next upcoming (time >= now) or the first unfinished one
+        const upcoming = apptData.find((a: any) => (a.time || '00:00') >= nowTime) || apptData[0]
+        setNextPatient({ ...upcoming, source: 'appointment' })
+      }
+      setLoading(false)
+    }
+
+    loadOPDStatus()
+    const interval = setInterval(loadOPDStatus, 30000) // refresh every 30 seconds
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 animate-pulse">
+        <div className="h-20 bg-purple-100/50 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (!currentPatient && !nextPatient) {
+    return (
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <CheckCircle className="w-4 h-4 text-green-500" />
+          <span className="text-sm font-bold text-green-700">All Patients Seen</span>
+        </div>
+        <p className="text-xs text-green-600">No more OPD patients waiting today.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* CURRENT PATIENT — In Progress */}
+      {currentPatient && (
+        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-300 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">
+            NOW SEEING
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                <Stethoscope className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-wide">Current Patient</span>
+                <div className="text-sm font-bold text-gray-900">{currentPatient.patient_name}</div>
+              </div>
+            </div>
+            <span className="text-lg font-mono font-black text-blue-700 bg-white/70 px-2.5 py-1 rounded-lg border border-blue-200">
+              #{String(currentPatient.token_number).padStart(2, '0')}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-600">
+            <span className="font-mono">{currentPatient.mrn}</span>
+            {currentPatient.mobile && <><span>·</span><span>{currentPatient.mobile}</span></>}
+            {currentPatient.priority && currentPatient.priority !== 'normal' && (
+              <span className={`font-bold px-1.5 py-0.5 rounded-full ${currentPatient.priority === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                {currentPatient.priority}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => router.push(`/patients/${currentPatient.patient_id}`)}
+            className="w-full mt-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+          >
+            <Stethoscope className="w-3.5 h-3.5" /> View Patient Profile
+          </button>
+        </div>
+      )}
+
+      {/* NEXT PATIENT — Waiting */}
+      {nextPatient && (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-purple-600 uppercase tracking-wide">
+                  {nextPatient.source === 'queue' ? 'Next in Queue' : 'Next Appointment'}
+                </span>
+                <div className="text-sm font-bold text-gray-900">{nextPatient.patient_name}</div>
+              </div>
+            </div>
+            {nextPatient.source === 'queue' ? (
+              <span className="text-lg font-mono font-black text-purple-700 bg-white/70 px-2.5 py-1 rounded-lg border border-purple-200">
+                #{String(nextPatient.token_number).padStart(2, '0')}
+              </span>
+            ) : (
+              <span className="text-xs font-mono bg-white/70 text-purple-700 px-2 py-1 rounded-lg border border-purple-200">
+                {nextPatient.time || '—'}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
+            <span className="font-mono">{nextPatient.mrn}</span>
+            {nextPatient.mobile && <><span>·</span><span>{nextPatient.mobile}</span></>}
+            {nextPatient.type && <><span>·</span><span>{nextPatient.type}</span></>}
+          </div>
+          {nextPatient.notes && (
+            <div className="text-xs text-gray-500 bg-white/50 rounded-lg px-2 py-1 mb-2 truncate">
+              {nextPatient.notes}
+            </div>
+          )}
+          <button
+            onClick={() => router.push(`/patients/${nextPatient.patient_id}`)}
+            className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+          >
+            <Stethoscope className="w-3.5 h-3.5" /> Start Consultation
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Doctor Alerts Section (Abnormal lab values) ───────────────
 function DoctorAlertsSection() {
   const [alerts, setAlerts] = useState<any[]>([])
@@ -22955,14 +25757,14 @@ export default function DashboardPage() {
     const [todayBills, weekBills, targetSetting] = await Promise.all([
       supabase.from('bills')
         .select('total, paid, due, status')
-        .gte('createdat', today + 'T00:00:00')
-        .lte('createdat', today + 'T23:59:59'),
+        .gte('created_at', today + 'T00:00:00')
+        .lte('created_at', today + 'T23:59:59'),
 
       supabase.from('bill_payments')
         .select('amount')
-        .gte('createdat', weekAgo + 'T00:00:00'),
+        .gte('created_at', weekAgo + 'T00:00:00'),
 
-      supabase.from('clinicsettings')
+      supabase.from('clinic_settings')
         .select('value')
         .eq('key', 'daily_revenue_target')
         .single(),
@@ -23058,20 +25860,20 @@ export default function DashboardPage() {
     // Encounters today
     const { data: encounters } = await supabase
       .from('encounters')
-      .select('id, patientid')
-      .eq('encounter_date', today)   // uses renamed column
+      .select('id, patient_id')
+      .eq('encounter_date', today)
 
     // Bills today
     const { data: bills } = await supabase
       .from('bills')
-      .select('patientid')
-      .gte('createdat', today + 'T00:00:00')
-      .lte('createdat', today + 'T23:59:59')
+      .select('patient_id')
+      .gte('created_at', today + 'T00:00:00')
+      .lte('created_at', today + 'T23:59:59')
 
     if (!encounters?.length) return
 
-    const billedPatients = new Set((bills || []).map(b => b.patientid))
-    const unbilled = encounters.filter(e => !billedPatients.has(e.patientid))
+    const billedPatients = new Set((bills || []).map(b => b.patient_id))
+    const unbilled = encounters.filter(e => !billedPatients.has(e.patient_id))
 
     setData(d => ({ ...d, unbilledToday: unbilled.length }))
 
@@ -23095,7 +25897,7 @@ export default function DashboardPage() {
     const { count } = await supabase
       .from('prescriptions')
       .select('id', { count: 'exact', head: true })
-      .eq('followupdate', today)
+      .eq('follow_up_date', today)
 
     if ((count || 0) > 0) {
       setData(d => ({ ...d, followUpsToday: count || 0 }))
@@ -23121,7 +25923,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="p-4 sm:p-6 max-w-xl mx-auto space-y-5">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -23145,116 +25947,128 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* TODAY'S REVENUE KPI */}
-        <TodayRevenueCard data={data} loading={loading} />
+        {/* ═══ MAIN GRID: 2-column on lg, single on mobile ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-        {/* 3 REVENUE PILLARS */}
-        <div>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-            Revenue Opportunities
-          </h2>
-          <div className="flex gap-3">
-            <PillarCard
-              icon={Target}
-              title="Fill Empty Slots"
-              value={data.bedsAvailable > 0 ? `${data.bedsAvailable} beds` : 'All full'}
-              sub="Available for admission"
-              className="text-emerald-800 bg-emerald-50 border-emerald-200"
-              onClick={() => router.push('/ipd/beds')}
-            />
-            <PillarCard
-              icon={AlertCircle}
-              title="Pending Bills"
-              value={formatCurrency(data.pendingBillsAmt)}
-              sub={`${data.pendingBillsCount} patients`}
-              className="text-orange-800 bg-orange-50 border-orange-200"
-              onClick={() => router.push('/billing')}
-            />
-            <PillarCard
-              icon={TrendingUp}
-              title="This Week"
-              value={formatCurrency(data.weekRevenue)}
-              sub="Collected"
-              className="text-blue-800 bg-blue-50 border-blue-200"
-              onClick={() => router.push('/analytics')}
-            />
-          </div>
-        </div>
+          {/* ── LEFT COLUMN (Revenue + Quick Actions) ── */}
+          <div className="lg:col-span-5 space-y-5">
+            {/* TODAY'S REVENUE KPI */}
+            <TodayRevenueCard data={data} loading={loading} />
 
-        {/* ACTION FEED */}
-        {sortedActions.length > 0 && (
-          <div>
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Action Required
-            </h2>
-            <div className="space-y-2">
-              {sortedActions.map(item => (
-                <ActionItem
-                  key={item.id}
-                  item={item}
-                  onClick={item.href ? () => router.push(item.href!) : undefined}
+            {/* 3 REVENUE PILLARS */}
+            <div>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                Revenue Opportunities
+              </h2>
+              <div className="flex gap-3">
+                <PillarCard
+                  icon={Target}
+                  title="Fill Empty Slots"
+                  value={data.bedsAvailable > 0 ? `${data.bedsAvailable} beds` : 'All full'}
+                  sub="Available for admission"
+                  className="text-emerald-800 bg-emerald-50 border-emerald-200"
+                  onClick={() => router.push('/beds')}
                 />
-              ))}
+                <PillarCard
+                  icon={AlertCircle}
+                  title="Pending Bills"
+                  value={formatCurrency(data.pendingBillsAmt)}
+                  sub={`${data.pendingBillsCount} patients`}
+                  className="text-orange-800 bg-orange-50 border-orange-200"
+                  onClick={() => router.push('/billing')}
+                />
+                <PillarCard
+                  icon={TrendingUp}
+                  title="This Week"
+                  value={formatCurrency(data.weekRevenue)}
+                  sub="Collected"
+                  className="text-blue-800 bg-blue-50 border-blue-200"
+                  onClick={() => router.push('/analytics')}
+                />
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS */}
+            <div>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                Quick Actions
+              </h2>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { icon: Users,       label: 'New Patient',   href: '/patients/new',   color: 'text-blue-600',   bg: 'bg-blue-50'   },
+                  { icon: Calendar,    label: 'Appointment',   href: '/appointments',   color: 'text-purple-600', bg: 'bg-purple-50' },
+                  { icon: IndianRupee, label: 'New Bill',      href: '/billing',        color: 'text-green-600',  bg: 'bg-green-50'  },
+                  { icon: Bed,         label: 'Admit Patient', href: '/ipd',            color: 'text-red-600',    bg: 'bg-red-50'    },
+                  { icon: FileText,    label: 'Prescription',  href: '/opd',            color: 'text-teal-600',   bg: 'bg-teal-50'   },
+                  { icon: BarChart2,   label: 'Analytics',     href: '/analytics',      color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                ].map(({ icon: Icon, label, href, color, bg }) => (
+                  <button
+                    key={href}
+                    onClick={() => router.push(href)}
+                    className="flex flex-col items-center gap-2 bg-white border border-gray-200
+                               rounded-2xl p-4 hover:shadow-md hover:border-gray-300
+                               transition-all hover:scale-[1.03]"
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
+                      <Icon className={`w-5 h-5 ${color}`} />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 text-center leading-tight">
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
 
-        {/* DOCTOR ALERTS — Abnormal Lab Values */}
-        <DoctorAlertsSection />
+          {/* ── RIGHT COLUMN (Actions + Alerts + Summary) ── */}
+          <div className="lg:col-span-7 space-y-5">
 
-        {/* QUICK ACTIONS */}
-        <div>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-            Quick Actions
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { icon: Users,       label: 'New Patient',   href: '/patients/new',     color: 'text-blue-600',   bg: 'bg-blue-50'   },
-              { icon: Calendar,    label: 'Appointment',   href: '/appointments/new', color: 'text-purple-600', bg: 'bg-purple-50' },
-              { icon: IndianRupee, label: 'New Bill',      href: '/billing/new',      color: 'text-green-600',  bg: 'bg-green-50'  },
-              { icon: Bed,         label: 'Admit Patient', href: '/ipd/new',          color: 'text-red-600',    bg: 'bg-red-50'    },
-              { icon: FileText,    label: 'Prescription',  href: '/prescriptions/new',color: 'text-teal-600',   bg: 'bg-teal-50'   },
-              { icon: BarChart2,   label: 'Analytics',     href: '/analytics',        color: 'text-indigo-600', bg: 'bg-indigo-50' },
-            ].map(({ icon: Icon, label, href, color, bg }) => (
-              <button
-                key={href}
-                onClick={() => router.push(href)}
-                className="flex flex-col items-center gap-2 bg-white border border-gray-200
-                           rounded-2xl p-4 hover:shadow-md hover:border-gray-300
-                           transition-all hover:scale-[1.03]"
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
-                  <Icon className={`w-5 h-5 ${color}`} />
+            {/* NEXT OPD PATIENT — at a glance */}
+            <NextOPDPatientCard />
+
+            {/* ACTION FEED */}
+            {sortedActions.length > 0 && (
+              <div>
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                  Action Required
+                </h2>
+                <div className="space-y-2">
+                  {sortedActions.map(item => (
+                    <ActionItem
+                      key={item.id}
+                      item={item}
+                      onClick={item.href ? () => router.push(item.href!) : undefined}
+                    />
+                  ))}
                 </div>
-                <span className="text-xs font-semibold text-gray-700 text-center leading-tight">
-                  {label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* TODAY SUMMARY */}
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-          <h2 className="text-sm font-bold text-gray-700 mb-3">Today at a Glance</h2>
-          <div className="space-y-2">
-            {[
-              { label: 'Appointments',        value: data.todayAppts,      icon: Calendar,     c: 'text-blue-500'   },
-              { label: 'Patients Seen',        value: data.todayPatients,   icon: Stethoscope,  c: 'text-green-500'  },
-              { label: 'Beds Occupied',        value: data.bedsOccupied,    icon: Bed,          c: 'text-red-500'    },
-              { label: 'Follow-ups Due',        value: data.followUpsToday,  icon: Clock,        c: 'text-orange-500' },
-              { label: 'Unbilled Encounters',  value: data.unbilledToday,   icon: AlertCircle,  c: 'text-amber-500'  },
-            ].map(({ label, value, icon: Icon, c }) => (
-              <div key={label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Icon className={`w-4 h-4 ${c}`} />
-                  {label}
-                </div>
-                <span className={`text-sm font-bold ${value > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                  {value}
-                </span>
               </div>
-            ))}
+            )}
+
+            {/* DOCTOR ALERTS — Abnormal Lab Values */}
+            <DoctorAlertsSection />
+
+            {/* TODAY SUMMARY */}
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+              <h2 className="text-sm font-bold text-gray-700 mb-3">Today at a Glance</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {[
+                  { label: 'Appointments',       value: data.todayAppts,     icon: Calendar,    c: 'text-blue-500',   bg: 'bg-blue-50'   },
+                  { label: 'Patients Seen',      value: data.todayPatients,  icon: Stethoscope, c: 'text-green-500',  bg: 'bg-green-50'  },
+                  { label: 'Beds Occupied',      value: data.bedsOccupied,   icon: Bed,         c: 'text-red-500',    bg: 'bg-red-50'    },
+                  { label: 'Follow-ups Due',     value: data.followUpsToday, icon: Clock,       c: 'text-orange-500', bg: 'bg-orange-50' },
+                  { label: 'Unbilled',           value: data.unbilledToday,  icon: AlertCircle, c: 'text-amber-500',  bg: 'bg-amber-50'  },
+                ].map(({ label, value, icon: Icon, c, bg }) => (
+                  <div key={label} className={`flex flex-col items-center p-3 rounded-xl ${bg} border border-gray-100`}>
+                    <Icon className={`w-5 h-5 ${c} mb-1`} />
+                    <span className={`text-xl font-bold ${value > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                      {value}
+                    </span>
+                    <span className="text-[10px] text-gray-500 text-center leading-tight mt-0.5">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -25981,98 +28795,332 @@ Please process/file as required.`
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <div className="card p-4 bg-orange-50">
-            <div className="text-2xl font-bold text-orange-700">{inr(pendingAmount)}</div>
-            <div className="text-xs font-semibold text-gray-600">{pending.length} Pending Claims</div>
-          </div>
-          <div className="card p-4 bg-green-50">
-            <div className="text-2xl font-bold text-green-700">{inr(settledAmount)}</div>
-            <div className="text-xs font-semibold text-gray-600">{settled.length} Settled</div>
-          </div>
-          <div className="card p-4 bg-blue-50">
-            <div className="text-2xl font-bold text-blue-700">{claims.length}</div>
-            <div className="text-xs font-semibold text-gray-600">Total Claims</div>
-          </div>
-        </div>
-
-        {/* Search + filter */}
-        <div className="flex gap-3 mb-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input className="input pl-9" placeholder="Search patient, MRN, TPA, claim #…" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <select className="input w-48" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="all">All Status</option>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Claims list */}
-        {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : filtered.length === 0 ? (
-          <div className="card p-12 text-center text-gray-400">
-            <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">{claims.length === 0 ? 'No claims yet' : 'No claims match filter'}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map(c => {
-              const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.pre_auth_pending
-              const Icon = cfg.icon
-              const nextStatuses = STATUS_FLOW[c.status] || []
-              return (
-                <div key={c.id} className={`card p-4 border ${cfg.color}`}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-semibold text-gray-900">{c.patient_name}</span>
-                        <span className="text-xs text-gray-400">{c.mrn}</span>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}><Icon className="w-3 h-3 inline mr-1" />{cfg.label}</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {c.tpa_name && <span>{c.tpa_name}</span>}
-                        {c.insurance_company && <span className="ml-2 text-gray-400">({c.insurance_company})</span>}
-                        {c.policy_number && <span className="ml-2 text-xs text-gray-400">Policy: {c.policy_number}</span>}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {c.diagnosis && <span>Dx: {c.diagnosis}</span>}
-                        {c.surgery_name && <span className="ml-2">Surgery: {c.surgery_name}</span>}
-                      </div>
-                      <div className="flex items-center gap-4 mt-2">
-                        <span className="text-sm font-mono font-bold text-gray-800">Claimed: {inr(c.claim_amount)}</span>
-                        {c.approved_amount != null && <span className="text-sm font-mono font-bold text-green-700">Approved: {inr(c.approved_amount)}</span>}
-                        {c.settlement_utr && <span className="text-xs text-gray-400">UTR: {c.settlement_utr}</span>}
-                      </div>
-                      {c.notes && <div className="text-xs text-gray-500 mt-1 italic">{c.notes}</div>}
-                    </div>
-                    <div className="flex flex-col gap-1 flex-shrink-0 min-w-[100px]">
-                      {nextStatuses.map(ns => (
-                        <button key={ns} onClick={() => updateClaimStatus(c, ns)}
-                          className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded font-medium text-gray-700 text-left">
-                          → {STATUS_CONFIG[ns]?.label || ns}
-                        </button>
-                      ))}
-                      <button onClick={() => shareWithCA(c)}
-                        className="text-xs bg-green-50 border border-green-200 hover:bg-green-100 px-2 py-1 rounded font-medium text-green-700 text-left flex items-center gap-1">
-                        <Share2 className="w-3 h-3" /> Share with CA
-                      </button>
-                      <button onClick={() => generateDocBundle(c)}
-                        className="text-xs bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded font-medium text-blue-700 text-left flex items-center gap-1">
-                        <FileText className="w-3 h-3" /> Download Docs
-                      </button>
-                      <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        {/* Tab Navigation — Claims vs Insured Patients */}
+        <InsuranceTabsSection
+          claims={claims}
+          pending={pending}
+          pendingAmount={pendingAmount}
+          settled={settled}
+          settledAmount={settledAmount}
+          filtered={filtered}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          updateClaimStatus={updateClaimStatus}
+          shareWithCA={shareWithCA}
+          generateDocBundle={generateDocBundle}
+          inr={inr}
+          user={user}
+        />
       </div>
     </AppShell>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// InsuranceTabsSection — Combines Claims list + Insured Patients
+// ═══════════════════════════════════════════════════════════════
+
+function InsuranceTabsSection({
+  claims, pending, pendingAmount, settled, settledAmount, filtered,
+  loading, search, setSearch, statusFilter, setStatusFilter,
+  updateClaimStatus, shareWithCA, generateDocBundle, inr, user,
+}: any) {
+  const [activeTab, setActiveTab] = useState<'claims' | 'insured_patients'>('claims')
+  const [insuredPatients, setInsuredPatients] = useState<any[]>([])
+  const [insuredStats, setInsuredStats] = useState<any>(null)
+  const [insuredLoading, setInsuredLoading] = useState(false)
+  const [insuredFilter, setInsuredFilter] = useState<string>('all')
+
+  // Load insured patients from sync API
+  async function loadInsuredPatients(filter = insuredFilter) {
+    setInsuredLoading(true)
+    try {
+      const res = await fetch(`/api/insurance/sync?filter=${filter}`)
+      if (res.ok) {
+        const data = await res.json()
+        setInsuredPatients(data.patients || [])
+        setInsuredStats(data.stats || null)
+      }
+    } catch (e) {
+      console.error('[Insurance] Failed to load insured patients:', e)
+    }
+    setInsuredLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'insured_patients') {
+      loadInsuredPatients()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, insuredFilter])
+
+  // Auto-create claim for a patient
+  async function autoCreateClaim(patient: any) {
+    if (!confirm(`Create insurance claim entry for ${patient.patient_name}?`)) return
+    try {
+      const res = await fetch('/api/insurance/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: patient.patient_id,
+          trigger: 'manual',
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        alert(`Claim created for ${patient.patient_name}. Switch to Claims tab to manage it.`)
+        loadInsuredPatients()
+      } else {
+        alert(data.message || data.error || 'Failed to create claim')
+      }
+    } catch {
+      alert('Error creating claim')
+    }
+  }
+
+  return (
+    <>
+      {/* Tab buttons */}
+      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setActiveTab('claims')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5
+            ${activeTab === 'claims' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+          <FileText className="w-3.5 h-3.5" /> Claims ({claims.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('insured_patients')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5
+            ${activeTab === 'insured_patients' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+          <Shield className="w-3.5 h-3.5" /> Insured Patients
+          {insuredStats?.patients_without_claims > 0 && (
+            <span className="bg-orange-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+              {insuredStats.patients_without_claims}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ═══ CLAIMS TAB ═══ */}
+      {activeTab === 'claims' && (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            <div className="card p-4 bg-orange-50">
+              <div className="text-2xl font-bold text-orange-700">{inr(pendingAmount)}</div>
+              <div className="text-xs font-semibold text-gray-600">{pending.length} Pending Claims</div>
+            </div>
+            <div className="card p-4 bg-green-50">
+              <div className="text-2xl font-bold text-green-700">{inr(settledAmount)}</div>
+              <div className="text-xs font-semibold text-gray-600">{settled.length} Settled</div>
+            </div>
+            <div className="card p-4 bg-blue-50">
+              <div className="text-2xl font-bold text-blue-700">{claims.length}</div>
+              <div className="text-xs font-semibold text-gray-600">Total Claims</div>
+            </div>
+          </div>
+
+          {/* Search + filter */}
+          <div className="flex gap-3 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input className="input pl-9" placeholder="Search patient, MRN, TPA, claim #…" value={search} onChange={(e: any) => setSearch(e.target.value)} />
+            </div>
+            <select className="input w-48" value={statusFilter} onChange={(e: any) => setStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Claims list */}
+          {loading ? <div className="text-center py-12 text-gray-400">Loading…</div> : filtered.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400">
+              <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">{claims.length === 0 ? 'No claims yet' : 'No claims match filter'}</p>
+              {claims.length === 0 && (
+                <p className="text-sm mt-2">
+                  Patients who register with insurance will auto-appear in the <strong>Insured Patients</strong> tab.
+                  Create claims from there or click <strong>+ New Claim</strong> above.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((c: any) => {
+                const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.pre_auth_pending
+                const Icon = cfg.icon
+                const nextStatuses = STATUS_FLOW[c.status] || []
+                return (
+                  <div key={c.id} className={`card p-4 border ${cfg.color}`}>
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-semibold text-gray-900">{c.patient_name}</span>
+                          <span className="text-xs text-gray-400">{c.mrn}</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}><Icon className="w-3 h-3 inline mr-1" />{cfg.label}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {c.tpa_name && <span>{c.tpa_name}</span>}
+                          {c.insurance_company && <span className="ml-2 text-gray-400">({c.insurance_company})</span>}
+                          {c.policy_number && <span className="ml-2 text-xs text-gray-400">Policy: {c.policy_number}</span>}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {c.diagnosis && <span>Dx: {c.diagnosis}</span>}
+                          {c.surgery_name && <span className="ml-2">Surgery: {c.surgery_name}</span>}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2">
+                          <span className="text-sm font-mono font-bold text-gray-800">Claimed: {inr(c.claim_amount)}</span>
+                          {c.approved_amount != null && <span className="text-sm font-mono font-bold text-green-700">Approved: {inr(c.approved_amount)}</span>}
+                          {c.settlement_utr && <span className="text-xs text-gray-400">UTR: {c.settlement_utr}</span>}
+                        </div>
+                        {c.notes && <div className="text-xs text-gray-500 mt-1 italic">{c.notes}</div>}
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0 min-w-[100px]">
+                        {nextStatuses.map((ns: string) => (
+                          <button key={ns} onClick={() => updateClaimStatus(c, ns)}
+                            className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded font-medium text-gray-700 text-left">
+                            → {STATUS_CONFIG[ns]?.label || ns}
+                          </button>
+                        ))}
+                        <button onClick={() => shareWithCA(c)}
+                          className="text-xs bg-green-50 border border-green-200 hover:bg-green-100 px-2 py-1 rounded font-medium text-green-700 text-left flex items-center gap-1">
+                          <Share2 className="w-3 h-3" /> Share with CA
+                        </button>
+                        <button onClick={() => generateDocBundle(c)}
+                          className="text-xs bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded font-medium text-blue-700 text-left flex items-center gap-1">
+                          <FileText className="w-3 h-3" /> Download Docs
+                        </button>
+                        <Link href={`/patients/${c.patient_id}`} className="text-xs text-blue-600 hover:underline px-2 py-1">Patient</Link>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ═══ INSURED PATIENTS TAB ═══ */}
+      {activeTab === 'insured_patients' && (
+        <>
+          {/* Insured Patients Stats */}
+          {insuredStats && (
+            <div className="grid grid-cols-4 gap-3 mb-5">
+              <div className="card p-3 bg-blue-50">
+                <div className="text-xl font-bold text-blue-700">{insuredStats.total_insured_patients}</div>
+                <div className="text-xs text-gray-600">Total Insured</div>
+              </div>
+              <div className="card p-3 bg-orange-50">
+                <div className="text-xl font-bold text-orange-700">{insuredStats.patients_without_claims}</div>
+                <div className="text-xs text-gray-600">No Claims Yet</div>
+              </div>
+              <div className="card p-3 bg-yellow-50">
+                <div className="text-xl font-bold text-yellow-700">{insuredStats.patients_with_pending}</div>
+                <div className="text-xs text-gray-600">Pending</div>
+              </div>
+              <div className="card p-3 bg-green-50">
+                <div className="text-xl font-bold text-green-700">{insuredStats.patients_settled}</div>
+                <div className="text-xs text-gray-600">Settled</div>
+              </div>
+            </div>
+          )}
+
+          {/* Filter tabs */}
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: 'all', label: 'All Insured' },
+              { key: 'no_claim', label: 'No Claim' },
+              { key: 'pending', label: 'Pending' },
+              { key: 'settled', label: 'Settled' },
+            ].map(f => (
+              <button key={f.key}
+                onClick={() => setInsuredFilter(f.key)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all
+                  ${insuredFilter === f.key
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                {f.label}
+              </button>
+            ))}
+            <button onClick={() => loadInsuredPatients(insuredFilter)}
+              className="text-xs text-gray-500 hover:text-gray-700 ml-auto flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+
+          {/* Info banner */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-700">
+            <strong>Auto-Sync:</strong> This list auto-updates from patient registration. When a patient registers with
+            Mediclaim = Yes or Cashless = Yes, they appear here. Claims are auto-created when they get admitted or discharged.
+          </div>
+
+          {/* Patient list */}
+          {insuredLoading ? (
+            <div className="text-center py-12 text-gray-400">Loading insured patients…</div>
+          ) : insuredPatients.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400">
+              <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No insured patients found</p>
+              <p className="text-sm mt-1">Patients who register with Mediclaim/Cashless will appear here automatically.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {insuredPatients.map((p: any) => (
+                <div key={p.patient_id} className="card p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/patients/${p.patient_id}`} className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                        {p.patient_name}
+                      </Link>
+                      <span className="text-xs text-gray-400 font-mono">{p.mrn}</span>
+                      {p.mediclaim && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Mediclaim</span>}
+                      {p.cashless && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Cashless</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {p.policy_tpa_name && <span>TPA: <strong>{p.policy_tpa_name}</strong></span>}
+                      {p.policy_number && <span className="ml-2">Policy: {p.policy_number}</span>}
+                      {p.mobile && <span className="ml-2 font-mono">{p.mobile}</span>}
+                    </div>
+                    {p.has_claim && (
+                      <div className="text-xs mt-1">
+                        <span className="text-gray-500">{p.total_claims} claim(s)</span>
+                        {p.pending_claims > 0 && <span className="ml-2 text-orange-600">{p.pending_claims} pending</span>}
+                        {p.settled_claims > 0 && <span className="ml-2 text-green-600">{p.settled_claims} settled</span>}
+                        {p.total_claimed_amount > 0 && <span className="ml-2 font-mono">Claimed: {inr(p.total_claimed_amount)}</span>}
+                        {p.total_settled_amount > 0 && <span className="ml-2 font-mono text-green-700">Settled: {inr(p.total_settled_amount)}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0">
+                    {!p.has_claim ? (
+                      <button
+                        onClick={() => autoCreateClaim(p)}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                        <Plus className="w-3 h-3" /> Create Claim
+                      </button>
+                    ) : (
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        p.latest_claim_status === 'settled' ? 'bg-green-100 text-green-700' :
+                        p.pending_claims > 0 ? 'bg-orange-100 text-orange-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {STATUS_CONFIG[p.latest_claim_status]?.label || p.latest_claim_status || 'Active'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }
 ```
@@ -28395,16 +31443,17 @@ import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { BedStatus, getBedActions, isBedAssignable } from '@/lib/business-logic'
+import { useAuth } from '@/lib/auth'
 import {
   Bed, User, Lock, Wrench, CheckCircle, Plus,
-  RefreshCw, Search, X, AlertCircle,
+  RefreshCw, Search, X, AlertCircle, Trash2,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────
 
 interface BedRecord {
   id:           string
-  bednumber:    string
+  bed_number:   string
   ward:         string | null
   type:         string
   status:       BedStatus
@@ -28447,7 +31496,7 @@ function ReserveModal({
         reservedfor:  name.trim(),
         reservednote: note.trim() || null,
         reservedat:   new Date().toISOString(),
-        updatedat:    new Date().toISOString(),
+        updated_at:   new Date().toISOString(),
       })
       .eq('id', bed.id)
 
@@ -28460,7 +31509,7 @@ function ReserveModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">🔒 Reserve Bed {bed.bednumber}</h3>
+          <h3 className="font-bold text-gray-900">🔒 Reserve Bed {bed.bed_number}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
@@ -28521,21 +31570,49 @@ function ReserveModal({
 // ── Add Bed Modal ─────────────────────────────────────────────
 
 function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [form,   setForm]   = useState({ bednumber: '', ward: '', type: 'General' })
+  const [form,   setForm]   = useState({ bed_number: '', ward: '', type: 'General' })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
 
   async function save() {
-    if (!form.bednumber.trim()) { setError('Bed number is required'); return }
+    if (!form.bed_number.trim()) { setError('Bed number is required'); return }
+    if (!form.ward.trim()) { setError('Ward is required'); return }
     setSaving(true)
-    const { error: err } = await supabase.from('beds').insert({
-      bednumber: form.bednumber.trim().toUpperCase(),
-      ward:      form.ward.trim() || null,
+    setError('')
+
+    const bedNumber = form.bed_number.trim().toUpperCase()
+    const ward = form.ward.trim()
+
+    // Try with 'bed_number' column first (new schema)
+    let result = await supabase.from('beds').insert({
+      bed_number: bedNumber,
+      ward,
       type:      form.type,
       status:    'available',
     })
+
+    // If that fails with schema cache error, try the old column name 'bednumber'
+    if (result.error && result.error.message.includes('schema cache')) {
+      result = await supabase.from('beds').insert({
+        bednumber: bedNumber,
+        ward,
+        type:     form.type,
+        status:   'available',
+      } as any)
+    }
+
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (result.error) {
+      // Provide user-friendly error messages
+      if (result.error.message.includes('duplicate') || result.error.message.includes('unique')) {
+        setError(`Bed "${bedNumber}" already exists. Choose a different bed number.`)
+      } else if (result.error.message.includes('schema cache')) {
+        setError('Database schema mismatch. Please run the migration SQL (migrations/001-fix-beds-schema.sql) in Supabase SQL Editor to fix this.')
+      } else {
+        setError(result.error.message)
+      }
+      return
+    }
     onDone()
   }
 
@@ -28558,8 +31635,8 @@ function AddBedModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g. B01, W2-03"
-              value={form.bednumber}
-              onChange={e => setForm(f => ({ ...f, bednumber: e.target.value }))}
+              value={form.bed_number}
+              onChange={e => setForm(f => ({ ...f, bed_number: e.target.value }))}
             />
           </div>
           <div>
@@ -28623,7 +31700,7 @@ function BedCard({
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${s.dot} flex-shrink-0`} />
           <div>
-            <div className="font-bold text-gray-900">Bed {bed.bednumber}</div>
+            <div className="font-bold text-gray-900">Bed {bed.bed_number}</div>
             <div className="text-xs text-gray-500">{bed.ward || 'General'} · {bed.type}</div>
           </div>
         </div>
@@ -28720,6 +31797,17 @@ function BedCard({
             Discharge patient to free this bed
           </p>
         )}
+
+        {/* Delete button — only visible for non-occupied beds */}
+        {bed.status !== 'occupied' && (
+          <button
+            onClick={() => onAction(bed, 'delete')}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                       bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold ml-auto"
+          >
+            <Trash2 className="w-3 h-3" /> Remove
+          </button>
+        )}
       </div>
     </div>
   )
@@ -28728,6 +31816,7 @@ function BedCard({
 // ── Main Page ─────────────────────────────────────────────────
 
 export default function BedsPage() {
+  const { isAdmin } = useAuth()
   const [beds,         setBeds]         = useState<BedRecord[]>([])
   const [loading,      setLoading]      = useState(true)
   const [search,       setSearch]       = useState('')
@@ -28745,28 +31834,46 @@ export default function BedsPage() {
   const loadBeds = useCallback(async () => {
     setLoading(true)
 
-    const { data: bedData } = await supabase
+    // Try with 'bed_number' first (new schema), fallback to 'bednumber' (old schema)
+    let bedData: any[] | null = null
+    let { data, error: err1 } = await supabase
       .from('beds')
       .select('*')
-      .order('bednumber')
+      .order('bed_number')
+
+    if (err1 && err1.message.includes('schema cache')) {
+      // Old schema — try ordering by bednumber
+      const { data: oldData } = await supabase
+        .from('beds')
+        .select('*')
+        .order('bednumber' as any)
+
+      // Normalize old schema to new field names
+      bedData = (oldData || []).map((b: any) => ({
+        ...b,
+        bed_number: b.bed_number || b.bednumber,
+      }))
+    } else {
+      bedData = data
+    }
 
     if (!bedData) { setLoading(false); return }
 
     // Get active admissions to find who's in each bed
     const { data: admissions } = await supabase
-      .from('ipdadmissions')
-      .select('id, bedid, patientid, patients(fullname, mrn)')
-      .eq('status', 'admitted')
+      .from('ipd_admissions')
+      .select('id, bed_id, patient_id, patient_name, mrn')
+      .eq('status', 'active')
 
     const admMap = new Map<string, any>()
     for (const adm of admissions || []) {
-      if (adm.bedid) admMap.set(adm.bedid, adm)
+      if (adm.bed_id) admMap.set(adm.bed_id, adm)
     }
 
     setBeds(bedData.map(b => ({
       ...b,
-      patient_name: admMap.get(b.id)?.patients?.fullname,
-      patient_mrn:  admMap.get(b.id)?.patients?.mrn,
+      patient_name: admMap.get(b.id)?.patient_name,
+      patient_mrn:  admMap.get(b.id)?.mrn,
     })))
     setLoading(false)
   }, [])
@@ -28779,13 +31886,22 @@ export default function BedsPage() {
       return
     }
 
+    if (action === 'delete') {
+      if (!isAdmin) { alert('Only admin can delete beds.'); return }
+      if (bed.status === 'occupied') { alert('Cannot delete an occupied bed. Discharge the patient first.'); return }
+      if (!confirm(`Are you sure you want to permanently remove Bed ${bed.bed_number}? This cannot be undone.`)) return
+      await supabase.from('beds').delete().eq('id', bed.id)
+      await loadBeds()
+      return
+    }
+
     const newStatus = action as BedStatus
     await supabase.from('beds').update({
       status:       newStatus,
       reservedfor:  null,
       reservednote: null,
       reservedat:   null,
-      updatedat:    new Date().toISOString(),
+      updated_at:   new Date().toISOString(),
     }).eq('id', bed.id)
 
     await loadBeds()
@@ -28794,7 +31910,7 @@ export default function BedsPage() {
   const filtered = beds.filter(b => {
     const matchSearch =
       !search ||
-      b.bednumber.toLowerCase().includes(search.toLowerCase()) ||
+      b.bed_number.toLowerCase().includes(search.toLowerCase()) ||
       (b.ward || '').toLowerCase().includes(search.toLowerCase()) ||
       (b.patient_name || '').toLowerCase().includes(search.toLowerCase()) ||
       (b.reservedfor || '').toLowerCase().includes(search.toLowerCase())
@@ -28818,13 +31934,15 @@ export default function BedsPage() {
               className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200">
               <RefreshCw className="w-4 h-4 text-gray-600" />
             </button>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
-                         px-4 py-2 rounded-xl font-semibold text-sm"
-            >
-              <Plus className="w-4 h-4" /> Add Bed
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                           px-4 py-2 rounded-xl font-semibold text-sm"
+              >
+                <Plus className="w-4 h-4" /> Add Bed
+              </button>
+            )}
           </div>
         </div>
 
@@ -28906,6 +32024,31 @@ export default function BedsPage() {
 }
 ```
 
+# src\app\ipd\new\page.tsx
+
+```tsx
+'use client'
+/**
+ * /ipd/new — Redirects to the IPD page which has the admission form.
+ * The IPD page shows the admission form when you click "New Admission".
+ */
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function IPDNewRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/ipd')
+  }, [router])
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+```
+
 # src\app\ipd\page.tsx
 
 ```tsx
@@ -28937,6 +32080,8 @@ import {
   Plus, Trash2, Save, CheckCircle, ChevronDown, ChevronUp,
   IndianRupee, FileText, Users, X
 } from 'lucide-react'
+import DischargeModal from '@/components/ipd/DischargeModal'
+import IPDFileUpload from '@/components/ipd/IPDFileUpload'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -29133,21 +32278,12 @@ function CensusView({
   onDischarge: () => void
   canManage: boolean
 }) {
+  const [dischargeAdmission, setDischargeAdmission] = useState<IPDAdmission | null>(null)
+
   async function markDischarged(id: string) {
-    if (!confirm('Mark this patient as discharged?')) return
-    await supabase
-      .from('ipd_admissions')
-      .update({ status: 'discharged', updated_at: new Date().toISOString() })
-      .eq('id', id)
-    // Free the bed
+    // Use the enhanced discharge modal instead of simple confirm
     const adm = admissions.find(a => a.id === id)
-    if (adm?.bed_id) {
-      await supabase
-        .from('beds')
-        .update({ status: 'cleaning', patient_id: null, patient_name: null })
-        .eq('id', adm.bed_id)
-    }
-    onDischarge()
+    if (adm) setDischargeAdmission(adm)
   }
 
   return (
@@ -29241,6 +32377,15 @@ function CensusView({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Enhanced Discharge Modal */}
+      {dischargeAdmission && (
+        <DischargeModal
+          admission={dischargeAdmission}
+          onClose={() => setDischargeAdmission(null)}
+          onDischarged={() => { setDischargeAdmission(null); onDischarge() }}
+        />
       )}
     </>
   )
@@ -29824,6 +32969,37 @@ function NursingChart({ admission, onBack, currentUserName }: {
         )}
       </div>
 
+      {/* Photos & Documents Upload */}
+      <div className="card p-5 mb-5">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-green-500"/> Photos &amp; Documents
+          <span className="text-xs text-gray-400 font-normal">(AI auto-extraction enabled)</span>
+        </h3>
+        <IPDFileUpload
+          ipdAdmissionId={admission.id}
+          patientId={admission.patient_id}
+          uploadedBy={currentUserName}
+          uploadedByRole="nurse"
+          onFileUploaded={(file, aiData) => {
+            // If AI extracted vital data, pre-fill the vital form
+            if (aiData && !aiData._error) {
+              if (aiData.pulse || aiData.bp_systolic || aiData.temperature) {
+                setVitalForm(prev => ({
+                  ...prev,
+                  pulse: aiData.pulse || prev.pulse,
+                  bp_systolic: aiData.bp_systolic || prev.bp_systolic,
+                  bp_diastolic: aiData.bp_diastolic || prev.bp_diastolic,
+                  temperature: aiData.temperature || prev.temperature,
+                  spo2: aiData.spo2 || prev.spo2,
+                  rr: aiData.respiratory_rate || aiData.rr || prev.rr,
+                  weight: aiData.weight || prev.weight,
+                }))
+              }
+            }
+          }}
+        />
+      </div>
+
       {/* Chart History */}
       {loading ? (
         <div className="flex items-center justify-center h-24">
@@ -29955,8 +33131,20 @@ export default function LabPartnerPortalPage() {
   const [history, setHistory] = useState<UploadHistory[]>([])
   const [showHistory, setShowHistory] = useState(false)
 
-  // Check stored token on mount
+  // Check stored token on mount OR token from URL query param
   useEffect(() => {
+    // Priority 1: Token from URL (shareable link from admin)
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlToken = urlParams.get('token')
+    if (urlToken) {
+      setInputToken(urlToken)
+      verifyToken(urlToken)
+      // Clean URL without reloading (remove token from address bar for security)
+      window.history.replaceState({}, '', '/lab-partner-portal')
+      return
+    }
+
+    // Priority 2: Previously stored token in localStorage
     const stored = localStorage.getItem('lab-portal-token')
     if (stored) {
       setToken(stored)
@@ -31287,28 +34475,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```tsx
 'use client'
 /**
- * src/app/login/page.tsx — FIXED
+ * src/app/login/page.tsx — OTP-FIRST LOGIN
  *
- * Bugs fixed vs previous delivery:
+ * Complete rewrite with OTP/Magic Link as primary login method.
+ * Password login is available as a secondary fallback.
  *
- * BUG 1 (CRITICAL — breaks typing): `const Bg = (...)` was defined INSIDE
- *   LoginPage(). React treats a component defined inside another component as
- *   a NEW component type on every render. Every keystroke (state change) caused
- *   React to unmount + remount Bg's children — destroying the <input> DOM node
- *   and resetting focus. Fix: Bg is now a module-level component (outside LoginPage).
+ * Flow:
+ *   1. User enters email → clicks "Send Login Code"
+ *   2. Supabase sends a 6-digit OTP + magic link to their email
+ *   3. User types OTP (or clicks magic link from email)
+ *   4. Session created → redirect to dashboard
  *
- * BUG 2: MFA enrollment offered on EVERY login for users with no MFA.
- *   This interrupted normal login for all non-MFA users. Fix: enrollment offer
- *   only shown to admin role users; regular staff skip straight to dashboard.
+ * Password fallback:
+ *   - Small link "Sign in with password instead"
+ *   - For scenarios where email is down or slow
  *
- * BUG 3: useEffect([router]) — router from next/navigation is stable so this
- *   is fine, but the inner isFirstTimeSetup() call had no error handling.
- *   Fix: wrapped in try/catch.
+ * MFA:
+ *   - Now OPTIONAL — not forced on first login
+ *   - Can be enabled from Settings by any user
  *
- * BUG 4: startEnrollment() was async and called with await inside handleLogin,
- *   but setView('mfa-enroll') was called before enrollment state was set.
- *   This caused the enrollment screen to render with null enrollment (blank QR).
- *   Fix: await startEnrollment() completes before setView().
+ * First-time setup:
+ *   - Still supported — first user becomes admin
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -31316,29 +34503,22 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/lib/constants'
 import { isFirstTimeSetup, bootstrapAdmin } from '@/lib/auth'
-import {
-  getMFAStatus,
-  getAAL,
-  enrollMFA,
-  verifyMFACode,
-  challengeMFA,
-  verifyMFA,
-  type MFAEnrollment,
-} from '@/lib/mfa'
+import { getAAL, verifyMFACode } from '@/lib/mfa'
 import { auditLogin } from '@/lib/audit'
 import {
-  Eye, EyeOff, Activity, ArrowLeft,
-  Shield, KeyRound, QrCode, CheckCircle2,
+  Eye, EyeOff, Activity, ArrowLeft, Mail,
+  Shield, KeyRound, CheckCircle2, Loader2,
 } from 'lucide-react'
 
-type View = 'login' | 'forgot' | 'setup' | 'mfa-verify' | 'mfa-enroll'
+type View =
+  | 'email'          // Enter email (primary screen)
+  | 'otp'            // Enter 6-digit OTP code
+  | 'password'       // Fallback password login
+  | 'forgot'         // Password reset
+  | 'setup'          // First-time admin setup
+  | 'mfa-verify'     // MFA verification (if user has TOTP enabled)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BUG FIX: Bg is declared at MODULE LEVEL — outside LoginPage.
-// A component defined inside another component gets a new identity on every
-// render, which causes React to unmount + remount it (and destroy its children's
-// DOM nodes) on every keystroke. Moving it outside completely prevents this.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Background component (module-level to prevent re-mount on keystroke)
 function LoginBackground({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
@@ -31354,378 +34534,315 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Client-side rate limiter for login attempts.
-// Defense-in-depth: since supabase.auth.signInWithPassword() calls go directly
-// from browser to Supabase (bypassing Next.js middleware), this client-side
-// limiter is the first line of defense against brute force from the same browser.
-// ─────────────────────────────────────────────────────────────────────────────
-const LOGIN_MAX_ATTEMPTS = 5
-const LOGIN_WINDOW_MS = 15 * 60 * 1000      // 15 minutes
-const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000 // 30-minute lockout
-const RESET_MAX_ATTEMPTS = 3
-const RESET_WINDOW_MS = 60 * 60 * 1000      // 60 minutes
+// ── Rate limiter
+function useRateLimiter(max: number, windowMs: number, blockMs: number) {
+  const attempts = useRef<number[]>([])
+  const blocked = useRef(0)
 
-function useClientRateLimiter(maxAttempts: number, windowMs: number, blockDurationMs: number) {
-  const attemptsRef = useRef<number[]>([])
-  const blockedUntilRef = useRef<number>(0)
-
-  function check(): { allowed: boolean; retryAfter: number; message: string } {
+  function check() {
     const now = Date.now()
-
-    // Check hard block
-    if (blockedUntilRef.current > now) {
-      const retryAfter = Math.ceil((blockedUntilRef.current - now) / 1000)
-      const minutes = Math.ceil(retryAfter / 60)
-      return {
-        allowed: false,
-        retryAfter,
-        message: `Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`,
-      }
+    if (blocked.current > now) {
+      const mins = Math.ceil((blocked.current - now) / 60000)
+      return { ok: false, msg: `Too many attempts. Try again in ${mins} min.` }
     }
-
-    // Clean old attempts outside the window
-    attemptsRef.current = attemptsRef.current.filter(t => t > now - windowMs)
-
-    // Check if over limit
-    if (attemptsRef.current.length >= maxAttempts) {
-      // Apply hard block
-      blockedUntilRef.current = now + blockDurationMs
-      const retryAfter = Math.ceil(blockDurationMs / 1000)
-      const minutes = Math.ceil(retryAfter / 60)
-      return {
-        allowed: false,
-        retryAfter,
-        message: `Too many attempts. Account locked for ${minutes} minutes. Please try again later.`,
-      }
+    attempts.current = attempts.current.filter(t => t > now - windowMs)
+    if (attempts.current.length >= max) {
+      blocked.current = now + blockMs
+      return { ok: false, msg: `Too many attempts. Locked for ${Math.ceil(blockMs / 60000)} min.` }
     }
-
-    return { allowed: true, retryAfter: 0, message: '' }
+    return { ok: true, msg: '' }
   }
-
-  function record(): void {
-    attemptsRef.current.push(Date.now())
-  }
-
-  function reset(): void {
-    attemptsRef.current = []
-    blockedUntilRef.current = 0
-  }
-
+  function record() { attempts.current.push(Date.now()) }
+  function reset() { attempts.current = []; blocked.current = 0 }
   return { check, record, reset }
 }
 
 export default function LoginPage() {
   const router = useRouter()
-  const otpRef = useRef<HTMLInputElement>(null)
-  const loginLimiter = useClientRateLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, LOGIN_BLOCK_DURATION_MS)
-  const resetLimiter = useClientRateLimiter(RESET_MAX_ATTEMPTS, RESET_WINDOW_MS, RESET_WINDOW_MS)
+  const otpInputRef = useRef<HTMLInputElement>(null)
+  const limiter = useRateLimiter(5, 15 * 60000, 30 * 60000)
 
-  const [view, setView] = useState<View>('login')
+  const [view, setView] = useState<View>('email')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Resend cooldown
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // First-time setup
   const [setupName, setSetupName] = useState('')
   const [setupDone, setSetupDone] = useState(false)
 
-  // MFA verify
+  // MFA
   const [mfaCode, setMfaCode] = useState('')
-  const [mfaLoading, setMfaLoading] = useState(false)
 
-  // MFA enroll
-  const [enrollment, setEnrollment] = useState<MFAEnrollment | null>(null)
-  const [enrollCode, setEnrollCode] = useState('')
-  const [enrollLoading, setEnrollLoading] = useState(false)
-  const [enrollDone, setEnrollDone] = useState(false)
-
-  // Handle auth state changes (including PASSWORD_RECOVERY from hash fragments)
-  // and redirect if already logged in — combined to avoid race conditions
+  // ── On mount: check if already logged in or handle auth callbacks
   useEffect(() => {
-    // BUG FIX: Clear any role simulation override when arriving at login page.
-    // This prevents the "stuck in doctor view after sign-out" bug where
-    // sessionStorage retains the override from a previous session.
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('nexmedicon_role_override')
     }
 
-    let isRecovery = false
     let redirected = false
 
-    // Set up auth state listener FIRST — this catches PASSWORD_RECOVERY events
-    // that fire after code exchange or hash fragment processing
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (redirected) return
-        if (event === 'PASSWORD_RECOVERY') {
-          // User arrived via a password reset link — redirect to reset page
-          isRecovery = true
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (redirected) return
+      if (event === 'PASSWORD_RECOVERY') {
+        redirected = true
+        router.push('/reset-password')
+      }
+      // Magic link / OTP verified via link click (handles both /login and /auth/callback flows)
+      if (event === 'SIGNED_IN' && session && (view === 'otp' || view === 'email')) {
+        redirected = true
+        auditLogin().then(() => router.push('/dashboard'))
+      }
+    })
+
+    async function init() {
+      // Handle auth code in URL (PKCE flow from magic link)
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      const hash = window.location.hash
+
+      if (code) {
+        // User clicked magic link that redirected here with ?code=XXX
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (!error && !redirected) {
           redirected = true
-          router.push('/reset-password')
+          await auditLogin()
+          router.push('/dashboard')
+        } else if (error) {
+          // Code exchange failed — show a helpful error
+          setError('Login link expired or already used. Please request a new code.')
+          // Clean URL so user doesn't see stale code param
+          window.history.replaceState({}, '', '/login')
         }
-      }
-    )
-
-    async function handleAuthFlow() {
-      if (typeof window !== 'undefined') {
-        const hash = window.location.hash
-        const params = new URLSearchParams(window.location.search)
-
-        // Check if the URL hash contains a recovery token (implicit flow)
-        if (hash && hash.includes('type=recovery')) {
-          isRecovery = true
-          // Supabase client will auto-process the hash and fire PASSWORD_RECOVERY
-          // Just wait for the onAuthStateChange callback above
-          return
-        }
-
-        // Check if URL has a code parameter (PKCE flow) — exchange it
-        const code = params.get('code')
-        if (code) {
-          isRecovery = true // Assume recovery — codes only arrive at /login from password reset
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchangeError) {
-            setError('Password reset link expired or invalid. Please request a new one.')
-            return
-          }
-          // Code exchanged successfully — redirect to reset password immediately
-          // In PKCE flow, PASSWORD_RECOVERY event may not fire, so don't wait for it
-          if (!redirected) {
-            redirected = true
-            router.push('/reset-password')
-          }
-          return
-        }
+        return
       }
 
-      // No code or hash — check if already logged in
-      if (!isRecovery) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
-        if (redirected) return
+      // Handle hash-based auth (legacy implicit flow from older Supabase versions)
+      if (hash && hash.includes('access_token')) {
+        // Let onAuthStateChange handle it
+        return
+      }
+      if (hash && hash.includes('type=recovery')) return
+
+      // Check if user is already logged in
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && !redirected) {
         try {
           const firstTime = await isFirstTimeSetup()
-          if (redirected) return
-          if (firstTime) setView('setup')
-          else {
-            redirected = true
-            router.push('/dashboard')
-          }
-        } catch {
-          if (!redirected) {
-            redirected = true
-            router.push('/dashboard')
-          }
-        }
+          if (firstTime) { setView('setup'); return }
+        } catch {}
+        redirected = true
+        router.push('/dashboard')
       }
     }
 
-    handleAuthFlow()
-
+    init()
     return () => { subscription.unsubscribe() }
   }, [router])
 
-  // Auto-focus OTP field when switching to MFA screens
+  // Auto-focus OTP input
   useEffect(() => {
-    if (view === 'mfa-verify' || view === 'mfa-enroll') {
-      setTimeout(() => otpRef.current?.focus(), 120)
+    if (view === 'otp' || view === 'mfa-verify') {
+      setTimeout(() => otpInputRef.current?.focus(), 150)
     }
   }, [view])
 
-  // ── Login ─────────────────────────────────────────────────────
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
+  // Cooldown timer
+  function startCooldown() {
+    setResendCooldown(60)
+    if (cooldownRef.current) clearInterval(cooldownRef.current)
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  // ── Send OTP via Supabase signInWithOtp
+  async function handleSendOTP(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.')
+      return
+    }
     setLoading(true)
     setError('')
-    const rateCheck = loginLimiter.check()
-    if (!rateCheck.allowed) { setError(rateCheck.message); setLoading(false); return }
 
+    const rate = limiter.check()
+    if (!rate.ok) { setError(rate.msg); setLoading(false); return }
 
-    // ── Rate limit check (client-side defense-in-depth) ──────────
-    if (!rateCheck.allowed) {
-      setError(rateCheck.message)
-      setLoading(false)
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: {
+        shouldCreateUser: false, // Only existing users can login
+        // Magic link clicks go to /auth/callback which handles code exchange properly
+        // This is the correct Supabase PKCE flow — /auth/callback exchanges the code
+        // and then redirects to /dashboard
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+
+    setLoading(false)
+
+    if (otpError) {
+      limiter.record()
+      // Supabase returns generic error for non-existent users (good for security)
+      if (otpError.message.includes('Signups not allowed') || otpError.message.includes('not allowed')) {
+        setError('No account found with this email. Contact your admin to get access.')
+      } else {
+        setError(otpError.message || 'Failed to send login code. Try again.')
+      }
       return
     }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-    if (authError) {
-      // Record failed attempt for rate limiting
-      loginLimiter.record()
-      setError('Invalid email or password. Please try again.')
-      setLoading(false)
+    limiter.reset()
+    setView('otp')
+    startCooldown()
+    setSuccess(`Login code sent to ${email}. Check your inbox (and spam folder).`)
+  }
+
+  // ── Verify OTP code
+  async function handleVerifyOTP(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (otpCode.length !== 6) {
+      setError('Please enter the complete 6-digit code.')
+      return
+    }
+    setLoading(true)
+    setError('')
+
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: otpCode,
+      type: 'email',
+    })
+
+    setLoading(false)
+
+    if (verifyError) {
+      setError('Invalid or expired code. Please try again or request a new one.')
+      setOtpCode('')
+      otpInputRef.current?.focus()
       return
     }
 
-    // Successful login — reset the rate limiter
-    loginLimiter.reset()
-
-    // First-time admin setup?
+    // Check MFA requirement
     try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) {
-        setView('setup')
-        setLoading(false)
-        return
-      }
-    } catch { /* non-fatal */ }
-
-    // MFA gate — check AAL level
-    try {
-      // Skip MFA if already verified in this browser session
-      const alreadyVerified = sessionStorage.getItem('nexmedicon_mfa_verified')
-      if (alreadyVerified === 'true') {
-        // Session still has valid token, skip MFA prompt
-        router.push('/dashboard')
-        return
-      }
-      await supabase.auth.refreshSession()
       const aal = await getAAL()
       if (aal.needsMFA) {
-        // User has a verified TOTP factor — require verification before dashboard
+        setView('mfa-verify')
+        return
+      }
+    } catch {}
+
+    // First-time setup check
+    try {
+      const firstTime = await isFirstTimeSetup()
+      if (firstTime) { setView('setup'); return }
+    } catch {}
+
+    await auditLogin()
+    router.push('/dashboard')
+  }
+
+  // ── Password login (fallback)
+  async function handlePasswordLogin(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !password) {
+      setError('Email and password are required.')
+      return
+    }
+    setLoading(true)
+    setError('')
+
+    const rate = limiter.check()
+    if (!rate.ok) { setError(rate.msg); setLoading(false); return }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+
+    if (authError) {
+      limiter.record()
+      setError('Invalid email or password.')
+      setLoading(false)
+      return
+    }
+
+    limiter.reset()
+
+    // Check MFA
+    try {
+      const aal = await getAAL()
+      if (aal.needsMFA) {
         setLoading(false)
         setView('mfa-verify')
         return
       }
+    } catch {}
 
-      // BUG FIX: Only offer MFA enrollment to admin users, and only if they
-      // have no factor at all. Don't block doctors/staff from logging in.
-      const mfaStatus = await getMFAStatus()
-      if (!mfaStatus.enrolled) {
-        // Check role — only prompt admins to set up MFA on first login
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: cu } = await supabase
-            .from('clinic_users')
-            .select('role')
-            .eq('auth_id', user.id)
-            .single()
-          if (cu?.role === 'admin') {
-            // BUG FIX: await startEnrollment() BEFORE setView so that the QR
-            // code state is populated before the enrollment screen renders.
-            await startEnrollment()
-            setLoading(false)
-            setView('mfa-enroll')
-            return
-          }
-        }
-      }
-    } catch {
-      // MFA check failed — let user through without blocking login
-    }
+    // First-time setup
+    try {
+      const firstTime = await isFirstTimeSetup()
+      if (firstTime) { setLoading(false); setView('setup'); return }
+    } catch {}
 
     await auditLogin()
     router.push('/dashboard')
   }
 
-  // ── MFA verify ────────────────────────────────────────────────
+  // ── MFA verify
   async function handleMFAVerify(e: React.FormEvent) {
     e.preventDefault()
-    if (!mfaCode.trim() || mfaCode.length !== 6) {
-      setError('Please enter the 6-digit code from your authenticator app.')
-      return
-    }
-    setMfaLoading(true)
-    setError('')
-
-    const result = await verifyMFACode(mfaCode)
-    setMfaLoading(false)
-    sessionStorage.setItem('nexmedicon_mfa_verified', 'true')
-
-    if (result.success) {
-      await auditLogin()
-      router.push('/dashboard')
-    } else {
-      setError(result.error || 'Invalid code. Please try again.')
-      setMfaCode('')
-      otpRef.current?.focus()
-    }
-  }
-
-  // ── MFA enroll — start ────────────────────────────────────────
-  async function startEnrollment() {
-    try {
-      const result = await enrollMFA('NexMedicon HMS')
-      if (result.success && result.enrollment) {
-        setEnrollment(result.enrollment)
-      }
-    } catch {
-      // enrollment start failed — user will see spinner and can skip
-    }
-  }
-
-  // ── MFA enroll — confirm code ─────────────────────────────────
-  async function handleEnrollVerify(e: React.FormEvent) {
-    e.preventDefault()
-    if (!enrollCode.trim() || enrollCode.length !== 6) {
-      setError('Enter the 6-digit code from your authenticator app.')
-      return
-    }
-    if (!enrollment) return
-    setEnrollLoading(true)
-    setError('')
-
-    const challenge = await challengeMFA(enrollment.id)
-    if (!challenge.success || !challenge.challengeId) {
-      setError(challenge.error || 'Could not create challenge. Try again.')
-      setEnrollLoading(false)
-      return
-    }
-
-    const result = await verifyMFA(enrollment.id, challenge.challengeId, enrollCode)
-    setEnrollLoading(false)
-
-    if (result.success) {
-      setEnrollDone(true)
-      setTimeout(async () => {
-        await auditLogin()
-        router.push('/dashboard')
-      }, 1500)
-    } else {
-      setError(result.error || 'Invalid code. Make sure your app time is correct.')
-      setEnrollCode('')
-      otpRef.current?.focus()
-    }
-  }
-
-  // ── Skip MFA enrollment ───────────────────────────────────────
-  async function skipMFAEnroll() {
-    await auditLogin()
-    router.push('/dashboard')
-  }
-
-  // ── Forgot password ───────────────────────────────────────────
-  async function handleForgotPassword(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email.trim()) { setError('Please enter your email address.'); return }
+    if (mfaCode.length !== 6) { setError('Enter the 6-digit code from your authenticator.'); return }
     setLoading(true)
     setError('')
 
-    // ── Rate limit check (client-side defense-in-depth) ──────────
-    const rateCheck = resetLimiter.check()
-    if (!rateCheck.allowed) {
-      setError(rateCheck.message)
-      setLoading(false)
-      return
-    }
-    resetLimiter.record()
-
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-    })
+    const result = await verifyMFACode(mfaCode)
     setLoading(false)
-    if (resetError) setError(resetError.message)
-    else setSuccess('Password reset email sent! Check your inbox.')
+
+    if (result.success) {
+      sessionStorage.setItem('nexmedicon_mfa_verified', 'true')
+      await auditLogin()
+      router.push('/dashboard')
+    } else {
+      setError(result.error || 'Invalid code. Try again.')
+      setMfaCode('')
+      otpInputRef.current?.focus()
+    }
   }
 
-  // ── First-time admin setup ────────────────────────────────────
+  // ── Forgot password
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim()) { setError('Enter your email first.'); return }
+    setLoading(true)
+    setError('')
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/auth/callback?type=recovery` }
+    )
+
+    setLoading(false)
+    if (resetError) setError(resetError.message)
+    else setSuccess('Password reset link sent! Check your email.')
+  }
+
+  // ── First-time setup
   async function handleSetup(e: React.FormEvent) {
     e.preventDefault()
-    if (!setupName.trim()) { setError('Please enter your name.'); return }
+    if (!setupName.trim()) { setError('Enter your name.'); return }
     setLoading(true)
     setError('')
     const result = await bootstrapAdmin(setupName.trim())
@@ -31734,16 +34851,13 @@ export default function LoginPage() {
       setSetupDone(true)
       setTimeout(() => router.push('/dashboard'), 2000)
     } else {
-      setError(result.error || 'Setup failed. Please try again.')
+      setError(result.error || 'Setup failed.')
     }
   }
 
-  function fillDemo() {
-    setEmail('demo@hospital.com')
-    setPassword('demo1234')
-  }
-
-  // ══ MFA VERIFY screen ═════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // MFA VERIFY SCREEN
+  // ══════════════════════════════════════════════════════════════
   if (view === 'mfa-verify') {
     return (
       <LoginBackground>
@@ -31752,156 +34866,39 @@ export default function LoginPage() {
             <KeyRound className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">Two-Factor Auth</h1>
-          <p className="text-blue-200 text-sm mt-1">Enter the 6-digit code from your authenticator app</p>
+          <p className="text-blue-200 text-sm mt-1">Enter the code from your authenticator app</p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
-            </div>
-          )}
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
           <form onSubmit={handleMFAVerify} className="space-y-5">
-            <div>
-              <label className="label">Verification Code</label>
-              <input
-                ref={otpRef}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                autoComplete="one-time-code"
-                className="input text-center text-2xl tracking-[0.5em] font-mono"
-                placeholder="000000"
-                value={mfaCode}
-                onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                required
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                Open Google Authenticator, Authy, or any TOTP app and enter the current 6-digit code for{' '}
-                <strong>NexMedicon HMS</strong>.
-              </p>
-            </div>
-            <button
-              type="submit"
-              disabled={mfaLoading || mfaCode.length !== 6}
-              className="w-full btn-primary py-3 text-base disabled:opacity-60"
-            >
-              {mfaLoading ? 'Verifying…' : 'Verify & Sign In'}
+            <input
+              ref={otpInputRef}
+              type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+              className="input text-center text-2xl tracking-[0.5em] font-mono"
+              placeholder="000000"
+              value={mfaCode}
+              onChange={e => { setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+            />
+            <button type="submit" disabled={loading || mfaCode.length !== 6}
+              className="w-full btn-primary py-3 text-base disabled:opacity-60">
+              {loading ? 'Verifying…' : 'Verify & Sign In'}
             </button>
           </form>
-          <button
-            onClick={() => {
-              setView('login')
-              setError('')
-              setMfaCode('')
-              supabase.auth.signOut()
-            }}
-            className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to login
+          <button onClick={() => { setView('email'); setError(''); supabase.auth.signOut() }}
+            className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1">
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
+          <p className="text-xs text-gray-400 text-center mt-3">
+            MFA not working? Contact your admin to reset it from Settings → User Management.
+          </p>
         </div>
       </LoginBackground>
     )
   }
 
-  // ══ MFA ENROLL screen ═════════════════════════════════════════
-  if (view === 'mfa-enroll') {
-    return (
-      <LoginBackground>
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-            <QrCode className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-white">Set Up Two-Factor Auth</h1>
-          <p className="text-blue-200 text-sm mt-1">Recommended for admin accounts</p>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          {enrollDone ? (
-            <div className="text-center py-6">
-              <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto mb-3" />
-              <h2 className="text-xl font-bold text-gray-900 mb-1">MFA Enabled!</h2>
-              <p className="text-gray-500 text-sm">Redirecting to dashboard…</p>
-            </div>
-          ) : (
-            <>
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {error}
-                </div>
-              )}
-
-              {enrollment ? (
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800 mb-1">Step 1 — Scan this QR code</p>
-                    <p className="text-xs text-gray-500 mb-3">Use Google Authenticator, Authy, or any TOTP app.</p>
-                    <div className="flex justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={enrollment.totp.qr_code}
-                        alt="MFA QR Code"
-                        className="border-4 border-white shadow-lg rounded-lg w-44 h-44"
-                      />
-                    </div>
-                    <details className="mt-3">
-                      <summary className="text-xs text-blue-600 cursor-pointer">
-                        Can&apos;t scan? Enter code manually
-                      </summary>
-                      <p className="text-xs font-mono bg-gray-100 rounded p-2 mt-1 break-all select-all">
-                        {enrollment.totp.secret}
-                      </p>
-                    </details>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800 mb-1">Step 2 — Enter the 6-digit code</p>
-                    <form onSubmit={handleEnrollVerify} className="space-y-3">
-                      <input
-                        ref={otpRef}
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={6}
-                        autoComplete="one-time-code"
-                        className="input text-center text-2xl tracking-[0.5em] font-mono"
-                        placeholder="000000"
-                        value={enrollCode}
-                        onChange={e => setEnrollCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        required
-                      />
-                      <button
-                        type="submit"
-                        disabled={enrollLoading || enrollCode.length !== 6}
-                        className="w-full btn-primary py-3 disabled:opacity-60"
-                      >
-                        {enrollLoading ? 'Verifying…' : 'Confirm & Enable MFA'}
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-
-              <button
-                onClick={skipMFAEnroll}
-                className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 text-center"
-              >
-                Skip for now
-              </button>
-            </>
-          )}
-        </div>
-      </LoginBackground>
-    )
-  }
-
-  // ══ FIRST-TIME SETUP screen ═══════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // FIRST-TIME SETUP
+  // ══════════════════════════════════════════════════════════════
   if (view === 'setup') {
     return (
       <LoginBackground>
@@ -31910,7 +34907,7 @@ export default function LoginPage() {
             <Shield className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">Welcome to {BRAND.name}</h1>
-          <p className="text-blue-200 text-sm mt-1">First-time setup — create your admin account</p>
+          <p className="text-blue-200 text-sm mt-1">First-time setup — create your admin profile</p>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           {setupDone ? (
@@ -31921,34 +34918,18 @@ export default function LoginPage() {
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Set Up Admin Account</h2>
               <p className="text-sm text-gray-500 mb-6">
-                You&apos;re the first user. You&apos;ll be set up as <strong>Admin</strong> with full access.
-                Invite doctors and staff later from Settings.
+                You're the first user. You'll be set up as <strong>Admin</strong> with full access.
+                Add doctors and staff later from Settings.
               </p>
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {error}
-                </div>
-              )}
+              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
               <form onSubmit={handleSetup} className="space-y-4">
                 <div>
                   <label className="label">Your Full Name</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="Dr. Patel"
-                    value={setupName}
-                    onChange={e => setSetupName(e.target.value)}
-                    autoFocus
-                    required
-                  />
+                  <input type="text" className="input" placeholder="Dr. Patel"
+                    value={setupName} onChange={e => setSetupName(e.target.value)} autoFocus required />
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full btn-primary py-3 text-base disabled:opacity-60"
-                >
+                <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
                   {loading ? 'Setting up…' : 'Create Admin Account'}
                 </button>
               </form>
@@ -31959,7 +34940,9 @@ export default function LoginPage() {
     )
   }
 
-  // ══ FORGOT PASSWORD screen ════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // FORGOT PASSWORD
+  // ══════════════════════════════════════════════════════════════
   if (view === 'forgot') {
     return (
       <LoginBackground>
@@ -31970,44 +34953,21 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-white">{BRAND.name}</h1>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <button
-            onClick={() => { setView('login'); setError(''); setSuccess('') }}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to login
+          <button onClick={() => { setView('password'); setError(''); setSuccess('') }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+            <ArrowLeft className="w-4 h-4" /> Back to password login
           </button>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Enter your email and we&apos;ll send a reset link.
-          </p>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {success}
-            </div>
-          )}
+          <p className="text-sm text-gray-500 mb-6">We'll send a reset link to your email.</p>
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <div>
               <label className="label">Email Address</label>
-              <input
-                type="email"
-                className="input"
-                placeholder="doctor@hospital.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                autoFocus
-                required
-              />
+              <input type="email" className="input" placeholder="you@clinic.com"
+                value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary py-3 text-base disabled:opacity-60"
-            >
+            <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
               {loading ? 'Sending…' : 'Send Reset Link'}
             </button>
           </form>
@@ -32016,7 +34976,139 @@ export default function LoginPage() {
     )
   }
 
-  // ══ MAIN LOGIN screen ═════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // PASSWORD LOGIN (FALLBACK)
+  // ══════════════════════════════════════════════════════════════
+  if (view === 'password') {
+    return (
+      <LoginBackground>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+            <Activity className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">{BRAND.name}</h1>
+          <p className="text-blue-200 text-sm mt-1">Sign in with password</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <button onClick={() => { setView('email'); setError('') }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+            <ArrowLeft className="w-4 h-4" /> Back to email login
+          </button>
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          <form onSubmit={handlePasswordLogin} className="space-y-4">
+            <div>
+              <label className="label">Email</label>
+              <input type="email" className="input" placeholder="you@clinic.com"
+                value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoFocus required />
+            </div>
+            <div>
+              <label className="label">Password</label>
+              <div className="relative">
+                <input type={showPwd ? 'text' : 'password'} className="input pr-10" placeholder="••••••••"
+                  value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required />
+                <button type="button" onClick={() => setShowPwd(p => !p)} tabIndex={-1}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
+                className="text-xs text-blue-500 hover:text-blue-700 hover:underline">
+                Forgot password?
+              </button>
+            </div>
+            <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-base disabled:opacity-60">
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+        </div>
+      </LoginBackground>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // OTP VERIFICATION SCREEN
+  // ══════════════════════════════════════════════════════════════
+  if (view === 'otp') {
+    return (
+      <LoginBackground>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+            <Mail className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-white">Check Your Email</h1>
+          <p className="text-blue-200 text-sm mt-1">We sent a 6-digit code to <strong>{email}</strong></p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
+
+          <form onSubmit={handleVerifyOTP} className="space-y-5">
+            <div>
+              <label className="label">Enter 6-digit code</label>
+              <input
+                ref={otpInputRef}
+                type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                className="input text-center text-3xl tracking-[0.6em] font-mono py-4"
+                placeholder="______"
+                value={otpCode}
+                onChange={e => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+                autoFocus
+              />
+              <p className="text-xs text-gray-400 mt-2 text-center">
+                Can't find it? Check your spam/junk folder. The email comes from <strong>noreply@mail.app.supabase.io</strong>
+              </p>
+            </div>
+
+            <button type="submit" disabled={loading || otpCode.length !== 6}
+              className="w-full btn-primary py-3.5 text-base disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              {loading ? 'Verifying…' : 'Verify & Sign In'}
+            </button>
+          </form>
+
+          {/* Resend */}
+          <div className="mt-5 text-center">
+            {resendCooldown > 0 ? (
+              <p className="text-xs text-gray-400">Resend available in {resendCooldown}s</p>
+            ) : (
+              <button onClick={() => { setError(''); setSuccess(''); handleSendOTP() }}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline">
+                Resend code
+              </button>
+            )}
+          </div>
+
+          {/* Back / change email */}
+          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+            <button onClick={() => { setView('email'); setError(''); setSuccess(''); setOtpCode('') }}
+              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              <ArrowLeft className="w-3 h-3" /> Change email
+            </button>
+            <p className="text-xs text-gray-400">
+              Or click the <strong>Login</strong> button in the email
+            </p>
+          </div>
+
+          {/* Troubleshooting help */}
+          <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            <p className="text-xs text-blue-700 font-medium mb-1">Not receiving the email?</p>
+            <ul className="text-xs text-blue-600 space-y-0.5 list-disc list-inside">
+              <li>Check spam/junk folder</li>
+              <li>Email sender: <strong>noreply@mail.app.supabase.io</strong></li>
+              <li>Wait 60 seconds before requesting a new code</li>
+              <li>Try <button onClick={() => { setView('password'); setError(''); setSuccess('') }} className="text-blue-700 underline font-medium">password login</button> as alternative</li>
+            </ul>
+          </div>
+        </div>
+      </LoginBackground>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PRIMARY SCREEN — EMAIL ENTRY (OTP-FIRST)
+  // ══════════════════════════════════════════════════════════════
   return (
     <LoginBackground>
       <div className="text-center mb-8">
@@ -32028,81 +35120,54 @@ export default function LoginPage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign in to your account</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in to your account</h2>
+        <p className="text-sm text-gray-500 mb-6">
+          We'll email you a login code — no password needed.
+        </p>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-            {error}
-          </div>
-        )}
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleSendOTP} className="space-y-4">
           <div>
             <label className="label">Email Address</label>
             <input
               type="email"
               className="input"
-              placeholder="doctor@hospital.com"
+              placeholder="doctor@clinic.com"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); setError('') }}
               autoComplete="email"
               autoFocus
               required
             />
           </div>
-          <div>
-            <label className="label">Password</label>
-            <div className="relative">
-              <input
-                type={showPwd ? 'text' : 'password'}
-                className="input pr-10"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPwd(p => !p)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                tabIndex={-1}
-              >
-                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
 
-          <div className="flex justify-end">
-            <span className="text-xs text-gray-400">
-              Forgot password? Contact your clinic admin to reset it.
-            </span>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full btn-primary py-3 text-base disabled:opacity-60"
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
+          <button type="submit" disabled={loading || !email.includes('@')}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl
+                       text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200">
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Mail className="w-5 h-5" />
+            )}
+            {loading ? 'Sending…' : 'Send Login Code'}
           </button>
         </form>
+
+        {/* Secondary: password login */}
+        <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+          <button onClick={() => { setView('password'); setError('') }}
+            className="text-sm text-gray-500 hover:text-gray-700 hover:underline">
+            Sign in with password instead
+          </button>
+        </div>
 
         <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-gray-400">
           <Shield className="w-3.5 h-3.5 text-green-500" />
           <span>Secured with end-to-end encryption</span>
         </div>
-
-        {/* Demo — dev only */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-5 pt-5 border-t border-gray-100">
-            <p className="text-xs text-gray-500 text-center mb-3">Dev mode only</p>
-            <button onClick={fillDemo} className="w-full btn-secondary text-xs py-2">
-              Fill Demo Credentials
-            </button>
-          </div>
-        )}
       </div>
+
       <p className="text-center text-blue-300 text-xs mt-6">{BRAND.copyright}</p>
     </LoginBackground>
   )
@@ -39360,6 +42425,24 @@ export default function NewPatientPage() {
     // Clear draft after successful registration
     clearDraft()
     generatePayLink(data.id, data.full_name, form.mobile.trim())
+
+    // ── Auto-sync insurance: if patient has mediclaim/cashless, create claim entry ──
+    if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
+      try {
+        await fetch('/api/insurance/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: data.id,
+            trigger: 'registration',
+            claim_amount: 0,  // Will be updated when bill is generated
+            diagnosis: null,
+          }),
+        })
+      } catch {
+        // Non-fatal: insurance sync failure should not block registration
+      }
+    }
   }
 
   // ── Helper: input class ────────────────────────────────────────
@@ -42703,6 +45786,62 @@ export default function PortalVerifyPage() {
 
 ```
 
+# src\app\prescriptions\new\page.tsx
+
+```tsx
+'use client'
+/**
+ * /prescriptions/new — Redirects to OPD page.
+ * Prescriptions in NexMedicon are always created from an OPD encounter.
+ * Flow: OPD → Select Patient → Start Encounter → Write Prescription
+ */
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function PrescriptionNewRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/opd')
+  }, [router])
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+```
+
+# src\app\prescriptions\page.tsx
+
+```tsx
+'use client'
+/**
+ * /prescriptions — Redirects to OPD page.
+ * In this clinic workflow, prescriptions are accessed through patient encounters (OPD).
+ * To view a patient's prescription: OPD → Patient → Prescription tab
+ */
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function PrescriptionsRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/opd')
+  }, [router])
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-gray-500">Redirecting to OPD...</p>
+        <p className="text-xs text-gray-400 mt-1">Prescriptions are created from patient encounters</p>
+      </div>
+    </div>
+  )
+}
+```
+
 # src\app\queue\display\page.tsx
 
 ```tsx
@@ -42714,16 +45853,16 @@ export default function PortalVerifyPage() {
  * No login required
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { todayIST } from '@/lib/business-logic'
 
 export default function QueueDisplayPage() {
-  const [current,   setCurrent]   = useState<{ queuenumber: number; patientname: string } | null>(null)
-  const [nextUp,    setNextUp]    = useState<{ queuenumber: number }[]>([])
-  const [waiting,   setWaiting]   = useState(0)
+  const [current, setCurrent] = useState<{ token_number: number; patient_id: string } | null>(null)
+  const [nextUp, setNextUp] = useState<{ token_number: number }[]>([])
+  const [waiting, setWaiting] = useState(0)
   const [lastToken, setLastToken] = useState<number | null>(null)
-  const [time,      setTime]      = useState('')
+  const [time, setTime] = useState('')
 
   // Clock update
   useEffect(() => {
@@ -42735,46 +45874,50 @@ export default function QueueDisplayPage() {
     return () => clearInterval(t)
   }, [])
 
-  async function loadQueue() {
+  const loadQueue = useCallback(async () => {
     const today = todayIST()
     const { data } = await supabase
-      .from('opdqueue')
-      .select('id, queuenumber, patientname, status')
-      .eq('date', today)                  // opdqueue.date — stays as 'date'
+      .from('opd_queue')
+      .select('id, token_number, patient_id, status')
+      .eq('queue_date', today)
       .neq('status', 'done')
       .neq('status', 'cancelled')
-      .order('queuenumber')
+      .order('token_number')
 
     if (!data) return
 
     const serving = data.filter(q => q.status === 'serving')
-    const waiting = data.filter(q => q.status === 'waiting')
+    const waitingList = data.filter(q => q.status === 'waiting')
 
-    setWaiting(waiting.length)
-    setNextUp(waiting.slice(0, 3))
+    setWaiting(waitingList.length)
+    
+    // Map data structure to align with types
+    setNextUp(waitingList.slice(0, 3).map(q => ({ token_number: q.token_number })))
 
     const curr = serving[0] || null
-    if (curr && curr.queuenumber !== lastToken) {
-      setLastToken(curr.queuenumber)
-      setCurrent(curr)
+    if (curr && curr.token_number !== lastToken) {
+      setLastToken(curr.token_number)
+      setCurrent({ token_number: curr.token_number, patient_id: curr.patient_id })
+      
       // Announce via text-to-speech
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         const u = new SpeechSynthesisUtterance(
-          `Token number ${curr.queuenumber}. Please proceed to the consultation room.`
+          `Token number ${curr.token_number}. Please proceed to the consultation room.`
         )
-        u.lang = 'en-IN'; u.rate = 0.9
+        u.lang = 'en-IN'
+        u.rate = 0.9
         window.speechSynthesis.speak(u)
       }
     } else if (!curr) {
       setCurrent(null)
     }
-  }
+  }, [lastToken])
 
   useEffect(() => {
     loadQueue()
     const interval = setInterval(loadQueue, 15000)
     return () => clearInterval(interval)
-  }, [])
+  }, [loadQueue])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900
@@ -42794,7 +45937,7 @@ export default function QueueDisplayPage() {
               className="text-[160px] font-black text-white leading-none mb-3"
               style={{ textShadow: '0 0 40px rgba(99,179,237,0.4)' }}
             >
-              {current.queuenumber}
+              {current.token_number}
             </div>
             <div className="text-2xl text-blue-200 font-light">
               Please proceed to the Consultation Room
@@ -42814,12 +45957,12 @@ export default function QueueDisplayPage() {
           <div className="flex gap-6 justify-center">
             {nextUp.map((q, i) => (
               <div
-                key={q.queuenumber}
+                key={q.token_number || i}
                 className="w-24 h-24 rounded-2xl border-2 border-blue-600
                            bg-blue-800/50 flex items-center justify-center"
                 style={{ opacity: 1 - i * 0.25 }}
               >
-                <span className="text-4xl font-black text-blue-200">{q.queuenumber}</span>
+                <span className="text-4xl font-black text-blue-200">{q.token_number}</span>
               </div>
             ))}
           </div>
@@ -43487,7 +46630,7 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   post_delivery:  { icon: Baby,          color: 'text-purple-600', label: 'Post-Delivery'       },
   vaccination:    { icon: Syringe,       color: 'text-green-600',  label: 'Vaccination'         },
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
-  ot_surgery:     { icon: Calendar,      color: 'text-purple-600', label: 'OT Surgery'          },
+  ot_surgery:     { icon: Calendar,      color: 'text-red-600',    label: 'OT Surgery'          },
 }
 
 const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [
@@ -43499,6 +46642,7 @@ const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; em
   { key: 'high_risk_anc', label: 'High-Risk ANC',  emoji: '🚨' },
   { key: 'post_delivery', label: 'Post-Delivery',  emoji: '👶' },
   { key: 'vaccination',   label: 'Vaccination',    emoji: '💉' },
+  { key: 'ot_surgery',    label: 'OT Surgery',     emoji: '🔪' },
   { key: 'pending_bill',  label: 'Pending Bills',  emoji: '💳' },
 ]
 
@@ -43540,6 +46684,9 @@ function buildWAMessage(r: ReminderItem, hs: any): string {
 
     case 'pending_bill':
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a gentle reminder that your *payment of ₹${c.billAmount?.toLocaleString('en-IN') || '—'}* is pending.\n\nPlease visit the hospital billing counter or contact us to complete the payment.\n\n📍 *Address:* ${a}\n📞 *Contact:* ${p}\n\n---\nઆપની ₹${c.billAmount?.toLocaleString('en-IN') || '—'} ની ચૂકવણી બાકી છે.\n\n_${h}_`
+
+    case 'ot_surgery':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your *upcoming surgery*.\n\n🔪 *Surgery:* ${c.apptType?.replace('OT: ', '') || 'Scheduled Surgery'}\n📅 *Date:* ${fmtDate(c.apptDate)}\n🕐 *Time:* ${c.apptTime || '—'}\n\n*Pre-operative instructions:*\n• ❌ Nothing to eat or drink after midnight (NPO)\n• ✅ Arrive 2 hours before scheduled time\n• ✅ Bring all previous reports & blood work\n• ✅ Wear loose, comfortable clothing\n• ✅ Bring one attendant\n• ❌ Remove jewellery, nail polish\n• ❌ Do NOT take blood thinners (unless instructed)\n\n📍 *Address:* ${a}\n📞 *For queries:* ${p}\n\n---\nઓપરેશન માટે ખાલી પેટે, ૨ કલાક પહેલાં, રિપોર્ટ્સ સાથે આવો.\n\n_${h} — Caring for you_`
 
     default:
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder from ${h}. Please contact us for details.\n\n📞 ${p}\n\n_${h}_`
@@ -43644,12 +46791,16 @@ export default function RemindersPage() {
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
   // FIX: Improved today_only filter — match by date OR priority (today/urgent)
+  // FIX: ot_surgery filter matches items whose title contains "OT Surgery"
   const filtered = (() => {
     if (filter === 'all') return reminders
     if (filter === 'today_only') return reminders.filter(r =>
       r.priority === 'today' || r.priority === 'urgent' ||
       r.dueDate === todayIST ||
       r.context?.apptDate === todayIST
+    )
+    if (filter === 'ot_surgery') return reminders.filter(r =>
+      r.type === 'ot_surgery' || r.title?.toLowerCase().includes('ot surgery')
     )
     return reminders.filter(r => r.type === (filter as ReminderType))
   })()
@@ -43673,6 +46824,10 @@ export default function RemindersPage() {
             r.priority === 'today' || r.priority === 'urgent' ||
             r.dueDate === todayIST ||
             r.context?.apptDate === todayIST
+          ).length
+        : t.key === 'ot_surgery'
+        ? reminders.filter(r =>
+            r.type === 'ot_surgery' || r.title?.toLowerCase().includes('ot surgery')
           ).length
         : reminders.filter(r => r.type === t.key).length,
     ])
@@ -48173,6 +51328,568 @@ function BulkDataDownloadSection() {
 }
 ```
 
+# src\app\settings\users\page.tsx‎
+
+```tsx‎
+'use client'
+/**
+ * src/app/settings/users/page.tsx
+ *
+ * Admin-only User Management Page
+ * - Create new admin/doctor/staff credentials
+ * - Deactivate (soft-delete) existing users
+ * - Reset passwords
+ * - View all clinic users
+ *
+ * Only users with role='admin' can access this page.
+ */
+
+import { useEffect, useState, useCallback } from 'react'
+import AppShell from '@/components/layout/AppShell'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
+import {
+  Users, UserPlus, Shield, Trash2, CheckCircle, X,
+  AlertCircle, Loader2, Copy, RefreshCw, Lock, Eye, EyeOff,
+  Stethoscope, User, Settings, Mail,
+} from 'lucide-react'
+
+interface ClinicUserRow {
+  id: string
+  auth_id: string
+  email: string
+  full_name: string
+  role: 'admin' | 'doctor' | 'staff'
+  is_active: boolean
+  phone?: string
+  specialty?: string
+  med_reg_no?: string
+  mfa_enabled?: boolean
+  created_at?: string
+}
+
+const ROLE_CONFIG = {
+  admin:  { label: 'Admin',  icon: Shield,       color: 'bg-red-100 text-red-700 border-red-200' },
+  doctor: { label: 'Doctor', icon: Stethoscope,  color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  staff:  { label: 'Staff',  icon: User,         color: 'bg-green-100 text-green-700 border-green-200' },
+}
+
+export default function UserManagementPage() {
+  const { user, isAdmin } = useAuth()
+  const [users, setUsers] = useState<ClinicUserRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showInvite, setShowInvite] = useState(false)
+  const [showDeactivated, setShowDeactivated] = useState(false)
+
+  // Invite form
+  const [inviteForm, setInviteForm] = useState({
+    full_name: '',
+    email: '',
+    role: 'staff' as 'admin' | 'doctor' | 'staff',
+    phone: '',
+    specialty: '',
+    med_reg_no: '',
+  })
+  const [inviting, setInviting] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{
+    success?: boolean
+    tempPassword?: string
+    message?: string
+    error?: string
+  } | null>(null)
+
+  // Actions
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/users')
+      if (res.ok) {
+        const data = await res.json()
+        setUsers(data.users || [])
+      }
+    } catch (e) {
+      console.error('[UserMgmt] Load error:', e)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadUsers() }, [loadUsers])
+
+  // ── Invite new user ─────────────────────────────────────────
+  async function handleInvite() {
+    if (!inviteForm.full_name.trim() || !inviteForm.email.trim()) {
+      setInviteResult({ error: 'Name and email are required.' })
+      return
+    }
+    setInviting(true)
+    setInviteResult(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users/invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({
+          full_name: inviteForm.full_name.trim(),
+          email: inviteForm.email.trim().toLowerCase(),
+          role: inviteForm.role,
+          phone: inviteForm.phone.trim() || undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setInviteResult({
+          success: true,
+          tempPassword: data.tempPassword,
+          message: data.message,
+        })
+        // Reset form
+        setInviteForm({ full_name: '', email: '', role: 'staff', phone: '', specialty: '', med_reg_no: '' })
+        await loadUsers()
+      } else {
+        setInviteResult({ error: data.error || 'Failed to create user.' })
+      }
+    } catch (e: any) {
+      setInviteResult({ error: e.message || 'Network error' })
+    }
+    setInviting(false)
+  }
+
+  // ── Deactivate user ─────────────────────────────────────────
+  async function handleDeactivate(userId: string, userName: string) {
+    if (!confirm(`Are you sure you want to deactivate "${userName}"?\n\nThey will not be able to log in. You can reactivate later.`)) return
+
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, is_active: false }),
+      })
+      if (res.ok) await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Deactivate error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Reactivate user ─────────────────────────────────────────
+  async function handleReactivate(userId: string) {
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, is_active: true }),
+      })
+      if (res.ok) await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Reactivate error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Change role ─────────────────────────────────────────────
+  async function handleChangeRole(userId: string, newRole: string) {
+    setActionLoading(userId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: userId, role: newRole }),
+      })
+      await loadUsers()
+    } catch (e) {
+      console.error('[UserMgmt] Role change error:', e)
+    }
+    setActionLoading(null)
+  }
+
+  // ── Guard: admin-only ───────────────────────────────────────
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto text-center py-20">
+          <Shield className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Admin Access Required</h1>
+          <p className="text-gray-500">Only administrators can manage user accounts.</p>
+        </div>
+      </AppShell>
+    )
+  }
+
+  const activeUsers = users.filter(u => u.is_active)
+  const deactivatedUsers = users.filter(u => !u.is_active)
+
+  return (
+    <AppShell>
+      <div className="p-6 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-6 h-6 text-blue-600" /> User Management
+            </h1>
+            <p className="text-sm text-gray-500">
+              Create, manage, and deactivate admin, doctor, and staff accounts.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={loadUsers}
+              className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200">
+              <RefreshCw className="w-4 h-4 text-gray-600" />
+            </button>
+            <button onClick={() => { setShowInvite(true); setInviteResult(null) }}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                         px-4 py-2 rounded-xl font-semibold text-sm">
+              <UserPlus className="w-4 h-4" /> Create User
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="card p-4 text-center">
+            <div className="text-2xl font-bold text-gray-900">{activeUsers.length}</div>
+            <div className="text-xs text-gray-500">Total Active</div>
+          </div>
+          <div className="card p-4 text-center bg-red-50">
+            <div className="text-2xl font-bold text-red-700">
+              {activeUsers.filter(u => u.role === 'admin').length}
+            </div>
+            <div className="text-xs text-gray-500">Admins</div>
+          </div>
+          <div className="card p-4 text-center bg-blue-50">
+            <div className="text-2xl font-bold text-blue-700">
+              {activeUsers.filter(u => u.role === 'doctor').length}
+            </div>
+            <div className="text-xs text-gray-500">Doctors</div>
+          </div>
+          <div className="card p-4 text-center bg-green-50">
+            <div className="text-2xl font-bold text-green-700">
+              {activeUsers.filter(u => u.role === 'staff').length}
+            </div>
+            <div className="text-xs text-gray-500">Staff</div>
+          </div>
+        </div>
+
+        {/* Active Users Table */}
+        <div className="card overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Active Users</h2>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+            </div>
+          ) : activeUsers.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <p>No users found. Create your first user above.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Name</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Email</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Role</th>
+                  <th className="text-left px-5 py-2.5 font-semibold text-gray-500">MFA</th>
+                  <th className="text-right px-5 py-2.5 font-semibold text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeUsers.map(u => {
+                  const cfg = ROLE_CONFIG[u.role]
+                  const Icon = cfg.icon
+                  const isCurrentUser = u.auth_id === user?.auth_id
+                  return (
+                    <tr key={u.id} className="border-t border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${cfg.color}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">{u.full_name}</div>
+                            {u.phone && <div className="text-xs text-gray-400">{u.phone}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 font-mono text-xs">{u.email}</td>
+                      <td className="px-5 py-3">
+                        <select
+                          value={u.role}
+                          onChange={e => handleChangeRole(u.id, e.target.value)}
+                          disabled={isCurrentUser || actionLoading === u.id}
+                          className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.color}
+                            ${isCurrentUser ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="doctor">Doctor</option>
+                          <option value="staff">Staff</option>
+                        </select>
+                      </td>
+                      <td className="px-5 py-3">
+                        {u.mfa_enabled ? (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                            Enabled
+                          </span>
+                        ) : (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                            Off
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {isCurrentUser ? (
+                          <span className="text-xs text-gray-400 italic">You</span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeactivate(u.id, u.full_name)}
+                            disabled={actionLoading === u.id}
+                            className="text-xs text-red-600 hover:text-red-700 font-semibold
+                                       flex items-center gap-1 ml-auto disabled:opacity-50"
+                          >
+                            {actionLoading === u.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            Deactivate
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Deactivated Users */}
+        {deactivatedUsers.length > 0 && (
+          <div className="card overflow-hidden mb-6">
+            <button
+              onClick={() => setShowDeactivated(d => !d)}
+              className="w-full px-5 py-3 border-b border-gray-100 flex items-center justify-between
+                         hover:bg-gray-50 transition-colors"
+            >
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                Deactivated Users ({deactivatedUsers.length})
+              </h2>
+              <span className="text-xs text-gray-400">
+                {showDeactivated ? 'Hide' : 'Show'}
+              </span>
+            </button>
+
+            {showDeactivated && (
+              <table className="w-full text-sm">
+                <tbody>
+                  {deactivatedUsers.map(u => (
+                    <tr key={u.id} className="border-t border-gray-50 opacity-60 hover:opacity-100">
+                      <td className="px-5 py-3">
+                        <span className="font-medium text-gray-700">{u.full_name}</span>
+                        <span className="text-xs text-gray-400 ml-2">{u.email}</span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                          {u.role} (inactive)
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          onClick={() => handleReactivate(u.id)}
+                          disabled={actionLoading === u.id}
+                          className="text-xs text-green-600 hover:text-green-700 font-semibold
+                                     flex items-center gap-1 ml-auto disabled:opacity-50"
+                        >
+                          <CheckCircle className="w-3 h-3" /> Reactivate
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* How-to info */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+          <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> How Login Works (OTP-First)
+          </h3>
+          <ul className="text-xs text-blue-700 space-y-1.5 list-disc list-inside">
+            <li><strong>Create User:</strong> Enter name, email, and role. That's it — no password needed!</li>
+            <li><strong>User Login:</strong> They enter their email → receive a 6-digit code → type it → done.</li>
+            <li><strong>No Passwords:</strong> Users never need to remember or share passwords. Email OTP is the primary method.</li>
+            <li><strong>Password Fallback:</strong> If needed, check "Generate password" during creation for offline scenarios.</li>
+            <li><strong>Deactivate:</strong> Disables login without deleting data. Their encounters/bills remain intact.</li>
+            <li><strong>Reactivate:</strong> Re-enables login for a previously deactivated user.</li>
+            <li><strong>Self-Recovery:</strong> Users can always login via email OTP — no admin needed for password resets.</li>
+            <li><strong>MFA (Optional):</strong> Users can optionally enable TOTP from Settings for extra security.</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* ── Create User Modal ────────────────────────────────── */}
+      {showInvite && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowInvite(false) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-blue-600" /> Create New User
+              </h3>
+              <button onClick={() => setShowInvite(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {inviteResult?.error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {inviteResult.error}
+              </div>
+            )}
+
+            {inviteResult?.success ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-bold text-green-800">User Created Successfully!</span>
+                  </div>
+                  <p className="text-sm text-green-700 mb-3">{inviteResult.message}</p>
+                </div>
+
+                {inviteResult.tempPassword ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Lock className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-bold text-amber-800">Temporary Password (optional fallback)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2
+                                       font-mono text-lg font-bold text-gray-900 text-center">
+                        {inviteResult.tempPassword}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(inviteResult.tempPassword || '')
+                          alert('Password copied to clipboard!')
+                        }}
+                        className="p-2 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                      >
+                        <Copy className="w-4 h-4 text-amber-700" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-600 mt-2">
+                      This is only needed if the user wants to use password login. They can also login via email OTP without any password.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Mail className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-bold text-blue-800">Login via Email OTP</span>
+                    </div>
+                    <p className="text-sm text-blue-700">
+                      The user can now login immediately by entering their email on the login page.
+                      A 6-digit code will be sent to their email — no password needed!
+                    </p>
+                  </div>
+                )}
+
+                <button onClick={() => { setInviteResult(null); setShowInvite(false) }}
+                  className="w-full btn-primary">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Full Name <span className="text-red-500">*</span></label>
+                  <input className="input" placeholder="e.g. Dr. Priya Sharma"
+                    value={inviteForm.full_name}
+                    onChange={e => setInviteForm(f => ({ ...f, full_name: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Email <span className="text-red-500">*</span></label>
+                  <input className="input" type="email" placeholder="user@clinic.com"
+                    value={inviteForm.email}
+                    onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))} />
+                  <p className="text-xs text-gray-400 mt-1">Used for login. Must be unique.</p>
+                </div>
+
+                <div>
+                  <label className="label">Role <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['admin', 'doctor', 'staff'] as const).map(role => {
+                      const cfg = ROLE_CONFIG[role]
+                      const Icon = cfg.icon
+                      return (
+                        <button key={role}
+                          onClick={() => setInviteForm(f => ({ ...f, role }))}
+                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all
+                            ${inviteForm.role === role
+                              ? `${cfg.color} border-current`
+                              : 'border-gray-200 hover:border-gray-300 bg-white'}`}
+                        >
+                          <Icon className="w-5 h-5" />
+                          <span className="text-xs font-bold">{cfg.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Phone (optional)</label>
+                  <input className="input" placeholder="9876543210"
+                    value={inviteForm.phone}
+                    onChange={e => setInviteForm(f => ({ ...f, phone: e.target.value }))} />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => setShowInvite(false)} className="btn-secondary flex-1">Cancel</button>
+                  <button onClick={handleInvite} disabled={inviting}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60">
+                    {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    {inviting ? 'Creating...' : 'Create User'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </AppShell>
+  )
+}
+```
+
 # src\app\setup\page.tsx
 
 ```tsx
@@ -51046,7 +54763,7 @@ type BedStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
 
 interface BedRecord {
   id: string
-  bednumber: string
+  bed_number: string
   ward: string | null
   type: string
   status: BedStatus
@@ -51077,7 +54794,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
       reservedfor: extra?.reservedfor ?? null,
       reservednote: extra?.reservednote ?? null,
       reservedat: newStatus === 'reserved' ? new Date().toISOString() : null,
-      updatedat: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }).eq('id', bed.id)
     setLoading(false)
     onUpdate()
@@ -51089,7 +54806,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
           <div>
-            <div className="font-bold text-base">Bed {bed.bednumber}</div>
+            <div className="font-bold text-base">Bed {bed.bed_number}</div>
             <div className="text-xs opacity-70">{bed.ward || 'General'} · {bed.type}</div>
           </div>
         </div>
@@ -51147,7 +54864,7 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
       {showReserveModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-3">
-            <div className="font-bold text-gray-900">Reserve Bed {bed.bednumber}</div>
+            <div className="font-bold text-gray-900">Reserve Bed {bed.bed_number}</div>
             <input className="input w-full" placeholder="Patient / Person name (required)"
               value={reserveName} onChange={e => setReserveName(e.target.value)} />
             <textarea className="input w-full resize-none" rows={2}
@@ -51167,6 +54884,760 @@ export default function BedCard({ bed, onUpdate }: { bed: BedRecord; onUpdate: (
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+# src\components\ipd\DischargeModal.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/ipd/DischargeModal.tsx
+ *
+ * Enhanced Discharge Modal — proper workflow:
+ *  1. Shows patient + admission details
+ *  2. Collects discharge info (condition, diagnosis, advice, follow-up)
+ *  3. Calls /api/ipd/discharge
+ *  4. Shows success notification with summary
+ *  5. Redirects to patient profile
+ *
+ * Replaces the simple "markDischarged" confirmation in IPD Census.
+ */
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  LogOut, X, CheckCircle, Loader2, AlertCircle,
+  Calendar, FileText, Heart, Pill, User, BedDouble,
+} from 'lucide-react'
+
+interface Admission {
+  id: string
+  patient_id: string
+  patient_name: string
+  mrn: string
+  mobile: string
+  bed_id: string
+  bed_number: string
+  ward: string
+  admission_date: string
+  admitting_doctor: string
+  diagnosis_on_admission: string
+  chief_complaint: string
+  insurance_details: string
+}
+
+interface DischargeModalProps {
+  admission: Admission
+  onClose: () => void
+  onDischarged: () => void
+  currentDoctor?: string
+}
+
+export default function DischargeModal({
+  admission,
+  onClose,
+  onDischarged,
+  currentDoctor = '',
+}: DischargeModalProps) {
+  const router = useRouter()
+  const [step, setStep] = useState<'form' | 'processing' | 'success' | 'error'>('form')
+  const [result, setResult] = useState<any>(null)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const [form, setForm] = useState({
+    discharge_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    discharge_time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }),
+    condition_at_discharge: 'Satisfactory',
+    final_diagnosis: admission.diagnosis_on_admission || '',
+    discharge_advice: '',
+    medications_at_discharge: '',
+    follow_up_date: '',
+    follow_up_note: '',
+    discharged_by: currentDoctor || admission.admitting_doctor || '',
+  })
+
+  function setField(key: string, value: string) {
+    setForm(prev => ({ ...prev, [key]: value }))
+  }
+
+  async function handleDischarge() {
+    if (!form.condition_at_discharge) {
+      setErrorMsg('Please select condition at discharge')
+      return
+    }
+
+    setStep('processing')
+    setErrorMsg('')
+
+    try {
+      const res = await fetch('/api/ipd/discharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admission_id: admission.id,
+          ...form,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setStep('error')
+        setErrorMsg(data.error || 'Discharge failed')
+        return
+      }
+
+      setResult(data)
+      setStep('success')
+      onDischarged()
+
+      // Auto-redirect to patient profile after 3 seconds
+      setTimeout(() => {
+        router.push(data.redirect || `/patients/${admission.patient_id}`)
+      }, 3000)
+    } catch (err: any) {
+      setStep('error')
+      setErrorMsg(err.message || 'Network error')
+    }
+  }
+
+  const daysSince = Math.floor(
+    (Date.now() - new Date(admission.admission_date).getTime()) / (1000 * 60 * 60 * 24)
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      onClick={e => { if (e.target === e.currentTarget && step === 'form') onClose() }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+
+        {/* ═══ FORM STEP ═══ */}
+        {step === 'form' && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-red-500" />
+                Discharge Patient
+              </h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Patient Summary */}
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <User className="w-5 h-5 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-gray-900">{admission.patient_name}</div>
+                  <div className="text-xs text-gray-500">
+                    {admission.mrn} · Bed {admission.bed_number} · {admission.ward}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    Admitted: {admission.admission_date} ({daysSince} days) · Dr. {admission.admitting_doctor}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {errorMsg && (
+              <div className="flex items-center gap-2 text-red-600 bg-red-50 rounded-xl p-3 text-sm mb-4">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {errorMsg}
+              </div>
+            )}
+
+            {/* Discharge Form */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Discharge Date</label>
+                  <input type="date" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                    value={form.discharge_date} onChange={e => setField('discharge_date', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Discharge Time</label>
+                  <input type="time" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                    value={form.discharge_time} onChange={e => setField('discharge_time', e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Condition at Discharge *</label>
+                <select className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                  value={form.condition_at_discharge} onChange={e => setField('condition_at_discharge', e.target.value)}>
+                  {['Satisfactory', 'Stable', 'Fair', 'Improving', 'Poor', 'Critical', 'Against Medical Advice (LAMA)'].map(c => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Final Diagnosis</label>
+                <input type="text" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                  placeholder="Final diagnosis at discharge"
+                  value={form.final_diagnosis} onChange={e => setField('final_diagnosis', e.target.value)} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Discharge Advice</label>
+                <textarea className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none" rows={3}
+                  placeholder="Diet, activity, wound care, warning signs, etc."
+                  value={form.discharge_advice} onChange={e => setField('discharge_advice', e.target.value)} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Medications at Discharge</label>
+                <textarea className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none" rows={2}
+                  placeholder="e.g. Tab Augmentin 625mg BD x 5d, Tab Zerodol-SP TDS x 3d"
+                  value={form.medications_at_discharge} onChange={e => setField('medications_at_discharge', e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Follow-up Date</label>
+                  <input type="date" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                    min={form.discharge_date}
+                    value={form.follow_up_date} onChange={e => setField('follow_up_date', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Follow-up Note</label>
+                  <input type="text" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                    placeholder="e.g. Suture removal"
+                    value={form.follow_up_note} onChange={e => setField('follow_up_note', e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Discharged By</label>
+                <input type="text" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+                  value={form.discharged_by} onChange={e => setField('discharged_by', e.target.value)} />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-6">
+              <button onClick={onClose} className="flex-1 py-2.5 px-4 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={handleDischarge}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm flex items-center justify-center gap-2">
+                <LogOut className="w-4 h-4" /> Confirm Discharge
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PROCESSING STEP ═══ */}
+        {step === 'processing' && (
+          <div className="p-8 text-center">
+            <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Processing Discharge...</h3>
+            <p className="text-sm text-gray-500">
+              Updating records, freeing bed, creating notifications...
+            </p>
+          </div>
+        )}
+
+        {/* ═══ SUCCESS STEP ═══ */}
+        {step === 'success' && result && (
+          <div className="p-8">
+            <div className="text-center mb-5">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-8 h-8 text-green-500" />
+              </div>
+              <h3 className="text-lg font-bold text-green-700 mb-2">Patient Discharged Successfully!</h3>
+              <p className="text-sm text-gray-600">{result.message}</p>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2 mb-5">
+              <div className="flex items-center gap-2 text-sm">
+                <BedDouble className="w-4 h-4 text-green-500" />
+                <span className="text-gray-700">Bed {admission.bed_number} marked for cleaning</span>
+              </div>
+              {result.notifications?.patient_whatsapp === 'queued' && (
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <span className="text-gray-700">WhatsApp notification queued for patient</span>
+                </div>
+              )}
+              {result.notifications?.follow_up_appointment === 'created' && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="w-4 h-4 text-green-500" />
+                  <span className="text-gray-700">Follow-up appointment created</span>
+                </div>
+              )}
+              {result.notifications?.insurance_reminder === 'scheduled_3_days' && (
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="w-4 h-4 text-green-500" />
+                  <span className="text-gray-700">Insurance document reminder scheduled (3 days)</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-400 text-center mb-4">
+              Redirecting to patient profile in 3 seconds...
+            </p>
+
+            <button
+              onClick={() => router.push(result.redirect || `/patients/${admission.patient_id}`)}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm flex items-center justify-center gap-2"
+            >
+              <User className="w-4 h-4" /> Go to Patient Profile Now
+            </button>
+          </div>
+        )}
+
+        {/* ═══ ERROR STEP ═══ */}
+        {step === 'error' && (
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-lg font-bold text-red-700 mb-2">Discharge Failed</h3>
+            <p className="text-sm text-gray-600 mb-5">{errorMsg}</p>
+            <div className="flex gap-3">
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm">
+                Close
+              </button>
+              <button onClick={() => setStep('form')}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm">
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+# src\components\ipd\IPDFileUpload.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/ipd/IPDFileUpload.tsx
+ *
+ * Photo & Document Upload Component for IPD Management
+ *
+ * Features:
+ *  - Camera capture (mobile) or file picker
+ *  - Drag-and-drop support
+ *  - Category selection (wound, report, xray, consent, prescription, nursing, general)
+ *  - AI data extraction toggle
+ *  - Preview uploaded files
+ *  - Shows AI-extracted data that can auto-fill nursing chart fields
+ *
+ * Used in:
+ *  - IPD Nursing Chart (src/app/ipd/page.tsx)
+ *  - Patient Profile attachment section
+ */
+
+import { useState, useCallback, useRef } from 'react'
+import {
+  Camera, Upload, FileText, Image, Trash2, Loader2,
+  Sparkles, CheckCircle, AlertCircle, X, Eye,
+  Stethoscope, ClipboardList, FileImage, Shield,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────
+
+interface UploadedFile {
+  id: string
+  file_name: string
+  file_type: string
+  file_size: number
+  file_url: string | null
+  file_data: string | null
+  category: string
+  description: string
+  ai_extracted_data: Record<string, any>
+  uploaded_by: string
+  uploaded_by_role: string
+  created_at: string
+}
+
+interface IPDFileUploadProps {
+  ipdAdmissionId: string
+  patientId: string
+  uploadedBy: string
+  uploadedByRole: 'doctor' | 'nurse' | 'staff'
+  onFileUploaded?: (file: UploadedFile, aiData: Record<string, any>) => void
+  existingFiles?: UploadedFile[]
+  onRefreshFiles?: () => void
+}
+
+const CATEGORIES = [
+  { value: 'wound',        label: 'Wound Photo',       icon: Camera,        color: 'text-red-600 bg-red-50' },
+  { value: 'report',       label: 'Lab/Test Report',   icon: FileText,      color: 'text-blue-600 bg-blue-50' },
+  { value: 'xray',         label: 'X-Ray / USG / CT',  icon: FileImage,     color: 'text-purple-600 bg-purple-50' },
+  { value: 'consent',      label: 'Consent Form',      icon: Shield,        color: 'text-green-600 bg-green-50' },
+  { value: 'prescription', label: 'Prescription',      icon: ClipboardList, color: 'text-orange-600 bg-orange-50' },
+  { value: 'nursing',      label: 'Nursing Document',  icon: Stethoscope,   color: 'text-pink-600 bg-pink-50' },
+  { value: 'general',      label: 'General',           icon: Image,         color: 'text-gray-600 bg-gray-50' },
+]
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export default function IPDFileUpload({
+  ipdAdmissionId,
+  patientId,
+  uploadedBy,
+  uploadedByRole,
+  onFileUploaded,
+  existingFiles = [],
+  onRefreshFiles,
+}: IPDFileUploadProps) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [category, setCategory] = useState('general')
+  const [description, setDescription] = useState('')
+  const [extractAI, setExtractAI] = useState(true)
+  const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null)
+  const [aiResult, setAiResult] = useState<Record<string, any> | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File too large (max 10 MB)')
+      return
+    }
+
+    setUploading(true)
+    setError('')
+    setSuccess('')
+    setProgress('Uploading...')
+    setAiResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('ipd_admission_id', ipdAdmissionId)
+      formData.append('patient_id', patientId)
+      formData.append('category', category)
+      formData.append('description', description)
+      formData.append('uploaded_by', uploadedBy)
+      formData.append('uploaded_by_role', uploadedByRole)
+      formData.append('extract_ai', extractAI ? 'true' : 'false')
+
+      if (extractAI) setProgress('Uploading + AI extraction (may take 10-15s)...')
+
+      const res = await fetch('/api/ipd/files', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Upload failed')
+        return
+      }
+
+      setSuccess(`File "${file.name}" uploaded successfully!`)
+      setDescription('')
+
+      if (data.ai_data && Object.keys(data.ai_data).length > 0) {
+        setAiResult(data.ai_data)
+      }
+
+      if (onFileUploaded) {
+        onFileUploaded(data.file, data.ai_data || {})
+      }
+      if (onRefreshFiles) {
+        onRefreshFiles()
+      }
+
+      setTimeout(() => setSuccess(''), 5000)
+    } catch (err: any) {
+      setError(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+      setProgress('')
+    }
+  }, [ipdAdmissionId, patientId, category, description, uploadedBy, uploadedByRole, extractAI, onFileUploaded, onRefreshFiles])
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleUpload(file)
+    e.target.value = '' // Reset so same file can be re-selected
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleUpload(file)
+  }
+
+  async function handleDelete(fileId: string) {
+    if (!confirm('Delete this file permanently?')) return
+    const res = await fetch(`/api/ipd/files?file_id=${fileId}`, { method: 'DELETE' })
+    if (res.ok && onRefreshFiles) onRefreshFiles()
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Upload Area */}
+      <div
+        className={`border-2 border-dashed rounded-2xl p-5 text-center transition-all ${
+          dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50 hover:border-blue-300'
+        }`}
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        <div className="flex items-center justify-center gap-4 mb-4">
+          {/* Camera button (mobile-friendly) */}
+          <button
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={uploading}
+            className="flex flex-col items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-semibold text-sm disabled:opacity-50 transition-colors"
+          >
+            <Camera className="w-5 h-5" />
+            Take Photo
+          </button>
+
+          {/* File picker button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex flex-col items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 rounded-xl font-semibold text-sm disabled:opacity-50 transition-colors"
+          >
+            <Upload className="w-5 h-5" />
+            Choose File
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-400">
+          or drag & drop a file here · Max 10 MB · JPG, PNG, PDF, HEIC supported
+        </p>
+
+        {/* Hidden inputs */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf,.doc,.docx"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+      </div>
+
+      {/* Category & Options */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">File Category</label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+          >
+            {CATEGORIES.map(c => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description (optional)</label>
+          <input
+            type="text"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g. Wound photo Day 3"
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+      </div>
+
+      {/* AI Extraction Toggle */}
+      <label className="flex items-center gap-3 cursor-pointer bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl px-4 py-3">
+        <input
+          type="checkbox"
+          checked={extractAI}
+          onChange={e => setExtractAI(e.target.checked)}
+          className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+        />
+        <Sparkles className="w-4 h-4 text-indigo-500" />
+        <div>
+          <span className="text-sm font-semibold text-indigo-700">AI Auto-Extraction</span>
+          <p className="text-xs text-indigo-500">Automatically extract data from photos/PDFs to fill nursing chart fields</p>
+        </div>
+      </label>
+
+      {/* Status messages */}
+      {uploading && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+          <span className="text-sm font-medium text-blue-700">{progress}</span>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertCircle className="w-4 h-4 text-red-500" />
+          <span className="text-sm text-red-700">{error}</span>
+          <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4 text-red-400" /></button>
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+          <CheckCircle className="w-4 h-4 text-green-500" />
+          <span className="text-sm text-green-700">{success}</span>
+        </div>
+      )}
+
+      {/* AI Extraction Results */}
+      {aiResult && Object.keys(aiResult).length > 0 && !aiResult._error && (
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-bold text-indigo-700">AI Extracted Data</span>
+            <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Auto-filled</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(aiResult)
+              .filter(([k]) => !k.startsWith('_'))
+              .map(([key, value]) => (
+                <div key={key} className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                  <div className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</div>
+                  <div className="text-sm font-medium text-gray-800 truncate">
+                    {typeof value === 'object' ? JSON.stringify(value).slice(0, 50) : String(value)}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Existing Files List */}
+      {existingFiles.length > 0 && (
+        <div>
+          <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-gray-400" />
+            Uploaded Files ({existingFiles.length})
+          </h4>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {existingFiles.map(f => {
+              const catCfg = CATEGORIES.find(c => c.value === f.category) || CATEGORIES[6]
+              const CatIcon = catCfg.icon
+              return (
+                <div key={f.id} className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2.5 hover:bg-gray-50">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${catCfg.color}`}>
+                    <CatIcon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-800 truncate">{f.file_name}</div>
+                    <div className="text-xs text-gray-400">
+                      {catCfg.label} · {formatFileSize(f.file_size || 0)} · {f.uploaded_by}
+                      {f.created_at && ` · ${new Date(f.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {/* Preview button */}
+                    {(f.file_url || f.file_data) && (
+                      <button
+                        onClick={() => setPreviewFile(f)}
+                        className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500"
+                        title="Preview"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    )}
+                    {/* AI badge */}
+                    {f.ai_extracted_data && Object.keys(f.ai_extracted_data).length > 0 && !f.ai_extracted_data._error && (
+                      <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-200">
+                        AI
+                      </span>
+                    )}
+                    {/* Delete button */}
+                    <button
+                      onClick={() => handleDelete(f.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* File Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={() => setPreviewFile(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-auto p-4"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-900">{previewFile.file_name}</h3>
+              <button onClick={() => setPreviewFile(null)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            {previewFile.file_type?.startsWith('image/') ? (
+              <img
+                src={previewFile.file_url || previewFile.file_data || ''}
+                alt={previewFile.file_name}
+                className="w-full rounded-xl"
+              />
+            ) : previewFile.file_type === 'application/pdf' && previewFile.file_url ? (
+              <iframe
+                src={previewFile.file_url}
+                className="w-full h-96 rounded-xl border"
+              />
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <FileText className="w-12 h-12 mx-auto mb-3" />
+                <p>Preview not available for this file type</p>
+                {previewFile.file_url && (
+                  <a href={previewFile.file_url} target="_blank" rel="noopener noreferrer"
+                    className="text-blue-600 underline text-sm mt-2 inline-block">
+                    Download File
+                  </a>
+                )}
+              </div>
+            )}
+            {/* Show AI data for this file */}
+            {previewFile.ai_extracted_data && Object.keys(previewFile.ai_extracted_data).length > 0 && !previewFile.ai_extracted_data._error && (
+              <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                <div className="text-xs font-bold text-indigo-700 mb-2 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> AI Extracted Data
+                </div>
+                <pre className="text-xs text-gray-700 whitespace-pre-wrap">
+                  {JSON.stringify(previewFile.ai_extracted_data, null, 2)}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -51216,6 +55687,7 @@ import ConnectionBanner from './ConnectionBanner'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
+import NotificationPanel from './NotificationPanel';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -51456,7 +55928,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Role badge with sign-out — clicking shows a small dropdown */}
           {effectiveUser && (
-            <div className="no-print fixed top-2 right-4 z-40 hidden md:block">
+            <div className="no-print fixed top-2 right-4 z-40 hidden md:flex items-center gap-2">
+              {/* Notification Bell */}
+              <NotificationPanel />
+
               <div className="relative group">
                 {/* Badge button */}
                 <button
@@ -51734,6 +56209,325 @@ export default function MobileNav() {
   )
 }
 
+```
+
+# src\components\layout\NotificationPanel.tsx
+
+```tsx
+'use client'
+/**
+ * src/components/layout/NotificationPanel.tsx
+ *
+ * Global Notification Panel — accessible from anywhere in the application.
+ *
+ * Shows real-time notifications for:
+ *  - Lab reports uploaded by lab partners
+ *  - Patient discharge events
+ *  - Insurance claim status changes
+ *  - Appointment confirmations/cancellations
+ *  - Billing alerts (pending bills, payments received)
+ *  - System alerts (abnormal lab values, overdue follow-ups)
+ *
+ * Integrated into AppShell header — visible as a bell icon with badge count.
+ * Uses polling (every 30s) + Supabase Realtime for instant updates.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
+import {
+  Bell, X, Check, CheckCheck, FlaskConical, BedDouble,
+  IndianRupee, Calendar, AlertTriangle, FileText,
+  Shield, Clock, ChevronRight, Loader2, RefreshCw,
+} from 'lucide-react'
+
+interface Notification {
+  id: string
+  title: string
+  message: string
+  type: string
+  severity: string
+  source: string | null
+  entity_type: string | null
+  entity_id: string | null
+  patient_id: string | null
+  patient_name: string | null
+  mrn: string | null
+  is_read: boolean
+  created_at: string
+  metadata: any
+}
+
+const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
+  lab_report:   { icon: FlaskConical,  color: 'text-purple-600', bg: 'bg-purple-50' },
+  discharge:    { icon: BedDouble,     color: 'text-red-600',    bg: 'bg-red-50' },
+  billing:      { icon: IndianRupee,   color: 'text-green-600',  bg: 'bg-green-50' },
+  appointment:  { icon: Calendar,      color: 'text-blue-600',   bg: 'bg-blue-50' },
+  insurance:    { icon: Shield,        color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  system:       { icon: AlertTriangle, color: 'text-amber-600',  bg: 'bg-amber-50' },
+  info:         { icon: FileText,      color: 'text-gray-600',   bg: 'bg-gray-50' },
+}
+
+function getTimeAgo(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffSec = Math.floor((now - then) / 1000)
+
+  if (diffSec < 60) return 'Just now'
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`
+  if (diffSec < 172800) return 'Yesterday'
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+export default function NotificationPanel() {
+  const { user } = useAuth()
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/notifications?role=${user.role}&limit=30`)
+      if (res.ok) {
+        const data = await res.json()
+        setNotifications(data.notifications || [])
+        setUnreadCount(data.unread_count || 0)
+      }
+    } catch {
+      // Silent fail — non-critical
+    }
+  }, [user])
+
+  // Initial load + polling every 30 seconds
+  useEffect(() => {
+    fetchNotifications()
+    pollRef.current = setInterval(fetchNotifications, 30000)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [fetchNotifications])
+
+  // Supabase Realtime subscription for instant updates
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel('clinic_notifications_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'clinic_notifications' },
+        () => {
+          // Refetch on new notification
+          fetchNotifications()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [user, fetchNotifications])
+
+  // Close panel on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleOutsideClick)
+      return () => document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [open])
+
+  // Mark single as read
+  async function markRead(id: string) {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+    setUnreadCount(prev => Math.max(0, prev - 1))
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [id], read_by: user?.full_name || user?.role }),
+    })
+  }
+
+  // Mark all as read
+  async function markAllRead() {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    setUnreadCount(0)
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mark_all: true, role: user?.role, read_by: user?.full_name }),
+    })
+  }
+
+  // Navigate to relevant page based on notification type
+  function handleNotificationClick(notif: Notification) {
+    if (!notif.is_read) markRead(notif.id)
+
+    // Navigate based on entity
+    if (notif.patient_id) {
+      router.push(`/patients/${notif.patient_id}`)
+    } else if (notif.type === 'lab_report') {
+      router.push('/labs')
+    } else if (notif.type === 'billing') {
+      router.push('/billing')
+    } else if (notif.type === 'insurance') {
+      router.push('/insurance')
+    } else if (notif.type === 'appointment') {
+      router.push('/appointments')
+    } else if (notif.type === 'discharge') {
+      router.push('/ipd')
+    }
+
+    setOpen(false)
+  }
+
+  if (!user) return null
+
+  return (
+    <div className="relative" ref={panelRef}>
+      {/* Bell Icon Button */}
+      <button
+        onClick={() => setOpen(!open)}
+        className="relative p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+      >
+        <Bell className="w-5 h-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center
+            bg-red-500 text-white text-[10px] font-bold rounded-full px-1 animate-pulse">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Notification Dropdown Panel */}
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-[380px] max-h-[520px] bg-white rounded-2xl shadow-2xl
+          border border-gray-200 z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2">
+
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/80 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-gray-600" />
+              <h3 className="text-sm font-bold text-gray-800">Notifications</h3>
+              {unreadCount > 0 && (
+                <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
+                  {unreadCount} new
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+                >
+                  <CheckCheck className="w-3 h-3" /> Read all
+                </button>
+              )}
+              <button
+                onClick={() => fetchNotifications()}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Notification List */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <Bell className="w-8 h-8 mb-2 opacity-30" />
+                <p className="text-sm font-medium">No notifications yet</p>
+                <p className="text-xs mt-1">Activity will appear here</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {notifications.map(notif => {
+                  const config = TYPE_CONFIG[notif.type] || TYPE_CONFIG.info
+                  const Icon = config.icon
+                  return (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors
+                        ${notif.is_read ? 'bg-white hover:bg-gray-50' : 'bg-blue-50/40 hover:bg-blue-50/70'}`}
+                    >
+                      {/* Icon */}
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${config.bg}`}>
+                        <Icon className={`w-4 h-4 ${config.color}`} />
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`text-sm leading-tight ${notif.is_read ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>
+                            {notif.title}
+                          </p>
+                          {!notif.is_read && (
+                            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.message}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            {getTimeAgo(notif.created_at)}
+                          </span>
+                          {notif.patient_name && (
+                            <span className="text-[10px] text-gray-400">
+                              · {notif.patient_name}{notif.mrn ? ` (${notif.mrn})` : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 mt-1" />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {notifications.length > 0 && (
+            <div className="border-t border-gray-100 px-4 py-2.5 bg-gray-50/50 flex-shrink-0">
+              <button
+                onClick={() => { router.push('/notifications'); setOpen(false) }}
+                className="w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-800 py-1"
+              >
+                View All Notifications →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 ```
 
 # src\components\layout\SessionTimeout.tsx
@@ -55510,10 +60304,10 @@ export default function RoleSwitcher() {
       if (!user) { setLoading(false); return }
 
       const { data: cu } = await supabase
-        .from('clinicusers')
+        .from('clinic_users')
         .select('role, extra_roles')
-        .eq('authid', user.id)
-        .eq('isactive', true)
+        .eq('auth_id', user.id)
+        .eq('is_active', true)
         .single()
 
       if (!cu) { setLoading(false); return }
@@ -63539,6 +68333,7 @@ export async function enrollMFA(friendlyName?: string): Promise<{
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType:   'totp',
       friendlyName: friendlyName || 'NexMedicon HMS',
+      issuer:       'NexMedicon HMS',
     })
 
     if (error) return { success: false, error: error.message }
@@ -64243,12 +69038,12 @@ export interface TimelineEvent {
 
 export async function buildPatientTimeline(patientId: string): Promise<TimelineEvent[]> {
   const [encounters, prescriptions, labs, bills, admissions, ancVisits] = await Promise.all([
-    supabase.from('encounters').select('*').eq('patientid', patientId).order('date', { ascending: false }),
-    supabase.from('prescriptions').select('*').eq('patientid', patientId).order('createdat', { ascending: false }),
-    supabase.from('labreports').select('*').eq('patientid', patientId).order('reportdate', { ascending: false }),
-    supabase.from('bills').select('*').eq('patientid', patientId).order('createdat', { ascending: false }),
-    supabase.from('ipdadmissions').select('*').eq('patientid', patientId).order('admissiondate', { ascending: false }),
-    supabase.from('ancvisits').select('*').eq('patientid', patientId).order('visitdate', { ascending: false }),
+    supabase.from('encounters').select('*').eq('patient_id', patientId).order('encounter_date', { ascending: false }),
+    supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('lab_reports').select('*').eq('patient_id', patientId).order('report_date', { ascending: false }),
+    supabase.from('bills').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+    supabase.from('ipd_admissions').select('*').eq('patient_id', patientId).order('admission_date', { ascending: false }),
+    supabase.from('anc_visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
   ])
 
   const events: TimelineEvent[] = []
@@ -69480,3876 +74275,6 @@ export interface DischargeSummary {
 
 ```
 
-# SUGGESTIONS.md
-
-```md
-# NexMedicon HMS — Production Readiness: Gap Analysis & Suggestions
-
-> **Prepared by:** Lead Software Architect Review
-> **Date:** April 2026
-> **Verdict:** The codebase has strong foundations but has a critical pattern: **library code exists for safety features but is NOT wired into the UI**. A doctor evaluating this would see zero clinical safety in action. This document identifies every gap and the fix applied.
-
----
-
-## 🔴 CRITICAL GAPS (Deal-Breakers for Any Doctor)
-
-### 1. Clinical Safety Features Exist in `/lib` But Are NOT in the UI
-
-| Feature | Library File | Integrated in UI? | Risk |
-|---------|-------------|-------------------|------|
-| Drug Interactions | `src/lib/drug-interactions.ts` | ❌ **NO** — prescription page doesn't call it | Doctor prescribes Metformin + contrast dye → no warning |
-| Allergy Alerts | `src/lib/allergy-alerts.ts` | ❌ **NO** — prescription page doesn't check allergies | Penicillin-allergic patient gets Amoxicillin → no hard stop |
-| Dose Validation | `src/lib/dose-validation.ts` | ❌ **NO** — prescription page doesn't validate doses | Paracetamol 5g for a child → no alert |
-| Critical Value Alerts | `src/lib/critical-alerts.ts` | ❌ **NO** — OPD edit page doesn't trigger alerts | Hb 4.2, BP 180/120 → no escalation |
-| Drug Database Search | `src/lib/drug-database.ts` | ❌ **NO** — prescription uses hardcoded `COMMON` array | 200+ drugs available but not searchable |
-| Gynecology Templates | `src/lib/gynecology-templates.ts` | ❌ **NO** — OPD new page doesn't offer template selection | 20 templates exist but doctor can't use them |
-| MFA | `src/lib/mfa.ts` | ❌ **NO** — login page doesn't check MFA | TOTP code built but never prompted |
-
-**Impact:** A doctor doing a demo would see NONE of these safety features. This is the #1 reason they'd reject the software.
-
-**Fix Applied:** Every library is now wired into its corresponding UI page with proper modal dialogs, hard stops, and override workflows.
-
----
-
-### 2. Prescription Page Has Zero Safety Checks
-
-**Before:** Doctor types drug name → saves. No checks whatsoever.
-
-**After (implemented):**
-- ✅ Drug name autocomplete from 200+ drug database (not just 25 hardcoded)
-- ✅ Real-time drug interaction checking as medications are added
-- ✅ Allergy cross-reference with hard stop modal for severe allergies
-- ✅ Dose range validation with overdose hard stops
-- ✅ Pregnancy category warnings for OB patients
-- ✅ Override workflow requiring documented reason for critical overrides
-
-### 3. Vitals Entry Has No Critical Value Detection
-
-**Before:** Nurse enters BP 220/130 → saves normally. No alert.
-
-**After (implemented):**
-- ✅ Real-time critical value detection as vitals are entered
-- ✅ Visual alert banner with severity color coding
-- ✅ Auto-creation of critical alerts in database
-- ✅ Escalation workflow for unacknowledged alerts
-
----
-
-## 🟡 IMPORTANT GAPS (Compliance & Trust)
-
-### 4. MFA Exists But Login Page Doesn't Use It
-
-**Gap:** `src/lib/mfa.ts` has full TOTP enrollment/verification but `src/app/login/page.tsx` never calls it.
-
-**Fix Applied:**
-- Login flow now checks if user has MFA enrolled
-- If enrolled → prompts for TOTP code before granting access
-- Settings page allows MFA enrollment with QR code display
-- AAL2 enforcement for admin operations
-
-### 5. Audit Log Immutability is SQL-Only
-
-**Gap:** SQL triggers prevent UPDATE/DELETE, and `entry_hash`/`prev_hash` columns exist, but the application never computes hashes.
-
-**Fix Applied:**
-- `src/lib/audit.ts` now computes SHA-256 hash of each entry
-- Hash chain links each entry to the previous one (blockchain-style)
-- Tamper detection function added to verify chain integrity
-
-### 6. No BAA Documentation
-
-**Gap:** HIPAA/Indian DPDP compliance requires a Business Associate Agreement with Supabase. No documentation exists.
-
-**Fix Applied:**
-- `docs/BAA-COMPLIANCE.md` created with:
-  - Supabase BAA request process
-  - Indian DPDP Act compliance checklist
-  - Data processing agreement template
-  - Encryption-at-rest and in-transit verification steps
-
-### 7. Backup Cron Not Configured
-
-**Gap:** Backup API exists at `/api/backup` but `vercel.json` only has reminder cron, not backup cron.
-
-**Fix Applied:**
-- Daily backup cron added to `vercel.json` (runs at 2:00 AM IST)
-- Backup API enhanced with encryption and Supabase Storage upload
-- Retention: keeps last 30 daily backups, auto-deletes older ones
-
-### 8. Data Export Missing Encryption
-
-**Gap:** `/api/export` exports raw JSON/CSV with no encryption. PHI data in plaintext.
-
-**Fix Applied:**
-- Export now includes AES-256 encryption option
-- Audit log entry created for every export
-- FHIR R4 bundle export for interoperability
-
----
-
-## 🟢 RELIABILITY GAPS (Doctor Confidence)
-
-### 9. No Offline Capability
-
-**Gap:** `next-pwa` is configured with basic caching but no IndexedDB, no Service Worker for critical flows, no offline patient search.
-
-**Fix Applied:**
-- `src/lib/offline-store.ts` — IndexedDB wrapper for patient data, vitals, prescriptions
-- `public/sw-custom.js` — Custom Service Worker with background sync
-- Clinic Mode: when Supabase is unreachable, app switches to read-only cached data
-- Sync queue: offline changes are queued and synced when connection returns
-
-### 10. No Database Failover
-
-**Gap:** Single Supabase connection. If Supabase goes down, entire app is dead.
-
-**Fix Applied:**
-- `src/lib/supabase.ts` enhanced with:
-  - Connection health monitoring
-  - Automatic retry with exponential backoff
-  - Read replica support (when configured)
-  - Graceful degradation to offline mode
-
-### 11. Status Page is Client-Only
-
-**Gap:** Status page exists but only checks current state. No history, no uptime percentage, no incident log.
-
-**Fix Applied:**
-- 90-day uptime history display
-- Response time graphs
-- Incident log from `system_health_log` table
-- Auto-refresh every 30 seconds
-- Public access (no auth required)
-
-### 12. No Growth Charts
-
-**Gap:** Gynecology HMS with no fundal height, weight, or BP plotting against WHO/ICB standards.
-
-**Fix Applied:**
-- `src/components/charts/GrowthChart.tsx` — SVG-based chart component
-- WHO standard curves for:
-  - Fundal height vs gestational age
-  - Maternal weight gain
-  - Blood pressure trends
-  - Fetal biometry (BPD, HC, AC, FL)
-- Plotted on patient's ANC page with historical data
-
----
-
-## 📋 FEATURE COMPLETENESS SUMMARY
-
-| # | Feature | Status Before | Status After |
-|---|---------|--------------|-------------|
-| 1 | Multi-Factor Authentication | Library only | ✅ Full UI integration |
-| 2 | Audit log immutability | SQL triggers only | ✅ Hash chain + verification |
-| 3 | BAA with Supabase | Not documented | ✅ Compliance docs created |
-| 4 | Data retention & auto-purge | Library only | ✅ Settings UI + cron |
-| 5 | Full data export | Basic JSON/CSV | ✅ Encrypted + FHIR |
-| 6 | Automated daily backups | API only, no cron | ✅ Daily cron configured |
-| 7 | Drug interaction checking | Library only | ✅ Real-time in prescription |
-| 8 | Allergy alerts | Library only | ✅ Hard stop in prescription |
-| 9 | Dose range validation | Library only | ✅ Overdose hard stop |
-| 10 | Critical value alerts | Library only | ✅ Auto-alert on vitals entry |
-| 11 | Status page | Basic health check | ✅ Uptime history + incidents |
-| 12 | Offline-first | Basic PWA cache | ✅ IndexedDB + Service Worker |
-| 13 | Clinic Mode | Not implemented | ✅ Read-only offline access |
-| 14 | Database read replicas | Not implemented | ✅ Failover logic added |
-| 15 | 20 gynecology templates | Library only | ✅ Template picker in OPD |
-| 16 | Drug database integration | Library only | ✅ Searchable in prescription |
-| 17 | Growth charts | Not implemented | ✅ WHO/ICB standard charts |
-
----
-
-## 🏥 WHAT A DOCTOR SEES NOW (Demo Flow)
-
-1. **Login** → MFA prompt with authenticator app
-2. **Dashboard** → Critical alerts banner if any unacknowledged
-3. **New OPD** → Template picker (20 gynecology templates)
-4. **Vitals Entry** → Real-time critical value detection (BP 180/120 → red alert)
-5. **Prescription** → Drug search from 200+ database, interaction warnings, allergy hard stops, dose validation
-6. **Print** → Professional prescription with all safety checks documented
-7. **Status Page** → 99.9% uptime with history
-8. **Offline** → Patient search and vitals entry work without internet
-9. **Settings** → MFA setup, data retention policies, backup history
-
-**This is what makes a doctor say "I trust this system with my patients."**
-
-```
-
-# supabase_add_aadhaar.sql
-
-```sql
--- ============================================================
--- HMS MVP — Add Aadhaar Card Number to patients table
--- Run this in Supabase → SQL Editor → New Query
--- Safe to re-run (uses IF NOT EXISTS pattern via DO block).
--- ============================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'aadhaar_no'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN aadhaar_no TEXT;
-    RAISE NOTICE 'Column aadhaar_no added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column aadhaar_no already exists — skipping.';
-  END IF;
-END
-$$;
-
-```
-
-# supabase_add_billing.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — Billing & Payments Table
--- Run in Supabase → SQL Editor → New Query
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS bills (
-  id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id            UUID REFERENCES patients(id) ON DELETE SET NULL,
-  patient_name          TEXT NOT NULL,
-  mrn                   TEXT NOT NULL,
-
-  -- Bill items as JSONB array: [{label, amount}]
-  items                 JSONB NOT NULL DEFAULT '[]'::JSONB,
-
-  -- Amounts
-  subtotal              NUMERIC(10,2) NOT NULL DEFAULT 0,
-  discount              NUMERIC(10,2) NOT NULL DEFAULT 0,
-  net_amount            NUMERIC(10,2) NOT NULL DEFAULT 0,
-
-  -- Payment
-  payment_mode          TEXT CHECK (payment_mode IN ('cash','upi','card','pending')),
-  status                TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled')),
-  razorpay_payment_id   TEXT,
-  razorpay_order_id     TEXT,
-
-  -- Meta
-  notes                 TEXT,
-  created_by            TEXT,          -- doctor/staff name
-  encounter_id          UUID,          -- optional link to OPD encounter
-
-  created_at            TIMESTAMPTZ DEFAULT NOW(),
-  paid_at               TIMESTAMPTZ
-);
-
--- RLS
-ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_bills ON bills;
-CREATE POLICY allow_auth_bills ON bills
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_bills_patient    ON bills(patient_id);
-CREATE INDEX IF NOT EXISTS idx_bills_status     ON bills(status);
-CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_bills_encounter  ON bills(encounter_id) WHERE encounter_id IS NOT NULL;
-
-SELECT 'bills table created ✓' AS result;
-
--- ── Add payment link columns (run if table already exists) ──────
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS payment_link_url   TEXT;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS payment_link_type  TEXT;  -- 'razorpay' | 'upi' | 'manual'
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS whatsapp_sent_at   TIMESTAMPTZ;
-
-```
-
-# supabase_add_discharge.sql
-
-```sql
--- ============================================================
--- HMS MVP — Add Discharge Summaries Table
--- Run in Supabase → SQL Editor → New Query
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS discharge_summaries (
-  id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id          UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-
-  -- Admission details
-  admission_date      DATE,
-  discharge_date      DATE DEFAULT CURRENT_DATE,
-
-  -- Diagnosis at discharge
-  final_diagnosis     TEXT,
-  secondary_diagnosis TEXT,
-
-  -- AI-generated sections (all editable by doctor)
-  clinical_summary    TEXT,    -- summary of stay: complaints, findings, procedures
-  investigations      TEXT,    -- lab and radiology results during stay
-  treatment_given     TEXT,    -- medications and procedures administered
-  condition_at_discharge TEXT, -- e.g. "Stable, afebrile, ambulant"
-  discharge_advice    TEXT,    -- what patient should do at home
-  diet_advice         TEXT,    -- dietary instructions
-  medications_at_discharge TEXT, -- drugs to continue at home
-  follow_up_date      DATE,
-  follow_up_note      TEXT,    -- e.g. "Review with USG report"
-
-  -- OB/Delivery section (nullable — only for maternity cases)
-  delivery_type       TEXT,    -- NVD | LSCS | Forceps | Vacuum
-  baby_sex            TEXT,    -- Male | Female
-  baby_weight         TEXT,    -- e.g. "2.9 kg"
-  apgar_score         TEXT,    -- e.g. "8/9"
-  delivery_date       DATE,
-  complications       TEXT,    -- PPH, perineal tear, wound infection etc.
-  lactation_advice    TEXT,
-
-  -- Document management
-  version             INTEGER DEFAULT 1,
-  is_final            BOOLEAN DEFAULT FALSE,  -- TRUE = signed off, no more edits
-  signed_by           TEXT,                   -- doctor name
-  signed_at           TIMESTAMPTZ,
-  pdf_generated_at    TIMESTAMPTZ,
-
-  created_at          TIMESTAMPTZ DEFAULT NOW(),
-  updated_at          TIMESTAMPTZ DEFAULT NOW()
-);
-
--- RLS
-ALTER TABLE discharge_summaries ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_discharge_summaries ON discharge_summaries;
-CREATE POLICY allow_auth_discharge_summaries ON discharge_summaries
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- Index
-CREATE INDEX IF NOT EXISTS idx_discharge_patient ON discharge_summaries(patient_id);
-CREATE INDEX IF NOT EXISTS idx_discharge_date    ON discharge_summaries(discharge_date);
-
-SELECT 'discharge_summaries table created ✓' AS result;
-
-```
-
-# supabase_audit_atomic.sql
-
-```sql
--- ============================================================
--- AUDIT LOG — Atomic Hash Chain Insert Function
--- ============================================================
---
--- SECURITY FIX: This function ensures hash chain integrity by
--- serializing audit log inserts using an advisory lock.
---
--- Problem it solves:
---   Two concurrent audit writes could both read the SAME prev_hash
---   (because the read and write were separate operations on the client),
---   creating a forked chain where two entries point to the same parent.
---
--- Solution:
---   This function uses pg_advisory_xact_lock() to ensure only ONE
---   insert can compute the hash chain at a time. The lock is released
---   automatically when the transaction commits.
---
--- Performance:
---   Advisory locks are lightweight (no table-level locking).
---   Under normal hospital load (< 100 concurrent users), the
---   serialization overhead is negligible (< 1ms per audit entry).
---
--- Run this ONCE in Supabase → SQL Editor → New Query.
--- Safe to re-run (uses CREATE OR REPLACE).
--- ============================================================
-
--- ─── Add hash chain columns if they don't exist ──────────────
-ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS entry_hash TEXT;
-ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS prev_hash  TEXT;
-
--- ─── Index for fast prev_hash lookup ─────────────────────────
-CREATE INDEX IF NOT EXISTS idx_audit_log_entry_hash ON audit_log(entry_hash);
-CREATE INDEX IF NOT EXISTS idx_audit_log_chain ON audit_log(created_at DESC) 
-  INCLUDE (entry_hash);
-
--- ─── Enable pgcrypto extension for SHA-256 ───────────────────
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- ─── Atomic insert function ──────────────────────────────────
-CREATE OR REPLACE FUNCTION insert_audit_entry(
-  p_user_id      UUID    DEFAULT NULL,
-  p_user_email   TEXT    DEFAULT NULL,
-  p_user_role    TEXT    DEFAULT NULL,
-  p_action       TEXT    DEFAULT 'view',
-  p_entity_type  TEXT    DEFAULT 'user',
-  p_entity_id    TEXT    DEFAULT NULL,
-  p_entity_label TEXT    DEFAULT NULL,
-  p_changes      JSONB   DEFAULT NULL
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER  -- Runs with function owner's privileges (bypasses RLS for the lock)
-SET search_path = public
-AS $$
-DECLARE
-  v_prev_hash  TEXT;
-  v_entry_hash TEXT;
-  v_entry_id   UUID;
-  v_payload    TEXT;
-BEGIN
-  -- ── Acquire advisory lock to serialize hash chain computation ──
-  -- Lock ID 8675309 is arbitrary but unique to audit log operations.
-  -- pg_advisory_xact_lock is transaction-scoped: auto-released on commit/rollback.
-  PERFORM pg_advisory_xact_lock(8675309);
-
-  -- ── Read the hash of the most recent entry ─────────────────────
-  SELECT entry_hash INTO v_prev_hash
-  FROM audit_log
-  ORDER BY created_at DESC
-  LIMIT 1;
-
-  -- If no previous entry, use GENESIS as the seed
-  IF v_prev_hash IS NULL THEN
-    v_prev_hash := NULL;  -- stored as NULL for the very first entry
-  END IF;
-
-  -- ── Compute SHA-256 hash of this entry ─────────────────────────
-  -- The hash includes all entry fields + the prev_hash, making it
-  -- tamper-evident: changing any field invalidates the chain.
-  v_payload := json_build_object(
-    'user_id',      COALESCE(p_user_id::TEXT, 'null'),
-    'user_email',   COALESCE(p_user_email, 'null'),
-    'user_role',    COALESCE(p_user_role, 'null'),
-    'action',       p_action,
-    'entity_type',  p_entity_type,
-    'entity_id',    COALESCE(p_entity_id, 'null'),
-    'entity_label', COALESCE(p_entity_label, 'null'),
-    'changes',      COALESCE(p_changes::TEXT, 'null'),
-    'prev_hash',    COALESCE(v_prev_hash, 'GENESIS')
-  )::TEXT;
-
-  v_entry_hash := encode(digest(v_payload, 'sha256'), 'hex');
-
-  -- ── Insert the audit entry with computed hash chain ─────────────
-  INSERT INTO audit_log (
-    user_id, user_email, user_role,
-    action, entity_type, entity_id, entity_label,
-    changes, entry_hash, prev_hash
-  ) VALUES (
-    p_user_id, p_user_email, p_user_role,
-    p_action, p_entity_type, p_entity_id, p_entity_label,
-    p_changes, v_entry_hash, v_prev_hash
-  )
-  RETURNING id INTO v_entry_id;
-
-  RETURN v_entry_id;
-END;
-$$;
-
--- ─── Grant execute to authenticated users ────────────────────
--- All authenticated users need to write audit entries.
-GRANT EXECUTE ON FUNCTION insert_audit_entry TO authenticated;
-
--- ─── Prevent direct manipulation of hash columns ─────────────
--- Only the function should set entry_hash and prev_hash.
--- Create a trigger that rejects direct updates to these columns.
-
-CREATE OR REPLACE FUNCTION protect_audit_hash_columns()
-RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-  -- Prevent UPDATE on hash chain columns (they should never change)
-  IF TG_OP = 'UPDATE' THEN
-    IF OLD.entry_hash IS DISTINCT FROM NEW.entry_hash THEN
-      RAISE EXCEPTION 'Cannot modify entry_hash — audit log is immutable';
-    END IF;
-    IF OLD.prev_hash IS DISTINCT FROM NEW.prev_hash THEN
-      RAISE EXCEPTION 'Cannot modify prev_hash — audit log is immutable';
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_protect_audit_hashes ON audit_log;
-CREATE TRIGGER trg_protect_audit_hashes
-  BEFORE UPDATE ON audit_log
-  FOR EACH ROW
-  EXECUTE FUNCTION protect_audit_hash_columns();
-
--- ─── Verification function (for admin use) ───────────────────
--- Returns stats about chain integrity: total, valid links, broken links.
-
-CREATE OR REPLACE FUNCTION verify_audit_chain(p_limit INTEGER DEFAULT 1000)
-RETURNS TABLE(
-  total_checked INTEGER,
-  valid_links   INTEGER,
-  broken_links  INTEGER,
-  first_broken_id UUID
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_total   INTEGER := 0;
-  v_valid   INTEGER := 0;
-  v_broken  INTEGER := 0;
-  v_first_broken UUID := NULL;
-  v_prev_hash TEXT := NULL;
-  v_row RECORD;
-BEGIN
-  FOR v_row IN
-    SELECT id, entry_hash, prev_hash
-    FROM audit_log
-    ORDER BY created_at ASC
-    LIMIT p_limit
-  LOOP
-    v_total := v_total + 1;
-
-    IF v_total = 1 THEN
-      -- First entry is always valid
-      v_valid := v_valid + 1;
-    ELSE
-      IF v_row.prev_hash = v_prev_hash THEN
-        v_valid := v_valid + 1;
-      ELSIF v_row.prev_hash IS NULL AND v_prev_hash IS NULL THEN
-        -- Both null = legacy entries before hash chain
-        v_valid := v_valid + 1;
-      ELSE
-        v_broken := v_broken + 1;
-        IF v_first_broken IS NULL THEN
-          v_first_broken := v_row.id;
-        END IF;
-      END IF;
-    END IF;
-
-    v_prev_hash := v_row.entry_hash;
-  END LOOP;
-
-  RETURN QUERY SELECT v_total, v_valid, v_broken, v_first_broken;
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION verify_audit_chain TO authenticated;
-
--- ============================================================
--- DONE. The audit log now has atomic hash chain integrity.
---
--- The client-side code (src/lib/audit.ts) will:
---   1. Try calling insert_audit_entry() RPC (atomic, preferred)
---   2. If the function doesn't exist yet, fall back to client-side
---      computation with a local mutex (still works, less safe)
---
--- After running this migration, the system is fully protected
--- against concurrent hash chain forking.
--- ============================================================
-
-```
-
-# supabase_rls_policies.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — Comprehensive Role-Based RLS Policies
--- ============================================================
---
--- SECURITY FIX: Previously, all tables used:
---   FOR ALL TO authenticated USING (true) WITH CHECK (true)
--- This meant ANY authenticated user (even deactivated staff) could
--- read/modify ALL data including other patients, billing, etc.
---
--- This migration replaces those wide-open policies with proper
--- role-based access control that mirrors the permission matrix
--- defined in src/lib/auth.ts.
---
--- Roles:
---   admin  — Full access to everything
---   doctor — Clinical access (patients, encounters, prescriptions, labs)
---            + read-only billing for own patients
---   staff  — Registration, queue, bed management, billing creation
---            but NO access to prescriptions editing or financial reports
---
--- Run this ONCE in Supabase SQL Editor after v8_roles.sql.
--- Safe to re-run (uses DROP POLICY IF EXISTS).
--- ============================================================
-
--- ─── Helper Functions (idempotent) ───────────────────────────
-
-CREATE OR REPLACE FUNCTION get_my_role()
-RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT role FROM clinic_users
-  WHERE auth_id = auth.uid() AND is_active = TRUE
-  LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION is_admin()
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM clinic_users
-    WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = TRUE
-  );
-$$;
-
-CREATE OR REPLACE FUNCTION is_doctor_or_admin()
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM clinic_users
-    WHERE auth_id = auth.uid() AND role IN ('admin', 'doctor') AND is_active = TRUE
-  );
-$$;
-
-CREATE OR REPLACE FUNCTION is_active_user()
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM clinic_users
-    WHERE auth_id = auth.uid() AND is_active = TRUE
-  );
-$$;
-
-
-
--- ═══════════════════════════════════════════════════════════════
--- PATIENTS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users (admin, doctor, staff)
--- INSERT: all active users (registration is a common task)
--- UPDATE: all active users (edit patient details)
--- DELETE: admin only (irreversible action)
-
-ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_patients ON patients;
-DROP POLICY IF EXISTS patients_select ON patients;
-DROP POLICY IF EXISTS patients_insert ON patients;
-DROP POLICY IF EXISTS patients_update ON patients;
-DROP POLICY IF EXISTS patients_delete ON patients;
-
-CREATE POLICY patients_select ON patients
-  FOR SELECT TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY patients_insert ON patients
-  FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-CREATE POLICY patients_update ON patients
-  FOR UPDATE TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY patients_delete ON patients
-  FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ═══════════════════════════════════════════════════════════════
--- ENCOUNTERS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT: admin + doctor only (clinical decision)
--- UPDATE: admin + doctor only
--- DELETE: admin only
-
-ALTER TABLE encounters ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_encounters ON encounters;
-DROP POLICY IF EXISTS encounters_select ON encounters;
-DROP POLICY IF EXISTS encounters_insert ON encounters;
-DROP POLICY IF EXISTS encounters_update ON encounters;
-DROP POLICY IF EXISTS encounters_delete ON encounters;
-
-CREATE POLICY encounters_select ON encounters
-  FOR SELECT TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY encounters_insert ON encounters
-  FOR INSERT TO authenticated
-  WITH CHECK (is_doctor_or_admin());
-
-CREATE POLICY encounters_update ON encounters
-  FOR UPDATE TO authenticated
-  USING (is_doctor_or_admin());
-
-CREATE POLICY encounters_delete ON encounters
-  FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ═══════════════════════════════════════════════════════════════
--- PRESCRIPTIONS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users (staff can view to print)
--- INSERT: admin + doctor only (clinical)
--- UPDATE: admin + doctor only
--- DELETE: admin only
-
-ALTER TABLE prescriptions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_prescriptions ON prescriptions;
-DROP POLICY IF EXISTS prescriptions_select ON prescriptions;
-DROP POLICY IF EXISTS prescriptions_insert ON prescriptions;
-DROP POLICY IF EXISTS prescriptions_update ON prescriptions;
-DROP POLICY IF EXISTS prescriptions_delete ON prescriptions;
-
-CREATE POLICY prescriptions_select ON prescriptions
-  FOR SELECT TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY prescriptions_insert ON prescriptions
-  FOR INSERT TO authenticated
-  WITH CHECK (is_doctor_or_admin());
-
-CREATE POLICY prescriptions_update ON prescriptions
-  FOR UPDATE TO authenticated
-  USING (is_doctor_or_admin());
-
-CREATE POLICY prescriptions_delete ON prescriptions
-  FOR DELETE TO authenticated
-  USING (is_admin());
-
-
-
--- ═══════════════════════════════════════════════════════════════
--- BEDS TABLE
--- ═══════════════════════════════════════════════════════════════
--- All active users can view and manage beds (reception workflow)
-
-ALTER TABLE beds ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_beds ON beds;
-DROP POLICY IF EXISTS beds_select ON beds;
-DROP POLICY IF EXISTS beds_insert ON beds;
-DROP POLICY IF EXISTS beds_update ON beds;
-DROP POLICY IF EXISTS beds_delete ON beds;
-
-CREATE POLICY beds_select ON beds
-  FOR SELECT TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY beds_insert ON beds
-  FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-CREATE POLICY beds_update ON beds
-  FOR UPDATE TO authenticated
-  USING (is_active_user());
-
-CREATE POLICY beds_delete ON beds
-  FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ═══════════════════════════════════════════════════════════════
--- BILLS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: admin + doctor (doctor sees own patients' bills)
--- INSERT: admin + staff (staff creates bills at reception)
--- UPDATE: admin only (prevent bill tampering)
--- DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bills') THEN
-    EXECUTE 'ALTER TABLE bills ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_bills ON bills';
-    EXECUTE 'DROP POLICY IF EXISTS bills_select ON bills';
-    EXECUTE 'DROP POLICY IF EXISTS bills_insert ON bills';
-    EXECUTE 'DROP POLICY IF EXISTS bills_update ON bills';
-    EXECUTE 'DROP POLICY IF EXISTS bills_delete ON bills';
-
-    EXECUTE '
-      CREATE POLICY bills_select ON bills
-        FOR SELECT TO authenticated
-        USING (
-          EXISTS (
-            SELECT 1 FROM clinic_users cu
-            WHERE cu.auth_id = auth.uid()
-              AND cu.is_active = TRUE
-              AND cu.role IN (''admin'', ''doctor'')
-          )
-        )';
-
-    EXECUTE '
-      CREATE POLICY bills_insert ON bills
-        FOR INSERT TO authenticated
-        WITH CHECK (
-          EXISTS (
-            SELECT 1 FROM clinic_users cu
-            WHERE cu.auth_id = auth.uid()
-              AND cu.is_active = TRUE
-              AND cu.role IN (''admin'', ''staff'')
-          )
-        )';
-
-    EXECUTE '
-      CREATE POLICY bills_update ON bills
-        FOR UPDATE TO authenticated
-        USING (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY bills_delete ON bills
-        FOR DELETE TO authenticated
-        USING (is_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- LAB REPORTS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT: admin + doctor
--- UPDATE: admin + doctor
--- DELETE: admin + doctor
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lab_reports') THEN
-    EXECUTE 'ALTER TABLE lab_reports ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_select_lab_reports ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_insert_lab_reports ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_update_lab_reports ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_delete_lab_reports ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS lab_reports_select ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS lab_reports_insert ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS lab_reports_update ON lab_reports';
-    EXECUTE 'DROP POLICY IF EXISTS lab_reports_delete ON lab_reports';
-
-    EXECUTE '
-      CREATE POLICY lab_reports_select ON lab_reports
-        FOR SELECT TO authenticated
-        USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY lab_reports_insert ON lab_reports
-        FOR INSERT TO authenticated
-        WITH CHECK (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY lab_reports_update ON lab_reports
-        FOR UPDATE TO authenticated
-        USING (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY lab_reports_delete ON lab_reports
-        FOR DELETE TO authenticated
-        USING (is_doctor_or_admin())';
-  END IF;
-END $$;
-
-
-
--- ═══════════════════════════════════════════════════════════════
--- IPD ADMISSIONS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT: all active users (reception can admit)
--- UPDATE: admin + doctor (clinical updates, discharge)
--- DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ipd_admissions') THEN
-    EXECUTE 'ALTER TABLE ipd_admissions ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_ipd_admissions ON ipd_admissions';
-    EXECUTE 'DROP POLICY IF EXISTS ipd_admissions_select ON ipd_admissions';
-    EXECUTE 'DROP POLICY IF EXISTS ipd_admissions_insert ON ipd_admissions';
-    EXECUTE 'DROP POLICY IF EXISTS ipd_admissions_update ON ipd_admissions';
-    EXECUTE 'DROP POLICY IF EXISTS ipd_admissions_delete ON ipd_admissions';
-
-    EXECUTE '
-      CREATE POLICY ipd_admissions_select ON ipd_admissions
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY ipd_admissions_insert ON ipd_admissions
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY ipd_admissions_update ON ipd_admissions
-        FOR UPDATE TO authenticated USING (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY ipd_admissions_delete ON ipd_admissions
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- APPOINTMENTS TABLE
--- ═══════════════════════════════════════════════════════════════
--- All active users can manage appointments (common workflow)
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'appointments') THEN
-    EXECUTE 'ALTER TABLE appointments ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS appointments_select ON appointments';
-    EXECUTE 'DROP POLICY IF EXISTS appointments_insert ON appointments';
-    EXECUTE 'DROP POLICY IF EXISTS appointments_update ON appointments';
-    EXECUTE 'DROP POLICY IF EXISTS appointments_delete ON appointments';
-
-    EXECUTE '
-      CREATE POLICY appointments_select ON appointments
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY appointments_insert ON appointments
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY appointments_update ON appointments
-        FOR UPDATE TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY appointments_delete ON appointments
-        FOR DELETE TO authenticated USING (is_doctor_or_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- OPD QUEUE TABLE
--- ═══════════════════════════════════════════════════════════════
--- All active users can manage the queue
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'opd_queue') THEN
-    EXECUTE 'ALTER TABLE opd_queue ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_select_opd_queue ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_insert_opd_queue ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_update_opd_queue ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_delete_opd_queue ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS opd_queue_select ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS opd_queue_insert ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS opd_queue_update ON opd_queue';
-    EXECUTE 'DROP POLICY IF EXISTS opd_queue_delete ON opd_queue';
-
-    EXECUTE '
-      CREATE POLICY opd_queue_select ON opd_queue
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY opd_queue_insert ON opd_queue
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY opd_queue_update ON opd_queue
-        FOR UPDATE TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY opd_queue_delete ON opd_queue
-        FOR DELETE TO authenticated USING (is_active_user())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- HOSPITAL FUND TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT (submit expense): all active users
--- UPDATE (approve): admin only
--- DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'hospital_fund') THEN
-    EXECUTE 'ALTER TABLE hospital_fund ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_fund ON hospital_fund';
-    EXECUTE 'DROP POLICY IF EXISTS hospital_fund_select ON hospital_fund';
-    EXECUTE 'DROP POLICY IF EXISTS hospital_fund_insert ON hospital_fund';
-    EXECUTE 'DROP POLICY IF EXISTS hospital_fund_update ON hospital_fund';
-    EXECUTE 'DROP POLICY IF EXISTS hospital_fund_delete ON hospital_fund';
-
-    EXECUTE '
-      CREATE POLICY hospital_fund_select ON hospital_fund
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY hospital_fund_insert ON hospital_fund
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY hospital_fund_update ON hospital_fund
-        FOR UPDATE TO authenticated USING (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY hospital_fund_delete ON hospital_fund
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
-
-
--- ═══════════════════════════════════════════════════════════════
--- CLINIC SETTINGS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT/UPDATE: admin only
--- DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clinic_settings') THEN
-    EXECUTE 'ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_read ON clinic_settings';
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_write ON clinic_settings';
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_select ON clinic_settings';
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_insert ON clinic_settings';
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_update ON clinic_settings';
-    EXECUTE 'DROP POLICY IF EXISTS clinic_settings_delete ON clinic_settings';
-
-    EXECUTE '
-      CREATE POLICY clinic_settings_select ON clinic_settings
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY clinic_settings_insert ON clinic_settings
-        FOR INSERT TO authenticated WITH CHECK (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY clinic_settings_update ON clinic_settings
-        FOR UPDATE TO authenticated USING (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY clinic_settings_delete ON clinic_settings
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- PATIENT ALLERGIES TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users (needed for prescription safety checks)
--- INSERT/UPDATE: admin + doctor
--- DELETE: admin + doctor
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'patient_allergies') THEN
-    EXECUTE 'ALTER TABLE patient_allergies ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS auth_select_allergies ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS auth_insert_allergies ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS auth_update_allergies ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS auth_delete_allergies ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS patient_allergies_select ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS patient_allergies_insert ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS patient_allergies_update ON patient_allergies';
-    EXECUTE 'DROP POLICY IF EXISTS patient_allergies_delete ON patient_allergies';
-
-    EXECUTE '
-      CREATE POLICY patient_allergies_select ON patient_allergies
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY patient_allergies_insert ON patient_allergies
-        FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY patient_allergies_update ON patient_allergies
-        FOR UPDATE TO authenticated USING (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY patient_allergies_delete ON patient_allergies
-        FOR DELETE TO authenticated USING (is_doctor_or_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- CRITICAL ALERTS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT/INSERT: all active users (alerts are generated automatically)
--- UPDATE/DELETE: admin + doctor
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'critical_alerts') THEN
-    EXECUTE 'ALTER TABLE critical_alerts ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS critical_alerts_select ON critical_alerts';
-    EXECUTE 'DROP POLICY IF EXISTS critical_alerts_insert ON critical_alerts';
-    EXECUTE 'DROP POLICY IF EXISTS critical_alerts_update ON critical_alerts';
-    EXECUTE 'DROP POLICY IF EXISTS critical_alerts_delete ON critical_alerts';
-
-    EXECUTE '
-      CREATE POLICY critical_alerts_select ON critical_alerts
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY critical_alerts_insert ON critical_alerts
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY critical_alerts_update ON critical_alerts
-        FOR UPDATE TO authenticated USING (is_doctor_or_admin())';
-
-    EXECUTE '
-      CREATE POLICY critical_alerts_delete ON critical_alerts
-        FOR DELETE TO authenticated USING (is_doctor_or_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- DATA RETENTION POLICIES TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users (settings page)
--- INSERT/UPDATE/DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'data_retention_policies') THEN
-    EXECUTE 'ALTER TABLE data_retention_policies ENABLE ROW LEVEL SECURITY';
-
-    EXECUTE 'DROP POLICY IF EXISTS data_retention_policies_select ON data_retention_policies';
-    EXECUTE 'DROP POLICY IF EXISTS data_retention_policies_insert ON data_retention_policies';
-    EXECUTE 'DROP POLICY IF EXISTS data_retention_policies_update ON data_retention_policies';
-    EXECUTE 'DROP POLICY IF EXISTS data_retention_policies_delete ON data_retention_policies';
-
-    EXECUTE '
-      CREATE POLICY data_retention_policies_select ON data_retention_policies
-        FOR SELECT TO authenticated USING (is_active_user())';
-
-    EXECUTE '
-      CREATE POLICY data_retention_policies_insert ON data_retention_policies
-        FOR INSERT TO authenticated WITH CHECK (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY data_retention_policies_update ON data_retention_policies
-        FOR UPDATE TO authenticated USING (is_admin())';
-
-    EXECUTE '
-      CREATE POLICY data_retention_policies_delete ON data_retention_policies
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
-
-
--- ═══════════════════════════════════════════════════════════════
--- CONSULTATION ATTACHMENTS / FILES
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT: all active users (staff can upload scanned docs)
--- UPDATE: admin + doctor
--- DELETE: admin + doctor
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultation_attachments') THEN
-    EXECUTE 'ALTER TABLE consultation_attachments ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_attachments ON consultation_attachments';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_attachments_select ON consultation_attachments';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_attachments_insert ON consultation_attachments';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_attachments_update ON consultation_attachments';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_attachments_delete ON consultation_attachments';
-
-    EXECUTE '
-      CREATE POLICY consultation_attachments_select ON consultation_attachments
-        FOR SELECT TO authenticated USING (is_active_user())';
-    EXECUTE '
-      CREATE POLICY consultation_attachments_insert ON consultation_attachments
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-    EXECUTE '
-      CREATE POLICY consultation_attachments_update ON consultation_attachments
-        FOR UPDATE TO authenticated USING (is_doctor_or_admin())';
-    EXECUTE '
-      CREATE POLICY consultation_attachments_delete ON consultation_attachments
-        FOR DELETE TO authenticated USING (is_doctor_or_admin())';
-  END IF;
-
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultation_files_db') THEN
-    EXECUTE 'ALTER TABLE consultation_files_db ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS allow_auth_files_db ON consultation_files_db';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_files_db_select ON consultation_files_db';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_files_db_insert ON consultation_files_db';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_files_db_update ON consultation_files_db';
-    EXECUTE 'DROP POLICY IF EXISTS consultation_files_db_delete ON consultation_files_db';
-
-    EXECUTE '
-      CREATE POLICY consultation_files_db_select ON consultation_files_db
-        FOR SELECT TO authenticated USING (is_active_user())';
-    EXECUTE '
-      CREATE POLICY consultation_files_db_insert ON consultation_files_db
-        FOR INSERT TO authenticated WITH CHECK (is_active_user())';
-    EXECUTE '
-      CREATE POLICY consultation_files_db_update ON consultation_files_db
-        FOR UPDATE TO authenticated USING (is_doctor_or_admin())';
-    EXECUTE '
-      CREATE POLICY consultation_files_db_delete ON consultation_files_db
-        FOR DELETE TO authenticated USING (is_doctor_or_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- AUDIT LOG TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: admin only (sensitive — shows who did what)
--- INSERT: all authenticated users (everyone generates audit entries)
--- UPDATE: NOBODY (immutable)
--- DELETE: NOBODY (immutable)
-
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS audit_log_read ON audit_log;
-DROP POLICY IF EXISTS audit_log_insert ON audit_log;
-DROP POLICY IF EXISTS allow_auth_insert_audit_log ON audit_log;
-DROP POLICY IF EXISTS allow_admin_select_audit_log ON audit_log;
-DROP POLICY IF EXISTS audit_log_select ON audit_log;
-DROP POLICY IF EXISTS audit_log_insert_new ON audit_log;
-
-CREATE POLICY audit_log_select ON audit_log
-  FOR SELECT TO authenticated
-  USING (is_admin());
-
-CREATE POLICY audit_log_insert_new ON audit_log
-  FOR INSERT TO authenticated
-  WITH CHECK (true);  -- All authenticated can write audit entries
-
--- No UPDATE or DELETE policies — audit log is immutable
-
--- ═══════════════════════════════════════════════════════════════
--- CLINIC USERS TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all authenticated (needed for role checks, doctor display)
--- INSERT: admin only (OR bootstrap when no users exist)
--- UPDATE: admin OR self (user can update own profile)
--- DELETE: admin only
-
-ALTER TABLE clinic_users ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS clinic_users_read ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_update ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_insert ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_delete ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_bootstrap ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_select ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_insert_admin ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_update_self_or_admin ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_delete_admin ON clinic_users;
-DROP POLICY IF EXISTS clinic_users_bootstrap_first ON clinic_users;
-
--- Everyone authenticated can read (needed for role checks throughout app)
-CREATE POLICY clinic_users_select ON clinic_users
-  FOR SELECT TO authenticated
-  USING (true);
-
--- Admin can create new users
-CREATE POLICY clinic_users_insert_admin ON clinic_users
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    -- Admin can invite new users
-    EXISTS (
-      SELECT 1 FROM clinic_users cu
-      WHERE cu.auth_id = auth.uid() AND cu.role = 'admin' AND cu.is_active = TRUE
-    )
-  );
-
--- Bootstrap: first user can create themselves when table is empty
-CREATE POLICY clinic_users_bootstrap_first ON clinic_users
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    NOT EXISTS (SELECT 1 FROM clinic_users)
-  );
-
--- Admin or self can update
-CREATE POLICY clinic_users_update_self_or_admin ON clinic_users
-  FOR UPDATE TO authenticated
-  USING (
-    auth_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM clinic_users cu
-      WHERE cu.auth_id = auth.uid() AND cu.role = 'admin' AND cu.is_active = TRUE
-    )
-  );
-
--- Only admin can delete
-CREATE POLICY clinic_users_delete_admin ON clinic_users
-  FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ═══════════════════════════════════════════════════════════════
--- BILLING PACKAGES TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users
--- INSERT/UPDATE/DELETE: admin only (manages pricing)
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'billing_packages') THEN
-    EXECUTE 'ALTER TABLE billing_packages ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS billing_packages_select ON billing_packages';
-    EXECUTE 'DROP POLICY IF EXISTS billing_packages_insert ON billing_packages';
-    EXECUTE 'DROP POLICY IF EXISTS billing_packages_update ON billing_packages';
-    EXECUTE 'DROP POLICY IF EXISTS billing_packages_delete ON billing_packages';
-
-    EXECUTE '
-      CREATE POLICY billing_packages_select ON billing_packages
-        FOR SELECT TO authenticated USING (is_active_user())';
-    EXECUTE '
-      CREATE POLICY billing_packages_insert ON billing_packages
-        FOR INSERT TO authenticated WITH CHECK (is_admin())';
-    EXECUTE '
-      CREATE POLICY billing_packages_update ON billing_packages
-        FOR UPDATE TO authenticated USING (is_admin())';
-    EXECUTE '
-      CREATE POLICY billing_packages_delete ON billing_packages
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- DRUG INTERACTION OVERRIDES TABLE
--- ═══════════════════════════════════════════════════════════════
--- SELECT: all active users (for display in prescriptions)
--- INSERT: admin + doctor (override requires clinical justification)
--- UPDATE/DELETE: admin only
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'drug_interaction_overrides') THEN
-    EXECUTE 'ALTER TABLE drug_interaction_overrides ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS drug_interaction_overrides_select ON drug_interaction_overrides';
-    EXECUTE 'DROP POLICY IF EXISTS drug_interaction_overrides_insert ON drug_interaction_overrides';
-    EXECUTE 'DROP POLICY IF EXISTS drug_interaction_overrides_update ON drug_interaction_overrides';
-    EXECUTE 'DROP POLICY IF EXISTS drug_interaction_overrides_delete ON drug_interaction_overrides';
-
-    EXECUTE '
-      CREATE POLICY drug_interaction_overrides_select ON drug_interaction_overrides
-        FOR SELECT TO authenticated USING (is_active_user())';
-    EXECUTE '
-      CREATE POLICY drug_interaction_overrides_insert ON drug_interaction_overrides
-        FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin())';
-    EXECUTE '
-      CREATE POLICY drug_interaction_overrides_update ON drug_interaction_overrides
-        FOR UPDATE TO authenticated USING (is_admin())';
-    EXECUTE '
-      CREATE POLICY drug_interaction_overrides_delete ON drug_interaction_overrides
-        FOR DELETE TO authenticated USING (is_admin())';
-  END IF;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- REMAINING TABLES (safe catch-all for any we missed)
--- ═══════════════════════════════════════════════════════════════
--- These tables use the "active user" pattern — any active authenticated
--- user can interact with them, but deactivated users are locked out.
-
-DO $$
-DECLARE
-  tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'consultation_templates',
-    'lab_templates',
-    'queue_overrides',
-    'ipd_nursing',
-    'reminder_log',
-    'portal_tokens',
-    'portal_otp',
-    'portal_sessions'
-  ]
-  LOOP
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl) THEN
-      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-      EXECUTE format('DROP POLICY IF EXISTS %I_rls_select ON %I', tbl, tbl);
-      EXECUTE format('DROP POLICY IF EXISTS %I_rls_insert ON %I', tbl, tbl);
-      EXECUTE format('DROP POLICY IF EXISTS %I_rls_update ON %I', tbl, tbl);
-      EXECUTE format('DROP POLICY IF EXISTS %I_rls_delete ON %I', tbl, tbl);
-
-      EXECUTE format('
-        CREATE POLICY %I_rls_select ON %I
-          FOR SELECT TO authenticated USING (is_active_user())', tbl, tbl);
-      EXECUTE format('
-        CREATE POLICY %I_rls_insert ON %I
-          FOR INSERT TO authenticated WITH CHECK (is_active_user())', tbl, tbl);
-      EXECUTE format('
-        CREATE POLICY %I_rls_update ON %I
-          FOR UPDATE TO authenticated USING (is_active_user())', tbl, tbl);
-      EXECUTE format('
-        CREATE POLICY %I_rls_delete ON %I
-          FOR DELETE TO authenticated USING (is_admin())', tbl, tbl);
-    END IF;
-  END LOOP;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════
--- VERIFICATION: List all tables and their RLS status
--- ═══════════════════════════════════════════════════════════════
-
-SELECT
-  schemaname,
-  tablename,
-  rowsecurity
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY tablename;
-
--- ============================================================
--- DONE. All tables now have role-based RLS policies.
---
--- Key principles enforced:
---   1. Deactivated users (is_active=false) cannot access ANY data
---   2. Staff cannot modify clinical data (encounters, prescriptions)
---   3. Only admin can delete patients or view audit logs
---   4. Only admin can modify billing after creation (prevents fraud)
---   5. Audit log is immutable (no UPDATE/DELETE policies)
---   6. Bootstrap policy allows first user registration
---
--- IMPORTANT: After running this migration:
---   - Test login as each role (admin, doctor, staff) to verify access
---   - Verify staff cannot create encounters (should get RLS error)
---   - Verify deactivated users are fully locked out
--- ============================================================
-
-```
-
-# supabase_setup.sql
-
-```sql
--- ============================================================
--- HMS MVP — Complete Database Setup
--- Run this entire script in Supabase → SQL Editor → New Query
--- Run it once. It is safe to re-run (uses IF NOT EXISTS).
--- ============================================================
-
--- ─── PATIENTS ───────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS patients (
-  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  mrn                     TEXT UNIQUE,
-  full_name               TEXT NOT NULL,
-  date_of_birth           DATE,
-  age                     INTEGER,
-  gender                  TEXT CHECK (gender IN ('Female','Male','Other')),
-  mobile                  TEXT NOT NULL,
-  blood_group             TEXT CHECK (blood_group IN ('A+','A-','B+','B-','O+','O-','AB+','AB-')),
-  address                 TEXT,
-  abha_id                 TEXT,
-  emergency_contact_name  TEXT,
-  emergency_contact_phone TEXT,
-  created_at              TIMESTAMPTZ DEFAULT NOW(),
-  updated_at              TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Auto-generate MRN: P-001, P-002 …
-CREATE SEQUENCE IF NOT EXISTS patient_mrn_seq START 1;
-
-CREATE OR REPLACE FUNCTION generate_mrn()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.mrn IS NULL THEN
-    NEW.mrn := 'P-' || LPAD(nextval('patient_mrn_seq')::TEXT, 3, '0');
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_patient_mrn ON patients;
-CREATE TRIGGER trg_patient_mrn
-  BEFORE INSERT ON patients
-  FOR EACH ROW EXECUTE FUNCTION generate_mrn();
-
--- ─── ENCOUNTERS (OPD visits) ─────────────────────────────────
-CREATE TABLE IF NOT EXISTS encounters (
-  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id     UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  encounter_date DATE    DEFAULT CURRENT_DATE,
-  encounter_type TEXT    DEFAULT 'OPD',
-  chief_complaint TEXT,
-  -- Vitals
-  pulse          INTEGER,          -- bpm
-  bp_systolic    INTEGER,          -- mmHg
-  bp_diastolic   INTEGER,          -- mmHg
-  temperature    NUMERIC(4,1),     -- °C
-  spo2           INTEGER,          -- %
-  weight         NUMERIC(5,1),     -- kg
-  height         NUMERIC(5,1),     -- cm
-  -- Clinical
-  diagnosis      TEXT,
-  icd_code       TEXT,
-  notes          TEXT,
-  -- OB/GYN data stored as flexible JSON
-  ob_data        JSONB DEFAULT '{}'::JSONB,
-  doctor_name    TEXT DEFAULT 'Dr. Demo',
-  created_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─── PRESCRIPTIONS ───────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS prescriptions (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  encounter_id    UUID NOT NULL REFERENCES encounters(id) ON DELETE CASCADE,
-  patient_id      UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  medications     JSONB NOT NULL DEFAULT '[]'::JSONB,
-  -- medications format:
-  -- [{ drug, dose, route, frequency, duration, instructions }]
-  advice          TEXT,
-  dietary_advice  TEXT,
-  reports_needed  TEXT,
-  follow_up_date  DATE,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─── BEDS ─────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS beds (
-  id                 UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bed_number         TEXT NOT NULL UNIQUE,
-  ward               TEXT NOT NULL,
-  status             TEXT NOT NULL DEFAULT 'available'
-                       CHECK (status IN ('available','occupied','cleaning','reserved')),
-  patient_id         UUID REFERENCES patients(id) ON DELETE SET NULL,
-  patient_name       TEXT,
-  admission_date     DATE,
-  expected_discharge DATE,
-  updated_at         TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─── SEED: 20 demo beds ──────────────────────────────────────
-INSERT INTO beds (bed_number, ward, status) VALUES
-  ('GW-01','General Ward','available'),
-  ('GW-02','General Ward','available'),
-  ('GW-03','General Ward','available'),
-  ('GW-04','General Ward','available'),
-  ('GW-05','General Ward','available'),
-  ('GW-06','General Ward','available'),
-  ('GW-07','General Ward','available'),
-  ('GW-08','General Ward','available'),
-  ('MW-01','Maternity Ward','available'),
-  ('MW-02','Maternity Ward','available'),
-  ('MW-03','Maternity Ward','available'),
-  ('MW-04','Maternity Ward','available'),
-  ('MW-05','Maternity Ward','available'),
-  ('MW-06','Maternity Ward','available'),
-  ('PR-01','Private Room','available'),
-  ('PR-02','Private Room','available'),
-  ('PR-03','Private Room','available'),
-  ('PR-04','Private Room','available'),
-  ('ICU-01','ICU','available'),
-  ('ICU-02','ICU','available')
-ON CONFLICT (bed_number) DO NOTHING;
-
--- ─── ROW LEVEL SECURITY (RLS) ────────────────────────────────
--- Enable RLS so only authenticated users can read/write
-ALTER TABLE patients     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE encounters   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prescriptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE beds         ENABLE ROW LEVEL SECURITY;
-
--- Policy: any authenticated user can do everything
--- (tighten per-role in production)
-DO $$
-DECLARE
-  tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY['patients','encounters','prescriptions','beds']
-  LOOP
-    EXECUTE format('
-      DROP POLICY IF EXISTS allow_auth_%1$s ON %1$s;
-      CREATE POLICY allow_auth_%1$s ON %1$s
-        FOR ALL TO authenticated USING (true) WITH CHECK (true);
-    ', tbl);
-  END LOOP;
-END;
-$$;
-
--- ─── INDEXES for fast lookup ─────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_patients_name    ON patients  USING gin(to_tsvector('simple', full_name));
-CREATE INDEX IF NOT EXISTS idx_patients_mobile  ON patients  (mobile);
-CREATE INDEX IF NOT EXISTS idx_encounters_pid   ON encounters(patient_id);
-CREATE INDEX IF NOT EXISTS idx_encounters_date  ON encounters(encounter_date);
-CREATE INDEX IF NOT EXISTS idx_prescriptions_enc ON prescriptions(encounter_id);
-CREATE INDEX IF NOT EXISTS idx_beds_status      ON beds(status);
-
--- Done!
-SELECT 'Database setup complete ✓' AS result;
-
-```
-
-# supabase_v5_updates.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v5 Database Updates
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS everywhere)
--- ============================================================
-
--- Index for overdue follow-up queries (used heavily in dashboard + reports)
-CREATE INDEX IF NOT EXISTS idx_prescriptions_followup
-  ON prescriptions(follow_up_date)
-  WHERE follow_up_date IS NOT NULL;
-
--- Index for ANC registry queries (ob_data->lmp lookups)
-CREATE INDEX IF NOT EXISTS idx_encounters_ob_lmp
-  ON encounters((ob_data->>'lmp'))
-  WHERE ob_data IS NOT NULL AND ob_data->>'lmp' IS NOT NULL;
-
--- Index for encounter date range queries (OPD trend chart)
-CREATE INDEX IF NOT EXISTS idx_encounters_date_range
-  ON encounters(encounter_date, patient_id);
-
--- Index for patient search by name (trigram — already exists but ensure)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_patients_name_trgm
-  ON patients USING gin(full_name gin_trgm_ops);
-
--- Ensure prescription → patient join is fast
-CREATE INDEX IF NOT EXISTS idx_prescriptions_patient
-  ON prescriptions(patient_id);
-
-SELECT 'v5 indexes created ✓' AS result;
-
-```
-
-# supabase_v6_updates.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS v6 — New columns for feature additions
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS / IF NOT)
--- ============================================================
-
--- 1. Patient registration: mediclaim + reference fields
-ALTER TABLE patients
-  ADD COLUMN IF NOT EXISTS mediclaim        BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS cashless         BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS reference_source TEXT;   -- 'Doctor Referral','Advertisement','Walk-in', etc.
-
--- 2. Discharge summary: baby birth time
-ALTER TABLE discharge_summaries
-  ADD COLUMN IF NOT EXISTS baby_birth_time  TEXT;   -- stored as HH:MM string
-
--- 3. Bills table: encounter_type for OPD/IPD split
-ALTER TABLE bills
-  ADD COLUMN IF NOT EXISTS encounter_type   TEXT CHECK (encounter_type IN ('OPD','IPD','Other'));
-
--- 4. Consultation attachments table (photos + PDFs per encounter)
-CREATE TABLE IF NOT EXISTS consultation_attachments (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  encounter_id    UUID REFERENCES encounters(id) ON DELETE CASCADE,
-  patient_id      UUID REFERENCES patients(id)  ON DELETE CASCADE,
-  file_name       TEXT NOT NULL,
-  file_type       TEXT NOT NULL,   -- 'image/jpeg','image/png','application/pdf'
-  file_size       INTEGER,         -- bytes
-  storage_key     TEXT NOT NULL,   -- Supabase Storage path
-  bucket          TEXT DEFAULT 'consultation-files',
-  notes           TEXT,
-  uploaded_by     TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE consultation_attachments ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_attachments ON consultation_attachments;
-CREATE POLICY allow_auth_attachments ON consultation_attachments
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_attachments_encounter ON consultation_attachments(encounter_id);
-CREATE INDEX IF NOT EXISTS idx_attachments_patient   ON consultation_attachments(patient_id);
-
--- 5. Supabase Storage bucket for consultation files
--- (Run this separately in Storage → New bucket if it doesn't exist)
--- INSERT INTO storage.buckets (id, name, public) VALUES ('consultation-files', 'consultation-files', false)
--- ON CONFLICT DO NOTHING;
-
-SELECT 'v6 migration complete ✓' AS result;
-
--- ── IPD Nursing Data table (replaces localStorage) ──────────────
-CREATE TABLE IF NOT EXISTS ipd_nursing (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bed_id          UUID NOT NULL,
-  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
-  entry_type      TEXT NOT NULL CHECK (entry_type IN ('vital', 'io', 'note')),
-
-  -- Vitals
-  recorded_time   TEXT,   -- HH:MM
-  pulse           TEXT,
-  bp_systolic     TEXT,
-  bp_diastolic    TEXT,
-  temperature     TEXT,
-  spo2            TEXT,
-  vital_note      TEXT,
-
-  -- I/O
-  io_type         TEXT,   -- 'Input' | 'Output'
-  io_label        TEXT,   -- e.g. 'IV Fluids', 'Urine'
-  io_amount_ml    NUMERIC,
-
-  -- Notes
-  nurse_name      TEXT,
-  note_text       TEXT,
-
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE ipd_nursing ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_ipd ON ipd_nursing;
-CREATE POLICY allow_auth_ipd ON ipd_nursing
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_ipd_bed     ON ipd_nursing(bed_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_patient ON ipd_nursing(patient_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_time    ON ipd_nursing(created_at DESC);
-
--- ── File storage fallback (when Storage bucket not set up) ─────
--- Stores small files (<2MB) as base64 directly in the DB
--- Use this if Supabase Storage bucket setup is blocked
-CREATE TABLE IF NOT EXISTS consultation_files_db (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  encounter_id    UUID REFERENCES encounters(id) ON DELETE CASCADE,
-  patient_id      UUID REFERENCES patients(id)  ON DELETE CASCADE,
-  file_name       TEXT NOT NULL,
-  file_type       TEXT NOT NULL,
-  file_size       INTEGER,
-  file_data       TEXT NOT NULL,   -- base64 encoded file content
-  notes           TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE consultation_files_db ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_files_db ON consultation_files_db;
-CREATE POLICY allow_auth_files_db ON consultation_files_db
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_files_db_patient   ON consultation_files_db(patient_id);
-CREATE INDEX IF NOT EXISTS idx_files_db_encounter ON consultation_files_db(encounter_id);
-
--- ── Allow public (unauthenticated) INSERT on patients table ───────
--- This is needed for the /intake page where patients self-register
--- without logging in. Read/Update/Delete still require authentication.
--- Run this in Supabase SQL Editor.
-DROP POLICY IF EXISTS allow_public_patient_insert ON patients;
-CREATE POLICY allow_public_patient_insert ON patients
-  FOR INSERT TO anon WITH CHECK (true);
-
--- Allow anon to read their own record after insert (for MRN display)
-DROP POLICY IF EXISTS allow_public_patient_select ON patients;
-CREATE POLICY allow_public_patient_select ON patients
-  FOR SELECT TO anon USING (true);
-
--- Allow anon to create an encounter (chief_complaint from intake form)
-DROP POLICY IF EXISTS allow_public_encounter_insert ON encounters;
-CREATE POLICY allow_public_encounter_insert ON encounters
-  FOR INSERT TO anon WITH CHECK (true);
-
-```
-
-# supabase_v7_abdm_fhir.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS v7 — ABDM/ABHA & FHIR Integration
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS / DO blocks)
--- ============================================================
-
--- 1. Add ABDM-specific columns to patients table
-DO $$
-BEGIN
-  -- ABHA number (14-digit, formatted XX-XXXX-XXXX-XXXX)
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'abha_number'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN abha_number TEXT;
-    RAISE NOTICE 'Column abha_number added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column abha_number already exists — skipping.';
-  END IF;
-
-  -- ABHA address (user@abdm)
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'abha_address'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN abha_address TEXT;
-    RAISE NOTICE 'Column abha_address added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column abha_address already exists — skipping.';
-  END IF;
-
-  -- ABDM KYC verified flag
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'abdm_kyc_verified'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN abdm_kyc_verified BOOLEAN DEFAULT FALSE;
-    RAISE NOTICE 'Column abdm_kyc_verified added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column abdm_kyc_verified already exists — skipping.';
-  END IF;
-
-  -- ABDM profile data (JSON blob for full ABDM profile)
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'abdm_profile'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN abdm_profile JSONB DEFAULT '{}'::JSONB;
-    RAISE NOTICE 'Column abdm_profile added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column abdm_profile already exists — skipping.';
-  END IF;
-
-  -- FHIR resource ID (for external FHIR server sync)
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'fhir_resource_id'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN fhir_resource_id TEXT;
-    RAISE NOTICE 'Column fhir_resource_id added to patients table.';
-  ELSE
-    RAISE NOTICE 'Column fhir_resource_id already exists — skipping.';
-  END IF;
-END
-$$;
-
--- 2. Add FHIR-related columns to encounters
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'encounters' AND column_name = 'fhir_resource_id'
-  ) THEN
-    ALTER TABLE encounters ADD COLUMN fhir_resource_id TEXT;
-    RAISE NOTICE 'Column fhir_resource_id added to encounters table.';
-  ELSE
-    RAISE NOTICE 'Column fhir_resource_id already exists — skipping.';
-  END IF;
-END
-$$;
-
--- 3. ABDM consent artifacts table (for health information exchange)
-CREATE TABLE IF NOT EXISTS abdm_consents (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID REFERENCES patients(id) ON DELETE CASCADE,
-  consent_id      TEXT,           -- ABDM consent artifact ID
-  request_id      TEXT,           -- ABDM consent request ID
-  status          TEXT DEFAULT 'REQUESTED'
-                    CHECK (status IN ('REQUESTED','GRANTED','DENIED','EXPIRED','REVOKED')),
-  purpose         TEXT,           -- Purpose of consent (e.g., 'CAREMGT', 'BTG')
-  hi_types        TEXT[],         -- Health info types (e.g., {'Prescription','DiagnosticReport'})
-  date_range_from DATE,
-  date_range_to   DATE,
-  expiry_date     TIMESTAMPTZ,
-  granted_at      TIMESTAMPTZ,
-  revoked_at      TIMESTAMPTZ,
-  raw_artifact    JSONB,          -- Full ABDM consent artifact JSON
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE abdm_consents ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_abdm_consents ON abdm_consents;
-CREATE POLICY allow_auth_abdm_consents ON abdm_consents
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_abdm_consents_patient ON abdm_consents(patient_id);
-CREATE INDEX IF NOT EXISTS idx_abdm_consents_status  ON abdm_consents(status);
-
--- 4. ABDM health information exchange log
-CREATE TABLE IF NOT EXISTS abdm_hi_exchange (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID REFERENCES patients(id) ON DELETE CASCADE,
-  consent_id      TEXT,
-  transaction_id  TEXT,
-  direction       TEXT CHECK (direction IN ('PUSH','PULL')),
-  hi_type         TEXT,           -- e.g., 'Prescription', 'OPConsultation'
-  fhir_bundle     JSONB,          -- The FHIR bundle exchanged
-  status          TEXT DEFAULT 'PENDING'
-                    CHECK (status IN ('PENDING','SUCCESS','FAILED')),
-  error_message   TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE abdm_hi_exchange ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_abdm_hi ON abdm_hi_exchange;
-CREATE POLICY allow_auth_abdm_hi ON abdm_hi_exchange
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_abdm_hi_patient ON abdm_hi_exchange(patient_id);
-
--- 5. Indexes for ABHA lookups
-CREATE INDEX IF NOT EXISTS idx_patients_abha_number  ON patients(abha_number)  WHERE abha_number IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_patients_abha_address ON patients(abha_address) WHERE abha_address IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_patients_abha_id      ON patients(abha_id)      WHERE abha_id IS NOT NULL;
-
-SELECT 'v7 ABDM/FHIR migration complete ✓' AS result;
-
-```
-
-# supabase_v8_roles.sql
-
-```sql
-  -- ============================================================
-  -- NexMedicon HMS v8 — Role-Based Access & Clinic Settings
-  -- Run in Supabase → SQL Editor → New Query
-  -- Safe to run multiple times (IF NOT EXISTS everywhere)
-  -- ============================================================
-
-  -- ─── CLINIC USERS (role mapping) ─────────────────────────────
-  -- Links Supabase auth.users to clinic roles.
-  -- Every person who logs in must have a row here.
-  CREATE TABLE IF NOT EXISTS clinic_users (
-    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    auth_id     UUID NOT NULL UNIQUE,          -- references auth.users(id)
-    email       TEXT NOT NULL,
-    full_name   TEXT NOT NULL,
-    role        TEXT NOT NULL DEFAULT 'staff'
-                CHECK (role IN ('admin', 'doctor', 'staff')),
-    is_active   BOOLEAN DEFAULT TRUE,
-    phone       TEXT,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  -- Index for fast lookup by auth_id (called on every page load)
-  CREATE INDEX IF NOT EXISTS idx_clinic_users_auth ON clinic_users(auth_id);
-  CREATE INDEX IF NOT EXISTS idx_clinic_users_email ON clinic_users(email);
-
-  -- RLS: only authenticated users can read clinic_users
-  ALTER TABLE clinic_users ENABLE ROW LEVEL SECURITY;
-
-  -- All authenticated users can read (to see who's who)
-  DROP POLICY IF EXISTS clinic_users_read ON clinic_users;
-  CREATE POLICY clinic_users_read ON clinic_users
-    FOR SELECT TO authenticated USING (true);
-
-  -- Only the user themselves or admins can update
-  DROP POLICY IF EXISTS clinic_users_update ON clinic_users;
-  CREATE POLICY clinic_users_update ON clinic_users
-    FOR UPDATE TO authenticated USING (
-      auth_id = auth.uid()
-      OR EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role = 'admin'
-      )
-    );
-
-  -- Only admins can insert new users
-  DROP POLICY IF EXISTS clinic_users_insert ON clinic_users;
-  CREATE POLICY clinic_users_insert ON clinic_users
-    FOR INSERT TO authenticated WITH CHECK (
-      EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role = 'admin'
-      )
-    );
-
-  -- Only admins can delete users
-  DROP POLICY IF EXISTS clinic_users_delete ON clinic_users;
-  CREATE POLICY clinic_users_delete ON clinic_users
-    FOR DELETE TO authenticated USING (
-      EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role = 'admin'
-      )
-    );
-
-  -- ─── CLINIC SETTINGS (replaces localStorage) ─────────────────
-  -- Key-value store for hospital settings.
-  -- Shared across all devices and users.
-  CREATE TABLE IF NOT EXISTS clinic_settings (
-    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    key         TEXT NOT NULL UNIQUE,
-    value       TEXT,
-    updated_by  UUID REFERENCES clinic_users(id) ON DELETE SET NULL,
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY;
-
-  -- All authenticated users can read settings
-  DROP POLICY IF EXISTS clinic_settings_read ON clinic_settings;
-  CREATE POLICY clinic_settings_read ON clinic_settings
-    FOR SELECT TO authenticated USING (true);
-
-  -- Only admins and doctors can update settings
-  DROP POLICY IF EXISTS clinic_settings_write ON clinic_settings;
-  CREATE POLICY clinic_settings_write ON clinic_settings
-    FOR ALL TO authenticated USING (
-      EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role IN ('admin', 'doctor')
-      )
-    ) WITH CHECK (
-      EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role IN ('admin', 'doctor')
-      )
-    );
-
-  -- ─── AUDIT LOG (who did what) ────────────────────────────────
-  CREATE TABLE IF NOT EXISTS audit_log (
-    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id     UUID REFERENCES clinic_users(id) ON DELETE SET NULL,
-    action      TEXT NOT NULL,       -- 'patient.create', 'encounter.update', etc.
-    entity_type TEXT,                -- 'patient', 'encounter', 'prescription'
-    entity_id   UUID,                -- the record that was changed
-    details     JSONB DEFAULT '{}'::JSONB,  -- extra context
-    ip_address  TEXT,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-
-  -- Only admins can read audit logs
-  DROP POLICY IF EXISTS audit_log_read ON audit_log;
-  CREATE POLICY audit_log_read ON audit_log
-    FOR SELECT TO authenticated USING (
-      EXISTS (
-        SELECT 1 FROM clinic_users cu
-        WHERE cu.auth_id = auth.uid() AND cu.role = 'admin'
-      )
-    );
-
-  -- All authenticated users can insert audit entries
-  DROP POLICY IF EXISTS audit_log_insert ON audit_log;
-  CREATE POLICY audit_log_insert ON audit_log
-    FOR INSERT TO authenticated WITH CHECK (true);
-
-  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_audit_entity  ON audit_log(entity_type, entity_id);
-
-  -- ─── BOOTSTRAP: Allow first admin to be created ──────────────
-  -- When clinic_users is empty (fresh install), allow the first
-  -- authenticated user to insert themselves as admin.
-  -- This policy is automatically superseded once an admin exists.
-  DROP POLICY IF EXISTS clinic_users_bootstrap ON clinic_users;
-  CREATE POLICY clinic_users_bootstrap ON clinic_users
-    FOR INSERT TO authenticated WITH CHECK (
-      NOT EXISTS (SELECT 1 FROM clinic_users)
-    );
-
-  -- ─── HELPER FUNCTION: Get current user's role ────────────────
-  CREATE OR REPLACE FUNCTION get_my_role()
-  RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT role FROM clinic_users WHERE auth_id = auth.uid() AND is_active = TRUE LIMIT 1;
-  $$;
-
-  -- ─── HELPER FUNCTION: Check if current user is admin ─────────
-  CREATE OR REPLACE FUNCTION is_admin()
-  RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = TRUE
-    );
-  $$;
-
-  -- ─── Update existing RLS policies to be role-aware ───────────
-  -- Patients: all authenticated can read, only doctor+admin can delete
-  -- (Keep existing broad policies for now — tighten incrementally)
-
-  -- ─── INTAKE (public patient self-registration) ───────────────
-  -- The /intake page needs to insert patients without being logged in.
-  -- We add a special policy for anon inserts on patients table.
-  -- This is safe because the intake form only inserts, never reads/updates.
-  DROP POLICY IF EXISTS patients_public_insert ON patients;
-  CREATE POLICY patients_public_insert ON patients
-    FOR INSERT TO anon WITH CHECK (true);
-
-  -- Also allow anon to read (for duplicate check by mobile)
-  DROP POLICY IF EXISTS patients_public_read ON patients;
-  CREATE POLICY patients_public_read ON patients
-    FOR SELECT TO anon USING (true);
-
-  -- Allow anon to insert encounters (for chief complaint from intake)
-  DROP POLICY IF EXISTS encounters_public_insert ON encounters;
-  CREATE POLICY encounters_public_insert ON encounters
-    FOR INSERT TO anon WITH CHECK (true);
-
-  SELECT 'v8 roles migration complete ✓' AS result;
-
-```
-
-# supabase_v9_appointments.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS v9 — Appointments Table (replaces localStorage)
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS everywhere)
--- ============================================================
-
--- ─── APPOINTMENTS ────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS appointments (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  patient_name    TEXT NOT NULL,          -- denormalized for fast display
-  mrn             TEXT,                   -- denormalized
-  mobile          TEXT,                   -- denormalized for WhatsApp reminders
-  date            DATE NOT NULL,
-  time            TEXT NOT NULL,          -- HH:MM format
-  type            TEXT NOT NULL DEFAULT 'OPD Consultation',
-  notes           TEXT,
-  status          TEXT NOT NULL DEFAULT 'scheduled'
-                  CHECK (status IN ('scheduled','confirmed','completed','cancelled','no-show')),
-  reminder_sent   BOOLEAN DEFAULT FALSE,
-  created_by      UUID REFERENCES clinic_users(id) ON DELETE SET NULL,
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes for common queries
-CREATE INDEX IF NOT EXISTS idx_appts_date     ON appointments(date);
-CREATE INDEX IF NOT EXISTS idx_appts_patient  ON appointments(patient_id);
-CREATE INDEX IF NOT EXISTS idx_appts_status   ON appointments(status);
-CREATE INDEX IF NOT EXISTS idx_appts_date_status ON appointments(date, status);
-
--- RLS
-ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
-
--- All authenticated users can read appointments
-DROP POLICY IF EXISTS appts_read ON appointments;
-CREATE POLICY appts_read ON appointments
-  FOR SELECT TO authenticated USING (true);
-
--- All authenticated users can insert appointments
-DROP POLICY IF EXISTS appts_insert ON appointments;
-CREATE POLICY appts_insert ON appointments
-  FOR INSERT TO authenticated WITH CHECK (true);
-
--- All authenticated users can update appointments (status changes, etc.)
-DROP POLICY IF EXISTS appts_update ON appointments;
-CREATE POLICY appts_update ON appointments
-  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-
--- Only admin can delete appointments
-DROP POLICY IF EXISTS appts_delete ON appointments;
-CREATE POLICY appts_delete ON appointments
-  FOR DELETE TO authenticated USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users cu
-      WHERE cu.auth_id = auth.uid() AND cu.role IN ('admin', 'doctor')
-    )
-  );
-
--- ─── MIGRATE EXISTING localStorage DATA ──────────────────────
--- If you have appointments in localStorage, you can export them
--- as JSON and insert them using the Supabase dashboard or API.
--- The app will automatically use the database going forward.
-
-SELECT 'v9 appointments migration complete ✓' AS result;
-
-```
-
-# supabase_v10_procedures.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS v10 — Procedure Tracking
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS)
--- ============================================================
-
--- Add procedures JSONB column to encounters table
--- Stores an array of procedure objects per encounter
--- Format: [{ name, indication, findings, complications, surgeon, anaesthesia, notes }]
-ALTER TABLE encounters
-  ADD COLUMN IF NOT EXISTS procedures JSONB DEFAULT '[]'::JSONB;
-
--- Index for searching procedures by name
-CREATE INDEX IF NOT EXISTS idx_encounters_procedures
-  ON encounters USING gin(procedures);
-
-SELECT 'v10 procedure tracking migration complete ✓' AS result;
-
-```
-
-# supabase_v11_features.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v11: Complete Feature Additions
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS everywhere)
---
--- This migration covers:
---  1. IPD Admissions table (Feature #1)
---  2. Portal tokens table  (Feature #5)
---  3. Hospital Fund table  (Feature #6)
---  4. Migrate localStorage keys to Supabase (Requirement #7)
---  5. PHI encryption with pgcrypto (Requirement #9)
---  6. Video appointment open slots support (Feature #5)
---  7. Multi-doctor support on clinic_users (Feature #4)
--- ============================================================
-
--- ─── Enable extensions ────────────────────────────────────────
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
--- ─── 1. IPD Admissions ───────────────────────────────────────
-CREATE TABLE IF NOT EXISTS ipd_admissions (
-  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id              UUID REFERENCES patients(id) ON DELETE SET NULL,
-  patient_name            TEXT NOT NULL,
-  mrn                     TEXT NOT NULL,
-  mobile                  TEXT,
-  age                     INTEGER,
-  gender                  TEXT,
-
-  -- Bed
-  bed_id                  UUID REFERENCES beds(id) ON DELETE SET NULL,
-  bed_number              TEXT,
-  ward                    TEXT,
-
-  -- Admission details
-  admission_date          DATE    NOT NULL DEFAULT CURRENT_DATE,
-  admission_time          TEXT    DEFAULT '00:00',
-  admitting_doctor        TEXT    NOT NULL,
-  consulting_doctors      JSONB   DEFAULT '[]'::jsonb,   -- array of doctor names
-  diagnosis_on_admission  TEXT,
-  chief_complaint         TEXT,
-  diet_type               TEXT    DEFAULT 'Normal',
-  allergies               TEXT,
-  comorbidities           TEXT,
-  insurance_details       TEXT,
-
-  -- Attendant
-  relative_name           TEXT,
-  relative_contact        TEXT,
-  relative_relation       TEXT,
-
-  -- Status
-  status                  TEXT    NOT NULL DEFAULT 'active'
-                            CHECK (status IN ('active', 'discharged', 'transferred')),
-
-  -- Housekeeping
-  created_at              TIMESTAMPTZ DEFAULT NOW(),
-  updated_at              TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE ipd_admissions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_ipd_admissions ON ipd_admissions;
-CREATE POLICY allow_auth_ipd_admissions ON ipd_admissions
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_ipd_adm_patient ON ipd_admissions(patient_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_adm_status  ON ipd_admissions(status);
-CREATE INDEX IF NOT EXISTS idx_ipd_adm_bed     ON ipd_admissions(bed_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_adm_date    ON ipd_admissions(admission_date DESC);
-
--- Update ipd_nursing to reference ipd_admissions (not bed_id directly)
-ALTER TABLE ipd_nursing
-  ADD COLUMN IF NOT EXISTS ipd_admission_id UUID REFERENCES ipd_admissions(id) ON DELETE CASCADE;
-CREATE INDEX IF NOT EXISTS idx_ipd_nursing_adm ON ipd_nursing(ipd_admission_id);
-
--- ─── 2. Portal Tokens (magic-link auth for /portal) ──────────
-CREATE TABLE IF NOT EXISTS portal_tokens (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  mrn         TEXT NOT NULL,
-  patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
-  token       TEXT NOT NULL UNIQUE,
-  expires_at  TIMESTAMPTZ NOT NULL,
-  is_used     BOOLEAN DEFAULT FALSE,
-  created_by  UUID,   -- auth.users.id of clinic staff who generated this
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Tokens are not authenticated reads — use a service-role API route to validate
--- The route /api/portal/* uses service_role key so no RLS needed here,
--- but we enable it and allow service_role through anyway.
-ALTER TABLE portal_tokens ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_service_portal_tokens ON portal_tokens;
-CREATE POLICY allow_service_portal_tokens ON portal_tokens
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_portal_tokens_mrn     ON portal_tokens(mrn);
-CREATE INDEX IF NOT EXISTS idx_portal_tokens_token   ON portal_tokens(token);
-CREATE INDEX IF NOT EXISTS idx_portal_tokens_expires ON portal_tokens(expires_at);
-
--- Auto-expire cleanup (run this periodically or via cron)
--- DELETE FROM portal_tokens WHERE expires_at < NOW();
-
--- ─── 3. Hospital Fund ─────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS hospital_fund (
-  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  type           TEXT NOT NULL CHECK (type IN ('topup', 'expense')),
-  category       TEXT NOT NULL,    -- 'printing' | 'food' | 'supplies' | 'transport' | 'maintenance' | 'other' | 'topup'
-  amount         NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
-  description    TEXT NOT NULL,
-  receipt_note   TEXT,             -- bill number or reference
-  submitted_by   TEXT NOT NULL,    -- staff member name
-  approved_by    TEXT,             -- admin who approved
-  status         TEXT NOT NULL DEFAULT 'pending'
-                   CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_at     TIMESTAMPTZ DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE hospital_fund ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_fund ON hospital_fund;
-CREATE POLICY allow_auth_fund ON hospital_fund
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_fund_status     ON hospital_fund(status);
-CREATE INDEX IF NOT EXISTS idx_fund_type       ON hospital_fund(type);
-CREATE INDEX IF NOT EXISTS idx_fund_created_at ON hospital_fund(created_at DESC);
-
--- ─── 4. Replace localStorage keys with Supabase tables ───────
---
--- 4a. Lab results (was `nexmedicon_labs` in localStorage)
-CREATE TABLE IF NOT EXISTS lab_templates (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name        TEXT NOT NULL,
-  category    TEXT,
-  parameters  JSONB NOT NULL DEFAULT '[]'::jsonb,  -- [{name, unit, range}, …]
-  is_active   BOOLEAN DEFAULT TRUE,
-  sort_order  INTEGER DEFAULT 0,
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE lab_templates ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_labs ON lab_templates;
-CREATE POLICY allow_auth_labs ON lab_templates
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- 4b. Queue overrides (was `queue_overrides_*` in localStorage)
-CREATE TABLE IF NOT EXISTS queue_overrides (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  queue_date  DATE NOT NULL DEFAULT CURRENT_DATE,
-  patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
-  position    INTEGER,
-  notes       TEXT,
-  created_by  TEXT,
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE queue_overrides ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_queue_overrides ON queue_overrides;
-CREATE POLICY allow_auth_queue_overrides ON queue_overrides
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_queue_overrides_date ON queue_overrides(queue_date);
-
--- ─── 5. PHI Encryption with pgcrypto (Requirement #9) ────────
---
--- DPDP Act compliance: Aadhaar and mobile numbers must be encrypted at rest.
--- Strategy: store encrypted values in new columns, keep plaintext columns
--- for backward compat during transition period, then drop them.
---
--- Key management: hospital_key is a per-hospital secret stored as an
--- environment variable (HOSPITAL_ENCRYPTION_KEY) and passed to pgcrypto.
--- NEVER store the key in the database.
---
--- Encryption function usage (in application code):
---   encrypt:  pgp_sym_encrypt(plaintext, key)
---   decrypt:  pgp_sym_decrypt(ciphertext, key)
---
--- We add encrypted columns here. The application layer
--- (src/lib/phi-crypto.ts) handles encrypt/decrypt transparently.
-
-ALTER TABLE patients
-  ADD COLUMN IF NOT EXISTS aadhaar_encrypted   BYTEA,   -- pgp_sym_encrypt(aadhaar_no, key)
-  ADD COLUMN IF NOT EXISTS mobile_encrypted    BYTEA;   -- pgp_sym_encrypt(mobile, key)
-
--- Mark existing columns as deprecated (application will stop writing them)
--- DO NOT DROP YET — migrate data first.
-COMMENT ON COLUMN patients.aadhaar_no IS 'DEPRECATED: Use aadhaar_encrypted. Will be nulled after migration.';
-COMMENT ON COLUMN patients.mobile     IS 'DEPRECATED: Use mobile_encrypted for PHI compliance. Keep for search index.';
-
--- Index on encrypted columns is not useful for search — full-text search
--- continues on mobile (non-sensitive) and aadhaar is never searched in plaintext.
--- For Aadhaar: search is done via last-4-digits stored separately.
-ALTER TABLE patients
-  ADD COLUMN IF NOT EXISTS aadhaar_last4 TEXT;   -- last 4 digits for display/search, non-PHI
-
--- ─── 6. Video consultation slot enhancements ─────────────────
-
--- Add open slot concept to appointments table
-ALTER TABLE appointments
-  ADD COLUMN IF NOT EXISTS type        TEXT DEFAULT 'opd'   -- 'opd' | 'video' | 'ipd_follow_up'
-  ,ADD COLUMN IF NOT EXISTS video_link TEXT                  -- Jitsi / Meet URL
-  ,ADD COLUMN IF NOT EXISTS duration_min INTEGER DEFAULT 15  -- slot duration
-  ,ADD COLUMN IF NOT EXISTS doctor_name TEXT;                -- for multi-doctor support
-
--- Open slots: status = 'open', patient_* fields are NULL until booked
--- Booked video: status = 'video'
-
-CREATE INDEX IF NOT EXISTS idx_appts_type   ON appointments(type);
-CREATE INDEX IF NOT EXISTS idx_appts_status ON appointments(status);
-
--- ─── 7. Multi-doctor support on clinic_users ─────────────────
-
-ALTER TABLE clinic_users
-  ADD COLUMN IF NOT EXISTS specialty   TEXT,       -- e.g. 'Gynaecology', 'Paediatrics'
-  ADD COLUMN IF NOT EXISTS med_reg_no  TEXT,       -- Medical Council registration
-  ADD COLUMN IF NOT EXISTS signature   TEXT,       -- base64 image of digital signature
-  ADD COLUMN IF NOT EXISTS is_primary  BOOLEAN DEFAULT FALSE;  -- the main doctor of the clinic
-
--- ─── 8. clinic_settings table for Supabase-backed settings ───
--- (Requirement #7: replace nexmedicon_settings localStorage key)
-
-CREATE TABLE IF NOT EXISTS clinic_settings (
-  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  key        TEXT NOT NULL UNIQUE,
-  value      JSONB NOT NULL DEFAULT '{}'::jsonb,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_settings ON clinic_settings;
-CREATE POLICY allow_auth_settings ON clinic_settings
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- ─── 9. Audit log enhancements ────────────────────────────────
-
-ALTER TABLE audit_log
-  ADD COLUMN IF NOT EXISTS ip_address  TEXT,
-  ADD COLUMN IF NOT EXISTS user_agent  TEXT;
-
--- ─── Done ─────────────────────────────────────────────────────
-
-SELECT 'v11 migration complete ✓' AS result;
-
-```
-
-# supabase_v11_improvements.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v11 Improvements Migration
--- Run in Supabase SQL Editor AFTER all previous migrations
--- Covers:
---   A. Lab Results → Supabase (migrate from localStorage)
---   B. OPD Queue → Supabase Realtime
---   D. Billing → GST + Package Billing
---   E. Audit Log wiring
---   F. API Route Auth Middleware support table
--- ============================================================
-
--- ─────────────────────────────────────────────────────────────
--- A. LAB RESULTS TABLE (replaces localStorage)
--- ─────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS lab_reports (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  encounter_id  UUID REFERENCES encounters(id) ON DELETE SET NULL,
-  report_date   DATE NOT NULL DEFAULT CURRENT_DATE,
-  lab_name      TEXT NOT NULL DEFAULT '',
-  entries       JSONB NOT NULL DEFAULT '[]',  -- array of LabEntry objects
-  notes         TEXT NOT NULL DEFAULT '',
-  created_by    UUID REFERENCES clinic_users(id) ON DELETE SET NULL,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Index for fast patient lookups
-CREATE INDEX IF NOT EXISTS idx_lab_reports_patient ON lab_reports(patient_id);
-CREATE INDEX IF NOT EXISTS idx_lab_reports_date    ON lab_reports(report_date DESC);
-CREATE INDEX IF NOT EXISTS idx_lab_reports_encounter ON lab_reports(encounter_id)
-  WHERE encounter_id IS NOT NULL;
-
--- RLS for lab_reports
-ALTER TABLE lab_reports ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_select_lab_reports ON lab_reports;
-DROP POLICY IF EXISTS allow_auth_insert_lab_reports ON lab_reports;
-DROP POLICY IF EXISTS allow_auth_update_lab_reports ON lab_reports;
-DROP POLICY IF EXISTS allow_auth_delete_lab_reports ON lab_reports;
-
-CREATE POLICY allow_auth_select_lab_reports ON lab_reports FOR SELECT TO authenticated USING (true);
-CREATE POLICY allow_auth_insert_lab_reports ON lab_reports FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY allow_auth_update_lab_reports ON lab_reports FOR UPDATE TO authenticated USING (true);
-CREATE POLICY allow_auth_delete_lab_reports ON lab_reports FOR DELETE TO authenticated USING (true);
-
--- ─────────────────────────────────────────────────────────────
--- B. OPD QUEUE — Supabase Realtime support
---    (queue table likely exists; ensure realtime is enabled)
--- ─────────────────────────────────────────────────────────────
-
--- Make sure the queue table exists with the right shape
-CREATE TABLE IF NOT EXISTS opd_queue (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  encounter_id  UUID REFERENCES encounters(id) ON DELETE SET NULL,
-  queue_date    DATE NOT NULL DEFAULT CURRENT_DATE,
-  token_number  INTEGER NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'waiting'
-                  CHECK (status IN ('waiting','in_progress','done','cancelled')),
-  priority      TEXT NOT NULL DEFAULT 'normal'
-                  CHECK (priority IN ('normal','urgent','emergency')),
-  notes         TEXT DEFAULT '',
-  called_at     TIMESTAMPTZ,
-  done_at       TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_opd_queue_date    ON opd_queue(queue_date);
-CREATE INDEX IF NOT EXISTS idx_opd_queue_status  ON opd_queue(status);
-CREATE INDEX IF NOT EXISTS idx_opd_queue_patient ON opd_queue(patient_id);
-
--- Enable RLS
-ALTER TABLE opd_queue ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_select_opd_queue ON opd_queue;
-DROP POLICY IF EXISTS allow_auth_insert_opd_queue ON opd_queue;
-DROP POLICY IF EXISTS allow_auth_update_opd_queue ON opd_queue;
-DROP POLICY IF EXISTS allow_auth_delete_opd_queue ON opd_queue;
-
-CREATE POLICY allow_auth_select_opd_queue ON opd_queue FOR SELECT TO authenticated USING (true);
-CREATE POLICY allow_auth_insert_opd_queue ON opd_queue FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY allow_auth_update_opd_queue ON opd_queue FOR UPDATE TO authenticated USING (true);
-CREATE POLICY allow_auth_delete_opd_queue ON opd_queue FOR DELETE TO authenticated USING (true);
-
--- IMPORTANT: Enable Realtime for opd_queue in Supabase Dashboard:
--- Database → Replication → Tables → toggle opd_queue ON
-
--- ─────────────────────────────────────────────────────────────
--- D. BILLING — GST + Package Billing additions
--- ─────────────────────────────────────────────────────────────
-
--- Add GST and package fields to existing bills table
-ALTER TABLE bills
-  ADD COLUMN IF NOT EXISTS gst_percent     NUMERIC(5,2) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS gst_amount      NUMERIC(10,2) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS package_id      UUID,  -- FK added below after packages table
-  ADD COLUMN IF NOT EXISTS package_name    TEXT,
-  ADD COLUMN IF NOT EXISTS is_package_bill BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS invoice_number  TEXT UNIQUE;
-
--- Auto-generate invoice number trigger
-CREATE SEQUENCE IF NOT EXISTS invoice_seq START 1001;
-
-CREATE OR REPLACE FUNCTION set_invoice_number()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.invoice_number IS NULL THEN
-    NEW.invoice_number := 'INV-' || TO_CHAR(NOW(), 'YYYYMM') || '-' || LPAD(nextval('invoice_seq')::TEXT, 4, '0');
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_invoice_number ON bills;
-CREATE TRIGGER trg_invoice_number
-  BEFORE INSERT ON bills
-  FOR EACH ROW EXECUTE FUNCTION set_invoice_number();
-
--- Billing packages master table
-CREATE TABLE IF NOT EXISTS billing_packages (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT,
-  items       JSONB NOT NULL DEFAULT '[]',  -- [{label, amount}]
-  total       NUMERIC(10,2) NOT NULL,
-  is_active   BOOLEAN DEFAULT TRUE,
-  category    TEXT DEFAULT 'general',       -- 'maternity'|'surgery'|'anc'|'general'
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Add FK now that table exists
-ALTER TABLE bills
-  ADD CONSTRAINT fk_bills_package
-  FOREIGN KEY (package_id) REFERENCES billing_packages(id) ON DELETE SET NULL;
-
-ALTER TABLE billing_packages ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_select_billing_packages ON billing_packages;
-DROP POLICY IF EXISTS allow_auth_insert_billing_packages ON billing_packages;
-DROP POLICY IF EXISTS allow_auth_update_billing_packages ON billing_packages;
-DROP POLICY IF EXISTS allow_auth_delete_billing_packages ON billing_packages;
-
-CREATE POLICY allow_auth_select_billing_packages ON billing_packages FOR SELECT TO authenticated USING (true);
-CREATE POLICY allow_auth_insert_billing_packages ON billing_packages FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY allow_auth_update_billing_packages ON billing_packages FOR UPDATE TO authenticated USING (true);
-CREATE POLICY allow_auth_delete_billing_packages ON billing_packages FOR DELETE TO authenticated USING (true);
-
--- Seed common gynecology packages
-INSERT INTO billing_packages (name, description, category, items, total) VALUES
-('Normal Delivery Package', 'Includes admission, delivery, 2 days stay, basic medicines', 'maternity',
-  '[{"label":"Delivery Charges","amount":8000},{"label":"Room (2 days)","amount":3000},{"label":"Nursing Care","amount":2000},{"label":"Basic Medicines","amount":1500}]'::jsonb, 14500),
-('LSCS Package', 'C-Section: OT, anaesthesia, 4 days stay, dressings', 'maternity',
-  '[{"label":"OT Charges","amount":15000},{"label":"Anaesthesia","amount":5000},{"label":"Room (4 days)","amount":6000},{"label":"Nursing & Dressings","amount":3000}]'::jsonb, 29000),
-('ANC Full Package', '4 ANC visits + Iron + Folate + 2 scans', 'anc',
-  '[{"label":"4 ANC Consultations","amount":1600},{"label":"2 Obstetric USGs","amount":2400},{"label":"Iron & Folate tablets","amount":500}]'::jsonb, 4500),
-('Minor OT Package', 'Minor surgical procedure under local anaesthesia', 'surgery',
-  '[{"label":"OT Charges","amount":4000},{"label":"Consumables","amount":800},{"label":"Follow-up Visit","amount":300}]'::jsonb, 5100)
-ON CONFLICT DO NOTHING;
-
--- GST rates reference (for UI dropdowns)
--- Standard rates for healthcare: most services are GST-exempt (0%)
--- Cosmetic / non-essential may attract 18%
-COMMENT ON COLUMN bills.gst_percent IS 'GST % applied. 0 for most medical services (exempt). 5/12/18 for taxable items.';
-
--- ─────────────────────────────────────────────────────────────
--- E. AUDIT LOG
--- ─────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS audit_log (
-  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id      UUID REFERENCES clinic_users(id) ON DELETE SET NULL,
-  user_email   TEXT,
-  user_role    TEXT,
-  action       TEXT NOT NULL,   -- 'create'|'update'|'delete'|'view'|'print'|'login'|'logout'
-  entity_type  TEXT NOT NULL,   -- 'patient'|'encounter'|'bill'|'lab_report'|'prescription'|'user'
-  entity_id    TEXT,            -- UUID of the affected record
-  entity_label TEXT,            -- human-readable: patient name, bill number, etc.
-  changes      JSONB,           -- {before: {...}, after: {...}} for updates
-  ip_address   TEXT,
-  user_agent   TEXT,
-  created_at   TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_log_user      ON audit_log(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_log_entity    ON audit_log(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_audit_log_created   ON audit_log(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_log_action    ON audit_log(action);
-
--- RLS: only admins can read audit log; anyone authenticated can INSERT (write)
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allow_auth_insert_audit_log ON audit_log;
-DROP POLICY IF EXISTS allow_admin_select_audit_log ON audit_log;
-
--- Anyone authenticated can write audit entries
-CREATE POLICY allow_auth_insert_audit_log ON audit_log FOR INSERT TO authenticated WITH CHECK (true);
-
--- Only admins can read audit log (checked via clinic_users role)
-CREATE POLICY allow_admin_select_audit_log ON audit_log FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users cu
-      WHERE cu.auth_id = auth.uid()
-        AND cu.role = 'admin'
-        AND cu.is_active = TRUE
-    )
-  );
-
--- Auto-trigger: log patient deletions automatically at DB level
-CREATE OR REPLACE FUNCTION log_patient_delete()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO audit_log (action, entity_type, entity_id, entity_label, changes)
-  VALUES (
-    'delete', 'patient',
-    OLD.id::TEXT,
-    OLD.full_name || ' (MRN: ' || OLD.mrn::TEXT || ')',
-    jsonb_build_object('before', row_to_json(OLD))
-  );
-  RETURN OLD;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS trg_audit_patient_delete ON patients;
-CREATE TRIGGER trg_audit_patient_delete
-  BEFORE DELETE ON patients
-  FOR EACH ROW EXECUTE FUNCTION log_patient_delete();
-
--- ─────────────────────────────────────────────────────────────
--- F. API ROUTE AUTH — Session validation helper
--- ─────────────────────────────────────────────────────────────
-
--- This view helps middleware quickly validate roles without extra round-trips
-CREATE OR REPLACE VIEW v_active_users AS
-  SELECT
-    cu.auth_id,
-    cu.id          AS clinic_user_id,
-    cu.email,
-    cu.full_name,
-    cu.role,
-    cu.is_active
-  FROM clinic_users cu
-  WHERE cu.is_active = TRUE;
-
--- Grant access to authenticated users
-GRANT SELECT ON v_active_users TO authenticated;
-
--- ─────────────────────────────────────────────────────────────
--- UPDATED_AT auto-touch triggers
--- ─────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION touch_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_lab_reports_updated_at ON lab_reports;
-CREATE TRIGGER trg_lab_reports_updated_at
-  BEFORE UPDATE ON lab_reports
-  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
-
-DROP TRIGGER IF EXISTS trg_opd_queue_updated_at ON opd_queue;
-CREATE TRIGGER trg_opd_queue_updated_at
-  BEFORE UPDATE ON opd_queue
-  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
-
-DROP TRIGGER IF EXISTS trg_billing_packages_updated_at ON billing_packages;
-CREATE TRIGGER trg_billing_packages_updated_at
-  BEFORE UPDATE ON billing_packages
-  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
-
-```
-
-# supabase_v12_bug_fixes.sql
-
-```sql
--- ═══════════════════════════════════════════════════════════════════════════
--- NexMedicon HMS — Bug Fix Migrations (v12)
--- ═══════════════════════════════════════════════════════════════════════════
--- Run this file in Supabase → SQL Editor.
---
--- Fixes:
---   BUG #1: Adds UNIQUE constraint on bills.razorpay_payment_id to prevent
---           duplicate bills if Razorpay fires the handler callback twice.
---
---   BUG #3: Adds gst_percent and gst_amount columns to bills so the GST
---           module can persist values from the billing form. Existing rows
---           default to 0 (no behaviour change for existing bills).
---
--- All operations are idempotent — safe to run multiple times.
--- ═══════════════════════════════════════════════════════════════════════════
-
-
--- ─── BUG #1 — Razorpay duplicate prevention ─────────────────────────────────
--- A UNIQUE constraint on razorpay_payment_id ensures that if Razorpay's
--- handler fires twice (network retry edge case), the second INSERT will fail
--- with a constraint violation rather than silently creating a duplicate bill.
---
--- NULL values are allowed and do NOT count as duplicates in PostgreSQL UNIQUE
--- constraints — so cash bills (which have NULL razorpay_payment_id) are not
--- affected.
---
--- We use a partial unique index instead of a table constraint so that:
---   1. It is conditional (only enforced where the id is NOT NULL)
---   2. It can be created with IF NOT EXISTS
---   3. It does not block existing rows that may have duplicate NULLs
-
-CREATE UNIQUE INDEX IF NOT EXISTS bills_razorpay_payment_id_unique
-  ON bills (razorpay_payment_id)
-  WHERE razorpay_payment_id IS NOT NULL;
-
-
--- ─── BUG #3 — Wire GST into the bills table ─────────────────────────────────
--- The billing-gst.ts library and BillingExtras.tsx components were already
--- written but never connected to the live bills table. These columns let the
--- billing page persist the GST percentage and computed GST amount per bill.
---
--- Defaults are 0 so that:
---   - All existing bills (without GST) read back as gst_percent=0, gst_amount=0
---   - The receipt and CA report logic can safely use Number(b.gst_amount || 0)
-
-ALTER TABLE bills
-  ADD COLUMN IF NOT EXISTS gst_percent NUMERIC(5, 2) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS gst_amount  NUMERIC(10, 2) DEFAULT 0;
-
-
--- ─── Verification ───────────────────────────────────────────────────────────
--- After running, you can confirm both fixes are in place with:
---
---   -- Check the unique index exists
---   SELECT indexname FROM pg_indexes
---    WHERE tablename = 'bills' AND indexname = 'bills_razorpay_payment_id_unique';
---
---   -- Check the GST columns exist
---   SELECT column_name, data_type, column_default
---     FROM information_schema.columns
---    WHERE table_name = 'bills' AND column_name IN ('gst_percent', 'gst_amount');
--- ═══════════════════════════════════════════════════════════════════════════
-
-```
-
-# supabase_v12_insurance.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v12: Insurance policy fields on patients
--- Run in Supabase → SQL Editor → New Query
--- Safe to re-run (IF NOT EXISTS pattern).
--- ============================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'policy_tpa_name'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN policy_tpa_name TEXT;
-    RAISE NOTICE 'Column policy_tpa_name added to patients.';
-  ELSE
-    RAISE NOTICE 'Column policy_tpa_name already exists — skipping.';
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'policy_number'
-  ) THEN
-    ALTER TABLE patients ADD COLUMN policy_number TEXT;
-    RAISE NOTICE 'Column policy_number added to patients.';
-  ELSE
-    RAISE NOTICE 'Column policy_number already exists — skipping.';
-  END IF;
-END $$;
-
-```
-
-# supabase_v13_reminders.sql
-
-```sql
--- ================================================================
--- NexMedicon HMS — v13: Reminder tracking columns
--- Run in Supabase → SQL Editor → New Query
--- Safe to re-run (IF NOT EXISTS pattern).
--- ================================================================
-
--- Track when a WhatsApp reminder was last sent for each appointment
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'appointments' AND column_name = 'reminder_sent_at'
-  ) THEN
-    ALTER TABLE appointments ADD COLUMN reminder_sent_at TIMESTAMPTZ;
-    RAISE NOTICE 'Column reminder_sent_at added to appointments.';
-  ELSE
-    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
-  END IF;
-END $$;
-
--- Track when a follow-up reminder was last sent for each prescription
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'prescriptions' AND column_name = 'reminder_sent_at'
-  ) THEN
-    ALTER TABLE prescriptions ADD COLUMN reminder_sent_at TIMESTAMPTZ;
-    RAISE NOTICE 'Column reminder_sent_at added to prescriptions.';
-  ELSE
-    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
-  END IF;
-END $$;
-
--- Track when a post-delivery / vaccination reminder was last sent
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'discharge_summaries' AND column_name = 'reminder_sent_at'
-  ) THEN
-    ALTER TABLE discharge_summaries ADD COLUMN reminder_sent_at TIMESTAMPTZ;
-    RAISE NOTICE 'Column reminder_sent_at added to discharge_summaries.';
-  ELSE
-    RAISE NOTICE 'Column reminder_sent_at already exists — skipping.';
-  END IF;
-END $$;
-
-```
-
-# supabase_v14_auto_reminders.sql
-
-```sql
--- ================================================================
--- NexMedicon HMS — v14: Auto-Reminder System
--- Run in Supabase → SQL Editor → New Query
--- Safe to re-run (IF NOT EXISTS pattern).
--- ================================================================
-
--- ─── 1. Reminder Log — tracks every reminder sent (bulk or individual) ───
-CREATE TABLE IF NOT EXISTS reminder_log (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID REFERENCES patients(id) ON DELETE CASCADE,
-  patient_name    TEXT,
-  mobile          TEXT,
-  reminder_type   TEXT NOT NULL,  -- appointment, follow_up, anc, post_delivery, vaccination, pending_bill, high_risk_anc
-  source_table    TEXT,           -- appointments, prescriptions, encounters, discharge_summaries, bills
-  source_id       UUID,
-  message_preview TEXT,           -- first 200 chars of the message
-  channel         TEXT DEFAULT 'whatsapp',  -- whatsapp, sms, etc.
-  status          TEXT DEFAULT 'sent',      -- sent, failed, pending
-  sent_at         TIMESTAMPTZ DEFAULT NOW(),
-  sent_by         TEXT,           -- 'auto', 'manual', 'bulk', user email
-  batch_id        UUID,           -- groups reminders sent in one bulk action
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_reminder_log_patient   ON reminder_log(patient_id);
-CREATE INDEX IF NOT EXISTS idx_reminder_log_type      ON reminder_log(reminder_type);
-CREATE INDEX IF NOT EXISTS idx_reminder_log_sent_at   ON reminder_log(sent_at);
-CREATE INDEX IF NOT EXISTS idx_reminder_log_batch     ON reminder_log(batch_id);
-CREATE INDEX IF NOT EXISTS idx_reminder_log_source    ON reminder_log(source_table, source_id);
-
--- RLS
-ALTER TABLE reminder_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS reminder_log_read ON reminder_log;
-CREATE POLICY reminder_log_read ON reminder_log
-  FOR SELECT TO authenticated USING (true);
-
-DROP POLICY IF EXISTS reminder_log_insert ON reminder_log;
-CREATE POLICY reminder_log_insert ON reminder_log
-  FOR INSERT TO authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS reminder_log_anon_insert ON reminder_log;
-CREATE POLICY reminder_log_anon_insert ON reminder_log
-  FOR INSERT TO anon WITH CHECK (true);
-
--- Allow anon read for cron jobs
-DROP POLICY IF EXISTS reminder_log_anon_read ON reminder_log;
-CREATE POLICY reminder_log_anon_read ON reminder_log
-  FOR SELECT TO anon USING (true);
-
--- ─── 2. Auto-reminder settings in hospital_settings (optional) ───
--- These are stored as JSON in the existing settings mechanism,
--- no schema change needed. Settings keys:
---   auto_reminder_enabled: boolean
---   auto_reminder_time: string (e.g., "08:00")
---   auto_reminder_types: string[] (e.g., ["appointment", "follow_up", "anc"])
-
-```
-
-# supabase_v14_critical_fixes.sql
-
-```sql
--- ═══════════════════════════════════════════════════════════════════════════
--- NexMedicon HMS — Critical Bug Fix Migrations (v14)
--- ═══════════════════════════════════════════════════════════════════════════
--- Run this file in Supabase → SQL Editor.
---
--- Fixes:
---   1. Adds local_storage_id column to lab_reports so localStorage→Supabase
---      migration is idempotent (safe to run multiple times without duplicates).
---
---   2. Adds migrated_from column to track data provenance.
---
---   3. Adds payment_notes and paid_at columns to bills table for the
---      Razorpay webhook to store payment metadata (method, timestamp, etc.)
---
---   4. Adds razorpay_order_id column if not already present (needed by
---      the webhook to find the matching bill for a payment).
---
--- All operations are idempotent — safe to run multiple times.
--- ═══════════════════════════════════════════════════════════════════════════
-
-
--- ─── 1. lab_reports: localStorage migration support ─────────────────────────
-
--- local_storage_id stores the original localStorage record UUID.
--- UNIQUE ensures re-running the migration never creates duplicates.
-ALTER TABLE lab_reports
-  ADD COLUMN IF NOT EXISTS local_storage_id TEXT,
-  ADD COLUMN IF NOT EXISTS migrated_from    TEXT;
-
--- Unique index on local_storage_id (nullable — NULL values are not unique in PG,
--- so existing Supabase-native records with NULL are unaffected)
-CREATE UNIQUE INDEX IF NOT EXISTS lab_reports_local_storage_id_unique
-  ON lab_reports (local_storage_id)
-  WHERE local_storage_id IS NOT NULL;
-
-
--- ─── 2. bills: Razorpay webhook metadata ────────────────────────────────────
-
--- razorpay_order_id: set when the bill is created and a Razorpay order is initiated.
--- Webhook uses this to find the matching bill.
-ALTER TABLE bills
-  ADD COLUMN IF NOT EXISTS razorpay_order_id  TEXT,
-  ADD COLUMN IF NOT EXISTS paid_at            TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS payment_method     TEXT,
-  ADD COLUMN IF NOT EXISTS payment_notes      TEXT;
-
--- Index for fast lookup by order_id in the webhook handler
-CREATE INDEX IF NOT EXISTS bills_razorpay_order_id_idx
-  ON bills (razorpay_order_id)
-  WHERE razorpay_order_id IS NOT NULL;
-
-
--- ─── 3. Verification ─────────────────────────────────────────────────────────
--- After running, verify with:
---
---   SELECT column_name, data_type
---     FROM information_schema.columns
---    WHERE table_name = 'lab_reports'
---      AND column_name IN ('local_storage_id', 'migrated_from');
---
---   SELECT column_name, data_type
---     FROM information_schema.columns
---    WHERE table_name = 'bills'
---      AND column_name IN ('razorpay_order_id', 'paid_at', 'payment_method', 'payment_notes');
---
---   SELECT indexname FROM pg_indexes
---    WHERE tablename = 'lab_reports' AND indexname = 'lab_reports_local_storage_id_unique';
---
--- ═══════════════════════════════════════════════════════════════════════════
-
-```
-
-# supabase_v15_safety_features.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v15 Safety & Compliance Features
--- Run AFTER all previous migrations (v1–v14)
--- ============================================================
-
--- ── 1. AUDIT LOG IMMUTABILITY ─────────────────────────────────
--- Make audit_log append-only: no UPDATE, no DELETE
-
--- Revoke DELETE and UPDATE from all roles on audit_log
-DO $$
-BEGIN
-  -- Prevent deletion of audit records
-  EXECUTE 'REVOKE DELETE ON audit_log FROM authenticated';
-  EXECUTE 'REVOKE DELETE ON audit_log FROM anon';
-  EXECUTE 'REVOKE DELETE ON audit_log FROM service_role';
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'Could not revoke DELETE on audit_log: %', SQLERRM;
-END $$;
-
--- Trigger to prevent UPDATE of audit_log rows
-CREATE OR REPLACE FUNCTION prevent_audit_update()
-RETURNS TRIGGER AS $$
-BEGIN
-  RAISE EXCEPTION 'Audit log entries are immutable and cannot be modified';
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_audit_immutable ON audit_log;
-CREATE TRIGGER trg_audit_immutable
-  BEFORE UPDATE ON audit_log
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_audit_update();
-
--- Trigger to prevent DELETE of audit_log rows (belt + suspenders)
-CREATE OR REPLACE FUNCTION prevent_audit_delete()
-RETURNS TRIGGER AS $$
-BEGIN
-  RAISE EXCEPTION 'Audit log entries are immutable and cannot be deleted';
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_audit_no_delete ON audit_log;
-CREATE TRIGGER trg_audit_no_delete
-  BEFORE DELETE ON audit_log
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_audit_delete();
-
--- Add hash chain for tamper detection
-ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS entry_hash TEXT;
-ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS prev_hash TEXT;
-
--- ── 2. PATIENT ALLERGIES TABLE ────────────────────────────────
-CREATE TABLE IF NOT EXISTS patient_allergies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  allergen TEXT NOT NULL,                    -- e.g. 'Penicillin', 'Sulfa', 'Ibuprofen'
-  allergen_type TEXT DEFAULT 'drug',         -- 'drug', 'food', 'environmental'
-  reaction TEXT,                             -- e.g. 'Anaphylaxis', 'Rash', 'Hives'
-  severity TEXT DEFAULT 'moderate',          -- 'mild', 'moderate', 'severe', 'life-threatening'
-  confirmed BOOLEAN DEFAULT true,
-  reported_by TEXT,                          -- who reported this allergy
-  reported_date TIMESTAMPTZ DEFAULT now(),
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- RLS for patient_allergies
-ALTER TABLE patient_allergies ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "auth_select_allergies" ON patient_allergies
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY "auth_insert_allergies" ON patient_allergies
-  FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "auth_update_allergies" ON patient_allergies
-  FOR UPDATE TO authenticated USING (true);
-CREATE POLICY "auth_delete_allergies" ON patient_allergies
-  FOR DELETE TO authenticated USING (true);
-
--- Index for fast lookup during prescription
-CREATE INDEX IF NOT EXISTS idx_allergies_patient ON patient_allergies(patient_id);
-CREATE INDEX IF NOT EXISTS idx_allergies_allergen ON patient_allergies(allergen);
-
--- ── 3. DRUG INTERACTIONS LOG ──────────────────────────────────
-CREATE TABLE IF NOT EXISTS drug_interaction_overrides (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id UUID NOT NULL REFERENCES patients(id),
-  encounter_id UUID REFERENCES encounters(id),
-  drug_a TEXT NOT NULL,
-  drug_b TEXT NOT NULL,
-  severity TEXT NOT NULL,                    -- 'critical', 'major', 'moderate', 'minor'
-  override_reason TEXT NOT NULL,             -- doctor must document why they're overriding
-  overridden_by UUID REFERENCES clinic_users(id),
-  overridden_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE drug_interaction_overrides ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "auth_all_interaction_overrides" ON drug_interaction_overrides
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- ── 4. CRITICAL VALUE ALERTS ──────────────────────────────────
-CREATE TABLE IF NOT EXISTS critical_alerts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id UUID NOT NULL REFERENCES patients(id),
-  encounter_id UUID REFERENCES encounters(id),
-  alert_type TEXT NOT NULL,                  -- 'vital', 'lab', 'drug_interaction', 'allergy'
-  parameter TEXT NOT NULL,                   -- e.g. 'haemoglobin', 'bp_systolic', 'spo2'
-  value TEXT NOT NULL,                       -- the actual value
-  threshold TEXT,                            -- the threshold that was breached
-  severity TEXT NOT NULL DEFAULT 'high',     -- 'critical', 'high', 'medium'
-  message TEXT NOT NULL,
-  action_required TEXT,
-  status TEXT DEFAULT 'open',                -- 'open', 'acknowledged', 'resolved', 'escalated'
-  acknowledged_by UUID REFERENCES clinic_users(id),
-  acknowledged_at TIMESTAMPTZ,
-  resolved_by UUID REFERENCES clinic_users(id),
-  resolved_at TIMESTAMPTZ,
-  resolution_notes TEXT,
-  escalated_to TEXT,                         -- phone/email of escalation target
-  escalated_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE critical_alerts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "auth_all_critical_alerts" ON critical_alerts
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_critical_alerts_patient ON critical_alerts(patient_id);
-CREATE INDEX IF NOT EXISTS idx_critical_alerts_status ON critical_alerts(status);
-CREATE INDEX IF NOT EXISTS idx_critical_alerts_severity ON critical_alerts(severity);
-
--- ── 5. DATA RETENTION POLICIES TABLE ──────────────────────────
-CREATE TABLE IF NOT EXISTS data_retention_policies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type TEXT NOT NULL UNIQUE,          -- 'audit_log', 'encounters', 'prescriptions', etc.
-  retention_days INTEGER NOT NULL,           -- how many days to keep
-  auto_purge BOOLEAN DEFAULT false,          -- whether to auto-delete expired records
-  legal_minimum_days INTEGER DEFAULT 2555,   -- 7 years (Indian medical records requirement)
-  description TEXT,
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  updated_by UUID REFERENCES clinic_users(id)
-);
-
-ALTER TABLE data_retention_policies ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "admin_only_retention" ON data_retention_policies
-  FOR ALL TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = true
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = true
-    )
-  );
-
--- Seed default retention policies (Indian medical records: 7 years minimum)
-INSERT INTO data_retention_policies (entity_type, retention_days, auto_purge, legal_minimum_days, description)
-VALUES
-  ('patients',       3650, false, 2555, 'Patient demographics — 10 years, no auto-purge'),
-  ('encounters',     3650, false, 2555, 'OPD consultations — 10 years'),
-  ('prescriptions',  3650, false, 2555, 'Prescriptions — 10 years'),
-  ('lab_reports',    3650, false, 2555, 'Lab results — 10 years'),
-  ('bills',          2920, false, 2555, 'Billing records — 8 years (tax requirement)'),
-  ('audit_log',      3650, false, 2555, 'Audit trail — 10 years, never auto-purge'),
-  ('attachments',    1825, true,  2555, 'Uploaded files — 5 years, auto-purge after'),
-  ('opd_queue',       365, true,    30, 'Queue tokens — 1 year, auto-purge'),
-  ('reminders',       365, true,    30, 'SMS/WhatsApp reminders — 1 year')
-ON CONFLICT (entity_type) DO NOTHING;
-
--- ── 6. GYNECOLOGY TEMPLATES TABLE ─────────────────────────────
-CREATE TABLE IF NOT EXISTS consultation_templates (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  category TEXT NOT NULL,                    -- 'ANC', 'Gynecology', 'Infertility', 'Emergency'
-  chief_complaint TEXT,
-  diagnosis TEXT,
-  notes TEXT,
-  default_medications JSONB DEFAULT '[]',    -- pre-filled medications
-  default_investigations TEXT,               -- suggested investigations
-  default_advice TEXT,
-  ob_data_template JSONB DEFAULT '{}',       -- pre-filled OB fields
-  is_active BOOLEAN DEFAULT true,
-  sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE consultation_templates ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "auth_select_templates" ON consultation_templates
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY "admin_manage_templates" ON consultation_templates
-  FOR ALL TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role IN ('admin', 'doctor') AND is_active = true
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role IN ('admin', 'doctor') AND is_active = true
-    )
-  );
-
--- ── 7. SYSTEM STATUS / HEALTH CHECK TABLE ─────────────────────
-CREATE TABLE IF NOT EXISTS system_health_log (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  check_type TEXT NOT NULL,                  -- 'database', 'api', 'storage', 'auth'
-  status TEXT NOT NULL,                      -- 'healthy', 'degraded', 'down'
-  response_time_ms INTEGER,
-  details JSONB,
-  checked_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Auto-cleanup: keep only last 7 days of health checks
-CREATE INDEX IF NOT EXISTS idx_health_log_time ON system_health_log(checked_at);
-
--- ── 8. BACKUP LOG ─────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS backup_log (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  backup_type TEXT NOT NULL,                 -- 'full', 'incremental', 'manual'
-  status TEXT NOT NULL,                      -- 'started', 'completed', 'failed'
-  tables_included TEXT[],
-  record_count INTEGER,
-  file_size_bytes BIGINT,
-  initiated_by UUID REFERENCES clinic_users(id),
-  started_at TIMESTAMPTZ DEFAULT now(),
-  completed_at TIMESTAMPTZ,
-  error_message TEXT
-);
-
-ALTER TABLE backup_log ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "admin_only_backup_log" ON backup_log
-  FOR ALL TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = true
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM clinic_users
-      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = true
-    )
-  );
-
--- ── 9. MFA ENROLLMENT TRACKING ────────────────────────────────
-ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT false;
-ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS mfa_enrolled_at TIMESTAMPTZ;
-
--- ── 10. PATIENT TABLE ADDITIONS ───────────────────────────────
--- Add allergy summary field for quick display
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS known_allergies TEXT;
--- Add weight for dose calculations
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS weight_kg NUMERIC;
-
--- ── DONE ──────────────────────────────────────────────────────
--- Run this migration in Supabase SQL Editor after all previous migrations.
--- Then deploy the updated application code.
-
-```
-
-# supabase_v16_mfa_video.sql
-
-```sql
--- ============================================================
--- supabase_v16_mfa_video.sql   (FIXED)
--- NexMedicon HMS — MFA tracking + Video consultation improvements
--- Run AFTER all previous migrations (v1 through v15)
---
--- FIX vs previous version:
---   The old version tried to DROP and RECREATE the appointments
---   status CHECK constraint with new values, which violated
---   existing rows that already had statuses like 'scheduled',
---   'confirmed', 'no-show'. The new approach:
---   1. Drops the old constraint (no data loss)
---   2. Re-adds it with ALL valid values (old + new combined)
---   This is safe — existing data is never touched.
--- ============================================================
-
--- ────────────────────────────────────────────────────────────
--- 1. MFA tracking columns on clinic_users
--- ────────────────────────────────────────────────────────────
-
-ALTER TABLE clinic_users
-  ADD COLUMN IF NOT EXISTS mfa_enabled     BOOLEAN     DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS mfa_enrolled_at TIMESTAMPTZ DEFAULT NULL;
-
-COMMENT ON COLUMN clinic_users.mfa_enabled
-  IS 'True when the user has a verified TOTP factor enrolled in Supabase Auth';
-COMMENT ON COLUMN clinic_users.mfa_enrolled_at
-  IS 'Timestamp when MFA was first verified (not just enrolled)';
-
--- ────────────────────────────────────────────────────────────
--- 2. Video / call columns on appointments
--- ────────────────────────────────────────────────────────────
-
-ALTER TABLE appointments
-  ADD COLUMN IF NOT EXISTS video_link        TEXT        DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS video_room_id     TEXT        DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS call_started_at   TIMESTAMPTZ DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS call_ended_at     TIMESTAMPTZ DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS call_duration_min INTEGER     DEFAULT NULL;
-
--- ────────────────────────────────────────────────────────────
--- 3. FIX: Replace the status CHECK constraint safely
---
---    The original appointments table (v9) used:
---      CHECK (status IN ('scheduled','confirmed','completed','cancelled','no-show'))
---
---    The video page uses: 'open', 'video'
---    The new video features need: 'missed'
---
---    We drop the OLD constraint and recreate it with the full
---    union of all values.  Existing rows are NEVER changed.
--- ────────────────────────────────────────────────────────────
-
--- Drop whichever constraint name was used (v9 or earlier)
-ALTER TABLE appointments
-  DROP CONSTRAINT IF EXISTS appointments_status_check;
-
--- Also try the Postgres auto-generated name (format: <table>_<col>_check)
-ALTER TABLE appointments
-  DROP CONSTRAINT IF EXISTS appointments_status_check1;
-
--- Recreate with ALL values: original + video-page values
-ALTER TABLE appointments
-  ADD CONSTRAINT appointments_status_check
-  CHECK (status IN (
-    -- Original v9 values
-    'scheduled',
-    'confirmed',
-    'completed',
-    'cancelled',
-    'no-show',
-    -- Video-page values
-    'open',
-    'video',
-    -- New values added by this migration
-    'missed'
-  ));
-
--- ────────────────────────────────────────────────────────────
--- 4. Performance indexes for video appointment queries
--- ────────────────────────────────────────────────────────────
-
-CREATE INDEX IF NOT EXISTS idx_appointments_video_type_date
-  ON appointments (date, time)
-  WHERE type = 'video';
-
-CREATE INDEX IF NOT EXISTS idx_appointments_status_type
-  ON appointments (status, type);
-
--- ────────────────────────────────────────────────────────────
--- 5. Trigger: auto-calculate call_duration_min when call ends
--- ────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION fn_calculate_call_duration()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.call_ended_at IS NOT NULL AND NEW.call_started_at IS NOT NULL THEN
-    NEW.call_duration_min :=
-      ROUND(EXTRACT(EPOCH FROM (NEW.call_ended_at - NEW.call_started_at)) / 60)::INTEGER;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_call_duration ON appointments;
-CREATE TRIGGER trg_call_duration
-  BEFORE UPDATE ON appointments
-  FOR EACH ROW
-  WHEN (NEW.call_ended_at IS NOT NULL)
-  EXECUTE FUNCTION fn_calculate_call_duration();
-
--- ────────────────────────────────────────────────────────────
--- 6. View: upcoming video consultations (dashboard widget)
--- ────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE VIEW v_upcoming_video_consults AS
-SELECT
-  a.id,
-  a.date,
-  a.time,
-  a.status,
-  a.patient_name,
-  a.mrn,
-  a.mobile,
-  a.doctor_name,
-  a.video_link,
-  a.notes,
-  a.call_duration_min
-FROM appointments a
-WHERE
-  a.type  = 'video'
-  AND a.date >= CURRENT_DATE
-  AND a.status NOT IN ('completed', 'missed', 'cancelled')
-ORDER BY a.date, a.time;
-
--- ────────────────────────────────────────────────────────────
--- 7. RLS policies for appointments (idempotent)
--- ────────────────────────────────────────────────────────────
-
-ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
-
--- SELECT: any authenticated user
-DROP POLICY IF EXISTS appts_read   ON appointments;
-CREATE POLICY appts_read ON appointments
-  FOR SELECT TO authenticated USING (true);
-
--- INSERT: any authenticated user
-DROP POLICY IF EXISTS appts_insert ON appointments;
-CREATE POLICY appts_insert ON appointments
-  FOR INSERT TO authenticated WITH CHECK (true);
-
--- UPDATE: any authenticated user
-DROP POLICY IF EXISTS appts_update ON appointments;
-CREATE POLICY appts_update ON appointments
-  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-
--- DELETE: admin + doctor only
-DROP POLICY IF EXISTS appts_delete ON appointments;
-CREATE POLICY appts_delete ON appointments
-  FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM clinic_users cu
-      WHERE cu.auth_id = auth.uid()
-        AND cu.role IN ('admin', 'doctor')
-    )
-  );
-
--- ────────────────────────────────────────────────────────────
--- 8. Realtime note
---    Enable in Supabase Dashboard → Database → Replication
---    OR uncomment the line below (requires superuser):
--- ALTER PUBLICATION supabase_realtime ADD TABLE appointments;
--- ────────────────────────────────────────────────────────────
-
--- ────────────────────────────────────────────────────────────
--- DONE ✓
--- After running this migration:
---   1. Enable Realtime for 'appointments' in Supabase Dashboard
---   2. Deploy src/app/login/page.tsx  (MFA UI)
---   3. Deploy src/lib/mfa.ts          (AAL2 fix)
---   4. Deploy src/app/video/page.tsx  (in-app iframe + realtime)
---   5. Protect API routes (see src/lib/api-auth.ts)
--- ────────────────────────────────────────────────────────────
-
-SELECT 'v16 MFA + Video migration complete ✓' AS result;
-
-```
-
-# supabase_v17_patient_portal.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v17: Full Patient Portal
--- Run in Supabase → SQL Editor → New Query
--- Safe to run multiple times
---
--- PREREQUISITE: Run supabase_setup.sql first (creates patients table).
---
--- SECURITY NOTE: Portal API routes use the SERVICE ROLE KEY which
--- bypasses RLS. We do NOT add anon policies to patient data tables.
--- This prevents data leakage via direct Supabase client queries.
--- ============================================================
-
--- ─── 1. Portal OTP (magic link / OTP login) ──────────────────
-CREATE TABLE IF NOT EXISTS portal_otp (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  mobile      TEXT NOT NULL,
-  otp_code    TEXT NOT NULL,
-  token       TEXT NOT NULL UNIQUE,
-  patient_id  UUID REFERENCES patients(id) ON DELETE CASCADE,
-  mrn         TEXT,
-  expires_at  TIMESTAMPTZ NOT NULL,
-  verified    BOOLEAN DEFAULT FALSE,
-  attempts    INTEGER DEFAULT 0,
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE portal_otp ENABLE ROW LEVEL SECURITY;
-
--- Only authenticated clinic staff and service role can manage OTPs
-DROP POLICY IF EXISTS portal_otp_service ON portal_otp;
-CREATE POLICY portal_otp_service ON portal_otp
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- NO anon policy — service role bypasses RLS for portal API routes
-
-CREATE INDEX IF NOT EXISTS idx_portal_otp_mobile   ON portal_otp(mobile);
-CREATE INDEX IF NOT EXISTS idx_portal_otp_token    ON portal_otp(token);
-CREATE INDEX IF NOT EXISTS idx_portal_otp_expires  ON portal_otp(expires_at);
-
--- ─── 2. Portal Sessions (persistent login for patients) ──────
-CREATE TABLE IF NOT EXISTS portal_sessions (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  mrn             TEXT NOT NULL,
-  mobile          TEXT NOT NULL,
-  session_token   TEXT NOT NULL UNIQUE,
-  expires_at      TIMESTAMPTZ NOT NULL,
-  is_active       BOOLEAN DEFAULT TRUE,
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  last_used       TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE portal_sessions ENABLE ROW LEVEL SECURITY;
-
--- Only authenticated clinic staff and service role can manage sessions
-DROP POLICY IF EXISTS portal_sessions_service ON portal_sessions;
-CREATE POLICY portal_sessions_service ON portal_sessions
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- NO anon policy — prevents direct session enumeration attacks
-
-CREATE INDEX IF NOT EXISTS idx_portal_sessions_token   ON portal_sessions(session_token);
-CREATE INDEX IF NOT EXISTS idx_portal_sessions_patient ON portal_sessions(patient_id);
-CREATE INDEX IF NOT EXISTS idx_portal_sessions_expires ON portal_sessions(expires_at);
-
--- ─── 3. Lab Reports table ────────────────────────────────────
-CREATE TABLE IF NOT EXISTS lab_reports (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id    UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  encounter_id  UUID,
-  test_name     TEXT NOT NULL DEFAULT 'Unknown Test',
-  test_category TEXT DEFAULT 'General',
-  result_data   JSONB DEFAULT '{}'::jsonb,
-  result_text   TEXT,
-  normal_range  TEXT,
-  status        TEXT DEFAULT 'pending',
-  report_date   DATE DEFAULT CURRENT_DATE,
-  reported_by   TEXT,
-  reviewed_by   TEXT,
-  file_url      TEXT,
-  notes         TEXT,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Add missing columns if table already existed
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_name TEXT DEFAULT 'Unknown Test';
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_category TEXT DEFAULT 'General';
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_data JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_text TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS normal_range TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS report_date DATE DEFAULT CURRENT_DATE;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS reported_by TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS reviewed_by TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS file_url TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS encounter_id UUID;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
-ALTER TABLE lab_reports ENABLE ROW LEVEL SECURITY;
-
--- Only authenticated users can access lab reports (no anon access)
-DROP POLICY IF EXISTS lab_reports_auth ON lab_reports;
-CREATE POLICY lab_reports_auth ON lab_reports
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_lab_reports_patient  ON lab_reports(patient_id);
-CREATE INDEX IF NOT EXISTS idx_lab_reports_date     ON lab_reports(report_date DESC);
-
--- ─── 4. Appointments modifications (safe) ────────────────────
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'appointments' AND table_schema = 'public') THEN
-    EXECUTE 'ALTER TABLE appointments ADD COLUMN IF NOT EXISTS doctor_name TEXT';
-    EXECUTE 'ALTER TABLE appointments ADD COLUMN IF NOT EXISTS video_link TEXT';
-    -- NO anon policies on appointments — service role handles portal access
-  END IF;
-END $$;
-
--- ─── 5. REMOVE any previously-added anon policies (security fix) ─
--- If you ran an earlier version of this migration that added anon policies,
--- this section removes them to prevent data leakage.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bills' AND table_schema = 'public') THEN
-    EXECUTE 'DROP POLICY IF EXISTS bills_anon_read ON bills';
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'prescriptions' AND table_schema = 'public') THEN
-    EXECUTE 'DROP POLICY IF EXISTS prescriptions_anon_read ON prescriptions';
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'appointments' AND table_schema = 'public') THEN
-    EXECUTE 'DROP POLICY IF EXISTS appointments_anon_read ON appointments';
-    EXECUTE 'DROP POLICY IF EXISTS appointments_anon_update ON appointments';
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'encounters' AND table_schema = 'public') THEN
-    EXECUTE 'DROP POLICY IF EXISTS encounters_anon_read ON encounters';
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  EXECUTE 'DROP POLICY IF EXISTS portal_otp_anon_read ON portal_otp';
-  EXECUTE 'DROP POLICY IF EXISTS portal_sessions_anon ON portal_sessions';
-  EXECUTE 'DROP POLICY IF EXISTS lab_reports_anon_read ON lab_reports';
-EXCEPTION WHEN OTHERS THEN
-  NULL;
-END $$;
-
-SELECT 'v17 patient portal migration complete (secure) ✓' AS result;
-
-```
-
-# supabase_v20_missing_features.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS v20 — Missing Features Migration
--- ============================================================
--- This migration adds tables and columns for:
---   1. Lab test pricing (per-test revenue sharing)
---   2. IPD structured charges (bed, nursing, OT, etc.)
---   3. Fund expense reporting columns
---
--- Run this ONCE in Supabase → SQL Editor → New Query.
--- Safe to re-run (uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
--- ============================================================
-
--- ═══════════════════════════════════════════════════════════════
--- 1. LAB TEST PRICING — Per-test revenue sharing percentages
--- ═══════════════════════════════════════════════════════════════
--- Allows configuring different % splits per test type.
--- Falls back to lab_partners.hospital_pct if no override exists.
-
-CREATE TABLE IF NOT EXISTS lab_test_pricing (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  partner_id    UUID NOT NULL REFERENCES lab_partners(id) ON DELETE CASCADE,
-  test_name     TEXT NOT NULL,
-  test_amount   NUMERIC(10,2) NOT NULL DEFAULT 0,
-  hospital_pct  NUMERIC(5,2) NOT NULL DEFAULT 60,
-  lab_pct       NUMERIC(5,2) NOT NULL DEFAULT 40,
-  is_active     BOOLEAN DEFAULT TRUE,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(partner_id, test_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_lab_test_pricing_partner ON lab_test_pricing(partner_id);
-CREATE INDEX IF NOT EXISTS idx_lab_test_pricing_test ON lab_test_pricing(test_name);
-
--- RLS
-ALTER TABLE lab_test_pricing ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS lab_test_pricing_select ON lab_test_pricing;
-DROP POLICY IF EXISTS lab_test_pricing_insert ON lab_test_pricing;
-DROP POLICY IF EXISTS lab_test_pricing_update ON lab_test_pricing;
-DROP POLICY IF EXISTS lab_test_pricing_delete ON lab_test_pricing;
-
-CREATE POLICY lab_test_pricing_select ON lab_test_pricing
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY lab_test_pricing_insert ON lab_test_pricing
-  FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY lab_test_pricing_update ON lab_test_pricing
-  FOR UPDATE TO authenticated USING (true);
-CREATE POLICY lab_test_pricing_delete ON lab_test_pricing
-  FOR DELETE TO authenticated USING (true);
-
--- ═══════════════════════════════════════════════════════════════
--- 2. LAB REPORTS — Add partner & amount columns
--- ═══════════════════════════════════════════════════════════════
-
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS lab_partner_id UUID REFERENCES lab_partners(id) ON DELETE SET NULL;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS hospital_amount NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS lab_amount NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'cash' CHECK (payment_mode IN ('cash', 'upi', 'card'));
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'paid' CHECK (payment_status IN ('paid', 'pending'));
-
-CREATE INDEX IF NOT EXISTS idx_lab_reports_partner ON lab_reports(lab_partner_id);
-CREATE INDEX IF NOT EXISTS idx_lab_reports_payment ON lab_reports(payment_mode, payment_status);
-
--- ═══════════════════════════════════════════════════════════════
--- 3. IPD CHARGES — Structured indoor billing
--- ═══════════════════════════════════════════════════════════════
--- Each charge row belongs to an IPD admission.
--- Categories: bed, nursing, doctor_visit, surgical, ot, procedure, medicine, investigation, other
-
-CREATE TABLE IF NOT EXISTS ipd_charges (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  admission_id    UUID NOT NULL REFERENCES ipd_admissions(id) ON DELETE CASCADE,
-  patient_id      UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  charge_date     DATE NOT NULL DEFAULT CURRENT_DATE,
-  category        TEXT NOT NULL CHECK (category IN (
-    'bed', 'nursing', 'doctor_visit', 'surgical', 'ot',
-    'procedure', 'medicine', 'investigation', 'other'
-  )),
-  description     TEXT NOT NULL,
-  quantity        NUMERIC(6,2) NOT NULL DEFAULT 1,
-  rate            NUMERIC(10,2) NOT NULL DEFAULT 0,
-  amount          NUMERIC(10,2) NOT NULL DEFAULT 0,
-  notes           TEXT,
-  created_by      TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_ipd_charges_admission ON ipd_charges(admission_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_charges_patient ON ipd_charges(patient_id);
-CREATE INDEX IF NOT EXISTS idx_ipd_charges_date ON ipd_charges(charge_date);
-CREATE INDEX IF NOT EXISTS idx_ipd_charges_category ON ipd_charges(category);
-
--- RLS
-ALTER TABLE ipd_charges ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS ipd_charges_select ON ipd_charges;
-DROP POLICY IF EXISTS ipd_charges_insert ON ipd_charges;
-DROP POLICY IF EXISTS ipd_charges_update ON ipd_charges;
-DROP POLICY IF EXISTS ipd_charges_delete ON ipd_charges;
-
-CREATE POLICY ipd_charges_select ON ipd_charges
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY ipd_charges_insert ON ipd_charges
-  FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY ipd_charges_update ON ipd_charges
-  FOR UPDATE TO authenticated USING (true);
-CREATE POLICY ipd_charges_delete ON ipd_charges
-  FOR DELETE TO authenticated USING (true);
-
--- ═══════════════════════════════════════════════════════════════
--- 4. IPD CHARGE RATES — Default rates per category
--- ═══════════════════════════════════════════════════════════════
--- Stores hospital's default per-day rates for each charge type.
-
-CREATE TABLE IF NOT EXISTS ipd_charge_rates (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  category    TEXT NOT NULL,
-  description TEXT NOT NULL,
-  default_rate NUMERIC(10,2) NOT NULL DEFAULT 0,
-  per_unit    TEXT DEFAULT 'per day',
-  is_active   BOOLEAN DEFAULT TRUE,
-  sort_order  INTEGER DEFAULT 0,
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(category, description)
-);
-
-ALTER TABLE ipd_charge_rates ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS ipd_charge_rates_select ON ipd_charge_rates;
-DROP POLICY IF EXISTS ipd_charge_rates_insert ON ipd_charge_rates;
-DROP POLICY IF EXISTS ipd_charge_rates_update ON ipd_charge_rates;
-DROP POLICY IF EXISTS ipd_charge_rates_delete ON ipd_charge_rates;
-
-CREATE POLICY ipd_charge_rates_select ON ipd_charge_rates
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY ipd_charge_rates_insert ON ipd_charge_rates
-  FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY ipd_charge_rates_update ON ipd_charge_rates
-  FOR UPDATE TO authenticated USING (true);
-CREATE POLICY ipd_charge_rates_delete ON ipd_charge_rates
-  FOR DELETE TO authenticated USING (true);
-
--- Seed default IPD charge rates
-INSERT INTO ipd_charge_rates (category, description, default_rate, per_unit, sort_order) VALUES
-  ('bed',           'General Ward Bed',        800,   'per day',     1),
-  ('bed',           'Semi-Private Room',       1500,  'per day',     2),
-  ('bed',           'Private Room',            2500,  'per day',     3),
-  ('bed',           'ICU Bed',                 5000,  'per day',     4),
-  ('nursing',       'Nursing Charges',         500,   'per day',     5),
-  ('nursing',       'Special Nursing (ICU)',    1000,  'per day',     6),
-  ('doctor_visit',  'Doctor Visit',            500,   'per visit',   7),
-  ('doctor_visit',  'Specialist Consultation', 1000,  'per visit',   8),
-  ('surgical',      'Minor Surgery',           5000,  'per procedure', 9),
-  ('surgical',      'Major Surgery',           15000, 'per procedure', 10),
-  ('ot',            'OT Charges (Minor)',       3000,  'per use',     11),
-  ('ot',            'OT Charges (Major)',       8000,  'per use',     12),
-  ('procedure',     'Dressing',                200,   'per procedure', 13),
-  ('procedure',     'Catheterization',         500,   'per procedure', 14),
-  ('procedure',     'IV Cannulation',          300,   'per procedure', 15),
-  ('medicine',      'IV Fluids',               150,   'per unit',    16),
-  ('medicine',      'Injection',               100,   'per unit',    17),
-  ('investigation', 'Blood Test (CBC)',         300,   'per test',    18),
-  ('investigation', 'USG',                     1200,  'per test',    19),
-  ('other',         'Miscellaneous',           0,     'per unit',    20)
-ON CONFLICT (category, description) DO NOTHING;
-
--- ═══════════════════════════════════════════════════════════════
--- 5. IPD ADMISSIONS — Add discharge_date and billing columns
--- ═══════════════════════════════════════════════════════════════
-
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS discharge_date TIMESTAMPTZ;
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS total_charges NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS discount NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS net_bill NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS bill_status TEXT DEFAULT 'pending' CHECK (bill_status IN ('pending', 'partial', 'paid'));
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS payment_mode TEXT CHECK (payment_mode IN ('cash', 'upi', 'card', 'mixed'));
-
--- ═══════════════════════════════════════════════════════════════
--- 6. HOSPITAL FUND — Add date index for efficient filtering
--- ═══════════════════════════════════════════════════════════════
-
-CREATE INDEX IF NOT EXISTS idx_hospital_fund_created ON hospital_fund(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_hospital_fund_status ON hospital_fund(status);
-CREATE INDEX IF NOT EXISTS idx_hospital_fund_type ON hospital_fund(type);
-
--- ═══════════════════════════════════════════════════════════════
--- 7. LAB PARTNERS — Ensure table exists with correct schema
--- ═══════════════════════════════════════════════════════════════
-
--- Add if missing (safe — IF NOT EXISTS)
-CREATE TABLE IF NOT EXISTS lab_partners (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name          TEXT NOT NULL,
-  contact       TEXT,
-  hospital_pct  NUMERIC(5,2) NOT NULL DEFAULT 60,
-  lab_pct       NUMERIC(5,2) NOT NULL DEFAULT 40,
-  is_active     BOOLEAN DEFAULT TRUE,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE lab_partners ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS lab_partners_select ON lab_partners;
-DROP POLICY IF EXISTS lab_partners_insert ON lab_partners;
-DROP POLICY IF EXISTS lab_partners_update ON lab_partners;
-DROP POLICY IF EXISTS lab_partners_delete ON lab_partners;
-
-CREATE POLICY lab_partners_select ON lab_partners
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY lab_partners_insert ON lab_partners
-  FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY lab_partners_update ON lab_partners
-  FOR UPDATE TO authenticated USING (true);
-CREATE POLICY lab_partners_delete ON lab_partners
-  FOR DELETE TO authenticated USING (true);
-
--- ============================================================
--- DONE. Tables created:
---   - lab_test_pricing (per-test % overrides)
---   - ipd_charges (structured indoor billing charges)
---   - ipd_charge_rates (default rate templates)
---
--- Columns added:
---   - lab_reports: lab_partner_id, total_amount, hospital_amount, lab_amount, payment_mode, payment_status
---   - ipd_admissions: discharge_date, total_charges, discount, net_bill, bill_status, payment_mode
---
--- Indexes added:
---   - hospital_fund: created_at, status, type (for date filtering)
---   - lab_reports: partner, payment
---   - ipd_charges: admission, patient, date, category
--- ============================================================
-
-```
-
 # tailwind.config.js
 
 ```js
@@ -76488,827 +77413,23 @@ SELECT 'v00-schema-master: fresh database bootstrap complete' AS result;
 
 ```
 
-# v21-final-v5.sql
+# vercel-cron.json
 
-```sql
--- ============================================================
--- NexMedicon HMS v21 — FINAL v5
--- Handles missing clinicusers, missing dischargesummaries.
--- Safe to run at ANY stage of your DB setup.
--- ============================================================
-
-
--- ============================================================
--- STEP 1: Create dischargesummaries table if missing
--- ============================================================
-CREATE TABLE IF NOT EXISTS dischargesummaries (
-  id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patientid            UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  admissiondate        DATE,
-  dischargedate        DATE DEFAULT CURRENT_DATE,
-  finaldiagnosis       TEXT,
-  secondarydiagnosis   TEXT,
-  clinicalsummary      TEXT,
-  investigations       TEXT,
-  treatmentgiven       TEXT,
-  conditionatdischarge TEXT,
-  dischargeadvice      TEXT,
-  dietadvice           TEXT,
-  medicationsatdischarge TEXT,
-  followupdate         DATE,
-  followupnote         TEXT,
-  deliverytype         TEXT,
-  babysex              TEXT,
-  babyweight           TEXT,
-  apgarscore           TEXT,
-  deliverydate         DATE,
-  complications        TEXT,
-  lactationadvice      TEXT,
-  babybirthtime        TEXT,
-  version              INTEGER DEFAULT 1,
-  isfinal              BOOLEAN DEFAULT FALSE,
-  signedby             TEXT,
-  signedat             TIMESTAMPTZ,
-  pdfgeneratedat       TIMESTAMPTZ,
-  remindersentat       TIMESTAMPTZ,
-  createdat            TIMESTAMPTZ DEFAULT NOW(),
-  updatedat            TIMESTAMPTZ DEFAULT NOW()
-);
-
-
--- ============================================================
--- STEP 2: Patch any missing columns on dischargesummaries
--- ============================================================
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS babybirthtime      TEXT;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS isfinal            BOOLEAN DEFAULT FALSE;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS signedby           TEXT;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS signedat           TIMESTAMPTZ;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS pdfgeneratedat     TIMESTAMPTZ;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS remindersentat     TIMESTAMPTZ;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS updatedat          TIMESTAMPTZ DEFAULT NOW();
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS unfinalizedreason  TEXT;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS unfinalizedby      TEXT;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS unfinializedat     TIMESTAMPTZ;
-ALTER TABLE dischargesummaries ADD COLUMN IF NOT EXISTS finalizedat        TIMESTAMPTZ;
-
-
--- ============================================================
--- STEP 3: New ABHA verification columns on patients
--- ============================================================
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS abhaverified   BOOLEAN DEFAULT FALSE;
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS abhaverifiedat TIMESTAMPTZ;
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS abhaverifiedby TEXT;
-
-
--- ============================================================
--- STEP 4: Indexes
--- ============================================================
-CREATE INDEX IF NOT EXISTS idx_discharge_patient
-  ON dischargesummaries (patientid);
-
-CREATE INDEX IF NOT EXISTS idx_discharge_date
-  ON dischargesummaries (dischargedate);
-
-CREATE INDEX IF NOT EXISTS idx_ds_isfinal
-  ON dischargesummaries (isfinal)
-  WHERE isfinal = TRUE;
-
-CREATE INDEX IF NOT EXISTS idx_ds_patient_final
-  ON dischargesummaries (patientid, isfinal);
-
-
--- ============================================================
--- STEP 5: RLS — only apply policies if clinicusers exists
--- If clinicusers does not exist yet, we still enable RLS with
--- a simple open policy (same as all other tables at setup stage).
--- Once you run v8roles.sql the policies get tightened.
--- ============================================================
-ALTER TABLE dischargesummaries ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS allowauthdischargesummaries ON dischargesummaries;
-DROP POLICY IF EXISTS ds_select ON dischargesummaries;
-DROP POLICY IF EXISTS ds_insert ON dischargesummaries;
-DROP POLICY IF EXISTS ds_update ON dischargesummaries;
-DROP POLICY IF EXISTS ds_delete ON dischargesummaries;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'clinicusers'
-  ) THEN
-    -- clinicusers exists: apply role-aware policies
-    EXECUTE '
-      CREATE POLICY ds_select ON dischargesummaries
-        FOR SELECT TO authenticated USING (true)
-    ';
-    EXECUTE '
-      CREATE POLICY ds_insert ON dischargesummaries
-        FOR INSERT TO authenticated WITH CHECK (true)
-    ';
-    EXECUTE '
-      CREATE POLICY ds_update ON dischargesummaries
-        FOR UPDATE TO authenticated
-        USING (
-          isfinal = FALSE
-          OR EXISTS (
-            SELECT 1 FROM clinicusers cu
-            WHERE cu.authid = auth.uid()
-              AND cu.role = ''admin''
-              AND cu.isactive = TRUE
-          )
-        )
-    ';
-    EXECUTE '
-      CREATE POLICY ds_delete ON dischargesummaries
-        FOR DELETE TO authenticated
-        USING (
-          EXISTS (
-            SELECT 1 FROM clinicusers cu
-            WHERE cu.authid = auth.uid()
-              AND cu.role = ''admin''
-              AND cu.isactive = TRUE
-          )
-        )
-    ';
-    RAISE NOTICE 'Applied role-aware RLS policies (clinicusers found)';
-  ELSE
-    -- clinicusers not yet created: apply open policy (same as setup.sql)
-    EXECUTE '
-      CREATE POLICY ds_open ON dischargesummaries
-        FOR ALL TO authenticated
-        USING (true)
-        WITH CHECK (true)
-    ';
-    RAISE NOTICE 'Applied open RLS policy (clinicusers not yet created — re-run v21 after v8roles.sql)';
-  END IF;
-END $$;
-
-
--- ============================================================
--- Done
--- ============================================================
-SELECT 'v21 migration complete — dischargesummaries + ABHA columns ready' AS result;
-
-```
-
-# v30-fix-all-issues.sql
-
-```sql
--- ============================================================
--- NexMedicon HMS — v30 FIX ALL ISSUES
--- 
--- Run this in Supabase → SQL Editor → New Query
--- Safe to run multiple times (IF NOT EXISTS / DO $$ blocks)
---
--- FIXES:
---   1. "relation ipdadmissions does not exist" — creates alias view
---   2. Storage bucket mime type fix — adds text/plain + more types
---   3. Adds missing columns for partial payments, refunds, daily closing
---   4. Adds doctor earnings columns (share_pct, earning_model)
---   5. Adds reminder_log table if missing
---   6. Adds follow_ups table if missing
---   7. Adds billing_packages table if missing
---   8. Adds daily_closing table for end-of-day reports
---   9. Adds payment_transactions table for partial/refund tracking
--- ============================================================
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #1: "relation ipdadmissions does not exist"
---
--- Your DB has the table as `ipd_admissions` (snake_case, created by
--- supabase_v11_features.sql). But some code references `ipdadmissions`.
--- Solution: Create a VIEW alias so both names work.
--- ═══════════════════════════════════════════════════════════════
-
-DO $$
-BEGIN
-  -- Only create the view if ipd_admissions exists but ipdadmissions doesn't
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipd_admissions')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.views WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
-  THEN
-    EXECUTE '
-      CREATE VIEW ipdadmissions AS
-      SELECT
-        id,
-        patient_id AS patientid,
-        bed_id AS bedid,
-        admission_date AS admissiondate,
-        admitting_doctor AS admittingdoctor,
-        status,
-        created_at AS createdat,
-        updated_at AS updatedat
-      FROM ipd_admissions
-    ';
-    RAISE NOTICE 'Created ipdadmissions view alias for ipd_admissions table';
-  END IF;
-
-  -- If neither exists, create ipd_admissions from scratch
-  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipd_admissions')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ipdadmissions')
-  THEN
-    EXECUTE '
-      CREATE TABLE ipd_admissions (
-        id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        patient_id              UUID REFERENCES patients(id) ON DELETE SET NULL,
-        patient_name            TEXT NOT NULL DEFAULT '''',
-        mrn                     TEXT NOT NULL DEFAULT '''',
-        mobile                  TEXT,
-        age                     INTEGER,
-        gender                  TEXT,
-        bed_id                  UUID REFERENCES beds(id) ON DELETE SET NULL,
-        bed_number              TEXT,
-        ward                    TEXT,
-        admission_date          DATE NOT NULL DEFAULT CURRENT_DATE,
-        admission_time          TEXT DEFAULT ''00:00'',
-        admitting_doctor        TEXT NOT NULL DEFAULT '''',
-        consulting_doctors      JSONB DEFAULT ''[]''::jsonb,
-        diagnosis_on_admission  TEXT,
-        chief_complaint         TEXT,
-        diet_type               TEXT DEFAULT ''Normal'',
-        allergies               TEXT,
-        comorbidities           TEXT,
-        insurance_details       TEXT,
-        relative_name           TEXT,
-        relative_contact        TEXT,
-        relative_relation       TEXT,
-        discharge_date          TIMESTAMPTZ,
-        total_charges           NUMERIC(10,2) DEFAULT 0,
-        discount                NUMERIC(10,2) DEFAULT 0,
-        net_bill                NUMERIC(10,2) DEFAULT 0,
-        bill_status             TEXT DEFAULT ''pending'',
-        payment_mode            TEXT,
-        status                  TEXT NOT NULL DEFAULT ''active''
-                                  CHECK (status IN (''active'', ''discharged'', ''transferred'')),
-        created_at              TIMESTAMPTZ DEFAULT NOW(),
-        updated_at              TIMESTAMPTZ DEFAULT NOW()
-      )
-    ';
-    EXECUTE 'ALTER TABLE ipd_admissions ENABLE ROW LEVEL SECURITY';
-    EXECUTE '
-      CREATE POLICY allow_auth_ipd_admissions ON ipd_admissions
-        FOR ALL TO authenticated USING (true) WITH CHECK (true)
-    ';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_patient ON ipd_admissions(patient_id)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_status ON ipd_admissions(status)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_adm_bed ON ipd_admissions(bed_id)';
-    RAISE NOTICE 'Created ipd_admissions table from scratch';
-  END IF;
-END $$;
-
--- Add doctorid column to ipd_admissions for earnings queries
-ALTER TABLE ipd_admissions ADD COLUMN IF NOT EXISTS doctorid UUID;
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #2: Storage bucket — add more allowed mime types
--- ═══════════════════════════════════════════════════════════════
-
--- Update the consultation-attachments bucket
-UPDATE storage.buckets
-SET allowed_mime_types = ARRAY[
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'image/bmp',
-  'image/heic',
-  'image/heif',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'text/plain',
-  'text/csv',
-  'application/octet-stream'
-],
-file_size_limit = 52428800
-WHERE id = 'consultation-attachments';
-
--- Also create/update the consultation-files bucket (used in code)
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'consultation-files',
-  'consultation-files',
-  false,
-  52428800,
-  ARRAY[
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/webp',
-    'image/gif',
-    'image/bmp',
-    'image/heic',
-    'image/heif',
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-    'text/csv',
-    'application/octet-stream'
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 2,7 * * *",
+      "description": "Daily clinical reminders - runs at 7:30 AM and 12:30 PM IST (2:00 and 7:00 UTC)"
+    },
+    {
+      "path": "/api/cron/followup-escalation",
+      "schedule": "30 2 * * *",
+      "description": "Follow-up escalation detection - runs at 8:00 AM IST (2:30 UTC)"
+    }
   ]
-)
-ON CONFLICT (id) DO UPDATE SET
-  file_size_limit = EXCLUDED.file_size_limit,
-  allowed_mime_types = EXCLUDED.allowed_mime_types;
-
--- RLS policies for consultation-files bucket
-DROP POLICY IF EXISTS "auth can upload consultation-files" ON storage.objects;
-DROP POLICY IF EXISTS "auth can read consultation-files" ON storage.objects;
-DROP POLICY IF EXISTS "auth can delete consultation-files" ON storage.objects;
-DROP POLICY IF EXISTS "auth can update consultation-files" ON storage.objects;
-
-CREATE POLICY "auth can upload consultation-files"
-  ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'consultation-files');
-
-CREATE POLICY "auth can read consultation-files"
-  ON storage.objects FOR SELECT TO authenticated
-  USING (bucket_id = 'consultation-files');
-
-CREATE POLICY "auth can delete consultation-files"
-  ON storage.objects FOR DELETE TO authenticated
-  USING (bucket_id = 'consultation-files');
-
-CREATE POLICY "auth can update consultation-files"
-  ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'consultation-files');
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #3: Missing tables for appointments & reminders
--- ═══════════════════════════════════════════════════════════════
-
--- follow_ups table
-CREATE TABLE IF NOT EXISTS follow_ups (
-  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id              UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  created_from_visit_id   UUID REFERENCES encounters(id) ON DELETE SET NULL,
-  recommended_date        DATE NOT NULL,
-  status                  TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'fulfilled', 'cancelled', 'missed')),
-  linked_appointment_id   UUID,
-  created_at              TIMESTAMPTZ DEFAULT NOW(),
-  updated_at              TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE follow_ups ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_follow_ups ON follow_ups;
-CREATE POLICY allow_auth_follow_ups ON follow_ups
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_follow_ups_patient ON follow_ups(patient_id);
-CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
-CREATE INDEX IF NOT EXISTS idx_follow_ups_date ON follow_ups(recommended_date);
-
--- reminder_log table
-CREATE TABLE IF NOT EXISTS reminder_log (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
-  patient_name    TEXT,
-  mobile          TEXT,
-  reminder_type   TEXT NOT NULL,
-  source_table    TEXT,
-  source_id       TEXT,
-  message_preview TEXT,
-  channel         TEXT DEFAULT 'whatsapp',
-  status          TEXT DEFAULT 'sent',
-  sent_at         TIMESTAMPTZ DEFAULT NOW(),
-  sent_by         TEXT,
-  batch_id        TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE reminder_log ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_reminder_log ON reminder_log;
-CREATE POLICY allow_auth_reminder_log ON reminder_log
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_reminder_log_patient ON reminder_log(patient_id);
-CREATE INDEX IF NOT EXISTS idx_reminder_log_sent ON reminder_log(sent_at);
-
--- Add missing columns to appointments
-ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
-ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
-ALTER TABLE appointments ADD COLUMN IF NOT EXISTS follow_up_id UUID;
-
--- Add missing columns to prescriptions for reminder tracking
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS patient_name TEXT;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS mrn TEXT;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS mobile TEXT;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS follow_up_date DATE;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS diagnosis TEXT;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS lab_tests TEXT;
-ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #4: Doctor earnings — add share_pct + earning_model
--- ═══════════════════════════════════════════════════════════════
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clinic_users') THEN
-    EXECUTE 'ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS share_pct NUMERIC(5,2) DEFAULT 40';
-    EXECUTE 'ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS earning_model TEXT DEFAULT ''percentage''';
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clinicusers') THEN
-    EXECUTE 'ALTER TABLE clinicusers ADD COLUMN IF NOT EXISTS share_pct NUMERIC(5,2) DEFAULT 40';
-    EXECUTE 'ALTER TABLE clinicusers ADD COLUMN IF NOT EXISTS earning_model TEXT DEFAULT ''percentage''';
-  END IF;
-END $$;
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #5: Daily Closing table
--- ═══════════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS daily_closings (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  closing_date    DATE NOT NULL UNIQUE,
-  total_opd       INTEGER DEFAULT 0,
-  total_ipd       INTEGER DEFAULT 0,
-  total_bills     INTEGER DEFAULT 0,
-  cash_collected  NUMERIC(10,2) DEFAULT 0,
-  upi_collected   NUMERIC(10,2) DEFAULT 0,
-  card_collected  NUMERIC(10,2) DEFAULT 0,
-  total_collected NUMERIC(10,2) DEFAULT 0,
-  total_discount  NUMERIC(10,2) DEFAULT 0,
-  total_pending   NUMERIC(10,2) DEFAULT 0,
-  total_refunds   NUMERIC(10,2) DEFAULT 0,
-  notes           TEXT,
-  closed_by       TEXT,
-  closed_at       TIMESTAMPTZ DEFAULT NOW(),
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE daily_closings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_daily_closings ON daily_closings;
-CREATE POLICY allow_auth_daily_closings ON daily_closings
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #6: Payment Transactions (partial payments + refunds)
--- ═══════════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS payment_transactions (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bill_id         UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-  patient_id      UUID REFERENCES patients(id) ON DELETE SET NULL,
-  amount          NUMERIC(10,2) NOT NULL,
-  payment_mode    TEXT NOT NULL CHECK (payment_mode IN ('cash', 'upi', 'card', 'cheque', 'insurance', 'advance', 'other')),
-  transaction_type TEXT NOT NULL DEFAULT 'payment' CHECK (transaction_type IN ('payment', 'refund', 'advance', 'adjustment')),
-  reference_no    TEXT,
-  notes           TEXT,
-  recorded_by     TEXT,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_payment_transactions ON payment_transactions;
-CREATE POLICY allow_auth_payment_transactions ON payment_transactions
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_payment_txn_bill ON payment_transactions(bill_id);
-CREATE INDEX IF NOT EXISTS idx_payment_txn_patient ON payment_transactions(patient_id);
-CREATE INDEX IF NOT EXISTS idx_payment_txn_date ON payment_transactions(created_at);
-
--- Add refund tracking columns to bills
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS refund_reason TEXT;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS refunded_by TEXT;
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #7: Billing packages table
--- ═══════════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS billing_packages (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT,
-  items       JSONB NOT NULL DEFAULT '[]',
-  total       NUMERIC(10,2) DEFAULT 0,
-  category    TEXT DEFAULT 'general',
-  is_active   BOOLEAN DEFAULT TRUE,
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE billing_packages ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_billing_packages ON billing_packages;
-CREATE POLICY allow_auth_billing_packages ON billing_packages
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #8: OPD Queue — add date index for date filter
--- ═══════════════════════════════════════════════════════════════
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'opd_queue') THEN
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opd_queue_date ON opd_queue(queue_date)';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opd_queue_status ON opd_queue(status)';
-  END IF;
-END $$;
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #9: IPD Nursing table (if missing)
--- ═══════════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS ipd_nursing (
-  id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  ipd_admission_id    UUID REFERENCES ipd_admissions(id) ON DELETE CASCADE,
-  patient_id          UUID REFERENCES patients(id) ON DELETE CASCADE,
-  entry_type          TEXT NOT NULL DEFAULT 'vital',
-  recorded_time       TEXT,
-  pulse               TEXT,
-  bp_systolic         TEXT,
-  bp_diastolic        TEXT,
-  temperature         TEXT,
-  spo2                TEXT,
-  weight              TEXT,
-  rr                  TEXT,
-  vital_note          TEXT,
-  io_type             TEXT,
-  io_label            TEXT,
-  io_amount_ml        INTEGER,
-  medication_name     TEXT,
-  medication_dose     TEXT,
-  medication_route    TEXT,
-  medication_given_by TEXT,
-  nurse_name          TEXT,
-  note_text           TEXT,
-  created_at          TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE ipd_nursing ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_ipd_nursing ON ipd_nursing;
-CREATE POLICY allow_auth_ipd_nursing ON ipd_nursing
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE INDEX IF NOT EXISTS idx_ipd_nursing_adm ON ipd_nursing(ipd_admission_id);
-
-
--- ═══════════════════════════════════════════════════════════════
--- FIX #10: Clinic settings table (both names)
--- ═══════════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS clinic_settings (
-  key         TEXT PRIMARY KEY,
-  value       TEXT NOT NULL,
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE clinic_settings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS allow_auth_clinic_settings ON clinic_settings;
-CREATE POLICY allow_auth_clinic_settings ON clinic_settings
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-
--- ═══════════════════════════════════════════════════════════════
--- Done!
--- ═══════════════════════════════════════════════════════════════
-SELECT 'v30 migration complete — all issues fixed' AS result;
-
-```
-
-# v31_hms_fixes.sql
-
-```sql
--- ═══════════════════════════════════════════════════════════════
--- HMS Fixes Migration — v31
--- All fixes for the 5 issues reported:
--- 1. Module connectivity & extra-click audit
--- 2. Admin paid-bill modification
--- 3. Attractive PDF reports
--- 4. Lab Portal → patient profile + doctor/patient reminders
--- 5. Bug fixes
---
--- Safe to re-run: all statements use IF NOT EXISTS / OR REPLACE
--- ═══════════════════════════════════════════════════════════════
-
--- ── FIX 1: Bills — add gst fields if missing (needed by AdminBillModify) ──
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS gst_percent  NUMERIC(5,2)  DEFAULT 0;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS gst_amount   NUMERIC(10,2) DEFAULT 0;
-ALTER TABLE bills ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ   DEFAULT NOW();
-
-CREATE INDEX IF NOT EXISTS idx_bills_patient    ON bills(patient_id);
-CREATE INDEX IF NOT EXISTS idx_bills_status     ON bills(status);
-CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at DESC);
-
--- ── FIX 2: Reminders — CREATE table if it doesn't exist, then add columns ──
---
--- Use a single DO block so we never ALTER a table that doesn't exist yet.
--- Every branch is safe to run even if the table/column already exists.
-DO $$
-BEGIN
-
-  -- ── 2a: Create reminders table if completely missing ──────────────────
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'reminders'
-  ) THEN
-    CREATE TABLE reminders (
-      id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-      patient_id    UUID        REFERENCES patients(id) ON DELETE CASCADE,
-      message       TEXT,
-      reminder_type TEXT        DEFAULT 'general',
-      status        TEXT        DEFAULT 'pending',
-      metadata      JSONB,
-      created_at    TIMESTAMPTZ DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-
-    DROP POLICY IF EXISTS allow_auth_reminders ON reminders;
-    CREATE POLICY allow_auth_reminders ON reminders
-      FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  ELSE
-    -- ── 2b: Table exists — add missing columns one by one ────────────────
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'patient_id'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN patient_id UUID REFERENCES patients(id) ON DELETE CASCADE;
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'message'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN message TEXT;
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'reminder_type'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN reminder_type TEXT DEFAULT 'general';
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'status'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN status TEXT DEFAULT 'pending';
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'metadata'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN metadata JSONB;
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'reminders' AND column_name = 'updated_at'
-    ) THEN
-      ALTER TABLE reminders ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
-    END IF;
-
-    -- Ensure RLS is on and policy exists
-    ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-
-    DROP POLICY IF EXISTS allow_auth_reminders ON reminders;
-    CREATE POLICY allow_auth_reminders ON reminders
-      FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  END IF;
-
-END $$;
-
--- Indexes (safe — IF NOT EXISTS)
-CREATE INDEX IF NOT EXISTS idx_reminders_patient    ON reminders(patient_id);
-CREATE INDEX IF NOT EXISTS idx_reminders_type       ON reminders(reminder_type);
-CREATE INDEX IF NOT EXISTS idx_reminders_status     ON reminders(status);
-CREATE INDEX IF NOT EXISTS idx_reminders_created_at ON reminders(created_at DESC);
-
--- ── FIX 3: Patients — index doctor_id for notification routing ──
--- Only if doctor_id column actually exists on this deployment
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'patients' AND column_name = 'doctor_id'
-  ) THEN
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_patients_doctor ON patients(doctor_id) WHERE doctor_id IS NOT NULL';
-  END IF;
-END $$;
-
--- ── FIX 4: Lab Reports — add portal & notification fields ──
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS portal_upload       BOOLEAN     DEFAULT FALSE;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS portal_patient_mrn  TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS notified_at         TIMESTAMPTZ;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS notification_sent   BOOLEAN     DEFAULT FALSE;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS lab_partner_name    TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS values              JSONB;
-
--- lab_partner_id FK — only add if lab_partners table exists
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'lab_partners'
-  ) THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'lab_reports' AND column_name = 'lab_partner_id'
-    ) THEN
-      ALTER TABLE lab_reports
-        ADD COLUMN lab_partner_id UUID REFERENCES lab_partners(id) ON DELETE SET NULL;
-    END IF;
-  END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_lab_reports_portal   ON lab_reports(portal_upload)     WHERE portal_upload = TRUE;
-CREATE INDEX IF NOT EXISTS idx_lab_reports_notified ON lab_reports(notification_sent);
-
--- ── FIX 5: Lab Portal Users table ──
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'lab_portal_users'
-  ) THEN
-    -- lab_partners table may or may not exist; create without FK if missing
-    IF EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'lab_partners'
-    ) THEN
-      EXECUTE '
-        CREATE TABLE lab_portal_users (
-          id             UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-          name           TEXT        NOT NULL,
-          email          TEXT,
-          lab_partner_id UUID        REFERENCES lab_partners(id) ON DELETE SET NULL,
-          auth_token     TEXT        NOT NULL UNIQUE,
-          is_active      BOOLEAN     DEFAULT TRUE,
-          last_used_at   TIMESTAMPTZ,
-          created_at     TIMESTAMPTZ DEFAULT NOW()
-        )
-      ';
-    ELSE
-      EXECUTE '
-        CREATE TABLE lab_portal_users (
-          id             UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-          name           TEXT        NOT NULL,
-          email          TEXT,
-          lab_partner_id UUID,
-          auth_token     TEXT        NOT NULL UNIQUE,
-          is_active      BOOLEAN     DEFAULT TRUE,
-          last_used_at   TIMESTAMPTZ,
-          created_at     TIMESTAMPTZ DEFAULT NOW()
-        )
-      ';
-    END IF;
-
-    ALTER TABLE lab_portal_users ENABLE ROW LEVEL SECURITY;
-
-    DROP POLICY IF EXISTS allow_auth_lab_portal_users ON lab_portal_users;
-    CREATE POLICY allow_auth_lab_portal_users ON lab_portal_users
-      FOR ALL TO authenticated USING (true) WITH CHECK (true);
-  END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_lab_portal_users_token  ON lab_portal_users(auth_token);
-CREATE INDEX IF NOT EXISTS idx_lab_portal_users_active ON lab_portal_users(is_active);
-
--- ── FIX 6: auto-update bills.updated_at via trigger ──
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS set_bills_updated_at ON bills;
-CREATE TRIGGER set_bills_updated_at
-  BEFORE UPDATE ON bills
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-
--- ── FIX 7: Case-insensitive MRN index ──
-CREATE INDEX IF NOT EXISTS idx_patients_mrn_upper ON patients(UPPER(mrn));
-
--- ── DONE ──
-SELECT 'v31 HMS fixes migration complete — all safe' AS result;
-
+}
 ```
 
 # vercel.json

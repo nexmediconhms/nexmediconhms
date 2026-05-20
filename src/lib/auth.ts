@@ -170,9 +170,13 @@ export function hasPermission(role: UserRole | null, permission: Permission): bo
 }
 
 export async function loadClinicUser(): Promise<ClinicUser | null> {
-  const { data: { user: authUser } } = await supabase.auth.getUser()
-  if (!authUser) return null
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+  if (authError || !authUser) {
+    console.warn('[loadClinicUser] No auth user:', authError?.message)
+    return null
+  }
 
+  // Attempt 1: Direct query (works when RLS policies are correct)
   const { data, error } = await supabase
     .from('clinic_users')
     .select('*')
@@ -180,8 +184,42 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
     .eq('is_active', true)
     .single()
 
-  if (error || !data) return null
+  if (!error && data) {
+    return mapClinicUser(data)
+  }
 
+  // Direct query failed — likely RLS policy issue
+  console.warn('[loadClinicUser] Direct query failed (likely RLS):', error?.message, '— falling back to /api/me')
+
+  // Attempt 2: Use server-side API that bypasses RLS
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      console.warn('[loadClinicUser] No session token for /api/me fallback')
+      return null
+    }
+
+    const res = await fetch('/api/me', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      console.error('[loadClinicUser] /api/me failed:', res.status, body.error || body.details)
+      return null
+    }
+
+    const { user: apiUser } = await res.json()
+    if (!apiUser) return null
+
+    return mapClinicUser(apiUser)
+  } catch (fetchErr: any) {
+    console.error('[loadClinicUser] /api/me fetch error:', fetchErr.message)
+    return null
+  }
+}
+
+function mapClinicUser(data: any): ClinicUser {
   return {
     id:          data.id,
     auth_id:     data.auth_id,
