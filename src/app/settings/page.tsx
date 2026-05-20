@@ -13,6 +13,7 @@ import type { ClinicUser } from '@/lib/auth'
 import { useAuth } from '@/lib/auth'
 import { useAutoSave } from '@/lib/useAutoSave'
 import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
+import LabPartnerSection from '@/components/settings/LabPartnerSection'
 
 function Field({ label, value, onChange, placeholder, hint, type = 'text' }: {
   label: string; value: string; onChange: (v: string) => void
@@ -271,27 +272,59 @@ export default function SettingsPage() {
           <h2 className="section-title flex items-center gap-2">
             <Printer className="w-4 h-4 text-gray-500" /> Print Header Preview
           </h2>
-          <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-5 text-center">
-            <div className="text-lg font-bold uppercase tracking-wide">
-              {form.hospitalName || 'NexMedicon Hospital'}
-            </div>
-            {form.address && <div className="text-sm text-gray-500 mt-1">{form.address}</div>}
-            {form.phone && <div className="text-sm text-gray-500">Tel: {form.phone}</div>}
-            {(form.regNo || form.gstin) && (
-              <div className="text-xs text-gray-400">
-                {form.regNo && `Reg: ${form.regNo}`}
-                {form.regNo && form.gstin && ' · '}
-                {form.gstin && `GSTIN: ${form.gstin}`}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+            {/* Premium clinic header design */}
+            <div className="flex items-center gap-4">
+              {/* Left: Logo placeholder */}
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl font-bold text-white">
+                  {(form.hospitalName || 'N')[0]}
+                </span>
               </div>
-            )}
-            <div className="border-t border-gray-300 mt-3 pt-2 text-sm">
-              <span className="font-semibold">{form.doctorName || 'Dr. Your Name'}</span>
-              {form.doctorQual && <span className="text-gray-500 ml-2">{form.doctorQual}</span>}
+
+              {/* Center: Hospital info */}
+              <div className="flex-1 text-center">
+                <div className="text-xl font-bold text-blue-900 uppercase tracking-wide">
+                  {form.hospitalName || 'NexMedicon Hospital'}
+                </div>
+                {form.address && (
+                  <div className="text-xs text-gray-600 mt-0.5">{form.address}</div>
+                )}
+                <div className="flex items-center justify-center gap-3 mt-1 text-xs text-gray-500">
+                  {form.phone && <span>Tel: {form.phone}</span>}
+                  {form.regNo && <span>Reg: {form.regNo}</span>}
+                </div>
+              </div>
+
+              {/* Right: GSTIN */}
+              {form.gstin && (
+                <div className="text-right flex-shrink-0">
+                  <div className="text-[10px] text-gray-400 uppercase">GSTIN</div>
+                  <div className="text-xs font-mono text-gray-600">{form.gstin}</div>
+                </div>
+              )}
             </div>
-            {form.doctorReg && (
-              <div className="text-xs text-gray-400">Reg. No: {form.doctorReg}</div>
-            )}
+
+            {/* Divider */}
+            <div className="mt-3 mb-2 border-t-2 border-blue-800"></div>
+            <div className="border-t border-blue-300"></div>
+
+            {/* Doctor info strip */}
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <span className="text-sm font-bold text-gray-900">{form.doctorName || 'Dr. Your Name'}</span>
+                {form.doctorQual && (
+                  <span className="text-xs text-gray-500 ml-2">{form.doctorQual}</span>
+                )}
+              </div>
+              {form.doctorReg && (
+                <div className="text-xs text-gray-500">Reg. No: {form.doctorReg}</div>
+              )}
+            </div>
           </div>
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            This is how your hospital header will appear on prescriptions, discharge summaries, and printed bills.
+          </p>
         </div>
 
         {/* Save buttons — auto-save handles most cases; these are kept as manual fallback */}
@@ -311,6 +344,11 @@ export default function SettingsPage() {
         {/* User Management section */}
         <div className="mt-8">
           <UserManagementSection />
+        </div>
+
+        {/* Lab Partner Management (Admin only) */}
+        <div className="mt-8">
+          <LabPartnerSection />
         </div>
 
         {/* Medicine Database Import (Admin only) */}
