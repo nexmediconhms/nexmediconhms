@@ -3,6 +3,8 @@ import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
+import Toast from '@/components/shared/Toast'
+import PatientSearchWithSuggestions from '@/components/shared/PatientSearchWithSuggestions'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
@@ -80,7 +82,13 @@ function AppointmentsContent() {
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selPatient, setSelPatient] = useState<any>(null)
   const [apptDate, setApptDate] = useState(today)
-  const [apptTime, setApptTime] = useState('09:00')
+  const [apptTime, setApptTime] = useState(() => {
+    // Default to next available time slot (if today, pick the next future slot)
+    const now = new Date()
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+    return nextSlot || '09:00'
+  })
   const [apptType, setApptType] = useState(APPT_TYPES[0])
   const [apptNotes, setApptNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -251,6 +259,12 @@ function AppointmentsContent() {
         return
       }
 
+      // Audit log
+      try {
+        const { audit } = await import('@/lib/audit')
+        await audit('create', 'appointment', newId, `${selPatient.full_name} — ${apptDate} ${apptTime}`)
+      } catch { /* non-fatal */ }
+
       resetForm()
       setView('list')
       fetchAppts()
@@ -361,7 +375,12 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
   function resetForm() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
     setApptDate(today)
-    setApptTime('09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
+    // Reset time to next available slot
+    const now = new Date()
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+    setApptTime(nextSlot || '09:00')
+    setApptType(APPT_TYPES[0]); setApptNotes('')
     setSaveError('')
   }
 
@@ -512,43 +531,18 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
             <h1 className="text-xl font-bold text-gray-900">Book Appointment</h1>
           </div>
 
-          {saveError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>{saveError}</span>
-            </div>
-          )}
+          {/* Error displayed as floating toast at bottom — no scroll needed */}
+          <Toast message={saveError} type="error" onDismiss={() => setSaveError('')} duration={6000} />
 
           <div className="card p-5 mb-4">
             <h2 className="section-title">Patient</h2>
-            {selPatient ? (
-              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-                <div>
-                  <div className="font-semibold text-gray-900">{selPatient.full_name}</div>
-                  <div className="text-xs text-gray-500">{selPatient.mrn} · {selPatient.mobile}</div>
-                </div>
-                <button onClick={() => { setSelPatient(null); setPatientQuery('') }}>
-                  <X className="w-4 h-4 text-gray-400 hover:text-red-500" />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)} />
-                {patientResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
-                    {patientResults.map(p => (
-                      <button key={p.id} onClick={() => { setSelPatient(p); setPatientResults([]) }}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50 text-sm border-b border-gray-50 last:border-0">
-                        <span className="font-semibold text-gray-900">{p.full_name}</span>
-                        <span className="text-gray-400 ml-2 text-xs">{p.mrn} · {p.mobile}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <PatientSearchWithSuggestions
+              selectedPatient={selPatient}
+              onSelect={(p) => { setSelPatient(p); setPatientResults([]) }}
+              onClear={() => { setSelPatient(null); setPatientQuery('') }}
+              autoFocus
+              placeholder="Search patient by name, MRN, or mobile..."
+            />
           </div>
 
           <div className="card p-5 mb-4">
@@ -557,7 +551,19 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
+                  value={apptDate} onChange={e => {
+                    const newDate = e.target.value
+                    setApptDate(newDate)
+                    // Auto-correct time if user picks today and current time has already passed the selected time
+                    if (newDate === today) {
+                      const now = new Date()
+                      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                      if (apptTime <= currentTimeStr) {
+                        const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+                        if (nextSlot) setApptTime(nextSlot)
+                      }
+                    }
+                  }} />
               </div>
               <div>
                 <label className="label">Time</label>

@@ -390,8 +390,10 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       .eq('status', 'available').order('ward').order('bed_number')
       .then(({ data }) => setBeds(data || []))
 
-    supabase.from('clinic_users').select('id, full_name, role')
-      .eq('is_active', true).in('role', ['admin', 'doctor'])
+    // Only load users with role 'doctor' for the admitting doctor dropdown.
+    // Previously included 'admin' role which showed hospital name instead of doctor name.
+    supabase.from('clinic_users').select('id, full_name, role, specialty')
+      .eq('is_active', true).eq('role', 'doctor')
       .order('full_name')
       .then(({ data }) => setDoctors(data || []))
   }, [])
@@ -402,11 +404,22 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     async function loadPatient() {
       const { data } = await supabase
         .from('patients')
-        .select('id, full_name, mrn, age, gender, mobile')
+        .select('id, full_name, mrn, age, gender, mobile, blood_group, address, emergency_contact_name, emergency_contact_phone, mediclaim, cashless, policy_tpa_name, policy_number')
         .eq('id', prefillPatientId)
         .single()
       if (data) {
         setSelectedPatient(data)
+        // Pre-fill additional admission fields from patient record
+        setForm(prev => ({
+          ...prev,
+          allergies: prev.allergies || '',
+          comorbidities: prev.comorbidities || '',
+          insurance_details: data.mediclaim
+            ? `${data.policy_tpa_name || 'Mediclaim'}${data.policy_number ? ` (${data.policy_number})` : ''}${data.cashless ? ' — Cashless' : ''}`
+            : prev.insurance_details,
+          relative_name: data.emergency_contact_name || prev.relative_name,
+          relative_contact: data.emergency_contact_phone || prev.relative_contact,
+        }))
       }
     }
     loadPatient()
@@ -604,9 +617,14 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
                 onChange={e => setField('admitting_doctor', e.target.value)}>
                 <option value="">— Select doctor —</option>
                 {doctors.map(d => (
-                  <option key={d.id} value={d.full_name}>{d.full_name}</option>
+                  <option key={d.id} value={d.full_name}>
+                    Dr. {d.full_name}{d.specialty ? ` (${d.specialty})` : ''}
+                  </option>
                 ))}
               </select>
+              {doctors.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No doctors found. Ensure doctor accounts exist in clinic_users with role = 'doctor'.</p>
+              )}
             </div>
           </div>
           <div>

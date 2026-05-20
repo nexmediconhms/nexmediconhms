@@ -29,7 +29,7 @@ import {
   Printer, Coffee, ShoppingCart, Truck, Wrench, MoreHorizontal,
   TrendingDown, TrendingUp, RefreshCw, Download, AlertTriangle,
   Loader2, Camera, MessageCircle, Mail, Calendar, Calculator,
-  FileText, ChevronDown, ChevronUp,
+  FileText, ChevronDown, ChevronUp, X,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -368,12 +368,16 @@ export default function FundPage() {
           </div>
         </div>
 
-        {/* Global error banner */}
+        {/* Global error — fixed toast at bottom */}
         {saveError && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-red-700">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">{saveError}</div>
-            <button onClick={() => setSaveError('')} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] w-[calc(100%-2rem)] max-w-lg">
+            <div className="bg-red-50 border-2 border-red-400 text-red-800 rounded-xl px-4 py-3 shadow-2xl flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm font-medium flex-1">{saveError}</p>
+              <button onClick={() => setSaveError('')} className="flex-shrink-0 p-0.5 rounded-lg hover:bg-red-100 transition-colors text-red-500">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
 

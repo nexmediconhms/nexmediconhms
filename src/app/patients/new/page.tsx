@@ -71,6 +71,16 @@ export default function NewPatientPage() {
   const [payLink, setPayLink] = useState<{ url?: string; whatsappText: string; type: string } | null>(null)
   const [payLinkLoading, setPayLinkLoading] = useState(false)
 
+  // Payment flow states (Step between form submission and success)
+  const [showPaymentStep, setShowPaymentStep] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'credit_card' | 'debit_card' | ''>('')
+  const [paymentAmount, setPaymentAmount] = useState('500') // Default consultation fee
+  const [paymentRef, setPaymentRef] = useState('')
+  const [paymentCollected, setPaymentCollected] = useState(false)
+  const [addingToQueue, setAddingToQueue] = useState(false)
+  const [queueAdded, setQueueAdded] = useState(false)
+  const [queueToken, setQueueToken] = useState<string>('')
+
   // Duplicate detection
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
   const [showDuplicateWarn, setShowDuplicateWarn] = useState(false)
@@ -434,7 +444,40 @@ export default function NewPatientPage() {
     setSuccessMobile(form.mobile.trim())
     // Clear draft after successful registration
     clearDraft()
+    // Show payment step instead of going directly to success
+    setShowPaymentStep(true)
     generatePayLink(data.id, data.full_name, form.mobile.trim())
+
+    // ── Create in-app notification for all staff/admin/doctor ──
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `New Patient: ${data.full_name}`,
+          message: `${data.full_name} (MRN: ${data.mrn}) registered. Mobile: ${normalizedMobile || '—'}${form.gender ? `, ${form.gender}` : ''}${form.age ? `, ${form.age}y` : ''}.`,
+          type: 'info',
+          severity: 'normal',
+          source: 'registration',
+          entity_type: 'patient',
+          entity_id: data.id,
+          patient_id: data.id,
+          patient_name: data.full_name,
+          mrn: data.mrn,
+          target_roles: ['admin', 'doctor', 'staff'],
+        }),
+      })
+    } catch {
+      // Non-fatal: notification failure should not block registration
+    }
+
+    // ── Audit log: record patient creation ──
+    try {
+      const { audit } = await import('@/lib/audit')
+      await audit('create', 'patient', data.id, data.full_name)
+    } catch {
+      // Non-fatal
+    }
 
     // ── Auto-sync insurance: if patient has mediclaim/cashless, create claim entry ──
     if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
@@ -473,6 +516,163 @@ export default function NewPatientPage() {
   }
 
   // ══════════════════════════════════════════════════════════════
+  // PAYMENT COLLECTION STEP (shown after patient is saved, before final success)
+  // ══════════════════════════════════════════════════════════════
+  if (success && showPaymentStep && !paymentCollected) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto mt-8">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+            {/* Patient registered indicator */}
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-green-700">Patient Saved Successfully</p>
+                <p className="text-xs text-gray-500">{success.name} · MRN: {success.mrn}</p>
+              </div>
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-900 mb-1">💳 Collect Payment</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Collect registration / consultation fee to complete the process.
+            </p>
+
+            {/* Payment Amount */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount (₹)</label>
+              <input
+                type="number"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={paymentAmount}
+                onChange={e => setPaymentAmount(e.target.value)}
+                min="0"
+              />
+            </div>
+
+            {/* Payment Method Selection */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { key: 'cash', label: '💵 Cash', color: 'green' },
+                  { key: 'upi', label: '📱 UPI', color: 'purple' },
+                  { key: 'credit_card', label: '💳 Credit Card', color: 'blue' },
+                  { key: 'debit_card', label: '🏧 Debit Card', color: 'indigo' },
+                ] as const).map(({ key, label, color }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setPaymentMethod(key)}
+                    className={`py-3.5 px-4 rounded-xl text-sm font-semibold border-2 transition-all duration-200 text-center ${
+                      paymentMethod === key
+                        ? `border-${color}-400 bg-${color}-50 text-${color}-700 ring-2 ring-${color}-200`
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reference / Transaction ID (for UPI/Card) */}
+            {paymentMethod && paymentMethod !== 'cash' && (
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {paymentMethod === 'upi' ? 'UPI Transaction ID' : 'Transaction / Approval Code'}
+                </label>
+                <input
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder={paymentMethod === 'upi' ? 'e.g. UPI123456789' : 'e.g. AUTH-789012'}
+                  value={paymentRef}
+                  onChange={e => setPaymentRef(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Confirm Payment Button */}
+            <button
+              onClick={async () => {
+                if (!paymentMethod) return
+                if (!paymentAmount || Number(paymentAmount) <= 0) return
+
+                // Record payment in billing
+                try {
+                  await supabase.from('bills').insert({
+                    patient_id: successId,
+                    patient_name: success.name,
+                    mrn: success.mrn,
+                    invoice_type: 'registration',
+                    total_amount: Number(paymentAmount),
+                    paid_amount: Number(paymentAmount),
+                    balance: 0,
+                    payment_method: paymentMethod,
+                    payment_reference: paymentRef || null,
+                    status: 'paid',
+                    items: [{ description: 'Registration / Consultation Fee', amount: Number(paymentAmount), qty: 1 }],
+                    created_at: new Date().toISOString(),
+                  })
+                } catch {
+                  // Non-fatal — bill creation failure shouldn't block registration
+                }
+
+                // Auto-add to OPD queue
+                setAddingToQueue(true)
+                try {
+                  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+                  // Get current max token for today
+                  const { data: maxToken } = await supabase
+                    .from('opd_queue')
+                    .select('token_number')
+                    .eq('date', todayStr)
+                    .order('token_number', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+
+                  const newToken = (maxToken?.token_number || 0) + 1
+
+                  await supabase.from('opd_queue').insert({
+                    patient_id: successId,
+                    patient_name: success.name,
+                    mrn: success.mrn,
+                    token_number: newToken,
+                    date: todayStr,
+                    status: 'waiting',
+                    payment_status: 'paid',
+                    payment_method: paymentMethod,
+                    amount_paid: Number(paymentAmount),
+                  })
+                  setQueueToken(String(newToken))
+                  setQueueAdded(true)
+                } catch {
+                  // Queue table may not exist — non-fatal
+                }
+                setAddingToQueue(false)
+                setPaymentCollected(true)
+              }}
+              disabled={!paymentMethod || !paymentAmount || Number(paymentAmount) <= 0}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold text-sm py-3.5 rounded-xl transition-all shadow-md shadow-green-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
+            >
+              <CheckCircle className="w-4 h-4" />
+              {addingToQueue ? 'Processing...' : `Confirm ₹${paymentAmount} Payment & Add to Queue`}
+            </button>
+
+            {/* Skip payment option */}
+            <button
+              onClick={() => setPaymentCollected(true)}
+              className="w-full mt-3 text-sm text-gray-400 hover:text-gray-600 py-2 transition-colors"
+            >
+              Skip payment (collect later at billing counter) →
+            </button>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // SUCCESS SCREEN
   // ══════════════════════════════════════════════════════════════
   if (success) {
@@ -483,14 +683,31 @@ export default function NewPatientPage() {
             <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-200">
               <CheckCircle className="w-10 h-10 text-white" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">Patient Registered!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Registration Complete!</h2>
             <p className="text-gray-500 mb-5">{success.name} has been successfully registered.</p>
-            <div className="inline-block bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-8 py-4 mb-6">
+            <div className="inline-block bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-8 py-4 mb-4">
               <div className="text-xs text-blue-500 font-semibold uppercase tracking-wider mb-1">Medical Record Number</div>
               <div className="text-4xl font-bold text-blue-700 font-mono tracking-wide">{success.mrn}</div>
             </div>
 
-            {/* Step 1: Payment */}
+            {/* Payment & Queue status */}
+            {paymentCollected && paymentMethod && (
+              <div className="mb-5 flex flex-col gap-2">
+                <div className="inline-flex items-center justify-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-800 font-semibold">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  ₹{paymentAmount} paid via {paymentMethod === 'cash' ? 'Cash' : paymentMethod === 'upi' ? 'UPI' : paymentMethod === 'credit_card' ? 'Credit Card' : 'Debit Card'}
+                </div>
+                {queueAdded && queueToken && (
+                  <div className="inline-flex items-center justify-center gap-2 bg-purple-50 border border-purple-200 rounded-xl px-4 py-2.5 text-sm text-purple-800 font-semibold">
+                    <Users className="w-4 h-4 text-purple-600" />
+                    OPD Queue Token: <span className="text-lg font-bold">{queueToken}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 1: Payment (only show if skipped) */}
+            {!paymentCollected && (
             <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-left">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">
                 💳 Step 1 — Collect Payment First
@@ -530,10 +747,11 @@ export default function NewPatientPage() {
                 ) : null}
               </div>
             </div>
+            )}
 
-            {/* Step 2: Consultation */}
+            {/* Next Steps: Consultation */}
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
-              🩺 Step 2 — After Payment
+              🩺 {paymentCollected ? 'Next Steps' : 'Step 2 — After Payment'}
             </p>
             <div className="grid grid-cols-1 gap-2 mb-5">
               <Link href={`/opd/new?patient=${successId}`}
@@ -563,7 +781,7 @@ export default function NewPatientPage() {
               </Link>
             </div>
 
-            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); clearDraft() }}
+            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); setShowPaymentStep(false); setPaymentCollected(false); setPaymentMethod(''); setPaymentAmount('500'); setPaymentRef(''); setQueueAdded(false); setQueueToken(''); clearDraft() }}
               className="text-sm text-gray-400 hover:text-gray-600 underline">
               Register another patient
             </button>

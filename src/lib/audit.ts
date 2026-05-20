@@ -176,7 +176,19 @@ export async function audit(
     if (rpcResult === 'success') return
     // If RPC doesn't exist, fall through to Strategy 2
 
-    // ── Strategy 2: Client-side mutex + hash (fallback) ──────────
+    // ── Strategy 2: Server-side API (uses service role key, bypasses RLS) ──
+    try {
+      const res = await fetch('/api/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+      })
+      if (res.ok) return
+    } catch {
+      // API not reachable — fall through to Strategy 3
+    }
+
+    // ── Strategy 3: Client-side mutex + hash (last resort fallback) ──────────
     await withAuditLock(async () => {
       await fallbackInsert(entry)
     })

@@ -85,6 +85,24 @@ export default function AuditLogPage() {
       const { data, error: e } = await q
       if (e) {
         if (e.message.includes('permission') || e.message.includes('policy')) {
+          // Try server-side API as fallback (uses service role key)
+          try {
+            const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(p * PAGE_SIZE) })
+            if (filterAction) params.set('action', filterAction)
+            if (filterEntity) params.set('entity_type', filterEntity)
+            const res = await fetch(`/api/audit?${params.toString()}`)
+            if (res.ok) {
+              const apiData = await res.json()
+              if (p === 0) setEntries(apiData.entries ?? [])
+              else setEntries(prev => [...prev, ...(apiData.entries ?? [])])
+              setHasMore((apiData.entries?.length ?? 0) === PAGE_SIZE)
+              setPage(p)
+              setLoading(false)
+              return
+            }
+          } catch {
+            // API also failed
+          }
           setIsAdmin(false)
           setError('Access denied. Audit log is visible to admins only.')
         } else throw e

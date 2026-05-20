@@ -16,7 +16,7 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList, Scissors,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download, ExternalLink, MessageCircle, Users,
+  Shield, Download, ExternalLink, MessageCircle, Users, BedDouble,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
@@ -291,6 +291,10 @@ export default function PatientDetailPage() {
                   <Link href={`/opd/new?patient=${patient.id}`}
                     className="btn-primary flex items-center gap-2 text-xs whitespace-nowrap">
                     <Stethoscope className="w-3.5 h-3.5" /> New Consultation
+                  </Link>
+                  <Link href={`/ipd?patientId=${patient.id}`}
+                    className="flex items-center gap-2 text-xs whitespace-nowrap px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors font-medium">
+                    <BedDouble className="w-3.5 h-3.5" /> Admit
                   </Link>
                   <Link href={`/appointments?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name)}`}
                     className="btn-secondary flex items-center gap-2 text-xs whitespace-nowrap">

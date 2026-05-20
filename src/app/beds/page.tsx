@@ -4,8 +4,9 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getIndiaToday } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 import type { Bed } from '@/types'
-import { BedDouble, Search, X, CheckCircle, User } from 'lucide-react'
+import { BedDouble, Search, X, CheckCircle, User, Plus, Trash2 } from 'lucide-react'
 
 type BedStatus = Bed['status']
 
@@ -17,9 +18,14 @@ const STATUS_CONFIG: Record<BedStatus, { label: string; bg: string; border: stri
 }
 
 export default function BedsPage() {
+  const { isAdmin } = useAuth()
   const [beds, setBeds] = useState<Bed[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ bed: Bed; action: 'admit' | 'discharge' } | null>(null)
+  const [showAddBed, setShowAddBed] = useState(false)
+  const [addBedForm, setAddBedForm] = useState({ bed_number: '', ward: '', type: 'General' })
+  const [addBedSaving, setAddBedSaving] = useState(false)
+  const [addBedError, setAddBedError] = useState('')
 
   // Admit form
   const [patientSearch, setPatientSearch] = useState('')
@@ -201,6 +207,14 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddBed(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Add Bed
+            </button>
+          )}
         </div>
 
         {/* Summary Stats */}
@@ -285,6 +299,19 @@ export default function BedsPage() {
                                     : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200'
                                 }`}>
                                 {bed.status === 'reserved' ? '✓ Unreserve' : '⊕ Reserve'}
+                              </button>
+                            )}
+                            {/* Admin: Delete bed */}
+                            {isAdmin && bed.status !== 'occupied' && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  if (!confirm(`Delete Bed ${bed.bed_number}? This cannot be undone.`)) return
+                                  await supabase.from('beds').delete().eq('id', bed.id)
+                                  loadBeds()
+                                }}
+                                className="mt-1.5 text-xs px-2 py-1 rounded-md font-medium transition-colors bg-red-100 text-red-700 hover:bg-red-200 border border-red-200">
+                                <Trash2 className="w-3 h-3 inline mr-0.5" /> Remove
                               </button>
                             )}
                           </div>
@@ -394,6 +421,92 @@ export default function BedsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Bed Modal ─────────────────────────────────── */}
+      {showAddBed && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowAddBed(false) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">+ Add New Bed</h3>
+              <button onClick={() => { setShowAddBed(false); setAddBedError('') }} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {addBedError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                {addBedError}
+              </div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bed Number <span className="text-red-500">*</span></label>
+                <input
+                  className="input"
+                  placeholder="e.g. B01, ICU-03, W2-05"
+                  value={addBedForm.bed_number}
+                  onChange={e => setAddBedForm(f => ({ ...f, bed_number: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ward <span className="text-red-500">*</span></label>
+                <input
+                  className="input"
+                  placeholder="e.g. General Ward, Maternity, ICU, Private Room"
+                  value={addBedForm.ward}
+                  onChange={e => setAddBedForm(f => ({ ...f, ward: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bed Type</label>
+                <select
+                  className="input"
+                  value={addBedForm.type}
+                  onChange={e => setAddBedForm(f => ({ ...f, type: e.target.value }))}
+                >
+                  {['General', 'Semi-Private', 'Private', 'ICU', 'HDU', 'Labour Room', 'Maternity', 'NICU'].map(t => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowAddBed(false); setAddBedError('') }} className="btn-secondary flex-1">Cancel</button>
+              <button
+                onClick={async () => {
+                  if (!addBedForm.bed_number.trim()) { setAddBedError('Bed number is required'); return }
+                  if (!addBedForm.ward.trim()) { setAddBedError('Ward is required'); return }
+                  setAddBedSaving(true); setAddBedError('')
+                  const { error } = await supabase.from('beds').insert({
+                    bed_number: addBedForm.bed_number.trim().toUpperCase(),
+                    ward: addBedForm.ward.trim(),
+                    type: addBedForm.type,
+                    status: 'available',
+                  })
+                  setAddBedSaving(false)
+                  if (error) {
+                    if (error.message.includes('duplicate') || error.message.includes('unique')) {
+                      setAddBedError(`Bed "${addBedForm.bed_number.trim().toUpperCase()}" already exists.`)
+                    } else {
+                      setAddBedError(error.message)
+                    }
+                    return
+                  }
+                  setShowAddBed(false)
+                  setAddBedForm({ bed_number: '', ward: '', type: 'General' })
+                  setAddBedError('')
+                  loadBeds()
+                }}
+                disabled={addBedSaving}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {addBedSaving ? 'Adding...' : '+ Add Bed'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -167,7 +167,14 @@ export default function RemindersPage() {
     if (!silent) setLoading(true)
     else         setRefreshing(true)
     try {
-      const res  = await fetch('/api/reminders')
+      // Get current session token for authenticated API call
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
+      const res  = await fetch('/api/reminders', { headers })
       if (!res.ok) {
         console.error('[Reminders] API returned', res.status, res.statusText)
       } else {
@@ -212,9 +219,13 @@ export default function RemindersPage() {
   async function markSent(r: ReminderItem) {
     setSent(prev => new Set(Array.from(prev).concat(r.id)))
     // PATCH updates source table + logs to reminder_log
+    const { data: { session } } = await supabase.auth.getSession()
     await fetch('/api/reminders', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({
         sourceTable: r.sourceTable,
         sourceId: r.sourceId,
@@ -329,9 +340,13 @@ export default function RemindersPage() {
     // Log all sent reminders to the server
     if (batchReminders.length > 0) {
       try {
+        const { data: { session } } = await supabase.auth.getSession()
         await fetch('/api/reminders/send-all', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({ reminders: batchReminders, sentBy: 'bulk' }),
         })
       } catch (e) {
@@ -352,7 +367,12 @@ export default function RemindersPage() {
     setAutoSending(true)
     setAutoResult(null)
     try {
-      const res = await fetch('/api/reminders/auto-generate')
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      const res = await fetch('/api/reminders/auto-generate', { headers })
       if (res.ok) {
         const data = await res.json()
         setAutoResult({ total: data.total, reminders: data.reminders || [] })
@@ -372,7 +392,12 @@ export default function RemindersPage() {
     setHistoryLoading(true)
     try {
       // FIXED: pass days param so we can load more than just "today"
-      const res = await fetch(`/api/reminders/history?days=${days}`)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      const res = await fetch(`/api/reminders/history?days=${days}`, { headers })
       if (res.ok) {
         const data = await res.json()
         setHistory(data.logs || [])

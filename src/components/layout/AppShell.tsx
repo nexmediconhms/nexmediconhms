@@ -24,6 +24,7 @@ import { initABDMConfig } from '@/lib/abdm'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
+import GlobalToastProvider from '../shared/GlobalToastProvider'
 import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
@@ -219,6 +220,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={authCtx}>
+      <GlobalToastProvider>
       <div className="flex min-h-screen bg-gray-50">
 
         <div className="no-print hidden md:block">
@@ -323,6 +325,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <SessionTimeout />
         <VoiceAssistant />
       </div>
+      </GlobalToastProvider>
     </AuthContext.Provider>
   )
 }
