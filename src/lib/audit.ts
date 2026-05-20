@@ -171,18 +171,45 @@ export async function audit(
       changes:      changes     ?? null,
     }
 
-    // ── Strategy 1: Atomic RPC (preferred — race-free) ──────────
+    // ── Strategy 1: API Route (preferred — bypasses RLS) ─────────
+    const apiResult = await tryApiInsert(entry)
+    if (apiResult === 'success') return
+
+    // ── Strategy 2: Atomic RPC (fallback — race-free) ────────────
     const rpcResult = await tryAtomicInsert(entry)
     if (rpcResult === 'success') return
-    // If RPC doesn't exist, fall through to Strategy 2
+    // If RPC doesn't exist, fall through to Strategy 3
 
-    // ── Strategy 2: Client-side mutex + hash (fallback) ──────────
+    // ── Strategy 3: Client-side mutex + hash (last resort) ───────
     await withAuditLock(async () => {
       await fallbackInsert(entry)
     })
   } catch (err) {
     // Never crash the app if audit fails — log and continue
     console.warn('[Audit] Unexpected error:', err)
+  }
+}
+
+/**
+ * Try to insert via the /api/audit API route.
+ * This bypasses RLS since the API uses the service role key.
+ * Returns 'success' if it worked, 'unavailable' if the API is unreachable.
+ */
+async function tryApiInsert(
+  entry: Record<string, unknown>
+): Promise<'success' | 'unavailable'> {
+  try {
+    const res = await fetch('/api/audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    })
+    if (res.ok) return 'success'
+    // If API returns error, fall through to other strategies
+    return 'unavailable'
+  } catch {
+    // Network error or API not available
+    return 'unavailable'
   }
 }
 

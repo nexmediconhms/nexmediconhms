@@ -71,6 +71,14 @@ export default function NewPatientPage() {
   const [payLink, setPayLink] = useState<{ url?: string; whatsappText: string; type: string } | null>(null)
   const [payLinkLoading, setPayLinkLoading] = useState(false)
 
+  // Payment collection state (inline payment before showing success)
+  const [showPaymentStep, setShowPaymentStep] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | ''>('')
+  const [paymentAmount, setPaymentAmount] = useState('500')
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+  const [paymentRef, setPaymentRef] = useState('')
+  const [addToQueue, setAddToQueue] = useState(true)
+
   // Duplicate detection
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
   const [showDuplicateWarn, setShowDuplicateWarn] = useState(false)
@@ -429,12 +437,48 @@ export default function NewPatientPage() {
       return
     }
 
-    setSuccess({ mrn: data.mrn, name: data.full_name })
     setSuccessId(data.id)
     setSuccessMobile(form.mobile.trim())
     // Clear draft after successful registration
     clearDraft()
+
+    // Show payment step first (before final success)
+    setShowPaymentStep(true)
+    // Store success data for later
+    setSuccess({ mrn: data.mrn, name: data.full_name })
     generatePayLink(data.id, data.full_name, form.mobile.trim())
+
+    // ── Create notification for new patient registration ──
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'New Patient Registered',
+          message: `${data.full_name} (MRN: ${data.mrn}) has been registered.`,
+          type: 'info',
+          severity: 'normal',
+          source: 'patient_registration',
+          entity_type: 'patient',
+          entity_id: data.id,
+          patient_id: data.id,
+          patient_name: data.full_name,
+          mrn: data.mrn,
+          target_roles: ['admin', 'doctor', 'staff'],
+          metadata: { mobile: normalizedMobile, gender: form.gender, age: form.age },
+        }),
+      })
+    } catch {
+      // Non-fatal: notification failure should not block registration
+    }
+
+    // ── Create audit log entry for patient registration ──
+    try {
+      const { audit } = await import('@/lib/audit')
+      await audit('create', 'patient', data.id, data.full_name)
+    } catch {
+      // Non-fatal: audit failure should not block registration
+    }
 
     // ── Auto-sync insurance: if patient has mediclaim/cashless, create claim entry ──
     if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
@@ -472,10 +516,176 @@ export default function NewPatientPage() {
     )
   }
 
+  // ── Payment confirmation handler ────────────────────────────────
+  async function handlePaymentConfirm() {
+    if (!paymentMethod || !success) return
+
+    // Record payment via registration-payment API (creates bill + payment atomically)
+    try {
+      await fetch('/api/billing/registration-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: successId,
+          patient_name: success.name,
+          mrn: success.mrn,
+          amount: parseFloat(paymentAmount) || 500,
+          payment_method: paymentMethod,
+          payment_ref: paymentRef || null,
+          description: 'OPD Registration Fee',
+          type: 'registration',
+        }),
+      })
+    } catch {
+      // Non-fatal — payment recording failure shouldn't block flow
+    }
+
+    // Auto-add to OPD queue if selected
+    if (addToQueue) {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        // Get next token number
+        const { data: lastToken } = await supabase
+          .from('opd_queue')
+          .select('token_number')
+          .eq('queue_date', today)
+          .order('token_number', { ascending: false })
+          .limit(1)
+          .single()
+
+        const nextToken = (lastToken?.token_number || 0) + 1
+
+        await supabase.from('opd_queue').insert({
+          patient_id: successId,
+          queue_date: today,
+          token_number: nextToken,
+          status: 'waiting',
+          priority: 'normal',
+          notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
+        })
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    setPaymentConfirmed(true)
+  }
+
   // ══════════════════════════════════════════════════════════════
-  // SUCCESS SCREEN
+  // PAYMENT COLLECTION STEP (shown after patient saved, before success)
   // ══════════════════════════════════════════════════════════════
-  if (success) {
+  if (showPaymentStep && success && !paymentConfirmed) {
+
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto mt-8">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+            {/* Patient registered badge */}
+            <div className="flex items-center gap-3 mb-6 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-green-800">{success.name} registered</div>
+                <div className="text-xs text-green-600">MRN: <span className="font-mono font-bold">{success.mrn}</span></div>
+              </div>
+            </div>
+
+            {/* Payment Collection */}
+            <h2 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+              💳 Collect Payment
+            </h2>
+            <p className="text-sm text-gray-500 mb-5">
+              Accept registration/consultation fee before proceeding.
+            </p>
+
+            {/* Amount */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount (₹)</label>
+              <input
+                type="number"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={paymentAmount}
+                onChange={e => setPaymentAmount(e.target.value)}
+                min="0"
+              />
+            </div>
+
+            {/* Payment Method */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'cash', label: '💵 Cash', color: 'green' },
+                  { key: 'upi', label: '📱 UPI', color: 'purple' },
+                  { key: 'card', label: '💳 Debit Card', color: 'blue' },
+                  { key: 'credit', label: '💳 Credit Card', color: 'indigo' },
+                ].map(({ key, label, color }) => (
+                  <button key={key} type="button"
+                    onClick={() => setPaymentMethod(key as any)}
+                    className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all duration-200 ${
+                      paymentMethod === key
+                        ? `border-${color}-400 bg-${color}-50 text-${color}-700 ring-2 ring-${color}-200`
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reference (for UPI/Card) */}
+            {paymentMethod && paymentMethod !== 'cash' && (
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Transaction Reference (optional)
+                </label>
+                <input
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="UPI Ref / Card last 4 digits"
+                  value={paymentRef}
+                  onChange={e => setPaymentRef(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Add to OPD Queue checkbox */}
+            <div className="mb-6 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <input
+                type="checkbox"
+                id="addToQueue"
+                checked={addToQueue}
+                onChange={e => setAddToQueue(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <label htmlFor="addToQueue" className="text-sm font-medium text-blue-800 cursor-pointer">
+                Auto-add patient to today&apos;s OPD Queue
+              </label>
+            </div>
+
+            {/* Confirm Button */}
+            <button
+              onClick={handlePaymentConfirm}
+              disabled={!paymentMethod}
+              className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all duration-200 ${
+                paymentMethod
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-200'
+                  : 'bg-gray-300 cursor-not-allowed'
+              }`}>
+              ✓ Confirm Payment — ₹{paymentAmount || '0'}
+            </button>
+
+            <p className="text-xs text-gray-400 text-center mt-3">
+              Payment will be recorded and patient number will be generated.
+            </p>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SUCCESS SCREEN (shown after payment is confirmed)
+  // ══════════════════════════════════════════════════════════════
+  if (success && (paymentConfirmed || !showPaymentStep)) {
     return (
       <AppShell>
         <div className="p-6 max-w-lg mx-auto mt-12 text-center">

@@ -73,23 +73,27 @@ export default function AuditLogPage() {
   async function load(p: number) {
     setLoading(true); setError('')
     try {
-      let q = supabase
-        .from('audit_log')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(p * PAGE_SIZE, (p + 1) * PAGE_SIZE - 1)
+      // Use the API route which has service role access (bypasses RLS)
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(p * PAGE_SIZE),
+      })
+      if (filterAction) params.set('action', filterAction)
+      if (filterEntity) params.set('entity_type', filterEntity)
 
-      if (filterAction) q = q.eq('action', filterAction)
-      if (filterEntity) q = q.eq('entity_type', filterEntity)
-
-      const { data, error: e } = await q
-      if (e) {
-        if (e.message.includes('permission') || e.message.includes('policy')) {
+      const res = await fetch(`/api/audit?${params.toString()}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        if (res.status === 403 || errData.error?.includes('permission')) {
           setIsAdmin(false)
           setError('Access denied. Audit log is visible to admins only.')
-        } else throw e
+        } else {
+          throw new Error(errData.error || `HTTP ${res.status}`)
+        }
         return
       }
+
+      const { entries: data, total } = await res.json()
 
       if (p === 0) setEntries(data ?? [])
       else setEntries(prev => [...prev, ...(data ?? [])])
