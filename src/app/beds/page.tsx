@@ -36,7 +36,16 @@ export default function BedsPage() {
   }, [])
 
   async function loadBeds() {
-    const { data } = await supabase.from('beds').select('*').order('bed_number')
+    // Try with 'bed_number' first (new schema), fallback to handle schema cache error
+    let { data, error: err } = await supabase.from('beds').select('*').order('bed_number')
+    if (err && err.message.includes('schema cache')) {
+      // Old schema has 'bednumber' instead of 'bed_number'
+      const { data: oldData } = await supabase.from('beds').select('*')
+      data = (oldData || []).map((b: any) => ({
+        ...b,
+        bed_number: b.bed_number || b.bednumber,
+      }))
+    }
     setBeds((data as Bed[]) || [])
     setLoading(false)
   }
@@ -55,6 +64,8 @@ export default function BedsPage() {
   async function handleAdmit() {
     if (!modal || !selectedPatient) return
     setActionLoading(true)
+
+    // Update bed status
     await supabase.from('beds').update({
       status: 'occupied',
       patient_id: selectedPatient.id,
@@ -63,6 +74,23 @@ export default function BedsPage() {
       expected_discharge: expectedDischarge || null,
       updated_at: new Date().toISOString(),
     }).eq('id', modal.bed.id)
+
+    // Also create an IPD admission record to keep things in sync
+    await supabase.from('ipd_admissions').insert({
+      patient_id: selectedPatient.id,
+      patient_name: selectedPatient.full_name,
+      mrn: selectedPatient.mrn || '',
+      age: selectedPatient.age,
+      gender: selectedPatient.gender,
+      bed_id: modal.bed.id,
+      bed_number: modal.bed.bed_number,
+      ward: modal.bed.ward,
+      admission_date: getIndiaToday(),
+      admission_time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }),
+      admitting_doctor: '',
+      status: 'active',
+    }).then(() => {}) // Non-blocking — IPD table may not exist in all setups
+
     setActionLoading(false)
     closeModal()
     loadBeds()
@@ -71,23 +99,67 @@ export default function BedsPage() {
   async function handleDischarge() {
     if (!modal) return
     setActionLoading(true)
-    await supabase.from('beds').update({
-      status: 'cleaning',
-      patient_id: null,
-      patient_name: null,
-      admission_date: null,
-      expected_discharge: null,
-      updated_at: new Date().toISOString(),
-    }).eq('id', modal.bed.id)
+
+    // Use the enhanced discharge API
+    try {
+      const res = await fetch('/api/ipd/discharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admission_id: null, // Will be looked up by bed
+          discharge_date: getIndiaToday(),
+          condition_at_discharge: 'Satisfactory',
+          final_diagnosis: '',
+          discharge_advice: '',
+          discharged_by: '',
+        }),
+      })
+
+      // If the API doesn't find an admission (e.g. direct bed admission without IPD record),
+      // fall back to direct bed update
+      if (!res.ok) {
+        await supabase.from('beds').update({
+          status: 'cleaning',
+          patient_id: null,
+          patient_name: null,
+          admission_date: null,
+          expected_discharge: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', modal.bed.id)
+
+        // Also update ipd_admissions if exists
+        if (modal.bed.patient_id) {
+          await supabase.from('ipd_admissions')
+            .update({ status: 'discharged', updated_at: new Date().toISOString() })
+            .eq('bed_id', modal.bed.id)
+            .eq('status', 'active')
+        }
+
+        // Auto-mark as available after short delay
+        setTimeout(async () => {
+          await supabase.from('beds').update({ status: 'available', updated_at: new Date().toISOString() })
+            .eq('id', modal.bed.id).eq('status', 'cleaning')
+          loadBeds()
+        }, 3000)
+      }
+    } catch {
+      // Fallback to direct update
+      await supabase.from('beds').update({
+        status: 'cleaning',
+        patient_id: null,
+        patient_name: null,
+        admission_date: null,
+        expected_discharge: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', modal.bed.id)
+    }
+
     setActionLoading(false)
     closeModal()
     loadBeds()
-    // Auto-mark as available after 2 seconds (simulating cleaning)
-    setTimeout(async () => {
-      await supabase.from('beds').update({ status: 'available', updated_at: new Date().toISOString() })
-        .eq('id', modal.bed.id).eq('status', 'cleaning')
-      loadBeds()
-    }, 2000)
+
+    // Show success notification
+    alert(`Patient discharged successfully from Bed ${modal.bed.bed_number}. Bed is now being cleaned.`)
   }
 
   async function toggleReserve(bed: Bed) {

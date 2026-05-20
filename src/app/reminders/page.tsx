@@ -68,7 +68,7 @@ const TYPE_CONFIG: Record<ReminderType, { icon: any; color: string; label: strin
   post_delivery:  { icon: Baby,          color: 'text-purple-600', label: 'Post-Delivery'       },
   vaccination:    { icon: Syringe,       color: 'text-green-600',  label: 'Vaccination'         },
   pending_bill:   { icon: IndianRupee,   color: 'text-yellow-600', label: 'Pending Payment'     },
-  ot_surgery:     { icon: Calendar,      color: 'text-purple-600', label: 'OT Surgery'          },
+  ot_surgery:     { icon: Calendar,      color: 'text-red-600',    label: 'OT Surgery'          },
 }
 
 const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; emoji: string }[] = [
@@ -80,6 +80,7 @@ const FILTER_TABS: { key: ReminderType | 'all' | 'today_only'; label: string; em
   { key: 'high_risk_anc', label: 'High-Risk ANC',  emoji: '🚨' },
   { key: 'post_delivery', label: 'Post-Delivery',  emoji: '👶' },
   { key: 'vaccination',   label: 'Vaccination',    emoji: '💉' },
+  { key: 'ot_surgery',    label: 'OT Surgery',     emoji: '🔪' },
   { key: 'pending_bill',  label: 'Pending Bills',  emoji: '💳' },
 ]
 
@@ -121,6 +122,9 @@ function buildWAMessage(r: ReminderItem, hs: any): string {
 
     case 'pending_bill':
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a gentle reminder that your *payment of ₹${c.billAmount?.toLocaleString('en-IN') || '—'}* is pending.\n\nPlease visit the hospital billing counter or contact us to complete the payment.\n\n📍 *Address:* ${a}\n📞 *Contact:* ${p}\n\n---\nઆપની ₹${c.billAmount?.toLocaleString('en-IN') || '—'} ની ચૂકવણી બાકી છે.\n\n_${h}_`
+
+    case 'ot_surgery':
+      return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder for your *upcoming surgery*.\n\n🔪 *Surgery:* ${c.apptType?.replace('OT: ', '') || 'Scheduled Surgery'}\n📅 *Date:* ${fmtDate(c.apptDate)}\n🕐 *Time:* ${c.apptTime || '—'}\n\n*Pre-operative instructions:*\n• ❌ Nothing to eat or drink after midnight (NPO)\n• ✅ Arrive 2 hours before scheduled time\n• ✅ Bring all previous reports & blood work\n• ✅ Wear loose, comfortable clothing\n• ✅ Bring one attendant\n• ❌ Remove jewellery, nail polish\n• ❌ Do NOT take blood thinners (unless instructed)\n\n📍 *Address:* ${a}\n📞 *For queries:* ${p}\n\n---\nઓપરેશન માટે ખાલી પેટે, ૨ કલાક પહેલાં, રિપોર્ટ્સ સાથે આવો.\n\n_${h} — Caring for you_`
 
     default:
       return `*${h}*\n\nNamaste ${r.patientName} ji 🙏\n\nThis is a reminder from ${h}. Please contact us for details.\n\n📞 ${p}\n\n_${h}_`
@@ -225,12 +229,16 @@ export default function RemindersPage() {
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
   // FIX: Improved today_only filter — match by date OR priority (today/urgent)
+  // FIX: ot_surgery filter matches items whose title contains "OT Surgery"
   const filtered = (() => {
     if (filter === 'all') return reminders
     if (filter === 'today_only') return reminders.filter(r =>
       r.priority === 'today' || r.priority === 'urgent' ||
       r.dueDate === todayIST ||
       r.context?.apptDate === todayIST
+    )
+    if (filter === 'ot_surgery') return reminders.filter(r =>
+      r.type === 'ot_surgery' || r.title?.toLowerCase().includes('ot surgery')
     )
     return reminders.filter(r => r.type === (filter as ReminderType))
   })()
@@ -254,6 +262,10 @@ export default function RemindersPage() {
             r.priority === 'today' || r.priority === 'urgent' ||
             r.dueDate === todayIST ||
             r.context?.apptDate === todayIST
+          ).length
+        : t.key === 'ot_surgery'
+        ? reminders.filter(r =>
+            r.type === 'ot_surgery' || r.title?.toLowerCase().includes('ot surgery')
           ).length
         : reminders.filter(r => r.type === t.key).length,
     ])

@@ -1,0 +1,14 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 2,7 * * *",
+      "description": "Daily clinical reminders - runs at 7:30 AM and 12:30 PM IST (2:00 and 7:00 UTC)"
+    },
+    {
+      "path": "/api/cron/followup-escalation",
+      "schedule": "30 2 * * *",
+      "description": "Follow-up escalation detection - runs at 8:00 AM IST (2:30 UTC)"
+    }
+  ]
+}

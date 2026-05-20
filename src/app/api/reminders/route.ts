@@ -76,7 +76,7 @@ const VAX_SCHEDULE: { name: string; days: number }[] = [
 
 export interface ReminderItem {
   id: string
-  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc'
+  type: 'upcoming' | 'appointment' | 'follow_up' | 'anc' | 'post_delivery' | 'vaccination' | 'pending_bill' | 'high_risk_anc' | 'ot_surgery'
   priority: 'urgent' | 'today' | 'tomorrow' | 'upcoming'
   patientId: string
   patientName: string
@@ -493,7 +493,7 @@ export async function GET(req: NextRequest) {
 
       reminders.push({
         id: `ot-${ot.id}`,
-        type: 'appointment',
+        type: 'ot_surgery',
         priority,
         patientId: ot.patient_id ?? '',
         patientName: ot.patient_name ?? '',

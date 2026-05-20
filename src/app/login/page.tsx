@@ -121,8 +121,8 @@ export default function LoginPage() {
         redirected = true
         router.push('/reset-password')
       }
-      // Magic link / OTP verified via link click
-      if (event === 'SIGNED_IN' && session && view === 'otp') {
+      // Magic link / OTP verified via link click (handles both /login and /auth/callback flows)
+      if (event === 'SIGNED_IN' && session && (view === 'otp' || view === 'email')) {
         redirected = true
         auditLogin().then(() => router.push('/dashboard'))
       }
@@ -135,17 +135,29 @@ export default function LoginPage() {
       const hash = window.location.hash
 
       if (code) {
+        // User clicked magic link that redirected here with ?code=XXX
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (!error && !redirected) {
           redirected = true
           await auditLogin()
           router.push('/dashboard')
+        } else if (error) {
+          // Code exchange failed — show a helpful error
+          setError('Login link expired or already used. Please request a new code.')
+          // Clean URL so user doesn't see stale code param
+          window.history.replaceState({}, '', '/login')
         }
+        return
+      }
+
+      // Handle hash-based auth (legacy implicit flow from older Supabase versions)
+      if (hash && hash.includes('access_token')) {
+        // Let onAuthStateChange handle it
         return
       }
       if (hash && hash.includes('type=recovery')) return
 
-      // Already logged in?
+      // Check if user is already logged in
       const { data: { session } } = await supabase.auth.getSession()
       if (session && !redirected) {
         try {
@@ -197,7 +209,10 @@ export default function LoginPage() {
       email: email.trim().toLowerCase(),
       options: {
         shouldCreateUser: false, // Only existing users can login
-        emailRedirectTo: `${window.location.origin}/login`,
+        // Magic link clicks go to /auth/callback which handles code exchange properly
+        // This is the correct Supabase PKCE flow — /auth/callback exchanges the code
+        // and then redirects to /dashboard
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
 
@@ -567,7 +582,7 @@ export default function LoginPage() {
                 autoFocus
               />
               <p className="text-xs text-gray-400 mt-2 text-center">
-                Can't find it? Check your spam/junk folder.
+                Can't find it? Check your spam/junk folder. The email comes from <strong>noreply@mail.app.supabase.io</strong>
               </p>
             </div>
 
@@ -597,8 +612,19 @@ export default function LoginPage() {
               <ArrowLeft className="w-3 h-3" /> Change email
             </button>
             <p className="text-xs text-gray-400">
-              Or click the <strong>magic link</strong> in the email
+              Or click the <strong>Login</strong> button in the email
             </p>
+          </div>
+
+          {/* Troubleshooting help */}
+          <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            <p className="text-xs text-blue-700 font-medium mb-1">Not receiving the email?</p>
+            <ul className="text-xs text-blue-600 space-y-0.5 list-disc list-inside">
+              <li>Check spam/junk folder</li>
+              <li>Email sender: <strong>noreply@mail.app.supabase.io</strong></li>
+              <li>Wait 60 seconds before requesting a new code</li>
+              <li>Try <button onClick={() => { setView('password'); setError(''); setSuccess('') }} className="text-blue-700 underline font-medium">password login</button> as alternative</li>
+            </ul>
           </div>
         </div>
       </LoginBackground>
