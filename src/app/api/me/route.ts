@@ -6,11 +6,10 @@
  * SIMPLIFIED: No auto-bootstrap. If no profile exists, returns 404.
  * Admin users are pre-created via SQL during deployment.
  *
- * What this does:
- * 1. Verifies the user's auth token
- * 2. Looks up their clinic_users row by auth_id
- * 3. If not found by auth_id, tries by email (handles auth_id mismatch)
- * 4. If still not found, returns 404 — user must be added by admin
+ * Error handling:
+ * - Table doesn't exist → returns 503 with clear "run SETUP-LOGIN-FIX.sql" message
+ * - User not found → returns 404
+ * - Auth failed → returns 401
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -39,7 +38,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'No authorization token provided' }, { status: 401 })
     }
 
-    // Verify the user's identity
+    // Verify the user's identity using anon key + their token
     const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -51,14 +50,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
     }
 
-    // Determine which client to use for DB operations
-    // Prefer service_role (bypasses RLS) but fall back to user's token
+    // Use service_role if available (bypasses RLS), else use user's token
+    // With RLS disabled on clinic_users, even the user's token will work
     let dbClient
     if (serviceKey) {
       dbClient = createClient(supabaseUrl, serviceKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       })
     } else {
+      // Even without service_role, clinic_users has RLS DISABLED so this works
       dbClient = userClient
     }
 
@@ -74,6 +74,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ user: data })
     }
 
+    // Check if the error is "table doesn't exist"
+    if (error && (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === '42P01')) {
+      return NextResponse.json({
+        error: 'Database not set up. The clinic_users table does not exist.',
+        fix: 'Run SETUP-LOGIN-FIX.sql in Supabase → SQL Editor. This creates the table and your admin account.',
+        details: error.message,
+      }, { status: 503 })
+    }
+
     // Attempt 2: Find by email (handles auth_id mismatch after user re-creation)
     if (authUser.email) {
       const { data: emailMatch, error: emailError } = await dbClient
@@ -84,7 +93,7 @@ export async function GET(req: NextRequest) {
         .single()
 
       if (!emailError && emailMatch) {
-        // Fix the auth_id mismatch
+        // Fix the auth_id mismatch silently
         await dbClient
           .from('clinic_users')
           .update({ auth_id: authUser.id })
@@ -95,7 +104,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // No profile found — return 404 (admin must add this user via Settings → Manage Users)
+    // No profile found
     return NextResponse.json(
       { error: 'No clinic profile found for this account', email: authUser.email },
       { status: 404 }
