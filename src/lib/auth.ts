@@ -15,41 +15,41 @@ import { supabase } from './supabase'
 export type UserRole = 'admin' | 'doctor' | 'staff'
 
 export interface ClinicUser {
-  id:        string
-  auth_id:   string
-  email:     string
+  id: string
+  auth_id: string
+  email: string
   full_name: string
-  role:      UserRole
+  role: UserRole
   is_active: boolean
-  phone?:    string
+  phone?: string
   /** Doctor-specific: specialty, registration no. */
-  specialty?:    string
-  med_reg_no?:   string
+  specialty?: string
+  med_reg_no?: string
 }
 
 // ─── React Context ────────────────────────────────────────────
 export interface AuthContextType {
-  user:      ClinicUser | null
-  loading:   boolean
-  isAdmin:   boolean
-  isDoctor:  boolean
-  isStaff:   boolean
-  can:       (permission: Permission) => boolean
-  reload:    () => Promise<void>
+  user: ClinicUser | null
+  loading: boolean
+  isAdmin: boolean
+  isDoctor: boolean
+  isStaff: boolean
+  can: (permission: Permission) => boolean
+  reload: () => Promise<void>
 }
 
 const defaultCtx: AuthContextType = {
-  user:     null,
-  loading:  true,
-  isAdmin:  false,
+  user: null,
+  loading: true,
+  isAdmin: false,
   isDoctor: false,
-  isStaff:  false,
-  can:      () => false,
-  reload:   async () => {},
+  isStaff: false,
+  can: () => false,
+  reload: async () => { },
 }
 
 export const AuthContext = createContext<AuthContextType>(defaultCtx)
-export const useAuth     = () => useContext(AuthContext)
+export const useAuth = () => useContext(AuthContext)
 
 // ─── Permissions ──────────────────────────────────────────────
 export type Permission =
@@ -98,70 +98,70 @@ export type Permission =
 
 // Permission matrix: which roles can do what
 const PERMISSIONS: Record<Permission, UserRole[]> = {
-  'patients.view':        ['admin', 'doctor', 'staff'],
-  'patients.create':      ['admin', 'doctor', 'staff'],
-  'patients.edit':        ['admin', 'doctor', 'staff'],
-  'patients.delete':      ['admin'],
+  'patients.view': ['admin', 'doctor', 'staff'],
+  'patients.create': ['admin', 'doctor', 'staff'],
+  'patients.edit': ['admin', 'doctor', 'staff'],
+  'patients.delete': ['admin'],
 
-  'encounters.view':      ['admin', 'doctor', 'staff'],
-  'encounters.create':    ['admin', 'doctor'],
-  'encounters.edit':      ['admin', 'doctor'],
+  'encounters.view': ['admin', 'doctor', 'staff'],
+  'encounters.create': ['admin', 'doctor'],
+  'encounters.edit': ['admin', 'doctor'],
 
-  'prescriptions.view':   ['admin', 'doctor', 'staff'],
+  'prescriptions.view': ['admin', 'doctor', 'staff'],
   'prescriptions.create': ['admin', 'doctor'],
-  'prescriptions.edit':   ['admin', 'doctor'],
+  'prescriptions.edit': ['admin', 'doctor'],
 
-  'beds.view':            ['admin', 'doctor', 'staff'],
-  'beds.manage':          ['admin', 'doctor', 'staff'],
+  'beds.view': ['admin', 'doctor', 'staff'],
+  'beds.manage': ['admin', 'doctor', 'staff'],
 
   // FIX: Only admin sees full billing; doctor sees own patient bills; staff can create but not view all
-  'billing.view':         ['admin', 'doctor'],
-  'billing.create':       ['admin', 'staff'],
+  'billing.view': ['admin', 'doctor'],
+  'billing.create': ['admin', 'staff'],
 
-  'reports.view':         ['admin', 'doctor'],
-  'reports.financial':    ['admin'],           // FIX: staff removed — finance is admin-only
+  'reports.view': ['admin', 'doctor'],
+  'reports.financial': ['admin'],           // FIX: staff removed — finance is admin-only
 
-  'settings.view':        ['admin', 'doctor', 'staff'],
-  'settings.edit':        ['admin'],           // FIX: only admin should edit settings
+  'settings.view': ['admin', 'doctor', 'staff'],
+  'settings.edit': ['admin'],           // FIX: only admin should edit settings
 
-  'users.manage':         ['admin'],
+  'users.manage': ['admin'],
 
-  'queue.view':           ['admin', 'doctor', 'staff'],
-  'queue.manage':         ['admin', 'doctor', 'staff'],
+  'queue.view': ['admin', 'doctor', 'staff'],
+  'queue.manage': ['admin', 'doctor', 'staff'],
 
-  'forms.view':           ['admin', 'doctor', 'staff'],
-  'forms.scan':           ['admin', 'doctor', 'staff'],
+  'forms.view': ['admin', 'doctor', 'staff'],
+  'forms.scan': ['admin', 'doctor', 'staff'],
 
-  'anc.view':             ['admin', 'doctor', 'staff'],
-  'anc.edit':             ['admin', 'doctor'],
+  'anc.view': ['admin', 'doctor', 'staff'],
+  'anc.edit': ['admin', 'doctor'],
 
-  'labs.view':            ['admin', 'doctor', 'staff'],
-  'labs.edit':            ['admin', 'doctor'],
+  'labs.view': ['admin', 'doctor', 'staff'],
+  'labs.edit': ['admin', 'doctor'],
 
-  'discharge.view':       ['admin', 'doctor', 'staff'],
-  'discharge.create':     ['admin', 'doctor'],
-  'discharge.edit':       ['admin', 'doctor'],
+  'discharge.view': ['admin', 'doctor', 'staff'],
+  'discharge.create': ['admin', 'doctor'],
+  'discharge.edit': ['admin', 'doctor'],
 
   // ── IPD ────────────────────────────────────────────────────
-  'ipd.view':             ['admin', 'doctor', 'staff'],
-  'ipd.admit':            ['admin', 'doctor', 'staff'],  // reception can admit
-  'ipd.nursing':          ['admin', 'doctor', 'staff'],  // nurses = staff role
-  'ipd.discharge':        ['admin', 'doctor'],           // doctors discharge
+  'ipd.view': ['admin', 'doctor', 'staff'],
+  'ipd.admit': ['admin', 'doctor', 'staff'],  // reception can admit
+  'ipd.nursing': ['admin', 'doctor', 'staff'],  // nurses = staff role
+  'ipd.discharge': ['admin', 'doctor'],           // doctors discharge
 
   // ── Video consultations ─────────────────────────────────────
-  'video.view':           ['admin', 'doctor', 'staff'],
-  'video.manage':         ['admin', 'doctor'],           // create/delete slots
+  'video.view': ['admin', 'doctor', 'staff'],
+  'video.manage': ['admin', 'doctor'],           // create/delete slots
 
   // ── Hospital Fund ──────────────────────────────────────────
-  'fund.view':            ['admin', 'doctor', 'staff'],
-  'fund.submit':          ['admin', 'doctor', 'staff'],  // anyone can submit expense
-  'fund.approve':         ['admin'],                     // only admin approves
+  'fund.view': ['admin', 'doctor', 'staff'],
+  'fund.submit': ['admin', 'doctor', 'staff'],  // anyone can submit expense
+  'fund.approve': ['admin'],                     // only admin approves
 
   // ── Patient Portal ────────────────────────────────────────
-  'portal.send':          ['admin', 'doctor', 'staff'],  // send magic links
+  'portal.send': ['admin', 'doctor', 'staff'],  // send magic links
 
   // ── Audit ─────────────────────────────────────────────────
-  'audit.view':           ['admin'],                     // only admin can view audit log
+  'audit.view': ['admin'],                     // only admin can view audit log
 }
 
 export function hasPermission(role: UserRole | null, permission: Permission): boolean {
@@ -203,8 +203,7 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
         .from('clinic_users')
         .update({ auth_id: authUser.id })
         .eq('id', emailData.id)
-        .then(() => {})
-        .catch(() => {})
+        .then(() => { })
       return mapClinicUser({ ...emailData, auth_id: authUser.id })
     }
   }
@@ -242,15 +241,15 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
 
 function mapClinicUser(data: any): ClinicUser {
   return {
-    id:          data.id,
-    auth_id:     data.auth_id,
-    email:       data.email,
-    full_name:   data.full_name,
-    role:        data.role as UserRole,
-    is_active:   data.is_active,
-    phone:       data.phone,
-    specialty:   data.specialty,
-    med_reg_no:  data.med_reg_no,
+    id: data.id,
+    auth_id: data.auth_id,
+    email: data.email,
+    full_name: data.full_name,
+    role: data.role as UserRole,
+    is_active: data.is_active,
+    phone: data.phone,
+    specialty: data.specialty,
+    med_reg_no: data.med_reg_no,
   }
 }
 
@@ -309,9 +308,9 @@ export async function bootstrapAdmin(fullName: string): Promise<{ success: boole
 
 // ─── Nav items ────────────────────────────────────────────────
 export interface NavItem {
-  href:        string
-  label:       string
-  icon:        any
+  href: string
+  label: string
+  icon: any
   permission?: Permission
 }
 
