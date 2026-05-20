@@ -1195,112 +1195,6 @@ public/sw.js
 public/workbox-*.js
 ```
 
-# 00-complete-setup.sql
-
-```sql
--- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  FIX LOGIN: Run this in Supabase → SQL Editor                        ║
--- ║                                                                      ║
--- ║  SAFE: Does NOT delete patients, encounters, prescriptions, etc.     ║
--- ║  Only fixes clinic_users table + RLS policies for login to work.     ║
--- ╚══════════════════════════════════════════════════════════════════════╝
-
--- ─────────────────────────────────────────────────────
--- STEP 1: Create clinic_users table if it doesn't exist
--- ─────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.clinic_users (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  auth_id     UUID NOT NULL UNIQUE,
-  email       TEXT NOT NULL,
-  full_name   TEXT NOT NULL,
-  role        TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'doctor', 'staff')),
-  is_active   BOOLEAN NOT NULL DEFAULT true,
-  phone       TEXT,
-  specialty   TEXT,
-  med_reg_no  TEXT,
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─────────────────────────────────────────────────────
--- STEP 2: Enable RLS
--- ─────────────────────────────────────────────────────
-ALTER TABLE public.clinic_users ENABLE ROW LEVEL SECURITY;
-
--- ─────────────────────────────────────────────────────
--- STEP 3: Drop ALL existing policies
--- ─────────────────────────────────────────────────────
-DROP POLICY IF EXISTS "Users can read own profile" ON public.clinic_users;
-DROP POLICY IF EXISTS "Users can read own profile by email" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can read all users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can insert users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can update users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Allow first user bootstrap" ON public.clinic_users;
-DROP POLICY IF EXISTS "Users can update own profile" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_own" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_insert_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_update_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "Service role full access" ON public.clinic_users;
-DROP POLICY IF EXISTS "Authenticated users can read by email" ON public.clinic_users;
-
--- ─────────────────────────────────────────────────────
--- STEP 4: Create correct RLS policies
--- ─────────────────────────────────────────────────────
-
--- Users can read their own row by auth_id
-CREATE POLICY "Users can read own profile"
-  ON public.clinic_users FOR SELECT
-  USING (auth.uid() = auth_id);
-
--- Users can read their own row by email (handles auth_id mismatch)
-CREATE POLICY "Users can read own profile by email"
-  ON public.clinic_users FOR SELECT
-  USING (email = auth.email());
-
--- Admins can read all users
-CREATE POLICY "Admins can read all users"
-  ON public.clinic_users FOR SELECT
-  USING (EXISTS (SELECT 1 FROM public.clinic_users cu WHERE cu.auth_id = auth.uid() AND cu.role = 'admin' AND cu.is_active = true));
-
--- Admins can insert users
-CREATE POLICY "Admins can insert users"
-  ON public.clinic_users FOR INSERT
-  WITH CHECK (EXISTS (SELECT 1 FROM public.clinic_users cu WHERE cu.auth_id = auth.uid() AND cu.role = 'admin' AND cu.is_active = true));
-
--- Admins can update users
-CREATE POLICY "Admins can update users"
-  ON public.clinic_users FOR UPDATE
-  USING (EXISTS (SELECT 1 FROM public.clinic_users cu WHERE cu.auth_id = auth.uid() AND cu.role = 'admin' AND cu.is_active = true));
-
--- Users can update their own row
-CREATE POLICY "Users can update own profile"
-  ON public.clinic_users FOR UPDATE
-  USING (auth.uid() = auth_id OR email = auth.email());
-
--- Allow first user bootstrap (when table is empty)
-CREATE POLICY "Allow first user bootstrap"
-  ON public.clinic_users FOR INSERT
-  WITH CHECK (NOT EXISTS (SELECT 1 FROM public.clinic_users));
-
--- ─────────────────────────────────────────────────────
--- STEP 5: Fix existing clinic_users auth_id to match auth.users
--- This updates any rows where email matches but auth_id doesn't
--- ─────────────────────────────────────────────────────
-UPDATE public.clinic_users cu
-SET auth_id = au.id
-FROM auth.users au
-WHERE cu.email = au.email AND cu.auth_id != au.id;
-
--- ─────────────────────────────────────────────────────
--- VERIFICATION
--- ─────────────────────────────────────────────────────
-SELECT 'DONE' AS status,
-  (SELECT count(*) FROM public.clinic_users) AS users,
-  (SELECT count(*) FROM pg_policies WHERE tablename = 'clinic_users') AS policies;
-
-```
-
 # 02-fix-storage-rls.sql
 
 ```sql
@@ -1420,140 +1314,6 @@ ORDER BY policyname;
 
 -- You should see 4 policies listed for consultation-attachments.
 -- Now go back to the app and try uploading a photo — it should work!
-
-```
-
-# 03-fix-clinic-users-rls.sql
-
-```sql
--- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  FIX: "Account exists but hasn't been assigned a role yet" error   ║
--- ║                                                                    ║
--- ║  ROOT CAUSE:                                                       ║
--- ║  RLS (Row Level Security) is enabled on the clinic_users table     ║
--- ║  but there is no SELECT policy allowing authenticated users to     ║
--- ║  read their own row. This causes the login flow to fail because    ║
--- ║  the app cannot load the user's profile/role.                      ║
--- ║                                                                    ║
--- ║  INSTRUCTIONS:                                                     ║
--- ║  1. Go to your Supabase project dashboard                         ║
--- ║  2. Click "SQL Editor" in the left sidebar                        ║
--- ║  3. Click "New query"                                              ║
--- ║  4. Copy ALL the code below and paste it in the editor            ║
--- ║  5. Click "Run" (or press Ctrl+Enter)                             ║
--- ║  6. You should see "Success" message                              ║
--- ║  7. Try logging in again — it should work now                     ║
--- ║                                                                    ║
--- ║  WHAT THIS DOES:                                                   ║
--- ║  ✅ Allows authenticated users to read their OWN clinic_users row  ║
--- ║  ✅ Allows admins to read ALL clinic_users rows (for user mgmt)    ║
--- ║  ✅ Allows admins to insert/update clinic_users (for adding users) ║
--- ║  ✅ Preserves security — users cannot see other users' data        ║
--- ╚══════════════════════════════════════════════════════════════════════╝
-
-
--- ─────────────────────────────────────────────────────
--- STEP 1: Ensure RLS is enabled (idempotent)
--- ─────────────────────────────────────────────────────
-ALTER TABLE public.clinic_users ENABLE ROW LEVEL SECURITY;
-
-
--- ─────────────────────────────────────────────────────
--- STEP 2: Drop existing policies (if any) to avoid conflicts
--- ─────────────────────────────────────────────────────
-DROP POLICY IF EXISTS "Users can read own profile" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can read all users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can insert users" ON public.clinic_users;
-DROP POLICY IF EXISTS "Admins can update users" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_own" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_select_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_insert_admin" ON public.clinic_users;
-DROP POLICY IF EXISTS "clinic_users_update_admin" ON public.clinic_users;
-
-
--- ─────────────────────────────────────────────────────
--- STEP 3: Create SELECT policy — users can read their own row
--- This is the CRITICAL policy that fixes the login error.
--- Without this, loadClinicUser() returns null and the app
--- shows "hasn't been assigned a role yet".
--- ─────────────────────────────────────────────────────
-CREATE POLICY "Users can read own profile"
-  ON public.clinic_users
-  FOR SELECT
-  USING (auth.uid() = auth_id);
-
-
--- ─────────────────────────────────────────────────────
--- STEP 4: Create SELECT policy — admins can read all users
--- Needed for Settings → Manage Users page
--- ─────────────────────────────────────────────────────
-CREATE POLICY "Admins can read all users"
-  ON public.clinic_users
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.clinic_users cu
-      WHERE cu.auth_id = auth.uid()
-        AND cu.role = 'admin'
-        AND cu.is_active = true
-    )
-  );
-
-
--- ─────────────────────────────────────────────────────
--- STEP 5: Create INSERT policy — admins can add new users
--- ─────────────────────────────────────────────────────
-CREATE POLICY "Admins can insert users"
-  ON public.clinic_users
-  FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.clinic_users cu
-      WHERE cu.auth_id = auth.uid()
-        AND cu.role = 'admin'
-        AND cu.is_active = true
-    )
-  );
-
-
--- ─────────────────────────────────────────────────────
--- STEP 6: Create UPDATE policy — admins can update users
--- ─────────────────────────────────────────────────────
-CREATE POLICY "Admins can update users"
-  ON public.clinic_users
-  FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.clinic_users cu
-      WHERE cu.auth_id = auth.uid()
-        AND cu.role = 'admin'
-        AND cu.is_active = true
-    )
-  );
-
-
--- ─────────────────────────────────────────────────────
--- STEP 7: Allow first-time setup (INSERT when no users exist)
--- This allows the bootstrapAdmin() function to work when
--- the clinic_users table is empty (first-time setup).
--- ─────────────────────────────────────────────────────
-DROP POLICY IF EXISTS "Allow first user bootstrap" ON public.clinic_users;
-
-CREATE POLICY "Allow first user bootstrap"
-  ON public.clinic_users
-  FOR INSERT
-  WITH CHECK (
-    -- Only allow if no users exist yet (first-time setup)
-    NOT EXISTS (SELECT 1 FROM public.clinic_users)
-  );
-
-
--- ─────────────────────────────────────────────────────
--- VERIFICATION: Check that policies were created
--- ─────────────────────────────────────────────────────
-SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual
-FROM pg_policies
-WHERE tablename = 'clinic_users';
 
 ```
 
@@ -11398,26 +11158,14 @@ export async function POST(req: NextRequest) {
 /**
  * src/app/api/bootstrap/route.ts
  *
- * First-time admin bootstrap endpoint — IMPROVED.
+ * OPTIONAL utility endpoint — NOT used in the main auth flow.
+ * 
+ * The primary admin setup is now done via SQL (SETUP-LOGIN-FIX.sql)
+ * during deployment. This endpoint is kept only as an emergency
+ * fallback tool that can be called manually if needed.
  *
- * FIXES:
- * - Better error diagnostics: tells you exactly what went wrong
- * - Handles the case where clinic_users table doesn't exist
- * - Handles the case where users exist but auth_id doesn't match
- * - Deletes stale clinic_users rows if they exist but have mismatched auth_ids
- *   (this happens when you recreate Supabase auth users but the old clinic_users
- *   rows still reference the old auth_ids)
- *
- * This uses the service_role key to bypass RLS completely, which solves
- * the chicken-and-egg problem: RLS policies on clinic_users require an
- * admin to exist, but the first admin can't be created because no admin
- * exists yet to satisfy the INSERT policy.
- *
- * Security:
- * - Only works when the clinic_users table is COMPLETELY empty (0 rows)
- *   OR when existing rows have no matching auth user (stale data)
- * - Requires a valid authenticated Supabase session (Bearer token)
- * - Creates exactly one admin user — subsequent calls will fail
+ * GET  → Check if clinic_users table is empty (for diagnostics)
+ * POST → Manually create admin (requires valid auth token + empty table)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -11431,52 +11179,35 @@ export async function POST(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    // ── Diagnostics: check each env var individually ──────────
-    if (!supabaseUrl) {
+    if (!supabaseUrl || !anonKey) {
       return NextResponse.json(
-        { error: 'NEXT_PUBLIC_SUPABASE_URL is not set in environment variables' },
-        { status: 500 }
-      )
-    }
-    if (!anonKey) {
-      return NextResponse.json(
-        { error: 'NEXT_PUBLIC_SUPABASE_ANON_KEY is not set in environment variables' },
-        { status: 500 }
-      )
-    }
-    if (!serviceKey) {
-      return NextResponse.json(
-        {
-          error: 'SUPABASE_SERVICE_ROLE_KEY is not set in environment variables',
-          fix: 'Go to Supabase Dashboard → Project Settings → API → service_role key, then add it to Vercel Environment Variables',
-        },
+        { error: 'Supabase URL or Anon Key not configured.' },
         { status: 500 }
       )
     }
 
-    // Parse request body
+    if (!serviceKey) {
+      return NextResponse.json(
+        { error: 'SUPABASE_SERVICE_ROLE_KEY is required for bootstrap. Add it in Vercel → Settings → Environment Variables.' },
+        { status: 500 }
+      )
+    }
+
     const body = await req.json().catch(() => ({}))
     const fullName = body.full_name?.trim()
 
     if (!fullName) {
-      return NextResponse.json(
-        { error: 'full_name is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'full_name is required' }, { status: 400 })
     }
 
-    // Extract the access token from the Authorization header
+    // Verify token
     const authHeader = req.headers.get('authorization')
     const token = authHeader?.replace('Bearer ', '')
 
     if (!token) {
-      return NextResponse.json(
-        { error: 'No authorization token provided' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'No authorization token provided' }, { status: 401 })
     }
 
-    // Verify the token by calling getUser with the user's token
     const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -11485,162 +11216,34 @@ export async function POST(req: NextRequest) {
     const { data: { user: authUser }, error: authError } = await userClient.auth.getUser()
 
     if (authError || !authUser) {
-      return NextResponse.json(
-        { error: 'Invalid or expired token', details: authError?.message },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
     }
 
-    // Use admin client (service_role) to bypass RLS
+    // Use service_role to bypass RLS
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // ── Check if clinic_users table exists and count rows ──────
+    // Only allow if clinic_users is empty
     const { count, error: countError } = await adminClient
       .from('clinic_users')
       .select('id', { count: 'exact', head: true })
 
     if (countError) {
-      // Provide specific diagnostic info
-      const errorDetails = {
-        code: countError.code,
-        message: countError.message,
-        hint: countError.hint || undefined,
-        details: countError.details || undefined,
-      }
-
-      // Common case: table doesn't exist
-      if (
-        countError.message?.includes('relation') &&
-        countError.message?.includes('does not exist')
-      ) {
-        return NextResponse.json(
-          {
-            error: 'The clinic_users table does not exist in your Supabase database',
-            fix: 'Run the database schema SQL in your Supabase SQL Editor. Check your project for a file like schema.sql or 00-schema.sql and execute it.',
-            supabase_error: errorDetails,
-          },
-          { status: 500 }
-        )
-      }
-
-      // Check if service key might be wrong (permission denied)
-      if (
-        countError.code === '42501' ||
-        countError.message?.includes('permission denied')
-      ) {
-        return NextResponse.json(
-          {
-            error: 'Permission denied — the SUPABASE_SERVICE_ROLE_KEY might be incorrect',
-            fix: 'Verify your SUPABASE_SERVICE_ROLE_KEY in Vercel matches what Supabase Dashboard → Project Settings → API shows.',
-            supabase_error: errorDetails,
-          },
-          { status: 500 }
-        )
-      }
-
-      // Generic error with full diagnostics
-      console.error('[/api/bootstrap] Count query failed:', JSON.stringify(errorDetails))
       return NextResponse.json(
-        {
-          error: 'Failed to check existing users',
-          supabase_error: errorDetails,
-          fix: 'Check the Supabase logs and verify your environment variables are correct.',
-        },
+        { error: 'Failed to check existing users', details: countError.message },
         { status: 500 }
       )
     }
 
-    // ── If users exist, check if any of them are actually reachable ──
     if ((count ?? 0) > 0) {
-      // Check if the current user already has a profile
-      const { data: existingProfile } = await adminClient
-        .from('clinic_users')
-        .select('id, email, role, auth_id')
-        .or(`auth_id.eq.${authUser.id},email.eq.${authUser.email}`)
-        .limit(1)
-
-      if (existingProfile && existingProfile.length > 0) {
-        const profile = existingProfile[0]
-
-        // If auth_id doesn't match, fix it
-        if (profile.auth_id !== authUser.id) {
-          await adminClient
-            .from('clinic_users')
-            .update({ auth_id: authUser.id })
-            .eq('id', profile.id)
-
-          return NextResponse.json({
-            success: true,
-            message: `Your existing profile (${profile.role}) was found and auth link was repaired. Try refreshing the page.`,
-            user: { ...profile, auth_id: authUser.id },
-            auth_id_fixed: true,
-          })
-        }
-
-        return NextResponse.json(
-          {
-            error: `Setup already completed. You already have a "${profile.role}" account. Try refreshing the page or sign out and sign back in.`,
-          },
-          { status: 403 }
-        )
-      }
-
-      // Users exist but none match this auth user
-      // Check if all existing clinic_users have valid auth accounts
-      const { data: allUsers } = await adminClient
-        .from('clinic_users')
-        .select('id, email, auth_id, role')
-
-      if (allUsers && allUsers.length > 0) {
-        // Verify each user's auth_id is still valid
-        let hasValidAdmin = false
-        for (const u of allUsers) {
-          if (u.role === 'admin') {
-            try {
-              const { data: { user: checkUser } } = await adminClient.auth.admin.getUserById(u.auth_id)
-              if (checkUser) {
-                hasValidAdmin = true
-                break
-              }
-            } catch {
-              // auth user doesn't exist anymore — this is a stale row
-            }
-          }
-        }
-
-        if (!hasValidAdmin) {
-          // All admin rows are stale (their auth accounts no longer exist)
-          // This happens when someone deletes auth users from Supabase dashboard
-          // but clinic_users rows remain.
-          // Safe to clear stale data and let this user become admin.
-          console.log('[/api/bootstrap] All existing admin rows are stale. Clearing clinic_users for fresh bootstrap.')
-
-          const { error: deleteError } = await adminClient
-            .from('clinic_users')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000')
-
-          if (deleteError) {
-            // Can't delete — there might be FK constraints.
-            // Fall through to create the admin alongside stale rows.
-            console.warn('[/api/bootstrap] Could not clear stale rows:', deleteError.message)
-          }
-          // Continue to insert below
-        } else {
-          return NextResponse.json(
-            {
-              error: 'Setup already completed. An admin account exists. Contact your admin to add your email.',
-              existingUserCount: allUsers.length,
-            },
-            { status: 403 }
-          )
-        }
-      }
+      return NextResponse.json(
+        { error: 'Users already exist. Use Settings → Manage Users to add new users.' },
+        { status: 403 }
+      )
     }
 
-    // ── Insert the first admin user (bypasses RLS via service_role) ──
+    // Insert admin
     const { data, error: insertError } = await adminClient
       .from('clinic_users')
       .insert({
@@ -11654,117 +11257,61 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (insertError) {
-      console.error('[/api/bootstrap] Insert failed:', insertError.message)
-
-      // Check for common insert errors
-      if (insertError.message?.includes('duplicate key')) {
-        return NextResponse.json(
-          {
-            error: 'A user with this email already exists. Try signing out and back in.',
-            details: insertError.message,
-          },
-          { status: 409 }
-        )
-      }
-
       return NextResponse.json(
-        {
-          error: 'Failed to create admin user',
-          details: insertError.message,
-          code: insertError.code,
-          hint: insertError.hint || undefined,
-        },
+        { error: 'Failed to create admin user', details: insertError.message },
         { status: 500 }
       )
     }
 
-    console.log('[/api/bootstrap] First admin created:', {
-      email: authUser.email,
-      name: fullName,
-      id: data.id,
-    })
-
     return NextResponse.json({
       success: true,
       message: 'Admin account created successfully',
-      user: {
-        id: data.id,
-        email: data.email,
-        full_name: data.full_name,
-        role: data.role,
-      },
+      user: { id: data.id, email: data.email, full_name: data.full_name, role: data.role },
     })
   } catch (err: any) {
-    console.error('[/api/bootstrap] Unexpected error:', err.message, err.stack)
-    return NextResponse.json(
-      { error: 'Internal server error', details: err.message },
-      { status: 500 }
-    )
+    console.error('[/api/bootstrap] Error:', err.message)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 /**
- * GET — Check if first-time setup is needed
- * Uses service_role to bypass RLS for the count check
+ * GET — Diagnostic: check if first-time setup is needed
  */
 export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    if (!supabaseUrl || !serviceKey) {
-      return NextResponse.json(
-        {
-          error: 'Server configuration incomplete',
-          missing: [
-            ...(!supabaseUrl ? ['NEXT_PUBLIC_SUPABASE_URL'] : []),
-            ...(!serviceKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
-          ],
-        },
-        { status: 500 }
-      )
+    const key = serviceKey || anonKey
+    if (!supabaseUrl || !key) {
+      return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
     }
 
-    const adminClient = createClient(supabaseUrl, serviceKey, {
+    const client = createClient(supabaseUrl, key, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    const { count, error } = await adminClient
+    const { count, error } = await client
       .from('clinic_users')
       .select('id', { count: 'exact', head: true })
 
     if (error) {
-      console.error('[/api/bootstrap] GET count failed:', error.message, error.code)
-
-      // If the table doesn't exist, it's definitely first-time setup
-      if (error.message?.includes('does not exist')) {
-        return NextResponse.json({
-          isFirstTime: true,
-          userCount: 0,
-          warning: 'clinic_users table does not exist — run the schema SQL first',
-        })
-      }
-
-      return NextResponse.json(
-        {
-          error: 'Failed to check setup status',
-          details: error.message,
-          code: error.code,
-        },
-        { status: 500 }
-      )
+      return NextResponse.json({
+        isFirstTime: true,
+        userCount: 0,
+        tableExists: false,
+        error: error.message,
+      })
     }
 
     return NextResponse.json({
       isFirstTime: (count ?? 0) === 0,
       userCount: count ?? 0,
+      tableExists: true,
     })
   } catch (err: any) {
-    console.error('[/api/bootstrap] GET unexpected error:', err.message)
-    return NextResponse.json(
-      { error: 'Internal server error', details: err.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 ```
@@ -17249,15 +16796,13 @@ export async function DELETE(req: NextRequest) {
  *
  * Returns the current authenticated user's clinic_users profile.
  * 
- * CRITICAL: This endpoint handles the first-time admin bootstrap.
- * When a user logs in and no clinic_users rows exist, it auto-creates
- * them as admin. This fixes the chicken-and-egg problem where:
- *   - RLS blocks client-side queries to clinic_users
- *   - No admin exists to add users via the UI
- *   - The first user needs to become admin automatically
+ * SIMPLIFIED: No auto-bootstrap. If no profile exists, returns 404.
+ * Admin users are pre-created via SQL during deployment.
  *
- * Uses service_role key if available (bypasses RLS).
- * Falls back to anon key + user token if service key is missing.
+ * Error handling:
+ * - Table doesn't exist → returns 503 with clear "run SETUP-LOGIN-FIX.sql" message
+ * - User not found → returns 404
+ * - Auth failed → returns 401
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -17273,7 +16818,7 @@ export async function GET(req: NextRequest) {
 
     if (!supabaseUrl || !anonKey) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete (missing SUPABASE_URL or ANON_KEY)' },
+        { error: 'Server configuration incomplete. Check Vercel environment variables (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY).' },
         { status: 500 }
       )
     }
@@ -17283,13 +16828,10 @@ export async function GET(req: NextRequest) {
     const token = authHeader?.replace('Bearer ', '')
 
     if (!token) {
-      return NextResponse.json(
-        { error: 'No authorization token provided' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'No authorization token provided' }, { status: 401 })
     }
 
-    // Create a client with the user's token to verify identity
+    // Verify the user's identity using anon key + their token
     const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -17298,28 +16840,22 @@ export async function GET(req: NextRequest) {
     const { data: { user: authUser }, error: authError } = await userClient.auth.getUser()
 
     if (authError || !authUser) {
-      return NextResponse.json(
-        { error: 'Invalid or expired token' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
     }
 
-    // Determine which client to use for DB operations
-    // Prefer service_role (bypasses RLS) but fall back to user's token
+    // Use service_role if available (bypasses RLS), else use user's token
+    // With RLS disabled on clinic_users, even the user's token will work
     let dbClient
-    let usingServiceRole = false
-
     if (serviceKey) {
       dbClient = createClient(supabaseUrl, serviceKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       })
-      usingServiceRole = true
     } else {
-      // No service key — use the user's own token (subject to RLS)
+      // Even without service_role, clinic_users has RLS DISABLED so this works
       dbClient = userClient
     }
 
-    // Try to find the user's clinic profile
+    // Attempt 1: Find by auth_id
     const { data, error } = await dbClient
       .from('clinic_users')
       .select('*')
@@ -17331,92 +16867,37 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ user: data })
     }
 
-    // Profile not found — check if this is first-time setup (no users at all)
-    const { count, error: countError } = await dbClient
-      .from('clinic_users')
-      .select('id', { count: 'exact', head: true })
-
-    // If count query fails (RLS blocking even count), try a different approach
-    if (countError && !usingServiceRole) {
-      // RLS is blocking everything — we need to bootstrap
-      // Try inserting directly (relies on "Allow first user bootstrap" RLS policy)
-      console.log('[/api/me] RLS blocking count query, attempting direct bootstrap for:', authUser.email)
-      
-      const { data: newUser, error: insertError } = await userClient
-        .from('clinic_users')
-        .insert({
-          auth_id: authUser.id,
-          email: authUser.email,
-          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Admin',
-          role: 'admin',
-          is_active: true,
-        })
-        .select()
-        .single()
-
-      if (!insertError && newUser) {
-        return NextResponse.json({ user: newUser, bootstrapped: true })
-      }
-
-      // If insert also fails, return a helpful error
-      console.error('[/api/me] Bootstrap insert failed:', insertError?.message)
+    // Check if the error is "table doesn't exist"
+    if (error && (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === '42P01')) {
       return NextResponse.json({
-        error: 'Cannot access clinic_users table. RLS policies may need to be configured.',
-        details: insertError?.message,
-        fix: 'Run the SQL in 03-fix-clinic-users-rls.sql in your Supabase SQL Editor',
-      }, { status: 500 })
+        error: 'Database not set up. The clinic_users table does not exist.',
+        fix: 'Run SETUP-LOGIN-FIX.sql in Supabase → SQL Editor. This creates the table and your admin account.',
+        details: error.message,
+      }, { status: 503 })
     }
 
-    if ((count ?? 0) === 0) {
-      // First-time setup: auto-create this user as admin
-      console.log('[/api/me] First-time setup — creating admin for:', authUser.email)
-
-      const { data: newUser, error: insertError } = await dbClient
+    // Attempt 2: Find by email (handles auth_id mismatch after user re-creation)
+    if (authUser.email) {
+      const { data: emailMatch, error: emailError } = await dbClient
         .from('clinic_users')
-        .insert({
-          auth_id: authUser.id,
-          email: authUser.email,
-          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Admin',
-          role: 'admin',
-          is_active: true,
-        })
-        .select()
+        .select('*')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
         .single()
 
-      if (insertError) {
-        console.error('[/api/me] Auto-bootstrap failed:', insertError.message)
-        return NextResponse.json(
-          { error: 'Failed to create admin profile', details: insertError.message },
-          { status: 500 }
-        )
+      if (!emailError && emailMatch) {
+        // Fix the auth_id mismatch silently
+        await dbClient
+          .from('clinic_users')
+          .update({ auth_id: authUser.id })
+          .eq('id', emailMatch.id)
+
+        emailMatch.auth_id = authUser.id
+        return NextResponse.json({ user: emailMatch, auth_id_fixed: true })
       }
-
-      return NextResponse.json({ user: newUser, bootstrapped: true })
     }
 
-    // Table has users but this user isn't one of them
-    // Try matching by email (handles auth_id mismatch after user re-creation)
-    const { data: emailMatch, error: emailError } = await dbClient
-      .from('clinic_users')
-      .select('*')
-      .eq('email', authUser.email || '')
-      .eq('is_active', true)
-      .single()
-
-    if (!emailError && emailMatch) {
-      // Found by email — fix the auth_id mismatch
-      console.log('[/api/me] Fixing auth_id mismatch for:', authUser.email)
-      
-      await dbClient
-        .from('clinic_users')
-        .update({ auth_id: authUser.id })
-        .eq('id', emailMatch.id)
-
-      emailMatch.auth_id = authUser.id
-      return NextResponse.json({ user: emailMatch, auth_id_fixed: true })
-    }
-
-    // Genuinely no profile for this user
+    // No profile found
     return NextResponse.json(
       { error: 'No clinic profile found for this account', email: authUser.email },
       { status: 404 }
@@ -17429,7 +16910,6 @@ export async function GET(req: NextRequest) {
     )
   }
 }
-
 ```
 
 # src\app\api\medicines\import\route.ts
@@ -35683,50 +35163,38 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```tsx
 'use client'
 /**
- * src/app/login/page.tsx — OTP-FIRST LOGIN
+ * src/app/login/page.tsx — PASSWORD-PRIMARY LOGIN
  *
- * Complete rewrite with OTP/Magic Link as primary login method.
- * Password login is available as a secondary fallback.
+ * Simple, fast, reliable login for clinic environments.
+ * Password login is PRIMARY. OTP/magic link is available as a secondary option.
  *
- * Flow:
- *   1. User enters email → clicks "Send Login Code"
- *   2. Supabase sends a 6-digit OTP + magic link to their email
- *   3. User types OTP (or clicks magic link from email)
- *   4. Session created → redirect to dashboard
- *
- * Password fallback:
- *   - Small link "Sign in with password instead"
- *   - For scenarios where email is down or slow
- *
- * MFA:
- *   - Now OPTIONAL — not forced on first login
- *   - Can be enabled from Settings by any user
- *
- * First-time setup:
- *   - Still supported — first user becomes admin
+ * Design principles:
+ *  - Password first (clinics have unreliable internet, doctors hate checking email)
+ *  - No runtime bootstrap (admin is pre-created via SQL during deployment)
+ *  - MFA optional (can be enabled from Settings)
+ *  - Rate limiting to prevent brute force
+ *  - Clean, professional UI
  */
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/lib/constants'
-import { isFirstTimeSetup, bootstrapAdmin } from '@/lib/auth'
 import { getAAL, verifyMFACode } from '@/lib/mfa'
 import { auditLogin } from '@/lib/audit'
 import {
   Eye, EyeOff, Activity, ArrowLeft, Mail,
-  Shield, KeyRound, CheckCircle2, Loader2,
+  Shield, KeyRound, Loader2,
 } from 'lucide-react'
 
 type View =
-  | 'email'          // Enter email (primary screen)
-  | 'otp'            // Enter 6-digit OTP code
-  | 'password'       // Fallback password login
+  | 'login'          // Email + password (primary screen)
+  | 'otp-send'       // Send OTP (secondary option)
+  | 'otp-verify'     // Enter 6-digit OTP code
   | 'forgot'         // Password reset
-  | 'setup'          // First-time admin setup
   | 'mfa-verify'     // MFA verification (if user has TOTP enabled)
 
-// ── Background component (module-level to prevent re-mount on keystroke)
+// ── Background component
 function LoginBackground({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 flex items-center justify-center p-4">
@@ -35742,7 +35210,7 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
   )
 }
 
-// ── Rate limiter
+// ── Rate limiter hook
 function useRateLimiter(max: number, windowMs: number, blockMs: number) {
   const attempts = useRef<number[]>([])
   const blocked = useRef(0)
@@ -35767,27 +35235,24 @@ function useRateLimiter(max: number, windowMs: number, blockMs: number) {
 
 export default function LoginPage() {
   const router = useRouter()
-  const otpInputRef = useRef<HTMLInputElement>(null)
   const limiter = useRateLimiter(5, 15 * 60000, 30 * 60000)
+  const mfaInputRef = useRef<HTMLInputElement>(null)
 
-  const [view, setView] = useState<View>('email')
+  const [view, setView] = useState<View>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
-  const [otpCode, setOtpCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Resend cooldown
+  // OTP state
+  const [otpCode, setOtpCode] = useState('')
+  const otpInputRef = useRef<HTMLInputElement>(null)
   const [resendCooldown, setResendCooldown] = useState(0)
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // First-time setup
-  const [setupName, setSetupName] = useState('')
-  const [setupDone, setSetupDone] = useState(false)
-
-  // MFA
+  // MFA state
   const [mfaCode, setMfaCode] = useState('')
 
   // ── On mount: check if already logged in or handle auth callbacks
@@ -35804,8 +35269,7 @@ export default function LoginPage() {
         redirected = true
         router.push('/reset-password')
       }
-      // Magic link / OTP verified via link click (handles both /login and /auth/callback flows)
-      if (event === 'SIGNED_IN' && session && (view === 'otp' || view === 'email')) {
+      if (event === 'SIGNED_IN' && session && view === 'otp-verify') {
         redirected = true
         auditLogin().then(() => router.push('/dashboard'))
       }
@@ -35818,35 +35282,24 @@ export default function LoginPage() {
       const hash = window.location.hash
 
       if (code) {
-        // User clicked magic link that redirected here with ?code=XXX
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (!error && !redirected) {
           redirected = true
           await auditLogin()
           router.push('/dashboard')
         } else if (error) {
-          // Code exchange failed — show a helpful error
-          setError('Login link expired or already used. Please request a new code.')
-          // Clean URL so user doesn't see stale code param
+          setError('Login link expired or already used. Please sign in again.')
           window.history.replaceState({}, '', '/login')
         }
         return
       }
 
-      // Handle hash-based auth (legacy implicit flow from older Supabase versions)
-      if (hash && hash.includes('access_token')) {
-        // Let onAuthStateChange handle it
-        return
-      }
+      if (hash && hash.includes('access_token')) return
       if (hash && hash.includes('type=recovery')) return
 
       // Check if user is already logged in
       const { data: { session } } = await supabase.auth.getSession()
       if (session && !redirected) {
-        try {
-          const firstTime = await isFirstTimeSetup()
-          if (firstTime) { setView('setup'); return }
-        } catch {}
         redirected = true
         router.push('/dashboard')
       }
@@ -35856,113 +35309,13 @@ export default function LoginPage() {
     return () => { subscription.unsubscribe() }
   }, [router])
 
-  // Auto-focus OTP input
+  // Auto-focus MFA/OTP input
   useEffect(() => {
-    if (view === 'otp' || view === 'mfa-verify') {
-      setTimeout(() => otpInputRef.current?.focus(), 150)
-    }
+    if (view === 'mfa-verify') setTimeout(() => mfaInputRef.current?.focus(), 150)
+    if (view === 'otp-verify') setTimeout(() => otpInputRef.current?.focus(), 150)
   }, [view])
 
-  // Cooldown timer
-  function startCooldown() {
-    setResendCooldown(60)
-    if (cooldownRef.current) clearInterval(cooldownRef.current)
-    cooldownRef.current = setInterval(() => {
-      setResendCooldown(prev => {
-        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0 }
-        return prev - 1
-      })
-    }, 1000)
-  }
-
-  // ── Send OTP via Supabase signInWithOtp
-  async function handleSendOTP(e?: React.FormEvent) {
-    e?.preventDefault()
-    if (!email.trim() || !email.includes('@')) {
-      setError('Please enter a valid email address.')
-      return
-    }
-    setLoading(true)
-    setError('')
-
-    const rate = limiter.check()
-    if (!rate.ok) { setError(rate.msg); setLoading(false); return }
-
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      options: {
-        shouldCreateUser: false, // Only existing users can login
-        // Magic link clicks go to /auth/callback which handles code exchange properly
-        // This is the correct Supabase PKCE flow — /auth/callback exchanges the code
-        // and then redirects to /dashboard
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-
-    setLoading(false)
-
-    if (otpError) {
-      limiter.record()
-      // Supabase returns generic error for non-existent users (good for security)
-      if (otpError.message.includes('Signups not allowed') || otpError.message.includes('not allowed')) {
-        setError('No account found with this email. Contact your admin to get access.')
-      } else {
-        setError(otpError.message || 'Failed to send login code. Try again.')
-      }
-      return
-    }
-
-    limiter.reset()
-    setView('otp')
-    startCooldown()
-    setSuccess(`Login code sent to ${email}. Check your inbox (and spam folder).`)
-  }
-
-  // ── Verify OTP code
-  async function handleVerifyOTP(e?: React.FormEvent) {
-    e?.preventDefault()
-    if (otpCode.length !== 6) {
-      setError('Please enter the complete 6-digit code.')
-      return
-    }
-    setLoading(true)
-    setError('')
-
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: otpCode,
-      type: 'email',
-    })
-
-    setLoading(false)
-
-    if (verifyError) {
-      setError('Invalid or expired code. Please try again or request a new one.')
-      setOtpCode('')
-      otpInputRef.current?.focus()
-      return
-    }
-
-    // Check MFA requirement
-    try {
-      const aal = await getAAL()
-      if (aal.needsMFA) {
-        setView('mfa-verify')
-        return
-      }
-    } catch {}
-
-    // First-time setup check
-    try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) { setView('setup'); return }
-    } catch {}
-
-    await auditLogin()
-    router.push('/dashboard')
-  }
-
-  // ── Password login (fallback)
+  // ── Password login (PRIMARY)
   async function handlePasswordLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !password) {
@@ -35982,7 +35335,13 @@ export default function LoginPage() {
 
     if (authError) {
       limiter.record()
-      setError('Invalid email or password.')
+      if (authError.message.includes('Invalid login')) {
+        setError('Invalid email or password. Please try again.')
+      } else if (authError.message.includes('Email not confirmed')) {
+        setError('Email not confirmed. Check your inbox for a confirmation link, or contact your admin.')
+      } else {
+        setError(authError.message || 'Login failed. Please try again.')
+      }
       setLoading(false)
       return
     }
@@ -35997,13 +35356,7 @@ export default function LoginPage() {
         setView('mfa-verify')
         return
       }
-    } catch {}
-
-    // First-time setup
-    try {
-      const firstTime = await isFirstTimeSetup()
-      if (firstTime) { setLoading(false); setView('setup'); return }
-    } catch {}
+    } catch { /* MFA not configured — continue */ }
 
     await auditLogin()
     router.push('/dashboard')
@@ -36012,7 +35365,7 @@ export default function LoginPage() {
   // ── MFA verify
   async function handleMFAVerify(e: React.FormEvent) {
     e.preventDefault()
-    if (mfaCode.length !== 6) { setError('Enter the 6-digit code from your authenticator.'); return }
+    if (mfaCode.length !== 6) { setError('Enter the 6-digit code from your authenticator app.'); return }
     setLoading(true)
     setError('')
 
@@ -36026,7 +35379,7 @@ export default function LoginPage() {
     } else {
       setError(result.error || 'Invalid code. Try again.')
       setMfaCode('')
-      otpInputRef.current?.focus()
+      mfaInputRef.current?.focus()
     }
   }
 
@@ -36044,23 +35397,84 @@ export default function LoginPage() {
 
     setLoading(false)
     if (resetError) setError(resetError.message)
-    else setSuccess('Password reset link sent! Check your email.')
+    else setSuccess('Password reset link sent! Check your email (including spam folder).')
   }
 
-  // ── First-time setup
-  async function handleSetup(e: React.FormEvent) {
-    e.preventDefault()
-    if (!setupName.trim()) { setError('Enter your name.'); return }
+  // ── Send OTP (secondary option)
+  function startCooldown() {
+    setResendCooldown(60)
+    if (cooldownRef.current) clearInterval(cooldownRef.current)
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  async function handleSendOTP(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.')
+      return
+    }
     setLoading(true)
     setError('')
-    const result = await bootstrapAdmin(setupName.trim())
+
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+
     setLoading(false)
-    if (result.success) {
-      setSetupDone(true)
-      setTimeout(() => router.push('/dashboard'), 2000)
-    } else {
-      setError(result.error || 'Setup failed.')
+
+    if (otpError) {
+      if (otpError.message.includes('Signups not allowed') || otpError.message.includes('not allowed')) {
+        setError('No account found with this email. Contact your admin.')
+      } else {
+        setError(otpError.message || 'Failed to send code. Try again.')
+      }
+      return
     }
+
+    setView('otp-verify')
+    startCooldown()
+    setSuccess(`Code sent to ${email}. Check your inbox.`)
+  }
+
+  // ── Verify OTP
+  async function handleVerifyOTP(e: React.FormEvent) {
+    e.preventDefault()
+    if (otpCode.length !== 6) { setError('Enter the 6-digit code.'); return }
+    setLoading(true)
+    setError('')
+
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: otpCode,
+      type: 'email',
+    })
+
+    setLoading(false)
+
+    if (verifyError) {
+      setError('Invalid or expired code. Try again or request a new one.')
+      setOtpCode('')
+      otpInputRef.current?.focus()
+      return
+    }
+
+    // Check MFA
+    try {
+      const aal = await getAAL()
+      if (aal.needsMFA) { setView('mfa-verify'); return }
+    } catch {}
+
+    await auditLogin()
+    router.push('/dashboard')
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -36080,7 +35494,7 @@ export default function LoginPage() {
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
           <form onSubmit={handleMFAVerify} className="space-y-5">
             <input
-              ref={otpInputRef}
+              ref={mfaInputRef}
               type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
               className="input text-center text-2xl tracking-[0.5em] font-mono"
               placeholder="000000"
@@ -36089,60 +35503,13 @@ export default function LoginPage() {
             />
             <button type="submit" disabled={loading || mfaCode.length !== 6}
               className="w-full btn-primary py-3 text-base disabled:opacity-60">
-              {loading ? 'Verifying…' : 'Verify & Sign In'}
+              {loading ? 'Verifying...' : 'Verify & Sign In'}
             </button>
           </form>
-          <button onClick={() => { setView('email'); setError(''); supabase.auth.signOut() }}
+          <button onClick={() => { setView('login'); setError(''); supabase.auth.signOut() }}
             className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1">
-            <ArrowLeft className="w-3.5 h-3.5" /> Back
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to login
           </button>
-          <p className="text-xs text-gray-400 text-center mt-3">
-            MFA not working? Contact your admin to reset it from Settings → User Management.
-          </p>
-        </div>
-      </LoginBackground>
-    )
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // FIRST-TIME SETUP
-  // ══════════════════════════════════════════════════════════════
-  if (view === 'setup') {
-    return (
-      <LoginBackground>
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-            <Shield className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-white">Welcome to {BRAND.name}</h1>
-          <p className="text-blue-200 text-sm mt-1">First-time setup — create your admin profile</p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          {setupDone ? (
-            <div className="text-center py-6">
-              <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto mb-3" />
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Admin Account Created!</h2>
-              <p className="text-gray-500">Redirecting to dashboard…</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500 mb-6">
-                You're the first user. You'll be set up as <strong>Admin</strong> with full access.
-                Add doctors and staff later from Settings.
-              </p>
-              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
-              <form onSubmit={handleSetup} className="space-y-4">
-                <div>
-                  <label className="label">Your Full Name</label>
-                  <input type="text" className="input" placeholder="Dr. Patel"
-                    value={setupName} onChange={e => setSetupName(e.target.value)} autoFocus required />
-                </div>
-                <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
-                  {loading ? 'Setting up…' : 'Create Admin Account'}
-                </button>
-              </form>
-            </>
-          )}
         </div>
       </LoginBackground>
     )
@@ -36156,17 +35523,17 @@ export default function LoginPage() {
       <LoginBackground>
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-            <Activity className="w-8 h-8 text-blue-600" />
+            <Mail className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">{BRAND.name}</h1>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <button onClick={() => { setView('password'); setError(''); setSuccess('') }}
+          <button onClick={() => { setView('login'); setError(''); setSuccess('') }}
             className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeft className="w-4 h-4" /> Back to password login
+            <ArrowLeft className="w-4 h-4" /> Back to login
           </button>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
-          <p className="text-sm text-gray-500 mb-6">We'll send a reset link to your email.</p>
+          <p className="text-sm text-gray-500 mb-6">We&apos;ll send a reset link to your email.</p>
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
           {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
           <form onSubmit={handleForgotPassword} className="space-y-4">
@@ -36176,7 +35543,7 @@ export default function LoginPage() {
                 value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
             </div>
             <button type="submit" disabled={loading} className="w-full btn-primary py-3 disabled:opacity-60">
-              {loading ? 'Sending…' : 'Send Reset Link'}
+              {loading ? 'Sending...' : 'Send Reset Link'}
             </button>
           </form>
         </div>
@@ -36185,137 +35552,90 @@ export default function LoginPage() {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // PASSWORD LOGIN (FALLBACK)
+  // OTP SEND SCREEN (secondary)
   // ══════════════════════════════════════════════════════════════
-  if (view === 'password') {
-    return (
-      <LoginBackground>
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-            <Activity className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">{BRAND.name}</h1>
-          <p className="text-blue-200 text-sm mt-1">Sign in with password</p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <button onClick={() => { setView('email'); setError('') }}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeft className="w-4 h-4" /> Back to email login
-          </button>
-          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
-          <form onSubmit={handlePasswordLogin} className="space-y-4">
-            <div>
-              <label className="label">Email</label>
-              <input type="email" className="input" placeholder="you@clinic.com"
-                value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoFocus required />
-            </div>
-            <div>
-              <label className="label">Password</label>
-              <div className="relative">
-                <input type={showPwd ? 'text' : 'password'} className="input pr-10" placeholder="••••••••"
-                  value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required />
-                <button type="button" onClick={() => setShowPwd(p => !p)} tabIndex={-1}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
-                className="text-xs text-blue-500 hover:text-blue-700 hover:underline">
-                Forgot password?
-              </button>
-            </div>
-            <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-base disabled:opacity-60">
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-          </form>
-        </div>
-      </LoginBackground>
-    )
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // OTP VERIFICATION SCREEN
-  // ══════════════════════════════════════════════════════════════
-  if (view === 'otp') {
+  if (view === 'otp-send') {
     return (
       <LoginBackground>
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
             <Mail className="w-8 h-8 text-blue-600" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Check Your Email</h1>
-          <p className="text-blue-200 text-sm mt-1">We sent a 6-digit code to <strong>{email}</strong></p>
+          <h1 className="text-3xl font-bold text-white">Email Login Code</h1>
+          <p className="text-blue-200 text-sm mt-1">We&apos;ll send a 6-digit code to your email</p>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <button onClick={() => { setView('login'); setError('') }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+            <ArrowLeft className="w-4 h-4" /> Back to password login
+          </button>
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
-          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
-
-          <form onSubmit={handleVerifyOTP} className="space-y-5">
+          <form onSubmit={handleSendOTP} className="space-y-4">
             <div>
-              <label className="label">Enter 6-digit code</label>
-              <input
-                ref={otpInputRef}
-                type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
-                className="input text-center text-3xl tracking-[0.6em] font-mono py-4"
-                placeholder="______"
-                value={otpCode}
-                onChange={e => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
-                autoFocus
-              />
-              <p className="text-xs text-gray-400 mt-2 text-center">
-                Can't find it? Check your spam/junk folder. The email comes from <strong>noreply@mail.app.supabase.io</strong>
-              </p>
+              <label className="label">Email Address</label>
+              <input type="email" className="input" placeholder="you@clinic.com"
+                value={email} onChange={e => { setEmail(e.target.value); setError('') }} autoFocus required />
             </div>
-
-            <button type="submit" disabled={loading || otpCode.length !== 6}
-              className="w-full btn-primary py-3.5 text-base disabled:opacity-60 flex items-center justify-center gap-2">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              {loading ? 'Verifying…' : 'Verify & Sign In'}
+            <button type="submit" disabled={loading || !email.includes('@')}
+              className="w-full btn-primary py-3 disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              {loading ? 'Sending...' : 'Send Login Code'}
             </button>
           </form>
-
-          {/* Resend */}
-          <div className="mt-5 text-center">
-            {resendCooldown > 0 ? (
-              <p className="text-xs text-gray-400">Resend available in {resendCooldown}s</p>
-            ) : (
-              <button onClick={() => { setError(''); setSuccess(''); handleSendOTP() }}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                Resend code
-              </button>
-            )}
-          </div>
-
-          {/* Back / change email */}
-          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
-            <button onClick={() => { setView('email'); setError(''); setSuccess(''); setOtpCode('') }}
-              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-              <ArrowLeft className="w-3 h-3" /> Change email
-            </button>
-            <p className="text-xs text-gray-400">
-              Or click the <strong>Login</strong> button in the email
-            </p>
-          </div>
-
-          {/* Troubleshooting help */}
-          <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg p-3">
-            <p className="text-xs text-blue-700 font-medium mb-1">Not receiving the email?</p>
-            <ul className="text-xs text-blue-600 space-y-0.5 list-disc list-inside">
-              <li>Check spam/junk folder</li>
-              <li>Email sender: <strong>noreply@mail.app.supabase.io</strong></li>
-              <li>Wait 60 seconds before requesting a new code</li>
-              <li>Try <button onClick={() => { setView('password'); setError(''); setSuccess('') }} className="text-blue-700 underline font-medium">password login</button> as alternative</li>
-            </ul>
-          </div>
         </div>
       </LoginBackground>
     )
   }
 
   // ══════════════════════════════════════════════════════════════
-  // PRIMARY SCREEN — EMAIL ENTRY (OTP-FIRST)
+  // OTP VERIFY SCREEN
+  // ══════════════════════════════════════════════════════════════
+  if (view === 'otp-verify') {
+    return (
+      <LoginBackground>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
+            <Mail className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-white">Enter Code</h1>
+          <p className="text-blue-200 text-sm mt-1">Sent to <strong>{email}</strong></p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">{success}</div>}
+          <form onSubmit={handleVerifyOTP} className="space-y-5">
+            <input
+              ref={otpInputRef}
+              type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+              className="input text-center text-2xl tracking-[0.5em] font-mono py-3"
+              placeholder="000000"
+              value={otpCode}
+              onChange={e => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+            />
+            <button type="submit" disabled={loading || otpCode.length !== 6}
+              className="w-full btn-primary py-3 disabled:opacity-60">
+              {loading ? 'Verifying...' : 'Verify & Sign In'}
+            </button>
+          </form>
+          <div className="mt-4 text-center">
+            {resendCooldown > 0 ? (
+              <p className="text-xs text-gray-400">Resend in {resendCooldown}s</p>
+            ) : (
+              <button onClick={() => { setError(''); setSuccess(''); handleSendOTP() }}
+                className="text-sm text-blue-600 hover:underline">Resend code</button>
+            )}
+          </div>
+          <button onClick={() => { setView('login'); setError(''); setSuccess(''); setOtpCode('') }}
+            className="w-full mt-3 text-xs text-gray-500 hover:text-gray-700 text-center flex items-center justify-center gap-1">
+            <ArrowLeft className="w-3 h-3" /> Back to login
+          </button>
+        </div>
+      </LoginBackground>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PRIMARY SCREEN — PASSWORD LOGIN
   // ══════════════════════════════════════════════════════════════
   return (
     <LoginBackground>
@@ -36330,12 +35650,12 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-2xl p-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in to your account</h2>
         <p className="text-sm text-gray-500 mb-6">
-          We'll email you a login code — no password needed.
+          Enter your email and password to access the system.
         </p>
 
         {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
 
-        <form onSubmit={handleSendOTP} className="space-y-4">
+        <form onSubmit={handlePasswordLogin} className="space-y-4">
           <div>
             <label className="label">Email Address</label>
             <input
@@ -36350,23 +35670,45 @@ export default function LoginPage() {
             />
           </div>
 
-          <button type="submit" disabled={loading || !email.includes('@')}
+          <div>
+            <label className="label">Password</label>
+            <div className="relative">
+              <input
+                type={showPwd ? 'text' : 'password'}
+                className="input pr-10"
+                placeholder="Enter your password"
+                value={password}
+                onChange={e => { setPassword(e.target.value); setError('') }}
+                autoComplete="current-password"
+                required
+              />
+              <button type="button" onClick={() => setShowPwd(p => !p)} tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess('') }}
+              className="text-xs text-blue-500 hover:text-blue-700 hover:underline">
+              Forgot password?
+            </button>
+          </div>
+
+          <button type="submit" disabled={loading || !email.includes('@') || !password}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl
                        text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200">
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Mail className="w-5 h-5" />
-            )}
-            {loading ? 'Sending…' : 'Send Login Code'}
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
-        {/* Secondary: password login */}
+        {/* Secondary: OTP login */}
         <div className="mt-6 pt-5 border-t border-gray-100 text-center">
-          <button onClick={() => { setView('password'); setError('') }}
+          <button onClick={() => { setView('otp-send'); setError('') }}
             className="text-sm text-gray-500 hover:text-gray-700 hover:underline">
-            Sign in with password instead
+            Sign in with email code instead (passwordless)
           </button>
         </div>
 
@@ -56859,40 +56201,31 @@ export default function IPDFileUpload({
 ```tsx
 'use client'
 /**
- * src/components/layout/AppShell.tsx — FIXED
+ * src/components/layout/AppShell.tsx — SIMPLIFIED
  *
- * FIXES:
- * BUG 2: Role switching for single-user setups (admin & doctor same credentials).
- *   When you have ONE Supabase auth user who has a clinic_users record with role='admin',
- *   signing out and back in with the same credentials will ALWAYS load the 'admin' role
- *   because there's only one clinic_users row.
+ * Removed:
+ * - Runtime bootstrap UI (first-time admin setup screen)
+ * - handleEmergencyBootstrap / handleFirstTimeSetup
+ * - "Access Not Configured" fallback with setup link
  *
- *   Root cause: The system stores ONE role per auth_id. Switching roles isn't possible
- *   by signing out — you'd need a second clinic_users record or a different auth user.
- *
- *   Solution implemented:
- *   - Added a "Switch to Doctor View" / "Switch to Admin View" toggle that stores a
- *     LOCAL role override in sessionStorage. This lets a single admin user temporarily
- *     act as a doctor to test doctor-specific UI, without needing two accounts.
- *   - The override is session-only (cleared on tab close) and clearly labeled.
- *   - For proper multi-user setups: admin should create a separate doctor user via
- *     Settings → Manage Users, each with their own login credentials.
- *
- * All other original auth, config-warning, and layout code preserved exactly.
+ * Now:
+ * - If no profile found → shows clean "No Access" message with Sign Out
+ * - Admin is pre-created via SQL during deployment (not at runtime)
+ * - Role override preview mode for admins is preserved
  */
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AuthContext, loadClinicUser, isFirstTimeSetup, bootstrapAdmin, hasPermission } from '@/lib/auth'
+import { AuthContext, loadClinicUser, hasPermission } from '@/lib/auth'
 import type { ClinicUser, AuthContextType, Permission, UserRole } from '@/lib/auth'
 import { initSettings } from '@/lib/settings'
 import { initABDMConfig } from '@/lib/abdm'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import ConnectionBanner from './ConnectionBanner'
-import { AlertTriangle, X, UserPlus, Loader2, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotificationPanel from './NotificationPanel';
@@ -56917,17 +56250,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [clinicUser, setClinicUser] = useState<ClinicUser | null>(null)
   const [noProfile, setNoProfile] = useState(false)
-  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false)
   const [configWarn, setConfigWarn] = useState<string[]>([])
   const [warnDismissed, setWarnDismissed] = useState(false)
 
-  // First-time setup form state
-  const [setupName, setSetupName] = useState('')
-  const [setupLoading, setSetupLoading] = useState(false)
-  const [setupError, setSetupError] = useState('')
-  const [setupDone, setSetupDone] = useState(false)
-
-  // FIX #2: Role override state for single-user setups
+  // Role override state for single-user setups (admin preview mode)
   const [roleOverride, setRoleOverrideState] = useState<UserRole | null>(null)
 
   const applyOverride = useCallback((base: ClinicUser | null, override: UserRole | null): ClinicUser | null => {
@@ -56935,22 +56261,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return { ...base, role: override }
   }, [])
 
-  // Effective user (with override applied)
   const effectiveUser = applyOverride(clinicUser, roleOverride)
 
   const loadUser = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
 
-    // Try loading user — first via direct query, then via /api/me (bypasses RLS)
+    // Try loading user profile
     let user = await loadClinicUser()
 
-    // If loadClinicUser() already succeeded (direct or via /api/me fallback), use it
+    // Fallback: try /api/me (bypasses RLS via service_role)
     if (!user) {
-      // Last resort: the /api/me endpoint also handles auto-bootstrapping
-      // (creates admin if clinic_users is empty) and fixes auth_id mismatches.
-      // This covers the case where loadClinicUser's own /api/me call failed
-      // (e.g., network timing issue on first load).
       try {
         const res = await fetch('/api/me', {
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -56970,13 +56291,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               med_reg_no:  body.user.med_reg_no,
             }
           }
-        } else {
-          const body = await res.json().catch(() => ({}))
-          console.error('[AppShell] /api/me returned:', res.status, body)
         }
-      } catch (err: any) {
-        console.error('[AppShell] /api/me fetch failed:', err.message)
-      }
+      } catch { /* network error — will show noProfile */ }
     }
 
     if (!user) { setNoProfile(true); setLoading(false); return }
@@ -56987,16 +56303,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     } catch { /* non-fatal */ }
 
     setClinicUser(user)
-    // Restore any existing role override
     const existing = getRoleOverride()
     setRoleOverrideState(existing)
     setLoading(false)
   }, [router])
 
   useEffect(() => { loadUser() }, [loadUser])
+
+  // Keyboard shortcuts
   useEffect(() => {
     function handleKeyboard(e: KeyboardEvent) {
-      // Don't trigger shortcuts when typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
@@ -57006,25 +56322,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           case 'd': e.preventDefault(); router.push('/dashboard'); break
           case 'p': e.preventDefault(); window.print(); break
           case '/': e.preventDefault();
-            // Focus the search input if it exists on this page
             document.querySelector<HTMLInputElement>('input[type="text"][placeholder*="Search"]')?.focus()
             break
         }
       }
       if (e.key === 'Escape') {
-        // Close any open modal or go back
         const modal = document.querySelector('[role="dialog"]')
         if (modal) {
           (modal.querySelector('button[aria-label="Close"]') as HTMLButtonElement)?.click()
         }
       }
     }
-
     window.addEventListener('keydown', handleKeyboard)
     return () => window.removeEventListener('keydown', handleKeyboard)
   }, [router])
 
-
+  // Config warnings
   useEffect(() => {
     fetch('/api/check-config')
       .then(r => r.json())
@@ -57037,15 +56350,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => { })
   }, [])
 
-  // FIX #2: Handle role switching (ADMIN ONLY — preview mode)
-  // Only admins can simulate other roles. This is a UI-only preview;
-  // actual permissions are still enforced server-side via RLS.
+  // Role switching (ADMIN ONLY — UI preview)
   function handleRoleSwitch(targetRole: UserRole) {
-    // Security: only admin can simulate other roles
     if (clinicUser?.role !== 'admin') return
-
     if (targetRole === clinicUser?.role) {
-      // Revert to real role
       setRoleOverride(null)
       setRoleOverrideState(null)
     } else {
@@ -57054,35 +56362,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Always clear role override when signing out — prevents "stuck in doctor view"
   function handleSignOut() {
     setRoleOverride(null)
     setRoleOverrideState(null)
-    supabase.auth.signOut().then(() => {
-      router.push('/login')
-    })
-  }
-
-  // Handler for first-time setup form submission
-  async function handleFirstTimeSetup(e: React.FormEvent) {
-    e.preventDefault()
-    if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
-    setSetupLoading(true)
-    setSetupError('')
-
-    const result = await bootstrapAdmin(setupName.trim())
-    setSetupLoading(false)
-
-    if (result.success) {
-      setSetupDone(true)
-      setTimeout(() => {
-        setShowFirstTimeSetup(false)
-        setLoading(true)
-        loadUser()
-      }, 1500)
-    } else {
-      setSetupError(result.error || 'Failed to create admin account.')
-    }
+    supabase.auth.signOut().then(() => { router.push('/login') })
   }
 
   const authCtx: AuthContextType = {
@@ -57095,17 +56378,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     reload: loadUser,
   }
 
+  // ── Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Loading NexMedicon HMS…</p>
+          <p className="text-sm text-gray-500">Loading NexMedicon HMS...</p>
         </div>
       </div>
     )
   }
 
+  // ── No profile found — simple message, no bootstrap UI
   if (noProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -57114,37 +56399,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <AlertTriangle className="w-8 h-8 text-amber-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Access Not Configured</h2>
-          <p className="text-gray-500 mb-4">
+          <p className="text-gray-500 mb-6">
             Your account exists but hasn&apos;t been assigned a role yet.
-            Please contact your clinic administrator.
+            Please contact your clinic administrator to add your email
+            in <strong>Settings → Manage Users</strong>.
           </p>
-          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 mb-4">
-            <p className="font-semibold mb-1">For the admin:</p>
-            <p>
-              Go to <strong>Settings → Manage Users</strong> and add this email
-              with the appropriate role.
-            </p>
-          </div>
-
-          {/* First-time setup fallback */}
-          <div className="border-t border-gray-200 pt-4 mb-4">
-            <p className="text-xs text-gray-400 mb-2">
-              First time setting up? No admin exists yet?
-            </p>
-            <button
-              onClick={() => {
-                setNoProfile(false)
-                setShowFirstTimeSetup(true)
-              }}
-              className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
-            >
-              → Set up as Admin (first-time only)
-            </button>
-          </div>
-
           <button
-            onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
-            className="btn-secondary"
+            onClick={handleSignOut}
+            className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
           >
             Sign Out
           </button>
@@ -57153,71 +56415,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // First-time setup screen
-  if (showFirstTimeSetup) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl mb-4">
-              <UserPlus className="w-8 h-8 text-blue-600" />
-            </div>
-            <h1 className="text-3xl font-bold text-white">Welcome to NexMedicon</h1>
-            <p className="text-blue-200 text-sm mt-2">First-time setup — you&apos;ll be the clinic admin</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-2xl p-8">
-            {setupDone ? (
-              <div className="text-center py-4">
-                <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                <h2 className="text-lg font-bold text-gray-900 mb-1">Admin Account Created!</h2>
-                <p className="text-sm text-gray-500">Loading your dashboard…</p>
-              </div>
-            ) : (
-              <>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">Create Admin Account</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  Enter your name to become the first admin.
-                </p>
-                {setupError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                    {setupError}
-                  </div>
-                )}
-                <form onSubmit={handleFirstTimeSetup} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Your Full Name</label>
-                    <input
-                      type="text"
-                      value={setupName}
-                      onChange={e => setSetupName(e.target.value)}
-                      placeholder="Dr. Your Name"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      autoFocus
-                      disabled={setupLoading}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={setupLoading || !setupName.trim()}
-                    className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
-                  >
-                    {setupLoading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Creating…</>) : 'Create Admin Account & Continue'}
-                  </button>
-                </form>
-                <button
-                  onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
-                  className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 text-center"
-                >
-                  Sign Out
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
+  // ── Main app layout
   const isUsingOverride = roleOverride !== null && clinicUser !== null
 
   return (
@@ -57252,90 +56450,67 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </Link>
                 </div>
               </div>
-              <button
-                onClick={() => setWarnDismissed(true)}
-                className="text-amber-500 hover:text-amber-700 flex-shrink-0 p-0.5"
-              >
+              <button onClick={() => setWarnDismissed(true)}
+                className="text-amber-500 hover:text-amber-700 flex-shrink-0 p-0.5">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
 
-          {/* FIX #2: Role override banner — shown when admin is previewing another role */}
+          {/* Role override banner */}
           {isUsingOverride && (
             <div className="no-print bg-purple-50 border-b border-purple-200 px-4 py-2 flex items-center gap-3">
               <span className="text-xs font-semibold text-purple-800">
-                👁️ PREVIEW MODE: You are viewing the app as {roleOverride === 'doctor' ? '🩺 Doctor' : '📋 Staff'} would see it. Your actual role is still Admin — all actions use admin permissions.
+                PREVIEW MODE: Viewing as {roleOverride === 'doctor' ? 'Doctor' : roleOverride === 'staff' ? 'Staff' : roleOverride}. Your real role is Admin.
               </span>
-              <button
-                onClick={() => handleRoleSwitch(clinicUser!.role)}
-                className="text-xs text-purple-700 underline hover:text-purple-900 font-semibold ml-auto flex-shrink-0"
-              >
-                ✕ Exit Preview
+              <button onClick={() => handleRoleSwitch(clinicUser!.role)}
+                className="text-xs text-purple-700 underline hover:text-purple-900 font-semibold ml-auto">
+                Exit Preview
               </button>
             </div>
           )}
 
-          {/* Role badge with sign-out — clicking shows a small dropdown */}
+          {/* Role badge + dropdown */}
           {effectiveUser && (
             <div className="no-print fixed top-2 right-4 z-40 hidden md:flex items-center gap-2">
-              {/* Notification Bell */}
               <NotificationPanel />
-
               <div className="relative group">
-                {/* Badge button */}
                 <button
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${effectiveUser.role === 'admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
-                      effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                        'bg-green-100 text-green-700 hover:bg-green-200'
-                    }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm transition-all cursor-pointer ${
+                    effectiveUser.role === 'admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' :
+                    effectiveUser.role === 'doctor' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                    'bg-green-100 text-green-700 hover:bg-green-200'
+                  }${isUsingOverride ? ' ring-2 ring-purple-400' : ''}`}
                 >
-                  {effectiveUser.role === 'admin' ? '👑 Admin' :
-                    effectiveUser.role === 'doctor' ? '🩺 Doctor' : '📋 Staff'}
+                  {effectiveUser.role === 'admin' ? 'Admin' :
+                   effectiveUser.role === 'doctor' ? 'Doctor' : 'Staff'}
                   {' · '}{effectiveUser.full_name}
-                  {isUsingOverride && <span className="ml-1 text-purple-500 text-[10px]">(sim)</span>}
                   <span className="ml-0.5 opacity-50">▾</span>
                 </button>
 
-                {/* Dropdown — shows on hover */}
                 <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                   <div className="px-3 py-2 border-b border-gray-50">
                     <p className="text-xs font-semibold text-gray-700 truncate">{clinicUser?.full_name}</p>
                     <p className="text-[10px] text-gray-400 truncate">{clinicUser?.email}</p>
-                    <p className="text-[10px] text-gray-400">
-                      Real role: <strong>{clinicUser?.role}</strong>
-                    </p>
+                    <p className="text-[10px] text-gray-400">Role: <strong>{clinicUser?.role}</strong></p>
                   </div>
 
-                  {/* FIX #2: Role switch options — ADMIN ONLY can preview other roles */}
                   {clinicUser?.role === 'admin' && (
                     <>
-                      <button
-                        onClick={() => handleRoleSwitch(roleOverride === 'doctor' ? 'admin' : 'doctor')}
-                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-blue-50 flex items-center gap-2"
-                      >
-                        {roleOverride === 'doctor' ? '👑 Back to Admin view' : '🩺 Preview as Doctor'}
+                      <button onClick={() => handleRoleSwitch(roleOverride === 'doctor' ? 'admin' : 'doctor')}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-blue-50">
+                        {roleOverride === 'doctor' ? 'Back to Admin view' : 'Preview as Doctor'}
                       </button>
-                      <button
-                        onClick={() => handleRoleSwitch(roleOverride === 'staff' ? 'admin' : 'staff')}
-                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-green-50 flex items-center gap-2"
-                      >
-                        {roleOverride === 'staff' ? '👑 Back to Admin view' : '📋 Preview as Staff'}
+                      <button onClick={() => handleRoleSwitch(roleOverride === 'staff' ? 'admin' : 'staff')}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-green-50">
+                        {roleOverride === 'staff' ? 'Back to Admin view' : 'Preview as Staff'}
                       </button>
                     </>
                   )}
-                  {isUsingOverride && (
-                    <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-purple-50 border-t border-purple-100">
-                      ⚠️ Simulated view — changes are real. Sign out & back in to get another user's actual role.
-                    </div>
-                  )}
 
-                  {/* Sign out */}
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50"
-                  >
-                    🚪 Sign Out
+                  <button onClick={handleSignOut}
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 border-t border-gray-50">
+                    Sign Out
                   </button>
                 </div>
               </div>
@@ -57346,12 +56521,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
 
         <MobileNav />
-
-        {/* ── Uncomment these when the files exist: ────────── */}
         <SessionTimeout />
         <VoiceAssistant />
-
-
       </div>
     </AuthContext.Provider>
   )
@@ -64478,44 +63649,44 @@ import { createContext, useContext } from 'react'
 import { supabase } from './supabase'
 
 // ─── Types ────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'doctor' | 'staff'
+export type UserRole = 'admin' | 'doctor' | 'staff' | 'lab_partner'
 
 export interface ClinicUser {
-  id: string
-  auth_id: string
-  email: string
+  id:        string
+  auth_id:   string
+  email:     string
   full_name: string
-  role: UserRole
+  role:      UserRole
   is_active: boolean
-  phone?: string
+  phone?:    string
   /** Doctor-specific: specialty, registration no. */
-  specialty?: string
-  med_reg_no?: string
+  specialty?:    string
+  med_reg_no?:   string
 }
 
 // ─── React Context ────────────────────────────────────────────
 export interface AuthContextType {
-  user: ClinicUser | null
-  loading: boolean
-  isAdmin: boolean
-  isDoctor: boolean
-  isStaff: boolean
-  can: (permission: Permission) => boolean
-  reload: () => Promise<void>
+  user:      ClinicUser | null
+  loading:   boolean
+  isAdmin:   boolean
+  isDoctor:  boolean
+  isStaff:   boolean
+  can:       (permission: Permission) => boolean
+  reload:    () => Promise<void>
 }
 
 const defaultCtx: AuthContextType = {
-  user: null,
-  loading: true,
-  isAdmin: false,
+  user:     null,
+  loading:  true,
+  isAdmin:  false,
   isDoctor: false,
-  isStaff: false,
-  can: () => false,
-  reload: async () => { },
+  isStaff:  false,
+  can:      () => false,
+  reload:   async () => {},
 }
 
 export const AuthContext = createContext<AuthContextType>(defaultCtx)
-export const useAuth = () => useContext(AuthContext)
+export const useAuth     = () => useContext(AuthContext)
 
 // ─── Permissions ──────────────────────────────────────────────
 export type Permission =
@@ -64564,70 +63735,70 @@ export type Permission =
 
 // Permission matrix: which roles can do what
 const PERMISSIONS: Record<Permission, UserRole[]> = {
-  'patients.view': ['admin', 'doctor', 'staff'],
-  'patients.create': ['admin', 'doctor', 'staff'],
-  'patients.edit': ['admin', 'doctor', 'staff'],
-  'patients.delete': ['admin'],
+  'patients.view':        ['admin', 'doctor', 'staff'],
+  'patients.create':      ['admin', 'doctor', 'staff'],
+  'patients.edit':        ['admin', 'doctor', 'staff'],
+  'patients.delete':      ['admin'],
 
-  'encounters.view': ['admin', 'doctor', 'staff'],
-  'encounters.create': ['admin', 'doctor'],
-  'encounters.edit': ['admin', 'doctor'],
+  'encounters.view':      ['admin', 'doctor', 'staff'],
+  'encounters.create':    ['admin', 'doctor'],
+  'encounters.edit':      ['admin', 'doctor'],
 
-  'prescriptions.view': ['admin', 'doctor', 'staff'],
+  'prescriptions.view':   ['admin', 'doctor', 'staff'],
   'prescriptions.create': ['admin', 'doctor'],
-  'prescriptions.edit': ['admin', 'doctor'],
+  'prescriptions.edit':   ['admin', 'doctor'],
 
-  'beds.view': ['admin', 'doctor', 'staff'],
-  'beds.manage': ['admin', 'doctor', 'staff'],
+  'beds.view':            ['admin', 'doctor', 'staff'],
+  'beds.manage':          ['admin', 'doctor', 'staff'],
 
   // FIX: Only admin sees full billing; doctor sees own patient bills; staff can create but not view all
-  'billing.view': ['admin', 'doctor'],
-  'billing.create': ['admin', 'staff'],
+  'billing.view':         ['admin', 'doctor'],
+  'billing.create':       ['admin', 'staff'],
 
-  'reports.view': ['admin', 'doctor'],
-  'reports.financial': ['admin'],           // FIX: staff removed — finance is admin-only
+  'reports.view':         ['admin', 'doctor'],
+  'reports.financial':    ['admin'],           // FIX: staff removed — finance is admin-only
 
-  'settings.view': ['admin', 'doctor', 'staff'],
-  'settings.edit': ['admin'],           // FIX: only admin should edit settings
+  'settings.view':        ['admin', 'doctor', 'staff'],
+  'settings.edit':        ['admin'],           // FIX: only admin should edit settings
 
-  'users.manage': ['admin'],
+  'users.manage':         ['admin'],
 
-  'queue.view': ['admin', 'doctor', 'staff'],
-  'queue.manage': ['admin', 'doctor', 'staff'],
+  'queue.view':           ['admin', 'doctor', 'staff'],
+  'queue.manage':         ['admin', 'doctor', 'staff'],
 
-  'forms.view': ['admin', 'doctor', 'staff'],
-  'forms.scan': ['admin', 'doctor', 'staff'],
+  'forms.view':           ['admin', 'doctor', 'staff'],
+  'forms.scan':           ['admin', 'doctor', 'staff'],
 
-  'anc.view': ['admin', 'doctor', 'staff'],
-  'anc.edit': ['admin', 'doctor'],
+  'anc.view':             ['admin', 'doctor', 'staff'],
+  'anc.edit':             ['admin', 'doctor'],
 
-  'labs.view': ['admin', 'doctor', 'staff'],
-  'labs.edit': ['admin', 'doctor'],
+  'labs.view':            ['admin', 'doctor', 'staff'],
+  'labs.edit':            ['admin', 'doctor'],
 
-  'discharge.view': ['admin', 'doctor', 'staff'],
-  'discharge.create': ['admin', 'doctor'],
-  'discharge.edit': ['admin', 'doctor'],
+  'discharge.view':       ['admin', 'doctor', 'staff'],
+  'discharge.create':     ['admin', 'doctor'],
+  'discharge.edit':       ['admin', 'doctor'],
 
   // ── IPD ────────────────────────────────────────────────────
-  'ipd.view': ['admin', 'doctor', 'staff'],
-  'ipd.admit': ['admin', 'doctor', 'staff'],  // reception can admit
-  'ipd.nursing': ['admin', 'doctor', 'staff'],  // nurses = staff role
-  'ipd.discharge': ['admin', 'doctor'],           // doctors discharge
+  'ipd.view':             ['admin', 'doctor', 'staff'],
+  'ipd.admit':            ['admin', 'doctor', 'staff'],  // reception can admit
+  'ipd.nursing':          ['admin', 'doctor', 'staff'],  // nurses = staff role
+  'ipd.discharge':        ['admin', 'doctor'],           // doctors discharge
 
   // ── Video consultations ─────────────────────────────────────
-  'video.view': ['admin', 'doctor', 'staff'],
-  'video.manage': ['admin', 'doctor'],           // create/delete slots
+  'video.view':           ['admin', 'doctor', 'staff'],
+  'video.manage':         ['admin', 'doctor'],           // create/delete slots
 
   // ── Hospital Fund ──────────────────────────────────────────
-  'fund.view': ['admin', 'doctor', 'staff'],
-  'fund.submit': ['admin', 'doctor', 'staff'],  // anyone can submit expense
-  'fund.approve': ['admin'],                     // only admin approves
+  'fund.view':            ['admin', 'doctor', 'staff'],
+  'fund.submit':          ['admin', 'doctor', 'staff'],  // anyone can submit expense
+  'fund.approve':         ['admin'],                     // only admin approves
 
   // ── Patient Portal ────────────────────────────────────────
-  'portal.send': ['admin', 'doctor', 'staff'],  // send magic links
+  'portal.send':          ['admin', 'doctor', 'staff'],  // send magic links
 
   // ── Audit ─────────────────────────────────────────────────
-  'audit.view': ['admin'],                     // only admin can view audit log
+  'audit.view':           ['admin'],                     // only admin can view audit log
 }
 
 export function hasPermission(role: UserRole | null, permission: Permission): boolean {
@@ -64669,7 +63840,7 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
         .from('clinic_users')
         .update({ auth_id: authUser.id })
         .eq('id', emailData.id)
-        .then(() => { })
+        .then(() => {})
       return mapClinicUser({ ...emailData, auth_id: authUser.id })
     }
   }
@@ -64707,76 +63878,39 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
 
 function mapClinicUser(data: any): ClinicUser {
   return {
-    id: data.id,
-    auth_id: data.auth_id,
-    email: data.email,
-    full_name: data.full_name,
-    role: data.role as UserRole,
-    is_active: data.is_active,
-    phone: data.phone,
-    specialty: data.specialty,
-    med_reg_no: data.med_reg_no,
+    id:          data.id,
+    auth_id:     data.auth_id,
+    email:       data.email,
+    full_name:   data.full_name,
+    role:        data.role as UserRole,
+    is_active:   data.is_active,
+    phone:       data.phone,
+    specialty:   data.specialty,
+    med_reg_no:  data.med_reg_no,
   }
 }
 
+/**
+ * @deprecated Admin is now pre-created via SQL during deployment.
+ * This function is kept for backward compatibility but always returns false.
+ */
 export async function isFirstTimeSetup(): Promise<boolean> {
-  // Use server-side API that bypasses RLS to accurately count users
-  try {
-    const res = await fetch('/api/bootstrap')
-    if (!res.ok) {
-      // Fallback to client-side query (may be blocked by RLS but try anyway)
-      const { count, error } = await supabase
-        .from('clinic_users')
-        .select('id', { count: 'exact', head: true })
-      if (error) return false
-      return (count ?? 0) === 0
-    }
-    const data = await res.json()
-    return data.isFirstTime === true
-  } catch {
-    // Fallback to client-side query
-    const { count, error } = await supabase
-      .from('clinic_users')
-      .select('id', { count: 'exact', head: true })
-    if (error) return false
-    return (count ?? 0) === 0
-  }
+  return false
 }
 
-export async function bootstrapAdmin(fullName: string): Promise<{ success: boolean; error?: string }> {
-  // Use server-side API that bypasses RLS for the first admin insert
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      return { success: false, error: 'Not authenticated — no session token' }
-    }
-
-    const res = await fetch('/api/bootstrap', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ full_name: fullName }),
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      return { success: false, error: data.error || 'Bootstrap failed' }
-    }
-
-    return { success: true }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error during bootstrap' }
-  }
+/**
+ * @deprecated Admin is now pre-created via SQL during deployment.
+ * Use SETUP-LOGIN-FIX.sql instead. This function is kept for backward compatibility.
+ */
+export async function bootstrapAdmin(_fullName: string): Promise<{ success: boolean; error?: string }> {
+  return { success: false, error: 'Bootstrap is disabled. Admin must be created via SQL during deployment. Run SETUP-LOGIN-FIX.sql in Supabase SQL Editor.' }
 }
 
 // ─── Nav items ────────────────────────────────────────────────
 export interface NavItem {
-  href: string
-  label: string
-  icon: any
+  href:        string
+  label:       string
+  icon:        any
   permission?: Permission
 }
 
