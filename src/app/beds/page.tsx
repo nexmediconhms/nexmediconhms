@@ -18,7 +18,7 @@ const STATUS_CONFIG: Record<BedStatus, { label: string; bg: string; border: stri
 }
 
 export default function BedsPage() {
-  const { user, can } = useAuth()
+  const { user, can, isAdmin } = useAuth()
   const [beds, setBeds] = useState<Bed[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ bed: Bed; action: 'admit' | 'discharge' } | null>(null)
@@ -282,7 +282,7 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
-          {user?.role === 'admin' && (
+          {(isAdmin || user?.role === 'admin') && (
             <div className="flex gap-2">
               <button onClick={() => setShowManageBeds(!showManageBeds)}
                 className="btn-secondary flex items-center gap-2 text-xs">
@@ -394,7 +394,7 @@ export default function BedsPage() {
         )}
 
         {/* Manage Beds Panel (Admin) — Delete / Edit beds */}
-        {showManageBeds && user?.role === 'admin' && (
+        {showManageBeds && (isAdmin || user?.role === 'admin') && (
           <div className="mb-6 card p-4 border-2 border-orange-200 bg-orange-50/30">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
