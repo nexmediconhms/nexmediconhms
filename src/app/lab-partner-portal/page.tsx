@@ -54,8 +54,20 @@ export default function LabPartnerPortalPage() {
   const [history, setHistory] = useState<UploadHistory[]>([])
   const [showHistory, setShowHistory] = useState(false)
 
-  // Check stored token on mount
+  // Check stored token on mount OR token from URL query param
   useEffect(() => {
+    // Priority 1: Token from URL (shareable link from admin)
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlToken = urlParams.get('token')
+    if (urlToken) {
+      setInputToken(urlToken)
+      verifyToken(urlToken)
+      // Clean URL without reloading (remove token from address bar for security)
+      window.history.replaceState({}, '', '/lab-partner-portal')
+      return
+    }
+
+    // Priority 2: Previously stored token in localStorage
     const stored = localStorage.getItem('lab-portal-token')
     if (stored) {
       setToken(stored)

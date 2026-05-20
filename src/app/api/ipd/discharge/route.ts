@@ -218,6 +218,52 @@ export async function POST(req: NextRequest) {
           admission_id,
         }),
       })
+
+      // Auto-sync insurance claim: advance status to 'claim_submitted' on discharge
+      try {
+        await supabase.rpc('http_post', {}) // fallback: direct DB update
+      } catch { /* fallback below */ }
+
+      // Direct insurance claim status update on discharge
+      const { data: activeClaims } = await supabase
+        .from('insurance_claims')
+        .select('id, status')
+        .eq('patient_id', patientId)
+        .not('status', 'in', '("settled","rejected")')
+        .limit(1)
+
+      if (activeClaims && activeClaims.length > 0) {
+        const claim = activeClaims[0]
+        if (['pre_auth_pending', 'pre_auth_approved'].includes(claim.status)) {
+          await supabase.from('insurance_claims').update({
+            status: 'claim_submitted',
+            discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+            updated_at: now,
+          }).eq('id', claim.id)
+
+          await supabase.from('insurance_claim_history').insert({
+            claim_id: claim.id,
+            old_status: claim.status,
+            new_status: 'claim_submitted',
+            notes: `Auto-advanced on discharge (${discharge_date || 'today'})`,
+            done_by: discharged_by || 'system',
+          })
+        }
+      } else {
+        // No existing claim — create one automatically
+        await supabase.from('insurance_claims').insert({
+          patient_id: patientId,
+          patient_name: admission.patient_name,
+          mrn: admission.mrn || '',
+          status: 'claim_submitted',
+          diagnosis: final_diagnosis || admission.diagnosis_on_admission || null,
+          admission_date: admission.admission_date || null,
+          discharge_date: discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+          notes: `Auto-created on discharge. Insurance: ${admission.insurance_details}`,
+          created_by: 'system',
+          documents_sent: false,
+        })
+      }
     }
 
     // 8. Audit log
@@ -233,6 +279,27 @@ export async function POST(req: NextRequest) {
         final_diagnosis,
         follow_up_date,
         discharged_by,
+      }),
+    }).then(() => {}) // Non-blocking
+
+    // 8b. Create in-app notification for all staff
+    await supabase.from('clinic_notifications').insert({
+      title: `Discharge: ${admission.patient_name}`,
+      message: `${admission.patient_name} (Bed ${admission.bed_number}, ${admission.ward}) discharged by Dr. ${discharged_by || admission.admitting_doctor}. Condition: ${condition_at_discharge || 'Satisfactory'}.${follow_up_date ? ` Follow-up: ${follow_up_date}` : ''}`,
+      type: 'discharge',
+      severity: 'normal',
+      source: 'ipd',
+      entity_type: 'admission',
+      entity_id: admission_id,
+      patient_id: patientId,
+      patient_name: admission.patient_name,
+      mrn: admission.mrn || null,
+      target_roles: ['admin', 'doctor', 'staff'],
+      metadata: JSON.stringify({
+        bed_number: admission.bed_number,
+        ward: admission.ward,
+        discharged_by,
+        condition_at_discharge,
       }),
     }).then(() => {}) // Non-blocking
 

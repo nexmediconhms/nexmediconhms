@@ -172,8 +172,8 @@ async function processReminders(dryRun: boolean) {
         .gte('follow_up_date', threeDaysAgo)
         .lte('follow_up_date', today)
 
-      // Get patient details
-      const patientIds = [new Set((rxs || []).map(r => r.patient_id).filter(Boolean))]
+      // Get patient details — FIX: Flatten Set into Array using Array.from()
+      const patientIds = Array.from(new Set((rxs || []).map(r => r.patient_id).filter(Boolean)))
       const patientMap = new Map<string, any>()
       if (patientIds.length > 0) {
         const { data: patients } = await supabase
@@ -232,7 +232,9 @@ async function processReminders(dryRun: boolean) {
         }
       }
 
-      for (const enc of latestByPatient.values()) {
+      // FIX: Wrap Map values iterator into Array.from() for safe downlevel iteration
+      const encountersToProcess = Array.from(latestByPatient.values())
+      for (const enc of encountersToProcess) {
         const ob = enc.ob_data
         const pat = enc.patients as any
         if (!ob?.lmp || !pat?.mobile) continue
@@ -365,15 +367,18 @@ async function processReminders(dryRun: boolean) {
         if (!latestRx.has(rx.patient_id)) latestRx.set(rx.patient_id, rx)
       }
 
-      const patientIds = [latestRx.keys()]
+      // FIX: Convert Map keys to flat Array with Array.from()
+      const rxPatientIds = Array.from(latestRx.keys())
       const patientMap = new Map<string, any>()
-      if (patientIds.length > 0) {
+      if (rxPatientIds.length > 0) {
         const { data: patients } = await supabase
-          .from('patients').select('id, full_name, mobile').in('id', patientIds)
+          .from('patients').select('id, full_name, mobile').in('id', rxPatientIds)
         for (const p of patients || []) patientMap.set(p.id, p)
       }
 
-      for (const [pid, rx] of latestRx) {
+      // FIX: Convert Map entries to sequential Array for ES5-safe downlevel iteration
+      const rxEntries = Array.from(latestRx.entries())
+      for (const [pid, rx] of rxEntries) {
         const patient = patientMap.get(pid)
         if (!patient?.mobile) continue
         if (await alreadySentToday(pid, 'medication')) continue
@@ -406,7 +411,8 @@ async function processReminders(dryRun: boolean) {
         .eq('surgery_date', tomorrow)
         .eq('status', 'scheduled')
 
-      const otPatientIds = [new Set((otSchedules || []).map(s => s.patient_id).filter(Boolean))]
+      // FIX: Flatten Set into Array using Array.from()
+      const otPatientIds = Array.from(new Set((otSchedules || []).map(s => s.patient_id).filter(Boolean)))
       const otMobileMap = new Map<string, string>()
       if (otPatientIds.length > 0) {
         const { data: pats } = await supabase
@@ -473,7 +479,8 @@ async function processReminders(dryRun: boolean) {
         .lt('created_at', threeDaysAgo + 'T00:00:00')
         .limit(50)
 
-      const billPatientIds = [new Set((bills || []).map(b => b.patient_id).filter(Boolean))]
+      // FIX: Flatten Set into Array using Array.from()
+      const billPatientIds = Array.from(new Set((bills || []).map(b => b.patient_id).filter(Boolean)))
       const billMobileMap = new Map<string, string>()
       if (billPatientIds.length > 0) {
         const { data: pats } = await supabase

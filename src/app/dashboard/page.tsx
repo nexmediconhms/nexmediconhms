@@ -197,19 +197,62 @@ function ActionItem({ item, onClick }: { item: ActionItem; onClick?: () => void 
 
 // ── Next OPD Patient Widget ───────────────────────────────────
 function NextOPDPatientCard() {
+  const [currentPatient, setCurrentPatient] = useState<any>(null)
   const [nextPatient, setNextPatient] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
-    async function loadNext() {
+    async function loadOPDStatus() {
       const today = todayIST()
+
+      // 1. Check OPD Queue for current (in_progress) and next (waiting) patients
+      const { data: queueData } = await supabase
+        .from('opd_queue')
+        .select(`
+          id, token_number, status, priority, notes, called_at,
+          patient_id, patients!inner(full_name, mrn, mobile)
+        `)
+        .eq('queue_date', today)
+        .in('status', ['in_progress', 'waiting'])
+        .order('status', { ascending: false })  // in_progress first
+        .order('token_number', { ascending: true })
+        .limit(5)
+
+      if (queueData && queueData.length > 0) {
+        // Find current (in_progress) and next (first waiting)
+        const inProgress = queueData.find((q: any) => q.status === 'in_progress')
+        const waiting = queueData.filter((q: any) => q.status === 'waiting')
+
+        if (inProgress) {
+          setCurrentPatient({
+            ...inProgress,
+            patient_name: (inProgress.patients as any)?.full_name,
+            mrn: (inProgress.patients as any)?.mrn,
+            mobile: (inProgress.patients as any)?.mobile,
+            source: 'queue',
+          })
+        }
+        if (waiting.length > 0) {
+          const next = waiting[0]
+          setNextPatient({
+            ...next,
+            patient_name: (next.patients as any)?.full_name,
+            mrn: (next.patients as any)?.mrn,
+            mobile: (next.patients as any)?.mobile,
+            source: 'queue',
+          })
+        }
+        setLoading(false)
+        return
+      }
+
+      // 2. Fallback: check appointments if no queue entries
       const nowTime = new Date().toLocaleTimeString('en-IN', {
         timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
       })
 
-      // Get the next appointment that hasn't been completed yet
-      const { data } = await supabase
+      const { data: apptData } = await supabase
         .from('appointments')
         .select('id, patient_id, patient_name, mrn, mobile, date, time, type, status, notes')
         .eq('date', today)
@@ -218,27 +261,28 @@ function NextOPDPatientCard() {
         .order('time', { ascending: true })
         .limit(5)
 
-      if (data && data.length > 0) {
+      if (apptData && apptData.length > 0) {
         // Find the next upcoming (time >= now) or the first unfinished one
-        const upcoming = data.find(a => (a.time || '00:00') >= nowTime) || data[0]
-        setNextPatient(upcoming)
+        const upcoming = apptData.find((a: any) => (a.time || '00:00') >= nowTime) || apptData[0]
+        setNextPatient({ ...upcoming, source: 'appointment' })
       }
       setLoading(false)
     }
-    loadNext()
-    const interval = setInterval(loadNext, 60000) // refresh every minute
+
+    loadOPDStatus()
+    const interval = setInterval(loadOPDStatus, 30000) // refresh every 30 seconds
     return () => clearInterval(interval)
   }, [])
 
   if (loading) {
     return (
       <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 animate-pulse">
-        <div className="h-16 bg-purple-100/50 rounded-xl" />
+        <div className="h-20 bg-purple-100/50 rounded-xl" />
       </div>
     )
   }
 
-  if (!nextPatient) {
+  if (!currentPatient && !nextPatient) {
     return (
       <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-1">
@@ -251,44 +295,89 @@ function NextOPDPatientCard() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
-            <Stethoscope className="w-4 h-4 text-white" />
+    <div className="space-y-3">
+      {/* CURRENT PATIENT — In Progress */}
+      {currentPatient && (
+        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-300 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">
+            NOW SEEING
           </div>
-          <div>
-            <span className="text-xs font-bold text-purple-600 uppercase tracking-wide">Next Patient</span>
-            <div className="text-sm font-bold text-gray-900">{nextPatient.patient_name}</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                <Stethoscope className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-wide">Current Patient</span>
+                <div className="text-sm font-bold text-gray-900">{currentPatient.patient_name}</div>
+              </div>
+            </div>
+            <span className="text-lg font-mono font-black text-blue-700 bg-white/70 px-2.5 py-1 rounded-lg border border-blue-200">
+              #{String(currentPatient.token_number).padStart(2, '0')}
+            </span>
           </div>
-        </div>
-        <span className="text-xs font-mono bg-white/70 text-purple-700 px-2 py-1 rounded-lg border border-purple-200">
-          {nextPatient.time || '—'}
-        </span>
-      </div>
-      <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
-        <span className="font-mono">{nextPatient.mrn}</span>
-        <span>·</span>
-        <span>{nextPatient.type || 'OPD'}</span>
-        {nextPatient.mobile && (
-          <>
-            <span>·</span>
-            <span className="font-mono">{nextPatient.mobile}</span>
-          </>
-        )}
-      </div>
-      {nextPatient.notes && (
-        <div className="text-xs text-gray-500 bg-white/50 rounded-lg px-2 py-1 mb-2 truncate">
-          📝 {nextPatient.notes}
+          <div className="flex items-center gap-3 text-xs text-gray-600">
+            <span className="font-mono">{currentPatient.mrn}</span>
+            {currentPatient.mobile && <><span>·</span><span>{currentPatient.mobile}</span></>}
+            {currentPatient.priority && currentPatient.priority !== 'normal' && (
+              <span className={`font-bold px-1.5 py-0.5 rounded-full ${currentPatient.priority === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                {currentPatient.priority}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => router.push(`/patients/${currentPatient.patient_id}`)}
+            className="w-full mt-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+          >
+            <Stethoscope className="w-3.5 h-3.5" /> View Patient Profile
+          </button>
         </div>
       )}
-      <button
-        onClick={() => router.push(`/patients/${nextPatient.patient_id}`)}
-        className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
-      >
-        <Stethoscope className="w-3.5 h-3.5" /> Start Consultation
-        <ChevronRight className="w-3.5 h-3.5" />
-      </button>
+
+      {/* NEXT PATIENT — Waiting */}
+      {nextPatient && (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-purple-600 uppercase tracking-wide">
+                  {nextPatient.source === 'queue' ? 'Next in Queue' : 'Next Appointment'}
+                </span>
+                <div className="text-sm font-bold text-gray-900">{nextPatient.patient_name}</div>
+              </div>
+            </div>
+            {nextPatient.source === 'queue' ? (
+              <span className="text-lg font-mono font-black text-purple-700 bg-white/70 px-2.5 py-1 rounded-lg border border-purple-200">
+                #{String(nextPatient.token_number).padStart(2, '0')}
+              </span>
+            ) : (
+              <span className="text-xs font-mono bg-white/70 text-purple-700 px-2 py-1 rounded-lg border border-purple-200">
+                {nextPatient.time || '—'}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
+            <span className="font-mono">{nextPatient.mrn}</span>
+            {nextPatient.mobile && <><span>·</span><span>{nextPatient.mobile}</span></>}
+            {nextPatient.type && <><span>·</span><span>{nextPatient.type}</span></>}
+          </div>
+          {nextPatient.notes && (
+            <div className="text-xs text-gray-500 bg-white/50 rounded-lg px-2 py-1 mb-2 truncate">
+              {nextPatient.notes}
+            </div>
+          )}
+          <button
+            onClick={() => router.push(`/patients/${nextPatient.patient_id}`)}
+            className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+          >
+            <Stethoscope className="w-3.5 h-3.5" /> Start Consultation
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
