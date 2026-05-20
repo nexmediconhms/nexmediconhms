@@ -198,6 +198,8 @@ export async function audit(
 async function tryApiInsert(
   entry: Record<string, unknown>
 ): Promise<'success' | 'unavailable'> {
+  // Only attempt API call in browser context (not during SSR)
+  if (typeof window === 'undefined') return 'unavailable'
   try {
     const res = await fetch('/api/audit', {
       method: 'POST',

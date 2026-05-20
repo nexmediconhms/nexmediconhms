@@ -39,8 +39,11 @@ interface NotificationPayload {
 /**
  * Send a notification to the notification center.
  * Non-blocking — failures are silently logged.
+ * Only works in browser context (not during SSR).
  */
 async function sendNotification(payload: NotificationPayload): Promise<void> {
+  // Skip if not in browser (SSR context)
+  if (typeof window === 'undefined') return
   try {
     await fetch('/api/notifications', {
       method: 'POST',

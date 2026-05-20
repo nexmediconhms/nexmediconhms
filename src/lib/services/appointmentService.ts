@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabase'
 import { getIndiaToday } from '../utils'
-import notify from '@/lib/notifications'
 
 type CreateAppointmentParams = {
   patientId: string
@@ -90,9 +89,10 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
     throw new Error(error.message)
   }
 
-  // Send notification for new appointment
+  // Send notification for new appointment (dynamic import to avoid circular deps)
   try {
-    await notify.appointmentCreated(patientId, patientName, date, time, type)
+    const { default: notifyModule } = await import('@/lib/notifications')
+    await notifyModule.appointmentCreated(patientId, patientName, date, time, type)
   } catch {
     // Non-fatal
   }

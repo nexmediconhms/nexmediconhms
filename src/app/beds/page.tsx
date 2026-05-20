@@ -206,24 +206,27 @@ export default function BedsPage() {
 
     setAddBedLoading(true)
     try {
-      const bedsToInsert = []
+      const bedsToInsert: Record<string, unknown>[] = []
       if (bulkCount === 1) {
-        bedsToInsert.push({
+        const entry: Record<string, unknown> = {
           bed_number: newBed.bed_number.trim(),
           ward: newBed.ward,
-          floor: newBed.floor,
-          bed_type: newBed.bed_type,
-          status: 'available' as const,
-        })
+          status: 'available',
+        }
+        // Only include optional fields if they have values (columns may not exist in all setups)
+        if (newBed.floor) entry.floor = newBed.floor
+        if (newBed.bed_type) entry.bed_type = newBed.bed_type
+        bedsToInsert.push(entry)
       } else {
         for (let i = 1; i <= bulkCount; i++) {
-          bedsToInsert.push({
+          const entry: Record<string, unknown> = {
             bed_number: `${bulkPrefix.trim()}${i}`,
             ward: newBed.ward,
-            floor: newBed.floor,
-            bed_type: newBed.bed_type,
-            status: 'available' as const,
-          })
+            status: 'available',
+          }
+          if (newBed.floor) entry.floor = newBed.floor
+          if (newBed.bed_type) entry.bed_type = newBed.bed_type
+          bedsToInsert.push(entry)
         }
       }
 
