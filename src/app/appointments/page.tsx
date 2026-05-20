@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { audit } from '@/lib/audit'
 import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
 import { getIndiaToday } from '@/lib/utils'
@@ -80,7 +81,13 @@ function AppointmentsContent() {
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selPatient, setSelPatient] = useState<any>(null)
   const [apptDate, setApptDate] = useState(today)
-  const [apptTime, setApptTime] = useState('09:00')
+  const [apptTime, setApptTime] = useState(() => {
+    // Default to next available time slot (never in the past)
+    const now = new Date()
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+    return nextSlot || '09:00'
+  })
   const [apptType, setApptType] = useState(APPT_TYPES[0])
   const [apptNotes, setApptNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -212,6 +219,17 @@ function AppointmentsContent() {
     }, 300)
   }
 
+  // Load recent patients on focus (when search is empty)
+  async function loadRecentPatients() {
+    if (patientQuery.trim().length >= 2 || selPatient) return
+    const { data } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, mobile, age')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    if (data && data.length > 0) setPatientResults(data)
+  }
+
   // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
@@ -250,6 +268,32 @@ function AppointmentsContent() {
         fetchAppts()
         return
       }
+
+      // Create in-app notification for new appointment
+      try {
+        await fetch('/api/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `New Appointment — ${selPatient.full_name}`,
+            message: `Appointment booked for ${selPatient.full_name} on ${apptDate} at ${apptTime}. Type: ${apptType}`,
+            type: 'appointment',
+            severity: 'normal',
+            source: 'appointment_booking',
+            entity_type: 'appointment',
+            entity_id: newId,
+            patient_id: selPatient.id,
+            patient_name: selPatient.full_name,
+            mrn: selPatient.mrn || '',
+            target_roles: ['admin', 'doctor', 'staff'],
+          }),
+        })
+      } catch {
+        // Non-fatal
+      }
+
+      // Audit log
+      await audit('create', 'appointment', newId, `${selPatient.full_name} — ${apptDate} ${apptTime}`)
 
       resetForm()
       setView('list')
@@ -361,7 +405,11 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
   function resetForm() {
     setSelPatient(null); setPatientQuery(''); setPatientResults([])
     setApptDate(today)
-    setApptTime('09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
+    // Reset to next available time slot (never past)
+    const now = new Date()
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+    setApptTime(nextSlot || '09:00'); setApptType(APPT_TYPES[0]); setApptNotes('')
     setSaveError('')
   }
 
@@ -535,7 +583,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input className="input pl-9" placeholder="Search patient by name, MRN, or mobile…" autoFocus
-                  value={patientQuery} onChange={e => searchPatients(e.target.value)} />
+                  value={patientQuery} onChange={e => searchPatients(e.target.value)}
+                  onFocus={loadRecentPatients} />
                 {patientResults.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
                     {patientResults.map(p => (
@@ -557,7 +606,18 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
+                  value={apptDate} onChange={e => {
+                    const newDate = e.target.value
+                    setApptDate(newDate)
+                    // When switching to today, auto-select next available time slot
+                    if (newDate === today) {
+                      const now = new Date()
+                      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                      const nextSlot = TIME_SLOTS.find(t => t > currentTimeStr)
+                      if (nextSlot) setApptTime(nextSlot)
+                      else setApptTime(TIME_SLOTS[TIME_SLOTS.length - 1]) // fallback to last slot
+                    }
+                  }} />
               </div>
               <div>
                 <label className="label">Time</label>

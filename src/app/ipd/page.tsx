@@ -424,6 +424,18 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     setPatientResults(data || [])
   }, [])
 
+  // Load recent patients on focus when search is empty
+  const loadRecentPatients = useCallback(async () => {
+    if (patientQuery.trim().length >= 2 || selectedPatient) return
+    const { data } = await supabase
+      .from('patients')
+      .select('id, full_name, mrn, age, gender, mobile')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    if (data && data.length > 0) setPatientResults(data)
+  }, [patientQuery, selectedPatient])
+  }, [])
+
   function setField(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
@@ -528,7 +540,8 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
               <input className="input pl-9"
                 placeholder="Search patient by name, MRN, or mobile…"
                 value={patientQuery}
-                onChange={e => { setPatientQuery(e.target.value); searchPatients(e.target.value) }}/>
+                onChange={e => { setPatientQuery(e.target.value); searchPatients(e.target.value) }}
+                onFocus={loadRecentPatients}/>
               {patientResults.length > 0 && (
                 <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
                   {patientResults.map(p => (

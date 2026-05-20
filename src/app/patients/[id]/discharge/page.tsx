@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 // Hospital print settings loaded from Supabase-backed in-memory cache via getHospitalSettings()
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import {
@@ -111,6 +112,7 @@ function PrintSection({ label, value }: { label: string; value: string }) {
 export default function DischargeSummaryPage() {
   const { id: patientId } = useParams<{ id: string }>()
   const router = useRouter()
+  const { user } = useAuth()
 
   const [patient,       setPatient]       = useState<Patient | null>(null)
   const [encounters,    setEncounters]    = useState<Encounter[]>([])
@@ -154,7 +156,7 @@ export default function DischargeSummaryPage() {
         baby_weight: ds.baby_weight || '', apgar_score: ds.apgar_score || '',
         baby_birth_time: (ds as any).baby_birth_time || '',
         delivery_date: ds.delivery_date || '', complications: ds.complications || '',
-        lactation_advice: ds.lactation_advice || '', signed_by: ds.signed_by || getHospitalSettings().doctorName,
+        lactation_advice: ds.lactation_advice || '', signed_by: ds.signed_by || user?.full_name || getHospitalSettings().doctorName,
       })
       if (ds.delivery_type || ds.baby_weight) setShowOB(true)
     } else if (enc && enc.length > 0) {

@@ -7,6 +7,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
+import { audit } from '@/lib/audit'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
@@ -550,7 +551,7 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        doctor_name: user?.full_name || getHospitalSettings().doctorName,
+        doctor_name: user?.full_name || '',
       })
       .select('id')
       .single()
@@ -572,6 +573,10 @@ function NewConsultationContent() {
 
     // Clear draft after successful save
     if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch { } }
+
+    // Audit log entry
+    await audit('create', 'encounter', enc.id, patient?.full_name || '')
+
     router.push(`/opd/${enc.id}/prescription`)
   }
 
@@ -903,7 +908,7 @@ function NewConsultationContent() {
                 <h2 className="section-title mb-0">🔪 Procedures Performed</h2>
                 <button
                   type="button"
-                  onClick={() => setProcedures(prev => [...prev, { name: '', indication: '', findings: '', complications: '', surgeon: getHospitalSettings().doctorName, anaesthesia: '', notes: '' }])}
+                  onClick={() => setProcedures(prev => [...prev, { name: '', indication: '', findings: '', complications: '', surgeon: user?.full_name || '', anaesthesia: '', notes: '' }])}
                   className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg"
                 >
                   + Add Procedure

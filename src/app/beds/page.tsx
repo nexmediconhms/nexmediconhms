@@ -20,6 +20,14 @@ export default function BedsPage() {
   const [beds, setBeds] = useState<Bed[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ bed: Bed; action: 'admit' | 'discharge' } | null>(null)
+  const [showAddBed, setShowAddBed] = useState(false)
+
+  // Add bed form
+  const [newBedNumber, setNewBedNumber] = useState('')
+  const [newBedWard, setNewBedWard] = useState('')
+  const [newBedType, setNewBedType] = useState('General')
+  const [addBedSaving, setAddBedSaving] = useState(false)
+  const [addBedError, setAddBedError] = useState('')
 
   // Admit form
   const [patientSearch, setPatientSearch] = useState('')
@@ -168,6 +176,40 @@ export default function BedsPage() {
     loadBeds()
   }
 
+  async function handleAddBed() {
+    if (!newBedNumber.trim()) { setAddBedError('Bed number is required'); return }
+    if (!newBedWard.trim()) { setAddBedError('Ward is required'); return }
+    setAddBedSaving(true)
+    setAddBedError('')
+
+    const bedNumber = newBedNumber.trim().toUpperCase()
+    const ward = newBedWard.trim()
+
+    const { error: insertErr } = await supabase.from('beds').insert({
+      bed_number: bedNumber,
+      ward,
+      type: newBedType,
+      status: 'available',
+    })
+
+    setAddBedSaving(false)
+    if (insertErr) {
+      if (insertErr.message.includes('duplicate') || insertErr.message.includes('unique')) {
+        setAddBedError(`Bed "${bedNumber}" already exists.`)
+      } else {
+        setAddBedError(insertErr.message)
+      }
+      return
+    }
+
+    setShowAddBed(false)
+    setNewBedNumber('')
+    setNewBedWard('')
+    setNewBedType('General')
+    setAddBedError('')
+    loadBeds()
+  }
+
   function closeModal() {
     setModal(null)
     setPatientSearch('')
@@ -201,6 +243,12 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
+          <button
+            onClick={() => setShowAddBed(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+          >
+            <BedDouble className="w-4 h-4" /> + Add Bed
+          </button>
         </div>
 
         {/* Summary Stats */}
@@ -394,6 +442,61 @@ export default function BedsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Bed Modal ─────────────────────────────────── */}
+      {showAddBed && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+          onClick={e => { if (e.target === e.currentTarget) { setShowAddBed(false); setAddBedError('') } }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Add New Bed</h3>
+              <button onClick={() => { setShowAddBed(false); setAddBedError('') }} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {addBedError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-700">
+                {addBedError}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="label">Bed Number *</label>
+                <input className="input" placeholder="e.g. B01, W2-03, ICU-1"
+                  value={newBedNumber}
+                  onChange={e => { setNewBedNumber(e.target.value); setAddBedError('') }}
+                  autoFocus />
+              </div>
+              <div>
+                <label className="label">Ward *</label>
+                <input className="input" placeholder="e.g. General Ward, Maternity, Private Room"
+                  value={newBedWard}
+                  onChange={e => { setNewBedWard(e.target.value); setAddBedError('') }} />
+              </div>
+              <div>
+                <label className="label">Bed Type</label>
+                <select className="input" value={newBedType}
+                  onChange={e => setNewBedType(e.target.value)}>
+                  {['General', 'Semi-Private', 'Private', 'ICU', 'HDU', 'Labour Room', 'Maternity', 'NICU'].map(t => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowAddBed(false); setAddBedError('') }}
+                className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleAddBed} disabled={addBedSaving}
+                className="btn-primary flex-1 disabled:opacity-50">
+                {addBedSaving ? 'Adding...' : '+ Add Bed'}
+              </button>
+            </div>
           </div>
         </div>
       )}

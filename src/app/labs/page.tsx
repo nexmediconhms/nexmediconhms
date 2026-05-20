@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import FormScanner from '@/components/shared/FormScanner'
+import Toast from '@/components/shared/Toast'
 import type { OCRResult } from '@/lib/ocr'
 import {
   FlaskConical, Search, Plus, X, ChevronRight,
@@ -597,13 +598,8 @@ function LabsContent() {
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
-            <button onClick={() => setError('')} className="ml-auto"><X className="w-4 h-4" /></button>
-          </div>
-        )}
+        {/* Error — sticky toast at bottom of screen */}
+        <Toast message={error} type="error" onDismiss={() => setError('')} />
 
         {/* ── LIST VIEW ── */}
         {view === 'list' && (

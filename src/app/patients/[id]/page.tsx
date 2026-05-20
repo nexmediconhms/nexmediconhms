@@ -16,7 +16,7 @@ import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList, Scissors,
   CheckCircle, Sparkles, Loader2, AlertCircle, AlertTriangle, TrendingUp, FlaskConical, IndianRupee,
-  Shield, Download, ExternalLink, MessageCircle, Users,
+  Shield, Download, ExternalLink, MessageCircle, Users, BedDouble,
 } from 'lucide-react'
 
 // ── Inline mini vitals chart (pure SVG, no library needed) ───
@@ -332,6 +332,13 @@ export default function PatientDetailPage() {
                           onClick={() => setMenuOpen(false)}
                         >
                           <IndianRupee className="w-4 h-4 text-green-500" /> Collect Payment
+                        </Link>
+                        <Link
+                          href={`/ipd?patientId=${patient.id}`}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <BedDouble className="w-4 h-4 text-red-500" /> Admit to IPD
                         </Link>
                         <Link
                           href={`/patients/${patient.id}/discharge`}
