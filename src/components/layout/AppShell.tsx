@@ -43,7 +43,7 @@ const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 function getRoleOverride(): UserRole | null {
   if (typeof window === 'undefined') return null
   const v = sessionStorage.getItem(ROLE_OVERRIDE_KEY) as UserRole | null
-  if (v === 'admin' || v === 'doctor' || v === 'staff') return v
+  if (v === 'admin' || v === 'doctor' || v === 'staff' || v === 'lab_partner') return v
   return null
 }
 
@@ -204,6 +204,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
+  // Handler for first-time setup form submission
+  async function handleFirstTimeSetup(e: React.FormEvent) {
+    e.preventDefault()
+    if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
+    setSetupLoading(true)
+    setSetupError('')
+
+    const result = await bootstrapAdmin(setupName.trim())
+    setSetupLoading(false)
+
+    if (result.success) {
+      setSetupDone(true)
+      setTimeout(() => {
+        setShowFirstTimeSetup(false)
+        setLoading(true)
+        loadUser()
+      }, 1500)
+    } else {
+      setSetupError(result.error || 'Failed to create admin account.')
+    }
+  }
+
   const authCtx: AuthContextType = {
     user: effectiveUser,
     loading,
@@ -226,11 +248,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (noProfile) {
-    async function handleEmergencyBootstrap() {
-      setNoProfile(false)
-      setShowFirstTimeSetup(true)
-    }
-
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8 text-center">
@@ -256,7 +273,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               First time setting up? No admin exists yet?
             </p>
             <button
-              onClick={handleEmergencyBootstrap}
+              onClick={() => {
+                setNoProfile(false)
+                setShowFirstTimeSetup(true)
+              }}
               className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
             >
               → Set up as Admin (first-time only)
@@ -276,27 +296,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // First-time setup screen
   if (showFirstTimeSetup) {
-    async function handleFirstTimeSetup(e: React.FormEvent) {
-      e.preventDefault()
-      if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
-      setSetupLoading(true)
-      setSetupError('')
-
-      const result = await bootstrapAdmin(setupName.trim())
-      setSetupLoading(false)
-
-      if (result.success) {
-        setSetupDone(true)
-        setTimeout(() => {
-          setShowFirstTimeSetup(false)
-          setLoading(true)
-          loadUser()
-        }, 1500)
-      } else {
-        setSetupError(result.error || 'Failed to create admin account.')
-      }
-    }
-
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-4">
         <div className="w-full max-w-md">

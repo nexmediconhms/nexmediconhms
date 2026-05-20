@@ -12,7 +12,7 @@ import { createContext, useContext } from 'react'
 import { supabase } from './supabase'
 
 // ─── Types ────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'doctor' | 'staff'
+export type UserRole = 'admin' | 'doctor' | 'staff' | 'lab_partner'
 
 export interface ClinicUser {
   id:        string
