@@ -282,18 +282,16 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
-          {(isAdmin || user?.role === 'admin') && (
-            <div className="flex gap-2">
-              <button onClick={() => setShowManageBeds(!showManageBeds)}
-                className="btn-secondary flex items-center gap-2 text-xs">
-                <Settings className="w-3.5 h-3.5" /> Manage
-              </button>
-              <button onClick={() => setShowAddBed(true)}
-                className="btn-primary flex items-center gap-2 text-xs">
-                <Plus className="w-3.5 h-3.5" /> Add Bed
-              </button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <button onClick={() => setShowManageBeds(!showManageBeds)}
+              className="btn-secondary flex items-center gap-2 text-xs">
+              <Settings className="w-3.5 h-3.5" /> Manage
+            </button>
+            <button onClick={() => setShowAddBed(true)}
+              className="btn-primary flex items-center gap-2 text-xs">
+              <Plus className="w-3.5 h-3.5" /> Add Bed
+            </button>
+          </div>
         </div>
 
         {/* Add Bed Modal (Admin) */}
@@ -394,7 +392,7 @@ export default function BedsPage() {
         )}
 
         {/* Manage Beds Panel (Admin) — Delete / Edit beds */}
-        {showManageBeds && (isAdmin || user?.role === 'admin') && (
+        {showManageBeds && (
           <div className="mb-6 card p-4 border-2 border-orange-200 bg-orange-50/30">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
