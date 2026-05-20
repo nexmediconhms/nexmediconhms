@@ -11398,8 +11398,16 @@ export async function POST(req: NextRequest) {
 /**
  * src/app/api/bootstrap/route.ts
  *
- * First-time admin bootstrap endpoint.
- * 
+ * First-time admin bootstrap endpoint — IMPROVED.
+ *
+ * FIXES:
+ * - Better error diagnostics: tells you exactly what went wrong
+ * - Handles the case where clinic_users table doesn't exist
+ * - Handles the case where users exist but auth_id doesn't match
+ * - Deletes stale clinic_users rows if they exist but have mismatched auth_ids
+ *   (this happens when you recreate Supabase auth users but the old clinic_users
+ *   rows still reference the old auth_ids)
+ *
  * This uses the service_role key to bypass RLS completely, which solves
  * the chicken-and-egg problem: RLS policies on clinic_users require an
  * admin to exist, but the first admin can't be created because no admin
@@ -11407,6 +11415,7 @@ export async function POST(req: NextRequest) {
  *
  * Security:
  * - Only works when the clinic_users table is COMPLETELY empty (0 rows)
+ *   OR when existing rows have no matching auth user (stale data)
  * - Requires a valid authenticated Supabase session (Bearer token)
  * - Creates exactly one admin user — subsequent calls will fail
  */
@@ -11422,9 +11431,25 @@ export async function POST(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    if (!supabaseUrl || !serviceKey || !anonKey) {
+    // ── Diagnostics: check each env var individually ──────────
+    if (!supabaseUrl) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete' },
+        { error: 'NEXT_PUBLIC_SUPABASE_URL is not set in environment variables' },
+        { status: 500 }
+      )
+    }
+    if (!anonKey) {
+      return NextResponse.json(
+        { error: 'NEXT_PUBLIC_SUPABASE_ANON_KEY is not set in environment variables' },
+        { status: 500 }
+      )
+    }
+    if (!serviceKey) {
+      return NextResponse.json(
+        {
+          error: 'SUPABASE_SERVICE_ROLE_KEY is not set in environment variables',
+          fix: 'Go to Supabase Dashboard → Project Settings → API → service_role key, then add it to Vercel Environment Variables',
+        },
         { status: 500 }
       )
     }
@@ -11461,7 +11486,7 @@ export async function POST(req: NextRequest) {
 
     if (authError || !authUser) {
       return NextResponse.json(
-        { error: 'Invalid or expired token' },
+        { error: 'Invalid or expired token', details: authError?.message },
         { status: 401 }
       )
     }
@@ -11471,27 +11496,151 @@ export async function POST(req: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // SECURITY CHECK: Only allow bootstrap if clinic_users is empty
+    // ── Check if clinic_users table exists and count rows ──────
     const { count, error: countError } = await adminClient
       .from('clinic_users')
       .select('id', { count: 'exact', head: true })
 
     if (countError) {
-      console.error('[/api/bootstrap] Count query failed:', countError.message)
+      // Provide specific diagnostic info
+      const errorDetails = {
+        code: countError.code,
+        message: countError.message,
+        hint: countError.hint || undefined,
+        details: countError.details || undefined,
+      }
+
+      // Common case: table doesn't exist
+      if (
+        countError.message?.includes('relation') &&
+        countError.message?.includes('does not exist')
+      ) {
+        return NextResponse.json(
+          {
+            error: 'The clinic_users table does not exist in your Supabase database',
+            fix: 'Run the database schema SQL in your Supabase SQL Editor. Check your project for a file like schema.sql or 00-schema.sql and execute it.',
+            supabase_error: errorDetails,
+          },
+          { status: 500 }
+        )
+      }
+
+      // Check if service key might be wrong (permission denied)
+      if (
+        countError.code === '42501' ||
+        countError.message?.includes('permission denied')
+      ) {
+        return NextResponse.json(
+          {
+            error: 'Permission denied — the SUPABASE_SERVICE_ROLE_KEY might be incorrect',
+            fix: 'Verify your SUPABASE_SERVICE_ROLE_KEY in Vercel matches what Supabase Dashboard → Project Settings → API shows.',
+            supabase_error: errorDetails,
+          },
+          { status: 500 }
+        )
+      }
+
+      // Generic error with full diagnostics
+      console.error('[/api/bootstrap] Count query failed:', JSON.stringify(errorDetails))
       return NextResponse.json(
-        { error: 'Failed to check existing users', details: countError.message },
+        {
+          error: 'Failed to check existing users',
+          supabase_error: errorDetails,
+          fix: 'Check the Supabase logs and verify your environment variables are correct.',
+        },
         { status: 500 }
       )
     }
 
+    // ── If users exist, check if any of them are actually reachable ──
     if ((count ?? 0) > 0) {
-      return NextResponse.json(
-        { error: 'Setup already completed. Users already exist. Contact your admin.' },
-        { status: 403 }
-      )
+      // Check if the current user already has a profile
+      const { data: existingProfile } = await adminClient
+        .from('clinic_users')
+        .select('id, email, role, auth_id')
+        .or(`auth_id.eq.${authUser.id},email.eq.${authUser.email}`)
+        .limit(1)
+
+      if (existingProfile && existingProfile.length > 0) {
+        const profile = existingProfile[0]
+
+        // If auth_id doesn't match, fix it
+        if (profile.auth_id !== authUser.id) {
+          await adminClient
+            .from('clinic_users')
+            .update({ auth_id: authUser.id })
+            .eq('id', profile.id)
+
+          return NextResponse.json({
+            success: true,
+            message: `Your existing profile (${profile.role}) was found and auth link was repaired. Try refreshing the page.`,
+            user: { ...profile, auth_id: authUser.id },
+            auth_id_fixed: true,
+          })
+        }
+
+        return NextResponse.json(
+          {
+            error: `Setup already completed. You already have a "${profile.role}" account. Try refreshing the page or sign out and sign back in.`,
+          },
+          { status: 403 }
+        )
+      }
+
+      // Users exist but none match this auth user
+      // Check if all existing clinic_users have valid auth accounts
+      const { data: allUsers } = await adminClient
+        .from('clinic_users')
+        .select('id, email, auth_id, role')
+
+      if (allUsers && allUsers.length > 0) {
+        // Verify each user's auth_id is still valid
+        let hasValidAdmin = false
+        for (const u of allUsers) {
+          if (u.role === 'admin') {
+            try {
+              const { data: { user: checkUser } } = await adminClient.auth.admin.getUserById(u.auth_id)
+              if (checkUser) {
+                hasValidAdmin = true
+                break
+              }
+            } catch {
+              // auth user doesn't exist anymore — this is a stale row
+            }
+          }
+        }
+
+        if (!hasValidAdmin) {
+          // All admin rows are stale (their auth accounts no longer exist)
+          // This happens when someone deletes auth users from Supabase dashboard
+          // but clinic_users rows remain.
+          // Safe to clear stale data and let this user become admin.
+          console.log('[/api/bootstrap] All existing admin rows are stale. Clearing clinic_users for fresh bootstrap.')
+
+          const { error: deleteError } = await adminClient
+            .from('clinic_users')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000')
+
+          if (deleteError) {
+            // Can't delete — there might be FK constraints.
+            // Fall through to create the admin alongside stale rows.
+            console.warn('[/api/bootstrap] Could not clear stale rows:', deleteError.message)
+          }
+          // Continue to insert below
+        } else {
+          return NextResponse.json(
+            {
+              error: 'Setup already completed. An admin account exists. Contact your admin to add your email.',
+              existingUserCount: allUsers.length,
+            },
+            { status: 403 }
+          )
+        }
+      }
     }
 
-    // Insert the first admin user (bypasses RLS via service_role)
+    // ── Insert the first admin user (bypasses RLS via service_role) ──
     const { data, error: insertError } = await adminClient
       .from('clinic_users')
       .insert({
@@ -11506,8 +11655,25 @@ export async function POST(req: NextRequest) {
 
     if (insertError) {
       console.error('[/api/bootstrap] Insert failed:', insertError.message)
+
+      // Check for common insert errors
+      if (insertError.message?.includes('duplicate key')) {
+        return NextResponse.json(
+          {
+            error: 'A user with this email already exists. Try signing out and back in.',
+            details: insertError.message,
+          },
+          { status: 409 }
+        )
+      }
+
       return NextResponse.json(
-        { error: 'Failed to create admin user', details: insertError.message },
+        {
+          error: 'Failed to create admin user',
+          details: insertError.message,
+          code: insertError.code,
+          hint: insertError.hint || undefined,
+        },
         { status: 500 }
       )
     }
@@ -11529,9 +11695,9 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (err: any) {
-    console.error('[/api/bootstrap] Unexpected error:', err.message)
+    console.error('[/api/bootstrap] Unexpected error:', err.message, err.stack)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: err.message },
       { status: 500 }
     )
   }
@@ -11548,7 +11714,13 @@ export async function GET() {
 
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { error: 'Server configuration incomplete' },
+        {
+          error: 'Server configuration incomplete',
+          missing: [
+            ...(!supabaseUrl ? ['NEXT_PUBLIC_SUPABASE_URL'] : []),
+            ...(!serviceKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+          ],
+        },
         { status: 500 }
       )
     }
@@ -11562,9 +11734,23 @@ export async function GET() {
       .select('id', { count: 'exact', head: true })
 
     if (error) {
-      console.error('[/api/bootstrap] GET count failed:', error.message)
+      console.error('[/api/bootstrap] GET count failed:', error.message, error.code)
+
+      // If the table doesn't exist, it's definitely first-time setup
+      if (error.message?.includes('does not exist')) {
+        return NextResponse.json({
+          isFirstTime: true,
+          userCount: 0,
+          warning: 'clinic_users table does not exist — run the schema SQL first',
+        })
+      }
+
       return NextResponse.json(
-        { error: 'Failed to check setup status' },
+        {
+          error: 'Failed to check setup status',
+          details: error.message,
+          code: error.code,
+        },
         { status: 500 }
       )
     }
@@ -11576,12 +11762,11 @@ export async function GET() {
   } catch (err: any) {
     console.error('[/api/bootstrap] GET unexpected error:', err.message)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: err.message },
       { status: 500 }
     )
   }
 }
-
 ```
 
 # src\app\api\check-config\route.ts
@@ -21675,6 +21860,406 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[send-all] Error:', err)
     return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 })
+  }
+}
+```
+
+# src\app\api\reset-seed\route.ts
+
+```ts
+/**
+ * src/app/api/reset-seed/route.ts
+ *
+ * DANGER ZONE — Wipes ALL data and creates fresh users.
+ *
+ * After running this, you can login with:
+ *   - admin@nexmedicon.com  / Welcome@1234  (Admin)
+ *   - doctor@nexmedicon.com / Welcome@1234  (Doctor)
+ *   - staff@nexmedicon.com  / Welcome@1234  (Staff)
+ *   - lab@nexmedicon.com    / Welcome@1234  (Lab Partner)
+ *
+ * HOW TO USE:
+ *   Option A (from browser): Visit /api/reset-seed?confirm=yes-delete-everything
+ *     → This is a GET request that runs the reset. Simple and works even when login is broken.
+ *
+ *   Option B (from code/Postman): POST /api/reset-seed
+ *     Headers: X-Confirm-Reset: yes-delete-everything
+ *
+ * WHAT IT DOES:
+ *   1. Deletes all rows from data tables (respecting FK order)
+ *   2. Deletes all Supabase auth users
+ *   3. Creates 4 fresh users with password "Welcome@1234"
+ *
+ * SECURITY NOTE:
+ *   This endpoint uses the SUPABASE_SERVICE_ROLE_KEY server-side.
+ *   After your initial setup, you should DELETE this file or disable it.
+ *   Never leave it accessible in production.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const dynamic = 'force-dynamic'
+
+const DEFAULT_PASSWORD = 'Welcome@1234'
+
+const SEED_USERS = [
+  {
+    email: 'admin@nexmedicon.com',
+    full_name: 'Admin User',
+    role: 'admin',
+    phone: '+919876543210',
+  },
+  {
+    email: 'doctor@nexmedicon.com',
+    full_name: 'Dr. Sharma',
+    role: 'doctor',
+    phone: '+919876543211',
+    specialty: 'General Medicine',
+    med_reg_no: 'MED-2024-001',
+  },
+  {
+    email: 'staff@nexmedicon.com',
+    full_name: 'Staff Member',
+    role: 'staff',
+    phone: '+919876543212',
+  },
+  {
+    email: 'lab@nexmedicon.com',
+    full_name: 'Lab Partner',
+    role: 'lab_partner',
+    phone: '+919876543213',
+  },
+]
+
+// Tables to clear — child tables first to avoid FK violations.
+// We use a broad list and skip any table that doesn't exist.
+const TABLES_TO_CLEAR = [
+  'auditlog',
+  'reminderlog',
+  'reminders',
+  'attachments',
+  'videorooms',
+  'bill_payments',
+  'bills',
+  'dischargesummaries',
+  'ipdadmissions',
+  'beds',
+  'ancvisits',
+  'ancregistrations',
+  'labreports',
+  'prescriptions',
+  'encounters',
+  'opdqueue',
+  'appointments',
+  'hospitalfund',
+  'ipdchargerates',
+  'portalsessions',
+  'portalpatients',
+  'patients',
+  'labpartners',
+  'clinic_users',
+]
+
+async function runReset(supabaseUrl: string, serviceKey: string) {
+  const adminClient = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const log: string[] = []
+
+  // ── Step 1: Clear all data tables ──────────────────────────
+  log.push('=== Step 1: Clearing data tables ===')
+
+  for (const table of TABLES_TO_CLEAR) {
+    try {
+      const { error } = await adminClient
+        .from(table)
+        .delete()
+        .not('id', 'is', null)
+
+      if (error) {
+        if (error.message?.includes('does not exist') || error.code === '42P01') {
+          log.push(`  ${table}: table does not exist, skipped`)
+        } else if (error.message?.includes('column') && error.message?.includes('id')) {
+          const { error: err2 } = await adminClient
+            .from(table)
+            .delete()
+            .gte('created_at', '1900-01-01')
+
+          if (err2) {
+            log.push(`  ${table}: could not clear (${err2.code}: ${err2.message})`)
+          } else {
+            log.push(`  ${table}: cleared (via created_at)`)
+          }
+        } else if (error.message?.includes('violates foreign key')) {
+          log.push(`  ${table}: FK violation, will retry after other tables`)
+        } else {
+          log.push(`  ${table}: error (${error.code}: ${error.message})`)
+        }
+      } else {
+        log.push(`  ${table}: cleared`)
+      }
+    } catch (err: any) {
+      log.push(`  ${table}: exception (${err.message})`)
+    }
+  }
+
+  // Retry tables that had FK violations (now their children should be gone)
+  for (const table of TABLES_TO_CLEAR) {
+    try {
+      const { count } = await adminClient
+        .from(table)
+        .select('*', { count: 'exact', head: true })
+
+      if (count && count > 0) {
+        const { error } = await adminClient
+          .from(table)
+          .delete()
+          .not('id', 'is', null)
+
+        if (!error) {
+          log.push(`  ${table}: cleared on retry`)
+        }
+      }
+    } catch {
+      // Ignore — table might not exist
+    }
+  }
+
+  // ── Step 2: Delete all Supabase auth users ─────────────────
+  log.push('')
+  log.push('=== Step 2: Deleting auth users ===')
+
+  let deletedAuthCount = 0
+  try {
+    let page = 1
+    let hasMore = true
+
+    while (hasMore) {
+      const { data: listData, error: listError } = await adminClient.auth.admin.listUsers({
+        page,
+        perPage: 100,
+      })
+
+      if (listError || !listData?.users?.length) {
+        hasMore = false
+        if (listError) log.push(`  Error listing users: ${listError.message}`)
+        break
+      }
+
+      for (const user of listData.users) {
+        try {
+          const { error: delError } = await adminClient.auth.admin.deleteUser(user.id)
+          if (!delError) {
+            deletedAuthCount++
+          } else {
+            log.push(`  Could not delete ${user.email}: ${delError.message}`)
+          }
+        } catch (err: any) {
+          log.push(`  Exception deleting ${user.email}: ${err.message}`)
+        }
+      }
+
+      if (listData.users.length < 100) {
+        hasMore = false
+      } else {
+        page++
+      }
+    }
+  } catch (err: any) {
+    log.push(`  Exception during auth user deletion: ${err.message}`)
+  }
+
+  log.push(`  Deleted ${deletedAuthCount} auth users`)
+
+  // ── Step 3: Create fresh seed users ────────────────────────
+  log.push('')
+  log.push('=== Step 3: Creating fresh users ===')
+
+  const createdUsers: { email: string; role: string; status: string }[] = []
+
+  for (const seedUser of SEED_USERS) {
+    const { data: authData, error: authErr } = await adminClient.auth.admin.createUser({
+      email: seedUser.email,
+      password: DEFAULT_PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name: seedUser.full_name, role: seedUser.role },
+    })
+
+    if (authErr) {
+      log.push(`  ${seedUser.email}: auth creation failed — ${authErr.message}`)
+      createdUsers.push({ email: seedUser.email, role: seedUser.role, status: `failed: ${authErr.message}` })
+      continue
+    }
+
+    const profileData: Record<string, unknown> = {
+      auth_id: authData.user.id,
+      email: seedUser.email,
+      full_name: seedUser.full_name,
+      role: seedUser.role,
+      phone: seedUser.phone || null,
+      is_active: true,
+    }
+
+    if (seedUser.role === 'doctor') {
+      profileData.specialty = (seedUser as any).specialty || null
+      profileData.med_reg_no = (seedUser as any).med_reg_no || null
+    }
+
+    const { error: profileErr } = await adminClient
+      .from('clinic_users')
+      .insert(profileData)
+
+    if (profileErr) {
+      await adminClient.auth.admin.deleteUser(authData.user.id)
+      log.push(`  ${seedUser.email}: profile creation failed — ${profileErr.message}`)
+      createdUsers.push({ email: seedUser.email, role: seedUser.role, status: `profile failed: ${profileErr.message}` })
+      continue
+    }
+
+    log.push(`  ${seedUser.email} (${seedUser.role}): created successfully`)
+    createdUsers.push({ email: seedUser.email, role: seedUser.role, status: 'created' })
+  }
+
+  const successCount = createdUsers.filter(u => u.status === 'created').length
+
+  return {
+    success: successCount > 0,
+    message: successCount === SEED_USERS.length
+      ? 'All users created successfully! You can now login.'
+      : `${successCount}/${SEED_USERS.length} users created. Check the log for errors.`,
+    deletedAuthUsers: deletedAuthCount,
+    createdUsers,
+    log,
+    loginCredentials: {
+      password: DEFAULT_PASSWORD,
+      loginUrl: '/login',
+      note: 'All users share this password. They can also login via email OTP. Use password login method.',
+      users: SEED_USERS.map(u => ({ email: u.email, role: u.role, name: u.full_name })),
+    },
+  }
+}
+
+/**
+ * GET — Easy browser-based reset.
+ *
+ * Visit: /api/reset-seed?confirm=yes-delete-everything
+ *
+ * Without the confirm param, shows diagnostics and instructions.
+ */
+export async function GET(req: NextRequest) {
+  const confirm = req.nextUrl.searchParams.get('confirm')
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  // ── No confirm param → show diagnostics ────────────────────
+  if (confirm !== 'yes-delete-everything') {
+    const diagnostics: Record<string, string> = {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl ? '✅ Set' : '❌ Missing',
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey ? `✅ Set (starts with ${serviceKey.substring(0, 10)}...)` : '❌ Missing',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing',
+    }
+
+    let tableCheck = 'Not tested'
+    if (supabaseUrl && serviceKey) {
+      try {
+        const testClient = createClient(supabaseUrl, serviceKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+        const { count, error } = await testClient
+          .from('clinic_users')
+          .select('id', { count: 'exact', head: true })
+
+        if (error) {
+          tableCheck = `❌ Error: ${error.message} (code: ${error.code})`
+        } else {
+          tableCheck = `✅ Table exists, ${count ?? 0} rows`
+        }
+      } catch (err: any) {
+        tableCheck = `❌ Connection failed: ${err.message}`
+      }
+    }
+
+    return NextResponse.json({
+      endpoint: '/api/reset-seed',
+      status: 'Ready — awaiting confirmation',
+      howToRun: 'Visit /api/reset-seed?confirm=yes-delete-everything in your browser',
+      warning: '⚠️ THIS WILL DELETE ALL DATA IN YOUR DATABASE',
+      diagnostics: {
+        envVars: diagnostics,
+        clinicUsersTable: tableCheck,
+      },
+      afterReset: {
+        password: DEFAULT_PASSWORD,
+        loginMethod: 'Use "Sign in with password" option on login page',
+        users: SEED_USERS.map(u => ({ email: u.email, role: u.role, name: u.full_name })),
+      },
+    })
+  }
+
+  // ── Run the reset ──────────────────────────────────────────
+  if (!supabaseUrl || !serviceKey) {
+    return NextResponse.json(
+      {
+        error: 'Server configuration incomplete',
+        missing: [
+          ...(!supabaseUrl ? ['NEXT_PUBLIC_SUPABASE_URL'] : []),
+          ...(!serviceKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+        ],
+        fix: 'Add these to your Vercel Environment Variables (Settings → Environment Variables)',
+      },
+      { status: 500 }
+    )
+  }
+
+  try {
+    const result = await runReset(supabaseUrl, serviceKey)
+    return NextResponse.json(result)
+  } catch (err: any) {
+    console.error('[reset-seed] Fatal error:', err.message, err.stack)
+    return NextResponse.json(
+      { error: 'Reset failed', details: err.message },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST — Programmatic reset (same logic, requires confirmation header)
+ */
+export async function POST(req: NextRequest) {
+  const confirmHeader = req.headers.get('x-confirm-reset')
+  if (confirmHeader !== 'yes-delete-everything') {
+    return NextResponse.json(
+      {
+        error: 'Missing confirmation header',
+        hint: 'Add header: X-Confirm-Reset: yes-delete-everything',
+      },
+      { status: 400 }
+    )
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceKey) {
+    return NextResponse.json(
+      { error: 'Server configuration incomplete' },
+      { status: 500 }
+    )
+  }
+
+  try {
+    const result = await runReset(supabaseUrl, serviceKey)
+    return NextResponse.json(result)
+  } catch (err: any) {
+    console.error('[reset-seed] Fatal error:', err.message)
+    return NextResponse.json(
+      { error: 'Reset failed', details: err.message },
+      { status: 500 }
+    )
   }
 }
 ```
@@ -56317,7 +56902,7 @@ const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 function getRoleOverride(): UserRole | null {
   if (typeof window === 'undefined') return null
   const v = sessionStorage.getItem(ROLE_OVERRIDE_KEY) as UserRole | null
-  if (v === 'admin' || v === 'doctor' || v === 'staff') return v
+  if (v === 'admin' || v === 'doctor' || v === 'staff' || v === 'lab_partner') return v
   return null
 }
 
@@ -56478,6 +57063,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
+  // Handler for first-time setup form submission
+  async function handleFirstTimeSetup(e: React.FormEvent) {
+    e.preventDefault()
+    if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
+    setSetupLoading(true)
+    setSetupError('')
+
+    const result = await bootstrapAdmin(setupName.trim())
+    setSetupLoading(false)
+
+    if (result.success) {
+      setSetupDone(true)
+      setTimeout(() => {
+        setShowFirstTimeSetup(false)
+        setLoading(true)
+        loadUser()
+      }, 1500)
+    } else {
+      setSetupError(result.error || 'Failed to create admin account.')
+    }
+  }
+
   const authCtx: AuthContextType = {
     user: effectiveUser,
     loading,
@@ -56500,11 +57107,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (noProfile) {
-    async function handleEmergencyBootstrap() {
-      setNoProfile(false)
-      setShowFirstTimeSetup(true)
-    }
-
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8 text-center">
@@ -56530,7 +57132,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               First time setting up? No admin exists yet?
             </p>
             <button
-              onClick={handleEmergencyBootstrap}
+              onClick={() => {
+                setNoProfile(false)
+                setShowFirstTimeSetup(true)
+              }}
               className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
             >
               → Set up as Admin (first-time only)
@@ -56550,27 +57155,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // First-time setup screen
   if (showFirstTimeSetup) {
-    async function handleFirstTimeSetup(e: React.FormEvent) {
-      e.preventDefault()
-      if (!setupName.trim()) { setSetupError('Please enter your name.'); return }
-      setSetupLoading(true)
-      setSetupError('')
-
-      const result = await bootstrapAdmin(setupName.trim())
-      setSetupLoading(false)
-
-      if (result.success) {
-        setSetupDone(true)
-        setTimeout(() => {
-          setShowFirstTimeSetup(false)
-          setLoading(true)
-          loadUser()
-        }, 1500)
-      } else {
-        setSetupError(result.error || 'Failed to create admin account.')
-      }
-    }
-
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-4">
         <div className="w-full max-w-md">
@@ -63897,41 +64481,41 @@ import { supabase } from './supabase'
 export type UserRole = 'admin' | 'doctor' | 'staff'
 
 export interface ClinicUser {
-  id:        string
-  auth_id:   string
-  email:     string
+  id: string
+  auth_id: string
+  email: string
   full_name: string
-  role:      UserRole
+  role: UserRole
   is_active: boolean
-  phone?:    string
+  phone?: string
   /** Doctor-specific: specialty, registration no. */
-  specialty?:    string
-  med_reg_no?:   string
+  specialty?: string
+  med_reg_no?: string
 }
 
 // ─── React Context ────────────────────────────────────────────
 export interface AuthContextType {
-  user:      ClinicUser | null
-  loading:   boolean
-  isAdmin:   boolean
-  isDoctor:  boolean
-  isStaff:   boolean
-  can:       (permission: Permission) => boolean
-  reload:    () => Promise<void>
+  user: ClinicUser | null
+  loading: boolean
+  isAdmin: boolean
+  isDoctor: boolean
+  isStaff: boolean
+  can: (permission: Permission) => boolean
+  reload: () => Promise<void>
 }
 
 const defaultCtx: AuthContextType = {
-  user:     null,
-  loading:  true,
-  isAdmin:  false,
+  user: null,
+  loading: true,
+  isAdmin: false,
   isDoctor: false,
-  isStaff:  false,
-  can:      () => false,
-  reload:   async () => {},
+  isStaff: false,
+  can: () => false,
+  reload: async () => { },
 }
 
 export const AuthContext = createContext<AuthContextType>(defaultCtx)
-export const useAuth     = () => useContext(AuthContext)
+export const useAuth = () => useContext(AuthContext)
 
 // ─── Permissions ──────────────────────────────────────────────
 export type Permission =
@@ -63980,70 +64564,70 @@ export type Permission =
 
 // Permission matrix: which roles can do what
 const PERMISSIONS: Record<Permission, UserRole[]> = {
-  'patients.view':        ['admin', 'doctor', 'staff'],
-  'patients.create':      ['admin', 'doctor', 'staff'],
-  'patients.edit':        ['admin', 'doctor', 'staff'],
-  'patients.delete':      ['admin'],
+  'patients.view': ['admin', 'doctor', 'staff'],
+  'patients.create': ['admin', 'doctor', 'staff'],
+  'patients.edit': ['admin', 'doctor', 'staff'],
+  'patients.delete': ['admin'],
 
-  'encounters.view':      ['admin', 'doctor', 'staff'],
-  'encounters.create':    ['admin', 'doctor'],
-  'encounters.edit':      ['admin', 'doctor'],
+  'encounters.view': ['admin', 'doctor', 'staff'],
+  'encounters.create': ['admin', 'doctor'],
+  'encounters.edit': ['admin', 'doctor'],
 
-  'prescriptions.view':   ['admin', 'doctor', 'staff'],
+  'prescriptions.view': ['admin', 'doctor', 'staff'],
   'prescriptions.create': ['admin', 'doctor'],
-  'prescriptions.edit':   ['admin', 'doctor'],
+  'prescriptions.edit': ['admin', 'doctor'],
 
-  'beds.view':            ['admin', 'doctor', 'staff'],
-  'beds.manage':          ['admin', 'doctor', 'staff'],
+  'beds.view': ['admin', 'doctor', 'staff'],
+  'beds.manage': ['admin', 'doctor', 'staff'],
 
   // FIX: Only admin sees full billing; doctor sees own patient bills; staff can create but not view all
-  'billing.view':         ['admin', 'doctor'],
-  'billing.create':       ['admin', 'staff'],
+  'billing.view': ['admin', 'doctor'],
+  'billing.create': ['admin', 'staff'],
 
-  'reports.view':         ['admin', 'doctor'],
-  'reports.financial':    ['admin'],           // FIX: staff removed — finance is admin-only
+  'reports.view': ['admin', 'doctor'],
+  'reports.financial': ['admin'],           // FIX: staff removed — finance is admin-only
 
-  'settings.view':        ['admin', 'doctor', 'staff'],
-  'settings.edit':        ['admin'],           // FIX: only admin should edit settings
+  'settings.view': ['admin', 'doctor', 'staff'],
+  'settings.edit': ['admin'],           // FIX: only admin should edit settings
 
-  'users.manage':         ['admin'],
+  'users.manage': ['admin'],
 
-  'queue.view':           ['admin', 'doctor', 'staff'],
-  'queue.manage':         ['admin', 'doctor', 'staff'],
+  'queue.view': ['admin', 'doctor', 'staff'],
+  'queue.manage': ['admin', 'doctor', 'staff'],
 
-  'forms.view':           ['admin', 'doctor', 'staff'],
-  'forms.scan':           ['admin', 'doctor', 'staff'],
+  'forms.view': ['admin', 'doctor', 'staff'],
+  'forms.scan': ['admin', 'doctor', 'staff'],
 
-  'anc.view':             ['admin', 'doctor', 'staff'],
-  'anc.edit':             ['admin', 'doctor'],
+  'anc.view': ['admin', 'doctor', 'staff'],
+  'anc.edit': ['admin', 'doctor'],
 
-  'labs.view':            ['admin', 'doctor', 'staff'],
-  'labs.edit':            ['admin', 'doctor'],
+  'labs.view': ['admin', 'doctor', 'staff'],
+  'labs.edit': ['admin', 'doctor'],
 
-  'discharge.view':       ['admin', 'doctor', 'staff'],
-  'discharge.create':     ['admin', 'doctor'],
-  'discharge.edit':       ['admin', 'doctor'],
+  'discharge.view': ['admin', 'doctor', 'staff'],
+  'discharge.create': ['admin', 'doctor'],
+  'discharge.edit': ['admin', 'doctor'],
 
   // ── IPD ────────────────────────────────────────────────────
-  'ipd.view':             ['admin', 'doctor', 'staff'],
-  'ipd.admit':            ['admin', 'doctor', 'staff'],  // reception can admit
-  'ipd.nursing':          ['admin', 'doctor', 'staff'],  // nurses = staff role
-  'ipd.discharge':        ['admin', 'doctor'],           // doctors discharge
+  'ipd.view': ['admin', 'doctor', 'staff'],
+  'ipd.admit': ['admin', 'doctor', 'staff'],  // reception can admit
+  'ipd.nursing': ['admin', 'doctor', 'staff'],  // nurses = staff role
+  'ipd.discharge': ['admin', 'doctor'],           // doctors discharge
 
   // ── Video consultations ─────────────────────────────────────
-  'video.view':           ['admin', 'doctor', 'staff'],
-  'video.manage':         ['admin', 'doctor'],           // create/delete slots
+  'video.view': ['admin', 'doctor', 'staff'],
+  'video.manage': ['admin', 'doctor'],           // create/delete slots
 
   // ── Hospital Fund ──────────────────────────────────────────
-  'fund.view':            ['admin', 'doctor', 'staff'],
-  'fund.submit':          ['admin', 'doctor', 'staff'],  // anyone can submit expense
-  'fund.approve':         ['admin'],                     // only admin approves
+  'fund.view': ['admin', 'doctor', 'staff'],
+  'fund.submit': ['admin', 'doctor', 'staff'],  // anyone can submit expense
+  'fund.approve': ['admin'],                     // only admin approves
 
   // ── Patient Portal ────────────────────────────────────────
-  'portal.send':          ['admin', 'doctor', 'staff'],  // send magic links
+  'portal.send': ['admin', 'doctor', 'staff'],  // send magic links
 
   // ── Audit ─────────────────────────────────────────────────
-  'audit.view':           ['admin'],                     // only admin can view audit log
+  'audit.view': ['admin'],                     // only admin can view audit log
 }
 
 export function hasPermission(role: UserRole | null, permission: Permission): boolean {
@@ -64085,8 +64669,7 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
         .from('clinic_users')
         .update({ auth_id: authUser.id })
         .eq('id', emailData.id)
-        .then(() => {})
-        .catch(() => {})
+        .then(() => { })
       return mapClinicUser({ ...emailData, auth_id: authUser.id })
     }
   }
@@ -64124,15 +64707,15 @@ export async function loadClinicUser(): Promise<ClinicUser | null> {
 
 function mapClinicUser(data: any): ClinicUser {
   return {
-    id:          data.id,
-    auth_id:     data.auth_id,
-    email:       data.email,
-    full_name:   data.full_name,
-    role:        data.role as UserRole,
-    is_active:   data.is_active,
-    phone:       data.phone,
-    specialty:   data.specialty,
-    med_reg_no:  data.med_reg_no,
+    id: data.id,
+    auth_id: data.auth_id,
+    email: data.email,
+    full_name: data.full_name,
+    role: data.role as UserRole,
+    is_active: data.is_active,
+    phone: data.phone,
+    specialty: data.specialty,
+    med_reg_no: data.med_reg_no,
   }
 }
 
@@ -64191,9 +64774,9 @@ export async function bootstrapAdmin(fullName: string): Promise<{ success: boole
 
 // ─── Nav items ────────────────────────────────────────────────
 export interface NavItem {
-  href:        string
-  label:       string
-  icon:        any
+  href: string
+  label: string
+  icon: any
   permission?: Permission
 }
 
