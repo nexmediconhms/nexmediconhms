@@ -530,6 +530,18 @@ function BillingContent() {
       console.error('Bill save error:', error)
       return null
     }
+
+    // Send notification for new bill
+    try {
+      const { default: notify } = await import('@/lib/notifications')
+      await notify.billCreated(
+        payload.patient_id,
+        payload.patient_name,
+        payload.net_amount,
+        data.invoice_number
+      )
+    } catch { /* non-fatal */ }
+
     return data as Bill
   }
 
