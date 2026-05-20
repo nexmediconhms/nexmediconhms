@@ -167,7 +167,14 @@ export default function RemindersPage() {
     if (!silent) setLoading(true)
     else         setRefreshing(true)
     try {
-      const res  = await fetch('/api/reminders')
+      // Get the current session token for authenticated API calls
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
+      const res  = await fetch('/api/reminders', { headers })
       if (!res.ok) {
         console.error('[Reminders] API returned', res.status, res.statusText)
       } else {
@@ -208,13 +215,24 @@ export default function RemindersPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Helper to get auth headers for API calls
+  async function getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    return headers
+  }
+
   // Mark a single reminder as sent in Supabase + local state
   async function markSent(r: ReminderItem) {
     setSent(prev => new Set(Array.from(prev).concat(r.id)))
+    const headers = await getAuthHeaders()
     // PATCH updates source table + logs to reminder_log
     await fetch('/api/reminders', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         sourceTable: r.sourceTable,
         sourceId: r.sourceId,
@@ -329,9 +347,10 @@ export default function RemindersPage() {
     // Log all sent reminders to the server
     if (batchReminders.length > 0) {
       try {
+        const headers = await getAuthHeaders()
         await fetch('/api/reminders/send-all', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ reminders: batchReminders, sentBy: 'bulk' }),
         })
       } catch (e) {
@@ -352,7 +371,8 @@ export default function RemindersPage() {
     setAutoSending(true)
     setAutoResult(null)
     try {
-      const res = await fetch('/api/reminders/auto-generate')
+      const headers = await getAuthHeaders()
+      const res = await fetch('/api/reminders/auto-generate', { headers })
       if (res.ok) {
         const data = await res.json()
         setAutoResult({ total: data.total, reminders: data.reminders || [] })

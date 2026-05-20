@@ -40,6 +40,24 @@ export default function PatientsPage() {
   const PAGE_SIZE = 50
   const [page, setPage] = useState(0)
 
+  // Auto-suggestion state
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [recentPatients, setRecentPatients] = useState<any[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Load recent patients for auto-suggestion (latest 8 patients)
+  useEffect(() => {
+    async function loadRecent() {
+      const { data } = await supabase
+        .from('patients')
+        .select('id, full_name, mrn, mobile, age, gender, created_at')
+        .order('created_at', { ascending: false })
+        .limit(8)
+      setRecentPatients(data || [])
+    }
+    loadRecent()
+  }, [])
+
   useEffect(() => { loadPatients() }, [page])
 
   async function loadPatients(q = query, gender = genderFilter, bg = bgFilter) {
@@ -159,15 +177,40 @@ export default function PatientsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
+                ref={searchInputRef}
                 className="input pl-9 bg-gray-50"
                 placeholder="Search by name, mobile, or MRN..."
                 value={query}
                 onChange={e => handleSearch(e.target.value)}
+                onFocus={() => { if (!query.trim()) setShowSuggestions(true) }}
+                onBlur={() => { setTimeout(() => setShowSuggestions(false), 200) }}
               />
               {query && (
-                <button onClick={() => handleSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <button onClick={() => { handleSearch(''); setShowSuggestions(false) }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   <X className="w-3.5 h-3.5" />
                 </button>
+              )}
+              {/* Auto-suggestion dropdown — shows recent patients when search is empty and focused */}
+              {showSuggestions && !query.trim() && recentPatients.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recent Patients</span>
+                  </div>
+                  {recentPatients.map(p => (
+                    <button key={p.id} type="button"
+                      onMouseDown={(e) => { e.preventDefault(); router.push(`/patients/${p.id}`); setShowSuggestions(false) }}
+                      className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-50 last:border-0 transition-colors">
+                      <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-700 flex-shrink-0">
+                        {p.full_name?.charAt(0) || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-800 truncate">{p.full_name}</div>
+                        <div className="text-xs text-gray-400">{p.mrn} · {p.age ? `${p.age}y` : ''} {p.gender || ''} · {p.mobile}</div>
+                      </div>
+                      <span className="text-xs text-gray-300 flex-shrink-0">→</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
             <button
@@ -269,7 +312,7 @@ export default function PatientsPage() {
                           <Stethoscope className="w-3 h-3" /> OPD
                         </Link>
                         <Link
-                          href={`/ipd?patientId=${p.id}`}
+                          href={`/ipd/new?patientId=${p.id}`}
                           className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors font-medium whitespace-nowrap">
                           <BedDouble className="w-3 h-3" /> Admit
                         </Link>
@@ -320,7 +363,7 @@ export default function PatientsPage() {
                     className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium">
                     <Stethoscope className="w-3.5 h-3.5" /> Start OPD
                   </Link>
-                  <Link href={`/ipd?patientId=${p.id}`}
+                  <Link href={`/ipd/new?patientId=${p.id}`}
                     className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 font-medium">
                     <BedDouble className="w-3.5 h-3.5" /> Admit
                   </Link>
