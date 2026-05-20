@@ -254,57 +254,20 @@ function mapClinicUser(data: any): ClinicUser {
   }
 }
 
+/**
+ * @deprecated Admin is now pre-created via SQL during deployment.
+ * This function is kept for backward compatibility but always returns false.
+ */
 export async function isFirstTimeSetup(): Promise<boolean> {
-  // Use server-side API that bypasses RLS to accurately count users
-  try {
-    const res = await fetch('/api/bootstrap')
-    if (!res.ok) {
-      // Fallback to client-side query (may be blocked by RLS but try anyway)
-      const { count, error } = await supabase
-        .from('clinic_users')
-        .select('id', { count: 'exact', head: true })
-      if (error) return false
-      return (count ?? 0) === 0
-    }
-    const data = await res.json()
-    return data.isFirstTime === true
-  } catch {
-    // Fallback to client-side query
-    const { count, error } = await supabase
-      .from('clinic_users')
-      .select('id', { count: 'exact', head: true })
-    if (error) return false
-    return (count ?? 0) === 0
-  }
+  return false
 }
 
-export async function bootstrapAdmin(fullName: string): Promise<{ success: boolean; error?: string }> {
-  // Use server-side API that bypasses RLS for the first admin insert
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      return { success: false, error: 'Not authenticated — no session token' }
-    }
-
-    const res = await fetch('/api/bootstrap', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ full_name: fullName }),
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      return { success: false, error: data.error || 'Bootstrap failed' }
-    }
-
-    return { success: true }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error during bootstrap' }
-  }
+/**
+ * @deprecated Admin is now pre-created via SQL during deployment.
+ * Use SETUP-LOGIN-FIX.sql instead. This function is kept for backward compatibility.
+ */
+export async function bootstrapAdmin(_fullName: string): Promise<{ success: boolean; error?: string }> {
+  return { success: false, error: 'Bootstrap is disabled. Admin must be created via SQL during deployment. Run SETUP-LOGIN-FIX.sql in Supabase SQL Editor.' }
 }
 
 // ─── Nav items ────────────────────────────────────────────────
