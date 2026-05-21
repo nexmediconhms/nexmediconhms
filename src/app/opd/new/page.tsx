@@ -576,6 +576,20 @@ function NewConsultationContent() {
         .is('encounter_id', null)
     } catch { /* tables may not exist yet — ignore */ }
 
+    // Link today's OPD queue row to this encounter (Gap 2)
+    // Non-fatal: queue row may not exist if patient was started outside the queue.
+    try {
+      const todayDate = getIndiaToday()
+      await supabase
+        .from('opd_queue')
+        .update({ encounter_id: enc.id, updated_at: new Date().toISOString() })
+        .eq('patient_id', patientId)
+        .eq('queue_date', todayDate)
+        .is('encounter_id', null)
+    } catch {
+      // non-fatal: queue may not have a row for this patient
+    }
+
     // Clear draft after successful save
     if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch { } }
     router.push(`/opd/${enc.id}/prescription`)

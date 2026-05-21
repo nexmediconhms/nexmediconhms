@@ -243,8 +243,14 @@ export async function createFollowUp(
 /**
  * Visit completion cleanup
  * ✅ Only completes follow-up if it's future or same day with visit logic
+ *
+ * Optional `encounterId` lets callers also stamp the queue row with the
+ * encounter that closed it, so queue → encounter is auditable.
  */
-export async function handleVisitCompletion(patientId: string) {
+export async function handleVisitCompletion(
+  patientId: string,
+  encounterId?: string,
+) {
 
   const today = getIndiaToday()
 
@@ -260,6 +266,28 @@ export async function handleVisitCompletion(patientId: string) {
 
   // ✅ Cancel only follow-up appointments (safe)
   await cancelActiveAppointment(patientId)
+
+  // ✅ Close today's OPD queue token for this patient (Gap 1)
+  // Only touches rows that are still open (waiting / in_progress).
+  // Never reopens a row that was already marked done or cancelled.
+  try {
+    const patch: Record<string, unknown> = {
+      status: 'done',
+      done_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    if (encounterId) patch.encounter_id = encounterId
+
+    await supabase
+      .from('opd_queue')
+      .update(patch)
+      .eq('patient_id', patientId)
+      .eq('queue_date', today)
+      .in('status', ['waiting', 'in_progress'])
+  } catch (err) {
+    // Non-fatal — visit completion (follow_ups + appointments) already succeeded.
+    console.warn('[handleVisitCompletion] queue close failed (non-fatal):', err)
+  }
 }
 
 /**

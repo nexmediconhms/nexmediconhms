@@ -19,6 +19,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
 import { escapeLike, formatDateTime } from '@/lib/utils'
+import { handleVisitCompletion } from '@/lib/services/appointmentService'
 import {
   Users, Plus, X, Clock, CheckCircle, Play,
   AlertTriangle, Loader2, RefreshCw, Zap,
@@ -217,6 +218,28 @@ function QueueContent() {
 
     await audit('update', 'encounter', entry.id,
       `Queue token #${entry.token_number} — ${entry.patient_name} → ${newStatus}`)
+    // Gap 7: when manually marking a token Done, mirror the visit-completion logic
+    // (close follow-ups + cancel active follow-up appointments).
+    // Guard: only run if an encounter exists for this patient today, so reception
+    // marking 'Done' before the doctor has saved an encounter does NOT cancel
+    // future-scheduled follow-ups.
+    if (newStatus === 'done') {
+      try {
+        const today = entry.queue_date
+        const { data: enc } = await supabase
+          .from('encounters')
+          .select('id')
+          .eq('patient_id', entry.patient_id)
+          .eq('encounter_date', today)
+          .limit(1)
+          .maybeSingle()
+        if (enc?.id) {
+          await handleVisitCompletion(entry.patient_id, enc.id)
+        }
+      } catch (err) {
+        console.warn('[Queue] visit completion on Done failed (non-fatal):', err)
+      }
+    }
     // Realtime will trigger reload
   }
 
