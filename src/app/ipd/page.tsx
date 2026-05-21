@@ -21,6 +21,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, formatDateTime, getHospitalSettings, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { checkIPDDoubleAdmit } from '@/lib/booking-guards'
 import {
   BedDouble, UserPlus, Search, RefreshCw, Stethoscope,
   AlertTriangle, Activity, ClipboardList, LogOut, Clock,
@@ -89,8 +90,8 @@ interface NursingEntry {
 // ── Helpers ────────────────────────────────────────────────────
 
 function statusBadge(s: IPDAdmission['status']) {
-  if (s === 'active')      return <span className="badge-green text-xs">Active</span>
-  if (s === 'discharged')  return <span className="badge-red text-xs">Discharged</span>
+  if (s === 'active') return <span className="badge-green text-xs">Active</span>
+  if (s === 'discharged') return <span className="badge-red text-xs">Discharged</span>
   return <span className="badge-yellow text-xs">Transferred</span>
 }
 
@@ -102,7 +103,7 @@ function daysSince(dateStr: string) {
 
 export default function IPDPageWrapper() {
   return (
-    <Suspense fallback={<AppShell><div className="p-6 flex items-center justify-center h-40"><div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"/></div></AppShell>}>
+    <Suspense fallback={<AppShell><div className="p-6 flex items-center justify-center h-40"><div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" /></div></AppShell>}>
       <IPDPageContent />
     </Suspense>
   )
@@ -112,9 +113,9 @@ function IPDPageContent() {
   const { user, can } = useAuth()
   const searchParams = useSearchParams()
   const [admissions, setAdmissions] = useState<IPDAdmission[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [query, setQuery]           = useState('')
-  const [view, setView]             = useState<'census' | 'admit' | 'chart'>('census')
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [view, setView] = useState<'census' | 'admit' | 'chart'>('census')
   const [selectedAdmission, setSelectedAdmission] = useState<IPDAdmission | null>(null)
 
   // Auto-switch to admit view when arriving with patientId in URL
@@ -159,7 +160,7 @@ function IPDPageContent() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <BedDouble className="w-6 h-6 text-purple-500"/> IPD Management
+              <BedDouble className="w-6 h-6 text-purple-500" /> IPD Management
             </h1>
             <p className="text-sm text-gray-500">
               In-patient admissions, nursing charts, multi-doctor care
@@ -168,12 +169,12 @@ function IPDPageContent() {
           <div className="flex gap-3">
             <button onClick={loadAdmissions} disabled={loading}
               className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}/> Refresh
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </button>
             {can('encounters.create') && (
               <button onClick={() => setView('admit')}
                 className="btn-primary flex items-center gap-2 text-xs">
-                <UserPlus className="w-3.5 h-3.5"/> Admit Patient
+                <UserPlus className="w-3.5 h-3.5" /> Admit Patient
               </button>
             )}
           </div>
@@ -183,13 +184,13 @@ function IPDPageContent() {
         <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
           {[
             { key: 'census', label: 'IPD Census', icon: Users },
-            { key: 'admit',  label: 'New Admission', icon: UserPlus },
+            { key: 'admit', label: 'New Admission', icon: UserPlus },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key}
               onClick={() => setView(key as any)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors
                 ${view === key ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
-              <Icon className="w-3.5 h-3.5"/> {label}
+              <Icon className="w-3.5 h-3.5" /> {label}
             </button>
           ))}
         </div>
@@ -255,20 +256,20 @@ function CensusView({
     <>
       <div className="card p-4 mb-5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input className="input pl-9 bg-gray-50"
             placeholder="Search patient name, MRN, bed number, ward…"
-            value={query} onChange={e => setQuery(e.target.value)}/>
+            value={query} onChange={e => setQuery(e.target.value)} />
         </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"/>
+          <div className="w-8 h-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : admissions.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <BedDouble className="w-12 h-12 mx-auto mb-3 opacity-20"/>
+          <BedDouble className="w-12 h-12 mx-auto mb-3 opacity-20" />
           <p className="font-medium">No active IPD admissions</p>
           <p className="text-sm mt-1">Admit a patient to see them here</p>
         </div>
@@ -326,12 +327,12 @@ function CensusView({
                       <div className="flex gap-1">
                         <button onClick={() => onOpenChart(adm)}
                           className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
-                          <Activity className="w-3 h-3"/> Chart
+                          <Activity className="w-3 h-3" /> Chart
                         </button>
                         {canManage && (
                           <button onClick={() => markDischarged(adm.id)}
                             className="text-xs py-1 px-2 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1">
-                            <LogOut className="w-3 h-3"/> DC
+                            <LogOut className="w-3 h-3" /> DC
                           </button>
                         )}
                       </div>
@@ -442,36 +443,45 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
 
   async function handleSave() {
     if (!selectedPatient) { alert('Select a patient first'); return }
-    if (!form.bed_id)    { alert('Select a bed'); return }
+    if (!form.bed_id) { alert('Select a bed'); return }
     if (!form.admitting_doctor) { alert('Select admitting doctor'); return }
 
     setSaving(true)
 
     // Create IPD admission record
     const payload = {
-      patient_id:             selectedPatient.id,
-      patient_name:           selectedPatient.full_name,
-      mrn:                    selectedPatient.mrn,
-      mobile:                 selectedPatient.mobile,
-      age:                    selectedPatient.age,
-      gender:                 selectedPatient.gender,
-      bed_id:                 form.bed_id,
-      bed_number:             beds.find(b => b.id === form.bed_id)?.bed_number || '',
-      ward:                   beds.find(b => b.id === form.bed_id)?.ward || '',
-      admission_date:         form.admission_date,
-      admission_time:         form.admission_time,
-      admitting_doctor:       form.admitting_doctor,
-      consulting_doctors:     form.consulting_doctors,
+      patient_id: selectedPatient.id,
+      patient_name: selectedPatient.full_name,
+      mrn: selectedPatient.mrn,
+      mobile: selectedPatient.mobile,
+      age: selectedPatient.age,
+      gender: selectedPatient.gender,
+      bed_id: form.bed_id,
+      bed_number: beds.find(b => b.id === form.bed_id)?.bed_number || '',
+      ward: beds.find(b => b.id === form.bed_id)?.ward || '',
+      admission_date: form.admission_date,
+      admission_time: form.admission_time,
+      admitting_doctor: form.admitting_doctor,
+      consulting_doctors: form.consulting_doctors,
       diagnosis_on_admission: form.diagnosis_on_admission,
-      chief_complaint:        form.chief_complaint,
-      diet_type:              form.diet_type,
-      allergies:              form.allergies,
-      comorbidities:          form.comorbidities,
-      insurance_details:      form.insurance_details,
-      relative_name:          form.relative_name,
-      relative_contact:       form.relative_contact,
-      relative_relation:      form.relative_relation,
-      status:                 'active',
+      chief_complaint: form.chief_complaint,
+      diet_type: form.diet_type,
+      allergies: form.allergies,
+      comorbidities: form.comorbidities,
+      insurance_details: form.insurance_details,
+      relative_name: form.relative_name,
+      relative_contact: form.relative_contact,
+      relative_relation: form.relative_relation,
+      status: 'active',
+    }
+    // ── Phase 1 additive guard: patient already admitted or bed occupied? ──
+    const ipdGuard = await checkIPDDoubleAdmit({
+      patientId: payload.patient_id,
+      bedId: payload.bed_id ?? null,
+    })
+    if (!ipdGuard.ok) {
+      alert(ipdGuard.reason)
+      return
     }
 
     const { error } = await supabase.from('ipd_admissions').insert(payload)
@@ -479,10 +489,10 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     if (!error) {
       // Mark bed as occupied
       await supabase.from('beds').update({
-        status:           'occupied',
-        patient_id:       selectedPatient.id,
-        patient_name:     selectedPatient.full_name,
-        admission_date:   form.admission_date,
+        status: 'occupied',
+        patient_id: selectedPatient.id,
+        patient_name: selectedPatient.full_name,
+        admission_date: form.admission_date,
       }).eq('id', form.bed_id)
 
       // Send notification for IPD admission
@@ -510,7 +520,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     <div className="max-w-3xl">
       <div className="flex items-center gap-3 mb-5">
         <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
-          <X className="w-5 h-5"/>
+          <X className="w-5 h-5" />
         </button>
         <h2 className="text-lg font-bold text-gray-900">New IPD Admission</h2>
       </div>
@@ -520,7 +530,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
         {/* Patient Search */}
         <div className="card p-5">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <UserPlus className="w-4 h-4 text-blue-500"/> Patient
+            <UserPlus className="w-4 h-4 text-blue-500" /> Patient
           </h3>
           {selectedPatient ? (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
@@ -530,16 +540,16 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
               </div>
               <button onClick={() => { setSelectedPatient(null); setPatientResults([]) }}
                 className="text-blue-400 hover:text-blue-600">
-                <X className="w-4 h-4"/>
+                <X className="w-4 h-4" />
               </button>
             </div>
           ) : (
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input className="input pl-9"
                 placeholder="Search patient by name, MRN, or mobile…"
                 value={patientQuery}
-                onChange={e => { setPatientQuery(e.target.value); searchPatients(e.target.value) }}/>
+                onChange={e => { setPatientQuery(e.target.value); searchPatients(e.target.value) }} />
               {patientResults.length > 0 && (
                 <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
                   {patientResults.map(p => (
@@ -564,7 +574,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
         {/* Bed + Dates */}
         <div className="card p-5">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <BedDouble className="w-4 h-4 text-purple-500"/> Bed Assignment
+            <BedDouble className="w-4 h-4 text-purple-500" /> Bed Assignment
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -592,12 +602,12 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
             <div>
               <label className="label">Admission Date *</label>
               <input className="input" type="date" value={form.admission_date}
-                onChange={e => setField('admission_date', e.target.value)}/>
+                onChange={e => setField('admission_date', e.target.value)} />
             </div>
             <div>
               <label className="label">Admission Time</label>
               <input className="input" type="time" value={form.admission_time}
-                onChange={e => setField('admission_time', e.target.value)}/>
+                onChange={e => setField('admission_time', e.target.value)} />
             </div>
           </div>
         </div>
@@ -605,7 +615,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
         {/* Multi-Doctor Assignment */}
         <div className="card p-5">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <Stethoscope className="w-4 h-4 text-green-500"/> Doctors
+            <Stethoscope className="w-4 h-4 text-green-500" /> Doctors
             <span className="text-xs text-gray-400 font-normal">(multiple doctors supported)</span>
           </h3>
           <div className="grid grid-cols-2 gap-4 mb-3">
@@ -629,11 +639,10 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
                   <button key={d.id}
                     type="button"
                     onClick={() => toggleConsultingDoctor(d.full_name)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                      form.consulting_doctors.includes(d.full_name)
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${form.consulting_doctors.includes(d.full_name)
                         ? 'bg-green-100 border-green-300 text-green-700'
                         : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}>
+                      }`}>
                     {form.consulting_doctors.includes(d.full_name) ? '✓ ' : '+ '}{d.full_name}
                   </button>
                 ))}
@@ -644,33 +653,33 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
         {/* Clinical Details */}
         <div className="card p-5">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-orange-500"/> Clinical Details
+            <ClipboardList className="w-4 h-4 text-orange-500" /> Clinical Details
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="label">Chief Complaint</label>
               <input className="input" placeholder="e.g. Abdominal pain, fever since 2 days"
-                value={form.chief_complaint} onChange={e => setField('chief_complaint', e.target.value)}/>
+                value={form.chief_complaint} onChange={e => setField('chief_complaint', e.target.value)} />
             </div>
             <div className="col-span-2">
               <label className="label">Diagnosis on Admission</label>
               <input className="input" placeholder="Primary diagnosis"
-                value={form.diagnosis_on_admission} onChange={e => setField('diagnosis_on_admission', e.target.value)}/>
+                value={form.diagnosis_on_admission} onChange={e => setField('diagnosis_on_admission', e.target.value)} />
             </div>
             <div>
               <label className="label">Allergies</label>
               <input className="input" placeholder="Drug / food allergies or NKDA"
-                value={form.allergies} onChange={e => setField('allergies', e.target.value)}/>
+                value={form.allergies} onChange={e => setField('allergies', e.target.value)} />
             </div>
             <div>
               <label className="label">Co-morbidities</label>
               <input className="input" placeholder="DM, HTN, Thyroid, etc."
-                value={form.comorbidities} onChange={e => setField('comorbidities', e.target.value)}/>
+                value={form.comorbidities} onChange={e => setField('comorbidities', e.target.value)} />
             </div>
             <div>
               <label className="label">Insurance / TPA</label>
               <input className="input" placeholder="Insurance company, policy no."
-                value={form.insurance_details} onChange={e => setField('insurance_details', e.target.value)}/>
+                value={form.insurance_details} onChange={e => setField('insurance_details', e.target.value)} />
             </div>
           </div>
         </div>
@@ -682,12 +691,12 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
             <div>
               <label className="label">Name</label>
               <input className="input" placeholder="Attendant name"
-                value={form.relative_name} onChange={e => setField('relative_name', e.target.value)}/>
+                value={form.relative_name} onChange={e => setField('relative_name', e.target.value)} />
             </div>
             <div>
               <label className="label">Contact</label>
               <input className="input" type="tel" placeholder="Mobile number"
-                value={form.relative_contact} onChange={e => setField('relative_contact', e.target.value)}/>
+                value={form.relative_contact} onChange={e => setField('relative_contact', e.target.value)} />
             </div>
             <div>
               <label className="label">Relation</label>
@@ -708,9 +717,9 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
           <button onClick={handleSave} disabled={saving || saved}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-60
               ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-              : saved ? <CheckCircle className="w-4 h-4"/>
-              : <Save className="w-4 h-4"/>}
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : saved ? <CheckCircle className="w-4 h-4" />
+                : <Save className="w-4 h-4" />}
             {saving ? 'Admitting…' : saved ? 'Admitted!' : 'Admit Patient'}
           </button>
         </div>
@@ -773,11 +782,11 @@ function NursingChart({ admission, onBack, currentUserName }: {
     setSaving(true)
     const { error } = await supabase.from('ipd_nursing').insert({
       ipd_admission_id: admission.id,
-      patient_id:       admission.patient_id,
-      entry_type:       'vital',
-      nurse_name:       currentUserName,
+      patient_id: admission.patient_id,
+      entry_type: 'vital',
+      nurse_name: currentUserName,
       ...vitalForm,
-      recorded_time:    vitalForm.recorded_time,
+      recorded_time: vitalForm.recorded_time,
     })
     if (!error) {
       setVitalForm({ recorded_time: new Date().toTimeString().slice(0, 5), pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', rr: '', weight: '', vital_note: '' })
@@ -790,13 +799,13 @@ function NursingChart({ admission, onBack, currentUserName }: {
     setSaving(true)
     await supabase.from('ipd_nursing').insert({
       ipd_admission_id: admission.id,
-      patient_id:       admission.patient_id,
-      entry_type:       'io',
-      nurse_name:       currentUserName,
-      recorded_time:    ioForm.recorded_time,
-      io_type:          ioForm.io_type,
-      io_label:         ioForm.io_label,
-      io_amount_ml:     parseFloat(ioForm.io_amount_ml) || 0,
+      patient_id: admission.patient_id,
+      entry_type: 'io',
+      nurse_name: currentUserName,
+      recorded_time: ioForm.recorded_time,
+      io_type: ioForm.io_type,
+      io_label: ioForm.io_label,
+      io_amount_ml: parseFloat(ioForm.io_amount_ml) || 0,
     })
     setIoForm({ recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
     await loadEntries()
@@ -806,17 +815,17 @@ function NursingChart({ admission, onBack, currentUserName }: {
   async function saveNote() {
     setSaving(true)
     const payload: any = {
-      ipd_admission_id:    admission.id,
-      patient_id:          admission.patient_id,
-      entry_type:          noteForm.entry_type,
-      nurse_name:          currentUserName,
-      recorded_time:       noteForm.recorded_time,
-      note_text:           noteForm.note_text,
+      ipd_admission_id: admission.id,
+      patient_id: admission.patient_id,
+      entry_type: noteForm.entry_type,
+      nurse_name: currentUserName,
+      recorded_time: noteForm.recorded_time,
+      note_text: noteForm.note_text,
     }
     if (noteForm.entry_type === 'medication') {
-      payload.medication_name     = noteForm.medication_name
-      payload.medication_dose     = noteForm.medication_dose
-      payload.medication_route    = noteForm.medication_route
+      payload.medication_name = noteForm.medication_name
+      payload.medication_dose = noteForm.medication_dose
+      payload.medication_route = noteForm.medication_route
       payload.medication_given_by = noteForm.medication_given_by
     }
     await supabase.from('ipd_nursing').insert(payload)
@@ -826,15 +835,15 @@ function NursingChart({ admission, onBack, currentUserName }: {
   }
 
   // I/O balance
-  const totalInput  = entries.filter(e => e.entry_type === 'io' && e.io_type === 'Input').reduce((s, e) => s + (e.io_amount_ml || 0), 0)
+  const totalInput = entries.filter(e => e.entry_type === 'io' && e.io_type === 'Input').reduce((s, e) => s + (e.io_amount_ml || 0), 0)
   const totalOutput = entries.filter(e => e.entry_type === 'io' && e.io_type === 'Output').reduce((s, e) => s + (e.io_amount_ml || 0), 0)
-  const ioBalance   = totalInput - totalOutput
+  const ioBalance = totalInput - totalOutput
 
   return (
     <div className="max-w-4xl">
       <div className="flex items-center gap-3 mb-5">
         <button onClick={onBack} className="text-gray-400 hover:text-gray-600">
-          <X className="w-5 h-5"/>
+          <X className="w-5 h-5" />
         </button>
         <div>
           <h2 className="text-lg font-bold text-gray-900">Nursing Chart — {admission.patient_name}</h2>
@@ -876,22 +885,22 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {addType === 'vital' && (
           <div>
             <div className="grid grid-cols-4 gap-3 mb-3">
-              <div><label className="label">Time</label><input className="input" type="time" value={vitalForm.recorded_time} onChange={e => setVitalForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
-              <div><label className="label">Pulse (bpm)</label><input className="input" type="number" placeholder="72" value={vitalForm.pulse} onChange={e => setVitalForm(p => ({ ...p, pulse: e.target.value }))}/></div>
-              <div><label className="label">BP Systolic</label><input className="input" type="number" placeholder="120" value={vitalForm.bp_systolic} onChange={e => setVitalForm(p => ({ ...p, bp_systolic: e.target.value }))}/></div>
-              <div><label className="label">BP Diastolic</label><input className="input" type="number" placeholder="80" value={vitalForm.bp_diastolic} onChange={e => setVitalForm(p => ({ ...p, bp_diastolic: e.target.value }))}/></div>
-              <div><label className="label">Temperature (°F)</label><input className="input" type="number" step="0.1" placeholder="98.6" value={vitalForm.temperature} onChange={e => setVitalForm(p => ({ ...p, temperature: e.target.value }))}/></div>
-              <div><label className="label">SpO₂ (%)</label><input className="input" type="number" placeholder="98" value={vitalForm.spo2} onChange={e => setVitalForm(p => ({ ...p, spo2: e.target.value }))}/></div>
-              <div><label className="label">RR (breaths/min)</label><input className="input" type="number" placeholder="16" value={vitalForm.rr} onChange={e => setVitalForm(p => ({ ...p, rr: e.target.value }))}/></div>
-              <div><label className="label">Weight (kg)</label><input className="input" type="number" step="0.1" placeholder="55.0" value={vitalForm.weight} onChange={e => setVitalForm(p => ({ ...p, weight: e.target.value }))}/></div>
+              <div><label className="label">Time</label><input className="input" type="time" value={vitalForm.recorded_time} onChange={e => setVitalForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
+              <div><label className="label">Pulse (bpm)</label><input className="input" type="number" placeholder="72" value={vitalForm.pulse} onChange={e => setVitalForm(p => ({ ...p, pulse: e.target.value }))} /></div>
+              <div><label className="label">BP Systolic</label><input className="input" type="number" placeholder="120" value={vitalForm.bp_systolic} onChange={e => setVitalForm(p => ({ ...p, bp_systolic: e.target.value }))} /></div>
+              <div><label className="label">BP Diastolic</label><input className="input" type="number" placeholder="80" value={vitalForm.bp_diastolic} onChange={e => setVitalForm(p => ({ ...p, bp_diastolic: e.target.value }))} /></div>
+              <div><label className="label">Temperature (°F)</label><input className="input" type="number" step="0.1" placeholder="98.6" value={vitalForm.temperature} onChange={e => setVitalForm(p => ({ ...p, temperature: e.target.value }))} /></div>
+              <div><label className="label">SpO₂ (%)</label><input className="input" type="number" placeholder="98" value={vitalForm.spo2} onChange={e => setVitalForm(p => ({ ...p, spo2: e.target.value }))} /></div>
+              <div><label className="label">RR (breaths/min)</label><input className="input" type="number" placeholder="16" value={vitalForm.rr} onChange={e => setVitalForm(p => ({ ...p, rr: e.target.value }))} /></div>
+              <div><label className="label">Weight (kg)</label><input className="input" type="number" step="0.1" placeholder="55.0" value={vitalForm.weight} onChange={e => setVitalForm(p => ({ ...p, weight: e.target.value }))} /></div>
             </div>
             <div className="mb-3">
               <label className="label">Nurse Note (optional)</label>
-              <textarea className="input" rows={2} placeholder="Any observation…" value={vitalForm.vital_note} onChange={e => setVitalForm(p => ({ ...p, vital_note: e.target.value }))}/>
+              <textarea className="input" rows={2} placeholder="Any observation…" value={vitalForm.vital_note} onChange={e => setVitalForm(p => ({ ...p, vital_note: e.target.value }))} />
             </div>
             <button onClick={saveVital} disabled={saving}
               className="btn-primary flex items-center gap-2 text-xs disabled:opacity-60">
-              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save Vitals'}
+              <Save className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Save Vitals'}
             </button>
           </div>
         )}
@@ -899,7 +908,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {/* I/O form */}
         {addType === 'io' && (
           <div className="grid grid-cols-4 gap-3 items-end">
-            <div><label className="label">Time</label><input className="input" type="time" value={ioForm.recorded_time} onChange={e => setIoForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
+            <div><label className="label">Time</label><input className="input" type="time" value={ioForm.recorded_time} onChange={e => setIoForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
             <div>
               <label className="label">Type</label>
               <select className="input" value={ioForm.io_type} onChange={e => setIoForm(p => ({ ...p, io_type: e.target.value as 'Input' | 'Output' }))}>
@@ -916,10 +925,10 @@ function NursingChart({ admission, onBack, currentUserName }: {
                 }
               </select>
             </div>
-            <div><label className="label">Amount (mL)</label><input className="input" type="number" placeholder="500" value={ioForm.io_amount_ml} onChange={e => setIoForm(p => ({ ...p, io_amount_ml: e.target.value }))}/></div>
+            <div><label className="label">Amount (mL)</label><input className="input" type="number" placeholder="500" value={ioForm.io_amount_ml} onChange={e => setIoForm(p => ({ ...p, io_amount_ml: e.target.value }))} /></div>
             <button onClick={saveIO} disabled={saving}
               className="btn-primary flex items-center gap-2 text-xs col-span-4 w-fit disabled:opacity-60">
-              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save I/O Entry'}
+              <Save className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Save I/O Entry'}
             </button>
           </div>
         )}
@@ -928,7 +937,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {(addType === 'note' || addType === 'medication') && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Time</label><input className="input" type="time" value={noteForm.recorded_time} onChange={e => setNoteForm(p => ({ ...p, recorded_time: e.target.value }))}/></div>
+              <div><label className="label">Time</label><input className="input" type="time" value={noteForm.recorded_time} onChange={e => setNoteForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
               <div>
                 <label className="label">Entry Type</label>
                 <select className="input" value={noteForm.entry_type} onChange={e => setNoteForm(p => ({ ...p, entry_type: e.target.value as any }))}>
@@ -939,8 +948,8 @@ function NursingChart({ admission, onBack, currentUserName }: {
             </div>
             {noteForm.entry_type === 'medication' && (
               <div className="grid grid-cols-3 gap-3">
-                <div><label className="label">Drug Name</label><input className="input" placeholder="e.g. Metronidazole" value={noteForm.medication_name} onChange={e => setNoteForm(p => ({ ...p, medication_name: e.target.value }))}/></div>
-                <div><label className="label">Dose</label><input className="input" placeholder="500mg" value={noteForm.medication_dose} onChange={e => setNoteForm(p => ({ ...p, medication_dose: e.target.value }))}/></div>
+                <div><label className="label">Drug Name</label><input className="input" placeholder="e.g. Metronidazole" value={noteForm.medication_name} onChange={e => setNoteForm(p => ({ ...p, medication_name: e.target.value }))} /></div>
+                <div><label className="label">Dose</label><input className="input" placeholder="500mg" value={noteForm.medication_dose} onChange={e => setNoteForm(p => ({ ...p, medication_dose: e.target.value }))} /></div>
                 <div><label className="label">Route</label>
                   <select className="input" value={noteForm.medication_route} onChange={e => setNoteForm(p => ({ ...p, medication_route: e.target.value }))}>
                     {['IV', 'IM', 'SC', 'Oral', 'Rectal', 'Topical', 'Inhalation'].map(r => <option key={r}>{r}</option>)}
@@ -951,11 +960,11 @@ function NursingChart({ admission, onBack, currentUserName }: {
             <div>
               <label className="label">{noteForm.entry_type === 'medication' ? 'Administration Note' : 'Note'}</label>
               <textarea className="input" rows={3} placeholder={noteForm.entry_type === 'medication' ? 'Any adverse reaction, site, timing notes…' : 'Nursing observation, patient complaint, action taken…'}
-                value={noteForm.note_text} onChange={e => setNoteForm(p => ({ ...p, note_text: e.target.value }))}/>
+                value={noteForm.note_text} onChange={e => setNoteForm(p => ({ ...p, note_text: e.target.value }))} />
             </div>
             <button onClick={saveNote} disabled={saving}
               className="btn-primary flex items-center gap-2 text-xs disabled:opacity-60">
-              <Save className="w-3.5 h-3.5"/>{saving ? 'Saving…' : 'Save Entry'}
+              <Save className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Save Entry'}
             </button>
           </div>
         )}
@@ -964,7 +973,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       {/* Photos & Documents Upload */}
       <div className="card p-5 mb-5">
         <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-green-500"/> Photos &amp; Documents
+          <FileText className="w-4 h-4 text-green-500" /> Photos &amp; Documents
           <span className="text-xs text-gray-400 font-normal">(AI auto-extraction enabled)</span>
         </h3>
         <IPDFileUpload
@@ -995,7 +1004,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       {/* Chart History */}
       {loading ? (
         <div className="flex items-center justify-center h-24">
-          <div className="w-6 h-6 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"/>
+          <div className="w-6 h-6 border-4 border-purple-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
         <div className="card overflow-hidden">
@@ -1024,8 +1033,8 @@ function NursingChart({ admission, onBack, currentUserName }: {
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize
                         ${e.entry_type === 'vital' ? 'bg-blue-50 text-blue-700'
                           : e.entry_type === 'io' ? 'bg-cyan-50 text-cyan-700'
-                          : e.entry_type === 'medication' ? 'bg-purple-50 text-purple-700'
-                          : 'bg-gray-100 text-gray-600'}`}>
+                            : e.entry_type === 'medication' ? 'bg-purple-50 text-purple-700'
+                              : 'bg-gray-100 text-gray-600'}`}>
                         {e.entry_type}
                       </span>
                     </td>

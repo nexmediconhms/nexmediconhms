@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
+import { checkAppointmentOverlap } from '@/lib/booking-guards'
 import { getIndiaToday } from '@/lib/utils'
 import DatePickerNoSunday from '@/components/shared/DatePickerNoSunday'
 
@@ -232,6 +233,17 @@ function AppointmentsContent() {
         return
       }
     }
+    // ── Phase 1 additive guard: pre-insert overlap / double-book check ─────
+    const overlapGuard = await checkAppointmentOverlap({
+      patientId: selPatient.id,
+      date: apptDate,
+      time: apptTime,
+      durationMin: 15,
+    })
+    if (!overlapGuard.ok) {
+      setSaveError(overlapGuard.reason)
+      return
+    }
 
     setSaving(true); setSaveError('')
 
@@ -405,8 +417,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
                 <button
                   onClick={() => setReminderTab('patient')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'patient'
-                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                    ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
                     }`}
                 >
                   <MessageCircle className="w-4 h-4" />
@@ -416,8 +428,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
                 <button
                   onClick={() => setReminderTab('doctor')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${reminderTab === 'doctor'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
                     }`}
                 >
                   <Stethoscope className="w-4 h-4" />
@@ -710,9 +722,8 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
             </div>
             <div className="space-y-2">
               {otSchedules.slice(0, 5).map(ot => (
-                <div key={ot.id} className={`flex items-center gap-3 bg-white border rounded-lg p-3 ${
-                  ot.surgery_date === today ? 'border-purple-300 shadow-sm' : 'border-gray-100'
-                }`}>
+                <div key={ot.id} className={`flex items-center gap-3 bg-white border rounded-lg p-3 ${ot.surgery_date === today ? 'border-purple-300 shadow-sm' : 'border-gray-100'
+                  }`}>
                   <div className="text-center min-w-[52px]">
                     <div className="text-sm font-bold text-gray-800">{ot.start_time}</div>
                     <div className="text-xs text-gray-400">{ot.surgery_date === today ? 'Today' : formatDate(ot.surgery_date)}</div>
@@ -721,11 +732,10 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-gray-900">{ot.patient_name}</span>
                       <span className="text-xs text-gray-400">{ot.mrn}</span>
-                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                        ot.priority === 'emergency' ? 'bg-red-100 text-red-700' :
-                        ot.priority === 'urgent' ? 'bg-orange-100 text-orange-700' :
-                        'bg-gray-100 text-gray-500'
-                      }`}>{ot.priority}</span>
+                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${ot.priority === 'emergency' ? 'bg-red-100 text-red-700' :
+                          ot.priority === 'urgent' ? 'bg-orange-100 text-orange-700' :
+                            'bg-gray-100 text-gray-500'
+                        }`}>{ot.priority}</span>
                     </div>
                     <div className="text-xs text-gray-600 mt-0.5">{ot.surgery_name} · {ot.ot_room} · Dr. {ot.surgeon}</div>
                   </div>

@@ -5,6 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getHospitalSettings, getIndiaToday, isSunday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { checkOTRoomConflict } from '@/lib/booking-guards'
 import {
     Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
     ChevronLeft, ChevronRight, Search, Calendar, ArrowLeft,
@@ -229,6 +230,22 @@ export default function OTSchedulePage() {
             const c = conflicts[0]
             if (!confirm(`⚠️ Conflict: "${c.surgery_name}" for ${c.patient_name} (${c.start_time}-${c.end_time}). Book anyway?`)) { setSaving(false); return }
         }
+
+        // ── Phase 1 additive guard: unified OT room conflict check ─────────
+        // This duplicates the inline check above on purpose - the unified
+        // guard also covers edge cases (invalid time strings, etc.) and
+        // shares the contract used by DB-level EXCLUDE constraints.
+        const otGuard = await checkOTRoomConflict({
+            otRoom: form.ot_room,
+            surgeryDate: form.surgery_date,
+            startTime: form.start_time,
+            endTime: form.end_time,
+        })
+        if (!otGuard.ok) {
+            setError(otGuard.reason)
+            setSaving(false)
+            return
+        }
         // Validate end time is after start time
         if (form.end_time <= form.start_time) {
             setError('End time must be after start time')
@@ -335,12 +352,11 @@ Post-Op: ${notes}` : ''}`,
                                                     <span className="text-gray-400 ml-2 text-xs">{s.mrn}</span>
                                                     <div className="text-xs text-gray-500 mt-0.5">GA: {s.ga_weeks}w · EDD: {formatDate(s.edd)}</div>
                                                 </div>
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                                    s.days_until_delivery <= 0 ? 'bg-red-100 text-red-700' :
-                                                    s.days_until_delivery <= 3 ? 'bg-orange-100 text-orange-700' :
-                                                    s.days_until_delivery <= 7 ? 'bg-yellow-100 text-yellow-700' :
-                                                    'bg-blue-100 text-blue-600'
-                                                }`}>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${s.days_until_delivery <= 0 ? 'bg-red-100 text-red-700' :
+                                                        s.days_until_delivery <= 3 ? 'bg-orange-100 text-orange-700' :
+                                                            s.days_until_delivery <= 7 ? 'bg-yellow-100 text-yellow-700' :
+                                                                'bg-blue-100 text-blue-600'
+                                                    }`}>
                                                     {s.days_until_delivery <= 0 ? `${Math.abs(s.days_until_delivery)}d overdue` : `${s.days_until_delivery}d away`}
                                                 </span>
                                             </button>
@@ -424,12 +440,11 @@ Post-Op: ${notes}` : ''}`,
                                 }} className="flex-shrink-0 bg-white border border-pink-100 rounded-lg px-3 py-2 hover:border-pink-300 hover:shadow-sm transition-all text-left min-w-[160px]">
                                     <div className="text-xs font-semibold text-gray-900 truncate">{s.patient_name}</div>
                                     <div className="text-xs text-gray-500">{s.mrn} · GA {s.ga_weeks}w</div>
-                                    <div className={`text-xs font-bold mt-1 ${
-                                        s.days_until_delivery <= 0 ? 'text-red-600' :
-                                        s.days_until_delivery <= 3 ? 'text-orange-600' :
-                                        s.days_until_delivery <= 7 ? 'text-yellow-700' :
-                                        'text-blue-600'
-                                    }`}>
+                                    <div className={`text-xs font-bold mt-1 ${s.days_until_delivery <= 0 ? 'text-red-600' :
+                                            s.days_until_delivery <= 3 ? 'text-orange-600' :
+                                                s.days_until_delivery <= 7 ? 'text-yellow-700' :
+                                                    'text-blue-600'
+                                        }`}>
                                         EDD: {formatDate(s.edd)} ({s.days_until_delivery <= 0 ? `${Math.abs(s.days_until_delivery)}d overdue` : `${s.days_until_delivery}d`})
                                     </div>
                                 </button>
