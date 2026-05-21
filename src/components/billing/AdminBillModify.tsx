@@ -21,6 +21,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
 import { useAuth } from '@/lib/auth'
+import { saveBillVersion, getBillVersionHistory, type BillVersion } from '@/lib/bill-versioning'
 import {
   Save, AlertTriangle, Lock, Edit3, History, ChevronDown, ChevronUp,
   Receipt, ShieldCheck, Info,
@@ -52,7 +53,7 @@ interface AdminBillModifyProps {
 }
 
 export default function AdminBillModify({ bill, onUpdated }: AdminBillModifyProps) {
-  const { isAdmin } = useAuth()
+  const { isAdmin, user } = useAuth()
   const { showSuccess, showError, showWarning, ToastContainer } = useToast()
   const [editing, setEditing] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -134,6 +135,31 @@ export default function AdminBillModify({ bill, onUpdated }: AdminBillModifyProp
 
     setSaving(true)
     try {
+      // ── IMMUTABLE VERSION TRACKING ──
+      // Save a complete snapshot of the current bill BEFORE modifying
+      await saveBillVersion({
+        billId: bill.id,
+        currentBill: {
+          id: bill.id,
+          patient_name: bill.patient_name,
+          mrn: bill.mrn,
+          net_amount: bill.net_amount,
+          subtotal: bill.subtotal,
+          discount: bill.discount,
+          gst_amount: bill.gst_amount,
+          gst_percent: bill.gst_percent,
+          items: bill.items,
+          status: bill.status,
+          payment_mode: bill.payment_mode,
+          created_at: bill.created_at,
+          notes: bill.notes,
+        },
+        modifier: user?.full_name || 'Unknown Admin',
+        modificationType: modType,
+        reason: reason.trim(),
+        newAmount: finalNet,
+      })
+
       const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
       const modNote = `[ADMIN MODIFIED] ${timestamp} | ${modType.toUpperCase()}: ₹${bill.net_amount} → ₹${finalNet.toFixed(2)} | Reason: ${reason.trim()}`
       const existingNotes = bill.notes ? bill.notes + '\n' : ''

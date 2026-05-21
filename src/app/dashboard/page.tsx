@@ -270,8 +270,18 @@ function NextOPDPatientCard() {
     }
 
     loadOPDStatus()
-    const interval = setInterval(loadOPDStatus, 30000) // refresh every 30 seconds
-    return () => clearInterval(interval)
+
+    // FIX: Use Supabase Realtime instead of polling every 30s
+    const channel = supabase
+      .channel('dashboard-opd-status')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' }, () => {
+        loadOPDStatus()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   if (loading) {
@@ -497,8 +507,40 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load()
-    const interval = setInterval(load, 5 * 60 * 1000)  // refresh every 5 min
-    return () => clearInterval(interval)
+    const interval = setInterval(load, 3 * 60 * 1000)  // refresh every 3 min (reduced from 5)
+
+    // ── Realtime subscription — debounced auto-refresh on data changes ──
+    // FIX: Debounce rapid events (e.g., multiple queue changes within 1s)
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        load()
+      }, 800) // Wait 800ms after last event before reloading
+    }
+
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, debouncedLoad)
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Dashboard Realtime] Subscription issue:', status, err)
+          // Retry subscription after 5s
+          setTimeout(() => {
+            supabase.removeChannel(channel)
+          }, 5000)
+        }
+      })
+
+    return () => {
+      clearInterval(interval)
+      if (debounceTimer) clearTimeout(debounceTimer)
+      supabase.removeChannel(channel)
+    }
   }, [load])
 
   // ── Data loaders ────────────────────────────────────────────
@@ -506,7 +548,7 @@ export default function DashboardPage() {
   async function loadRevenue(today: string, weekAgo: string) {
     const [todayBills, weekBills, targetSetting] = await Promise.all([
       supabase.from('bills')
-        .select('total, paid, due, status')
+        .select('total, paid, due, status, net_amount')
         .gte('created_at', today + 'T00:00:00')
         .lte('created_at', today + 'T23:59:59'),
 
@@ -520,18 +562,22 @@ export default function DashboardPage() {
         .single(),
     ])
 
-    const bills        = todayBills.data || []
-    const todayRevenue = bills.reduce((s, b) => s + Number(b.paid || 0), 0)
-    const pending      = bills.filter(b => b.status !== 'paid')
-    const weekRevenue  = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+    const bills = todayBills.data || []
+    // FIX: Handle both schema versions — use `paid` if available, fallback to `net_amount`
+    const todayRevenue = bills.reduce((s, b) => {
+      const amount = Number(b.paid || b.net_amount || 0)
+      return s + (b.status === 'paid' || Number(b.paid) > 0 ? amount : 0)
+    }, 0)
+    const pending = bills.filter(b => b.status !== 'paid' && b.status !== 'cancelled')
+    const weekRevenue = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
 
     setData(d => ({
       ...d,
       todayRevenue,
-      weekRevenue,
+      weekRevenue: weekRevenue || todayRevenue, // fallback if bill_payments table is empty
       todayTarget:       Number(targetSetting.data?.value || 0),
       pendingBillsCount: pending.length,
-      pendingBillsAmt:   pending.reduce((s, b) => s + Number(b.due || 0), 0),
+      pendingBillsAmt:   pending.reduce((s, b) => s + Number(b.due || b.net_amount || 0), 0),
     }))
 
     // Billing actions
@@ -710,7 +756,7 @@ export default function DashboardPage() {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                 Revenue Opportunities
               </h2>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <PillarCard
                   icon={Target}
                   title="Fill Empty Slots"

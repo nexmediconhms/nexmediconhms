@@ -231,6 +231,74 @@ function QueueContent() {
     return ((data?.[0]?.token_number ?? 0) as number) + 1
   }
 
+  // ── Remind patient (WhatsApp message) ─────────────────────
+  async function handleRemindPatient(entry: QueueEntry) {
+    // Get patient mobile number
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('mobile')
+      .eq('id', entry.patient_id)
+      .single()
+
+    const mobile = patient?.mobile?.replace(/\D/g, '')
+    if (!mobile) {
+      setError(`No mobile number found for ${entry.patient_name}. Cannot send reminder.`)
+      return
+    }
+
+    // Calculate position in queue
+    const waitingBefore = queue.filter(q =>
+      q.status === 'waiting' && q.token_number < entry.token_number
+    ).length
+
+    const message = encodeURIComponent(
+      `Hi ${entry.patient_name}, your turn is approaching. ` +
+      `You are #${entry.token_number} in the OPD queue` +
+      (waitingBefore > 0 ? ` (${waitingBefore} patient${waitingBefore > 1 ? 's' : ''} ahead)` : ' (you are next!)') +
+      `. Please be ready near the consultation room. Thank you.`
+    )
+
+    // Open WhatsApp with pre-filled message
+    const whatsappUrl = `https://wa.me/91${mobile}?text=${message}`
+    window.open(whatsappUrl, '_blank')
+
+    await audit('update', 'encounter', entry.id,
+      `Reminder sent to ${entry.patient_name} (Token #${entry.token_number}) via WhatsApp`)
+  }
+
+  // ── Remove from queue with confirmation ───────────────────
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState<QueueEntry | null>(null)
+  const [removeReason, setRemoveReason] = useState('')
+
+  async function handleRemoveFromQueue(entry: QueueEntry) {
+    setShowRemoveConfirm(entry)
+    setRemoveReason('')
+  }
+
+  async function confirmRemoveFromQueue() {
+    if (!showRemoveConfirm) return
+
+    const reason = removeReason || 'No reason provided'
+    const patch: any = {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+      notes: showRemoveConfirm.notes
+        ? `${showRemoveConfirm.notes} | REMOVED: ${reason}`
+        : `REMOVED: ${reason}`
+    }
+
+    const { error: e } = await supabase
+      .from('opd_queue').update(patch).eq('id', showRemoveConfirm.id)
+
+    if (e) { setError(e.message); setShowRemoveConfirm(null); return }
+
+    await audit('delete', 'encounter', showRemoveConfirm.id,
+      `Queue token #${showRemoveConfirm.token_number} — ${showRemoveConfirm.patient_name} REMOVED. Reason: ${reason}`)
+
+    setShowRemoveConfirm(null)
+    setRemoveReason('')
+  }
+
   // ── Add to queue ──────────────────────────────────────────
   async function handleAddToQueue() {
     if (!addPatientId) { setError('Select a patient.'); return }
@@ -275,7 +343,7 @@ function QueueContent() {
       <div className="max-w-4xl mx-auto px-4 py-6">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-600" /> OPD Queue
@@ -291,7 +359,7 @@ function QueueContent() {
               {lastUpdate && <span className="ml-2 text-xs text-gray-400">· Updated {lastUpdate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Date Filter */}
             <div className="flex items-center gap-2">
               <button
@@ -402,12 +470,23 @@ function QueueContent() {
                     <div className="flex gap-2 flex-shrink-0">
                       {entry.status === 'waiting' && (
                         <>
-                          <button onClick={() => updateStatus(entry, 'in_progress')}
-                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                            <Play className="w-3 h-3" /> Call
+                          <button onClick={() => {
+                            updateStatus(entry, 'in_progress')
+                            // Navigate to OPD consultation for this patient
+                            window.location.href = `/opd/new?patient=${entry.patient_id}`
+                          }}
+                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                            title="Start OPD consultation">
+                            <Play className="w-3 h-3" /> Start OPD
                           </button>
-                          <button onClick={() => updateStatus(entry, 'cancelled')}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                          <button onClick={() => handleRemindPatient(entry)}
+                            className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-lg"
+                            title="Send reminder to patient">
+                            <Clock className="w-3 h-3" /> Remind
+                          </button>
+                          <button onClick={() => handleRemoveFromQueue(entry)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                            title="Remove from queue">
                             <X className="w-4 h-4" />
                           </button>
                         </>
@@ -432,6 +511,65 @@ function QueueContent() {
           </div>
         )}
       </div>
+
+      {/* ── Remove Confirmation Modal ── */}
+      {showRemoveConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Remove from Queue?</h3>
+                <p className="text-xs text-gray-500">
+                  #{String(showRemoveConfirm.token_number).padStart(2, '0')} — {showRemoveConfirm.patient_name}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="label">Reason for removal</label>
+              <select
+                className="input mb-2"
+                value={removeReason}
+                onChange={e => setRemoveReason(e.target.value)}
+              >
+                <option value="">Select reason...</option>
+                <option value="Patient did not show up">Patient did not show up (No-show)</option>
+                <option value="Patient left before turn">Patient left before turn</option>
+                <option value="Duplicate entry">Duplicate entry</option>
+                <option value="Appointment rescheduled">Appointment rescheduled</option>
+                <option value="Patient request">Patient requested removal</option>
+                <option value="Other">Other</option>
+              </select>
+              {removeReason === 'Other' && (
+                <input
+                  className="input"
+                  placeholder="Specify reason..."
+                  onChange={e => setRemoveReason(e.target.value)}
+                />
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={confirmRemoveFromQueue}
+                disabled={!removeReason}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <X className="w-4 h-4" /> Remove
+              </button>
+              <button
+                onClick={() => { setShowRemoveConfirm(null); setRemoveReason('') }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Add to Queue modal ── */}
       {showAddModal && (
