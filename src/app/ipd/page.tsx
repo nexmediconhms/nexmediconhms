@@ -485,6 +485,17 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
         admission_date:   form.admission_date,
       }).eq('id', form.bed_id)
 
+      // Send notification for IPD admission
+      try {
+        const { default: notify } = await import('@/lib/notifications')
+        await notify.ipdAdmission(
+          selectedPatient.id,
+          selectedPatient.full_name,
+          beds.find(b => b.id === form.bed_id)?.bed_number || '',
+          beds.find(b => b.id === form.bed_id)?.ward || ''
+        )
+      } catch { /* non-fatal */ }
+
       setSaved(true)
       setTimeout(() => { setSaved(false); onSuccess() }, 1500)
     } else {

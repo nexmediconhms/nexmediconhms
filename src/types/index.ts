@@ -163,6 +163,9 @@ export interface Bed {
   patient_name?: string
   admission_date?: string
   expected_discharge?: string
+  floor?: string
+  bed_type?: string
+  updated_at?: string
 }
 
 export interface DischargeSummary {

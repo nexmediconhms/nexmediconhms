@@ -558,6 +558,12 @@ function NewConsultationContent() {
     setSaving(false)
     if (encErr || !enc) { setError(`Failed to save: ${encErr?.message}`); return }
 
+    // Send notification for OPD consultation
+    try {
+      const { default: notify } = await import('@/lib/notifications')
+      await notify.opdConsultationSaved(patientId!, patient?.full_name || '', diagnosis.trim() || undefined)
+    } catch { /* non-fatal */ }
+
     // Link any files uploaded before save (encounter_id was null) to the new encounter
     try {
       await supabase.from('consultation_attachments')

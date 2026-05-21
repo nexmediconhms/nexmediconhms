@@ -6,7 +6,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike } from '@/lib/utils'
-import { Search, Stethoscope, UserPlus, ChevronRight, Clock, Zap } from 'lucide-react'
+import { Search, Stethoscope, UserPlus, ChevronRight, Clock, Zap, Users } from 'lucide-react'
 
 interface PatientRow {
   id: string
@@ -126,6 +126,9 @@ function OPDIndexContent() {
           </p>
         </div>
 
+        {/* ── Current OPD Queue Banner ── */}
+        <OPDQueueBanner />
+
         {!searched && (
           <div className="card p-5 mb-5">
             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-3">
@@ -197,6 +200,83 @@ function OPDIndexContent() {
         </div>
       </div>
     </AppShell>
+  )
+}
+
+// ── OPD Queue Banner — shows current & next patient at top of consultation page ──
+function OPDQueueBanner() {
+  const [current, setCurrent] = useState<any>(null)
+  const [next, setNext] = useState<any>(null)
+  const [queueCount, setQueueCount] = useState(0)
+  const router = useRouter()
+
+  useEffect(() => {
+    async function loadQueue() {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      const { data } = await supabase
+        .from('opd_queue')
+        .select('id, token_number, status, patient_id, patients!inner(full_name, mrn, mobile)')
+        .eq('queue_date', today)
+        .in('status', ['in_progress', 'waiting'])
+        .order('status', { ascending: false })
+        .order('token_number', { ascending: true })
+        .limit(10)
+
+      if (data && data.length > 0) {
+        const inProgress = data.find((q: any) => q.status === 'in_progress')
+        const waiting = data.filter((q: any) => q.status === 'waiting')
+        setCurrent(inProgress ? { ...inProgress, patient_name: (inProgress.patients as any)?.full_name, mrn: (inProgress.patients as any)?.mrn } : null)
+        setNext(waiting.length > 0 ? { ...waiting[0], patient_name: (waiting[0].patients as any)?.full_name, mrn: (waiting[0].patients as any)?.mrn } : null)
+        setQueueCount(waiting.length)
+      } else {
+        setCurrent(null)
+        setNext(null)
+        setQueueCount(0)
+      }
+    }
+    loadQueue()
+    const ch = supabase.channel('opd-queue-banner')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' }, () => loadQueue())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
+  if (!current && !next) return null
+
+  return (
+    <div className="mb-5 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+          <Users className="w-4 h-4" /> OPD Queue
+          {queueCount > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{queueCount} waiting</span>}
+        </h3>
+        <Link href="/queue" className="text-xs text-blue-600 hover:underline font-medium">Manage Queue →</Link>
+      </div>
+      <div className="flex gap-3">
+        {current && (
+          <div className="flex-1 bg-white border-2 border-blue-300 rounded-lg p-3">
+            <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wide mb-1">Now Seeing</div>
+            <div className="font-semibold text-gray-900 text-sm">{current.patient_name}</div>
+            <div className="text-xs text-gray-500">#{String(current.token_number).padStart(2, '0')} · {current.mrn}</div>
+            <button onClick={() => router.push(`/opd/new?patient=${current.patient_id}`)}
+              className="mt-2 w-full text-xs bg-blue-600 text-white py-1.5 rounded-lg font-medium hover:bg-blue-700">
+              Continue Consultation
+            </button>
+          </div>
+        )}
+        {next && (
+          <div className="flex-1 bg-white border border-purple-200 rounded-lg p-3">
+            <div className="text-[10px] font-bold text-purple-600 uppercase tracking-wide mb-1">Next Up</div>
+            <div className="font-semibold text-gray-900 text-sm">{next.patient_name}</div>
+            <div className="text-xs text-gray-500">#{String(next.token_number).padStart(2, '0')} · {next.mrn}</div>
+            <button onClick={() => router.push(`/opd/new?patient=${next.patient_id}`)}
+              className="mt-2 w-full text-xs bg-purple-600 text-white py-1.5 rounded-lg font-medium hover:bg-purple-700">
+              Start Consultation
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
