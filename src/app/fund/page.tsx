@@ -286,11 +286,14 @@ export default function FundPage() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true); setSaveError('')
+    // Build description with receipt ref and submitter info appended
+    const descParts = [expenseForm.description.trim()]
+    if (expenseForm.receipt_note.trim()) descParts.push(`[Ref: ${expenseForm.receipt_note.trim()}]`)
+    descParts.push(`[By: ${user?.full_name || 'Unknown'}]`)
     const { error } = await supabase.from('hospital_fund').insert({
       type: 'expense', category: expenseForm.category,
       amount: Number(expenseForm.amount),
-      description: `${expenseForm.description.trim()} [By: ${user?.full_name || 'Unknown'}]`,
-      receipt_note: expenseForm.receipt_note.trim() || null,
+      description: descParts.join(' '),
       status: 'pending',
     })
     setSaving(false)
@@ -330,7 +333,7 @@ export default function FundPage() {
   async function updateStatus(id: string, status: 'approved' | 'rejected') {
     await supabase
       .from('hospital_fund')
-      .update({ status, approved_by: user?.full_name, updated_at: new Date().toISOString() })
+      .update({ status, approved_by: user?.full_name })
       .eq('id', id)
     await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
   }
@@ -796,7 +799,7 @@ export default function FundPage() {
                           {tx.type === 'topup' ? '+' : ''}{inr(tx.amount)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{tx.submitted_by || '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{tx.submitted_by}</td>
                       <td className="px-4 py-3">{statusBadge(tx.status)}</td>
                       {isAdmin && (
                         <td className="px-4 py-3">
