@@ -509,6 +509,65 @@ async function processReminders(dryRun: boolean) {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 10. NO-SHOW AUTO-DETECTION
+    // Mark past appointments as 'no-show' if time+60min passed
+    // and still in 'scheduled' or 'confirmed' status
+    // ═══════════════════════════════════════════════════════════
+    try {
+      const nowIST = new Date().toLocaleTimeString('en-IN', {
+        timeZone: IST, hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+      // Only run for today's appointments
+      const { data: overdueAppts } = await supabase
+        .from('appointments')
+        .select('id, patient_id, patient_name, mobile, time, type')
+        .eq('date', today)
+        .in('status', ['scheduled', 'confirmed'])
+
+      let noShowCount = 0
+      for (const appt of overdueAppts || []) {
+        if (!appt.time) continue
+        // Calculate if appointment time + 60 minutes has passed
+        const [h, m] = appt.time.split(':').map(Number)
+        const apptMinutes = (h || 0) * 60 + (m || 0)
+        const [nowH, nowM] = nowIST.split(':').map(Number)
+        const nowMinutes = (nowH || 0) * 60 + (nowM || 0)
+
+        if (nowMinutes > apptMinutes + 60) {
+          // Mark as no-show
+          await supabase
+            .from('appointments')
+            .update({
+              status: 'no-show',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', appt.id)
+            .in('status', ['scheduled', 'confirmed']) // double-check status hasn't changed
+
+          noShowCount++
+
+          // Queue a follow-up reminder for no-show patients
+          if (appt.mobile && appt.patient_id) {
+            if (!(await alreadySentToday(appt.patient_id, `noshow_${appt.id}`))) {
+              reminders.push({
+                patientId: appt.patient_id,
+                patientName: appt.patient_name || '',
+                mobile: appt.mobile,
+                type: `noshow_${appt.id}`,
+                message: `We noticed you missed your ${appt.type || 'appointment'} today at ${appt.time}. Please reschedule at your earliest convenience. Your health is important to us.`,
+              })
+            }
+          }
+        }
+      }
+      if (noShowCount > 0) {
+        console.log(`[cron/reminders] Auto-marked ${noShowCount} appointments as no-show`)
+      }
+    } catch (e: any) {
+      errors.push(`no_show_detection: ${e.message}`)
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // SAVE ALL REMINDERS TO DB (unless dry run)
     // ═══════════════════════════════════════════════════════════
     if (!dryRun && reminders.length > 0) {

@@ -546,6 +546,8 @@ export default function NewPatientPage() {
           status: 'waiting',
           priority: 'normal',
           notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
+          patient_name: success?.name || '',
+          mrn: success?.mrn || '',
         })
       } catch {
         // Non-fatal
@@ -584,7 +586,21 @@ export default function NewPatientPage() {
           status: 'waiting',
           priority: 'normal',
           notes: 'Registered: payment pending',
+          patient_name: success?.name || '',
+          mrn: success?.mrn || '',
         })
+
+        // Fire automation for queue addition (WhatsApp token notification)
+        try {
+          const { fireAutomation } = await import('@/lib/automation-engine')
+          fireAutomation('queue_added', {
+            patientId: successId,
+            patientName: success?.name || '',
+            mobile: successMobile,
+            mrn: success?.mrn || '',
+            tokenNumber: nextToken,
+          })
+        } catch { /* non-fatal */ }
       } catch (e) {
         // Non-fatal
         console.warn('[Registration] queue insert failed:', e)
