@@ -185,6 +185,15 @@ export default function FundPage() {
   const isAdmin   = isAdminCtx
   const roleLoading = authLoading
 
+  // FIX: Timeout for role loading — prevent permanent spinner
+  const [roleTimeout, setRoleTimeout] = useState(false)
+  useEffect(() => {
+    if (authLoading) {
+      const t = setTimeout(() => setRoleTimeout(true), 8000)
+      return () => clearTimeout(t)
+    }
+  }, [authLoading])
+
   // All transactions — used for balance tiles (unfiltered, all-time)
   const [allTransactions,      setAllTransactions]      = useState<FundTransaction[]>([])
   // Filtered transactions shown in the table
@@ -294,13 +303,23 @@ export default function FundPage() {
   async function topUpFund() {
     if (!topupForm.amount || Number(topupForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true); setSaveError('')
-    const { error } = await supabase.from('hospital_fund').insert({
+    const { data, error } = await supabase.from('hospital_fund').insert({
       type: 'topup', category: 'topup', amount: Number(topupForm.amount),
       description: topupForm.note || `Fund top-up by ${user?.full_name}`,
       submitted_by: user?.full_name || 'Admin', approved_by: user?.full_name || 'Admin', status: 'approved',
-    })
+    }).select().single()
     setSaving(false)
     if (error) { setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`); return }
+
+    // Audit log: every fund addition must be tracked
+    try {
+      const { audit } = await import('@/lib/audit')
+      await audit('create', 'fund', data?.id || 'unknown',
+        `[FUND TOP-UP] Amount: ₹${Number(topupForm.amount).toLocaleString('en-IN')} | ` +
+        `Note: ${topupForm.note || 'No note'} | By: ${user?.full_name || 'Admin'} | ` +
+        `New Balance: ₹${(totalTopups + Number(topupForm.amount) - totalApproved).toLocaleString('en-IN')}`)
+    } catch { /* audit non-fatal */ }
+
     setTopupForm({ amount: '', note: '' })
     setShowTopupForm(false)
     await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
@@ -626,10 +645,55 @@ export default function FundPage() {
                     </a>
                   )}
                   {caSettings.caEmail && (
-                    <a href={`mailto:${caSettings.caEmail}?subject=Fund+Expense+Report+${fundReport.period}&body=${buildFundEmail(fundReport, { ...hs, caName: caSettings.caName })}`}
+                    <button
+                      onClick={async () => {
+                        if (!fundReport) return
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession()
+                          const res = await fetch('/api/billing/send-email', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+                            },
+                            body: JSON.stringify({
+                              recipientEmail: caSettings.caEmail,
+                              recipientName: caSettings.caName || 'CA',
+                              reportData: {
+                                period: fundReport.period,
+                                fromDate: fundReport.fromDate,
+                                toDate: fundReport.toDate,
+                                totalGross: fundReport.totalApproved,
+                                totalDiscount: 0,
+                                totalNet: fundReport.totalApproved,
+                                billCount: fundReport.expenseCount,
+                                pendingCount: 0,
+                                pendingAmount: fundReport.totalPending,
+                                paymentBreakdown: fundReport.categoryBreakdown.map(c => ({
+                                  mode: c.category,
+                                  amount: c.amount,
+                                  count: c.count,
+                                })),
+                                serviceBreakdown: [],
+                              },
+                              hospitalSettings: hs,
+                            }),
+                          })
+                          const data = await res.json()
+                          if (data.success && data.method === 'email') {
+                            alert(`Report sent to ${caSettings.caEmail} successfully!`)
+                          } else if (data.mailtoUrl) {
+                            window.open(data.mailtoUrl, '_self')
+                          } else {
+                            alert(data.message || 'Email service not configured. Configure RESEND_API_KEY in environment.')
+                          }
+                        } catch (err: any) {
+                          alert('Failed to send email: ' + err.message)
+                        }
+                      }}
                       className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100">
                       <Mail className="w-3.5 h-3.5" /> Email CA
-                    </a>
+                    </button>
                   )}
                   <button onClick={() => window.print()}
                     className="flex items-center gap-1.5 text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-100">

@@ -66,6 +66,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
 
+    // FIX: Add timeout to prevent infinite loading spinner
+    const timeoutId = setTimeout(() => {
+      console.warn('[AppShell] User loading timed out after 10s')
+      setNoProfile(true)
+      setLoading(false)
+    }, 10000) // 10 second timeout
+
     // Try loading user profile
     let user = await loadClinicUser()
 
@@ -93,6 +100,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
       } catch { /* network error — will show noProfile */ }
     }
+
+    clearTimeout(timeoutId) // Clear timeout — we got a response
 
     if (!user) { setNoProfile(true); setLoading(false); return }
 
