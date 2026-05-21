@@ -279,6 +279,7 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
+          {/* Admin actions: Add/Manage beds — uses can() for robust RBAC check */}
           {(user?.role === 'admin' || can('beds.manage')) && (
             <div className="flex gap-2">
               <button onClick={() => setShowManageBeds(!showManageBeds)}
@@ -391,7 +392,7 @@ export default function BedsPage() {
         )}
 
         {/* Manage Beds Panel (Admin) — Delete / Edit beds */}
-        {showManageBeds && user?.role === 'admin' && (
+        {showManageBeds && (user?.role === 'admin' || can('beds.manage')) && (
           <div className="mb-6 card p-4 border-2 border-orange-200 bg-orange-50/30">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
@@ -451,17 +452,28 @@ export default function BedsPage() {
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : beds.length === 0 ? (
-          <div className="text-center py-16">
-            <BedDouble className="w-16 h-16 mx-auto text-gray-200 mb-4" />
-            <h3 className="text-lg font-bold text-gray-700 mb-2">No Beds Configured</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Add your first bed to start managing IPD admissions.
+          /* Empty state — no beds configured yet */
+          <div className="text-center py-16 card border-2 border-dashed border-gray-300 bg-gray-50/50 rounded-2xl">
+            <BedDouble className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+            <h3 className="text-xl font-bold text-gray-700 mb-2">No Beds Configured</h3>
+            <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+              Your hospital has no beds set up yet. Add beds to start managing IPD admissions, 
+              patient assignments, and bed occupancy tracking.
             </p>
-            {(user?.role === 'admin' || can('beds.manage')) && (
-              <button onClick={() => setShowAddBed(true)}
-                className="btn-primary flex items-center gap-2 mx-auto">
-                <Plus className="w-4 h-4" /> Add Your First Bed
-              </button>
+            {(user?.role === 'admin' || can('beds.manage')) ? (
+              <div className="space-y-3">
+                <button onClick={() => setShowAddBed(true)}
+                  className="btn-primary flex items-center gap-2 mx-auto text-base px-6 py-3">
+                  <Plus className="w-5 h-5" /> Add Your First Bed
+                </button>
+                <p className="text-xs text-gray-400">
+                  You can add beds individually or in bulk (up to 50 at once).
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                Contact your administrator to add beds to the system.
+              </p>
             )}
           </div>
         ) : (
