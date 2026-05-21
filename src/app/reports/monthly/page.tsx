@@ -7,8 +7,6 @@ import {
   TrendingUp, Printer, RefreshCw, ChevronLeft, ChevronRight,
   IndianRupee, Users, Stethoscope, BedDouble
 } from 'lucide-react'
-import CAReportButton from '@/components/reports/CAReportButton'
-import type { CAReportData } from '@/components/reports/CAReportButton'
 
 interface MonthDay {
   date:         string
@@ -172,27 +170,6 @@ export default function MonthlyReportPage() {
             <p className="text-sm text-gray-500">Revenue and patient summary by month</p>
           </div>
           <div className="flex gap-2">
-            <CAReportButton
-              reportData={data ? {
-                title: 'Monthly Revenue Report',
-                period: `${MONTH_NAMES[month - 1]} ${year}`,
-                fromDate: `${year}-${String(month).padStart(2, '0')}-01`,
-                toDate: `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`,
-                summaryRows: [
-                  { label: 'Total Revenue', value: `₹${data.total_revenue.toLocaleString('en-IN')}` },
-                  { label: 'Total Patients', value: String(data.total_patients) },
-                  { label: 'OPD', value: String(data.total_opd) },
-                  { label: 'Pending', value: `₹${data.total_pending.toLocaleString('en-IN')}` },
-                ],
-                tableHeaders: ['Date', 'OPD', 'IPD', 'Cash', 'UPI', 'Card', 'Total'],
-                tableRows: data.days.filter(d => !isSunday(d.date)).map(d => [
-                  d.date, String(d.opd), String(d.ipd),
-                  `₹${d.cash.toLocaleString('en-IN')}`, `₹${d.upi.toLocaleString('en-IN')}`,
-                  `₹${d.card.toLocaleString('en-IN')}`, `₹${d.total_revenue.toLocaleString('en-IN')}`,
-                ]),
-                totalRow: ['TOTAL', String(data.total_opd), String(data.total_ipd), `₹${data.total_cash.toLocaleString('en-IN')}`, `₹${data.total_upi.toLocaleString('en-IN')}`, `₹${data.total_card.toLocaleString('en-IN')}`, `₹${data.total_revenue.toLocaleString('en-IN')}`],
-              } : null}
-            />
             <button onClick={() => window.print()}
               className="btn-secondary flex items-center gap-2 text-xs no-print">
               <Printer className="w-3.5 h-3.5"/> Print
