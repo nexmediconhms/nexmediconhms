@@ -1,22 +1,32 @@
 /**
  * src/app/api/insurance/sync/route.ts
  *
- * Insurance Auto-Sync API
+ * Insurance Claims Auto-Sync API
  *
- * GET  /api/insurance/sync?filter=all|no_claim|admitted|discharged
- *   Returns patients with mediclaim=Yes or cashless=Yes, with their claim status.
+ * This endpoint automatically syncs insurance data from patient registration
+ * to the insurance claims module. It handles:
  *
- * POST /api/insurance/sync
- *   Auto-creates an insurance_claims entry for a patient.
- *   Body: { patient_id, trigger: 'manual'|'admission'|'discharge' }
+ *   1. GET /api/insurance/sync — Returns all patients with insurance who don't
+ *      have active claims yet (potential claims list)
  *
- * This fixes the bug where patients registered with Mediclaim/Cashless=Yes
- * were not appearing in the Insured Patients list.
+ *   2. POST /api/insurance/sync — Auto-creates a claim entry when a patient
+ *      with insurance is admitted/discharged (called by IPD admission/discharge flows)
+ *
+ *   3. PATCH /api/insurance/sync — Updates claim status based on patient events
+ *      (e.g., discharge → claim_submitted, bill paid → settled)
+ *
+ * In Indian clinic context:
+ *   - Patient registers with mediclaim=true, cashless=true, policy details
+ *   - When admitted for surgery/treatment, pre-auth is initiated
+ *   - After discharge, claim documents are submitted
+ *   - TPA reviews → approves/rejects → settlement
+ *   - This API keeps the insurance module in sync with all of this automatically
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const supabase = createClient(
@@ -25,171 +35,192 @@ const supabase = createClient(
   { auth: { persistSession: false } }
 )
 
-// ── GET: List insured patients with sync status ───────────────
+// ── GET: Fetch all insured patients and their claim status ────
 export async function GET(req: NextRequest) {
-  const filter = req.nextUrl.searchParams.get('filter') || 'all'
-
   try {
-    // Step 1: Get all patients with mediclaim or cashless flags
-    const { data: patients, error: patErr } = await supabase
+    const filter = req.nextUrl.searchParams.get('filter') // 'no_claim' | 'all' | 'pending' | 'settled'
+
+    // Get all patients with insurance (mediclaim = true OR cashless = true OR policy_tpa_name is not null)
+    const { data: insuredPatients, error: pErr } = await supabase
       .from('patients')
-      .select('id, full_name, mrn, mobile, age, gender, mediclaim, cashless, policy_tpa_name, policy_number, insurance_company, created_at')
-      .or('mediclaim.eq.Yes,mediclaim.eq.yes,mediclaim.eq.TRUE,mediclaim.eq.true,cashless.eq.Yes,cashless.eq.yes,cashless.eq.TRUE,cashless.eq.true')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at')
+      .or('mediclaim.eq.true,mediclaim.eq.Yes,mediclaim.eq.yes,cashless.eq.true,cashless.eq.Yes,cashless.eq.yes,policy_tpa_name.neq.')
       .order('created_at', { ascending: false })
 
-    if (patErr) {
-      return NextResponse.json({ error: patErr.message }, { status: 500 })
+    if (pErr) {
+      return NextResponse.json({ error: pErr.message }, { status: 500 })
     }
 
-    if (!patients || patients.length === 0) {
-      return NextResponse.json({
-        patients: [],
-        stats: { total_insured: 0, patients_with_claims: 0, patients_without_claims: 0 },
-      })
-    }
-
-    // Step 2: Get existing insurance claims
-    const patientIds = patients.map(p => p.id)
-    const { data: claims } = await supabase
+    // Get all existing claims
+    const { data: existingClaims, error: cErr } = await supabase
       .from('insurance_claims')
-      .select('patient_id, status, claim_amount')
-      .in('patient_id', patientIds)
+      .select('id, patient_id, status, claim_amount, approved_amount, created_at, updated_at')
 
-    const claimsMap = new Map<string, any>()
-    for (const c of claims || []) {
-      claimsMap.set(c.patient_id, c)
+    if (cErr) {
+      return NextResponse.json({ error: cErr.message }, { status: 500 })
     }
 
-    // Step 3: Check IPD admissions for admitted/discharged status
-    const { data: admissions } = await supabase
-      .from('ipd_admissions')
-      .select('patient_id, status, admission_date, ward, bed_number')
-      .in('patient_id', patientIds)
-      .order('admission_date', { ascending: false })
-
-    const admissionMap = new Map<string, any>()
-    for (const a of admissions || []) {
-      if (!admissionMap.has(a.patient_id)) {
-        admissionMap.set(a.patient_id, a)
-      }
+    // Build a map of patient_id → claims
+    const claimsByPatient = new Map<string, any[]>()
+    for (const claim of existingClaims || []) {
+      const existing = claimsByPatient.get(claim.patient_id) || []
+      existing.push(claim)
+      claimsByPatient.set(claim.patient_id, existing)
     }
 
-    // Step 4: Build combined list
-    let result = patients.map(p => {
-      const claim = claimsMap.get(p.id)
-      const admission = admissionMap.get(p.id)
+    // Categorize patients
+    const result = (insuredPatients || []).map(p => {
+      const patientClaims = claimsByPatient.get(p.id) || []
+      const hasClaim = patientClaims.length > 0
+      const latestClaim = patientClaims.sort((a: any, b: any) =>
+        new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+      )[0] || null
+
+      const pendingClaims = patientClaims.filter((c: any) =>
+        ['pre_auth_pending', 'claim_submitted', 'under_review', 'query_raised', 'query_resolved'].includes(c.status)
+      )
+      const settledClaims = patientClaims.filter((c: any) => c.status === 'settled')
+      const totalClaimed = patientClaims.reduce((s: number, c: any) => s + (Number(c.claim_amount) || 0), 0)
+      const totalSettled = settledClaims.reduce((s: number, c: any) => s + (Number(c.approved_amount) || 0), 0)
+
       return {
         patient_id: p.id,
         patient_name: p.full_name,
         mrn: p.mrn,
         mobile: p.mobile,
-        age: p.age,
-        gender: p.gender,
         mediclaim: p.mediclaim,
         cashless: p.cashless,
         policy_tpa_name: p.policy_tpa_name,
         policy_number: p.policy_number,
-        insurance_company: p.insurance_company,
         registered_at: p.created_at,
-        // Claim info
-        has_claim: !!claim,
-        claim_status: claim?.status || null,
-        claim_amount: claim?.claim_amount || 0,
-        // IPD info
-        is_admitted: admission?.status === 'active',
-        is_discharged: admission?.status === 'discharged',
-        admission_date: admission?.admission_date || null,
-        ward: admission?.ward || null,
-        bed_number: admission?.bed_number || null,
+        has_claim: hasClaim,
+        total_claims: patientClaims.length,
+        pending_claims: pendingClaims.length,
+        settled_claims: settledClaims.length,
+        total_claimed_amount: totalClaimed,
+        total_settled_amount: totalSettled,
+        latest_claim_status: latestClaim?.status || null,
+        latest_claim_id: latestClaim?.id || null,
       }
     })
 
-    // Step 5: Apply filter
+    // Apply filter
+    let filtered = result
     if (filter === 'no_claim') {
-      result = result.filter(p => !p.has_claim)
-    } else if (filter === 'admitted') {
-      result = result.filter(p => p.is_admitted)
-    } else if (filter === 'discharged') {
-      result = result.filter(p => p.is_discharged)
+      filtered = result.filter(r => !r.has_claim)
+    } else if (filter === 'pending') {
+      filtered = result.filter(r => r.pending_claims > 0)
+    } else if (filter === 'settled') {
+      filtered = result.filter(r => r.settled_claims > 0)
     }
 
-    // Stats
+    // Summary stats
     const stats = {
-      total_insured: patients.length,
-      patients_with_claims: result.filter(p => p.has_claim).length,
-      patients_without_claims: result.filter(p => !p.has_claim).length,
-      admitted: result.filter(p => p.is_admitted).length,
-      discharged: result.filter(p => p.is_discharged).length,
+      total_insured_patients: result.length,
+      patients_without_claims: result.filter(r => !r.has_claim).length,
+      patients_with_pending: result.filter(r => r.pending_claims > 0).length,
+      patients_settled: result.filter(r => r.settled_claims > 0).length,
+      total_pending_amount: result.reduce((s, r) => s + r.total_claimed_amount - r.total_settled_amount, 0),
+      total_settled_amount: result.reduce((s, r) => s + r.total_settled_amount, 0),
     }
 
-    return NextResponse.json({ patients: result, stats, total: result.length })
+    return NextResponse.json({
+      patients: filtered,
+      stats,
+      total: filtered.length,
+    })
   } catch (err: any) {
-    console.error('[insurance/sync] GET error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
 
-// ── POST: Auto-create claim for a patient ─────────────────────
+// ── POST: Auto-create insurance claim from patient event ──────
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { patient_id, trigger = 'manual' } = body
+    const {
+      patient_id,
+      trigger,         // 'admission' | 'discharge' | 'manual' | 'registration'
+      admission_id,    // IPD admission ID (optional)
+      claim_amount,    // Pre-filled amount (optional)
+      diagnosis,       // From IPD admission (optional)
+      surgery_name,    // From OT schedule (optional)
+      admission_date,
+      discharge_date,
+    } = body
 
     if (!patient_id) {
-      return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
+      return NextResponse.json({ error: 'patient_id is required' }, { status: 400 })
     }
 
-    // Get patient info
-    const { data: patient, error: patErr } = await supabase
+    // Fetch patient details
+    const { data: patient, error: pErr } = await supabase
       .from('patients')
-      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, insurance_company')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number')
       .eq('id', patient_id)
       .single()
 
-    if (patErr || !patient) {
+    if (pErr || !patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
     }
 
-    // Check if claim already exists
-    const { data: existingClaim } = await supabase
-      .from('insurance_claims')
-      .select('id')
-      .eq('patient_id', patient_id)
-      .maybeSingle()
-
-    if (existingClaim) {
+    // Verify patient actually has insurance
+    const hasMediclaim = patient.mediclaim === true || patient.mediclaim === 'Yes' || patient.mediclaim === 'yes' || patient.mediclaim === 'true';
+    const hasCashless = patient.cashless === true || patient.cashless === 'Yes' || patient.cashless === 'yes' || patient.cashless === 'true';
+    if (!hasMediclaim && !hasCashless && !patient.policy_tpa_name) {
       return NextResponse.json({
         ok: false,
-        message: 'Claim already exists for this patient',
-        claim_id: existingClaim.id,
+        message: 'Patient does not have insurance/mediclaim. No claim created.',
+        skip: true,
       })
     }
 
-    // Check if patient has IPD admission (for claim context)
-    const { data: admission } = await supabase
-      .from('ipd_admissions')
-      .select('admission_date, diagnosis_on_admission, ward')
+    // Check if there's already an active (non-settled) claim for this patient
+    const { data: existingActive } = await supabase
+      .from('insurance_claims')
+      .select('id, status')
       .eq('patient_id', patient_id)
-      .order('admission_date', { ascending: false })
+      .not('status', 'in', '("settled","rejected")')
       .limit(1)
-      .maybeSingle()
+
+    // If triggered by admission and there's already an active claim, don't create duplicate
+    if (trigger === 'admission' && existingActive && existingActive.length > 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'Active claim already exists for this patient.',
+        existing_claim_id: existingActive[0].id,
+        skip: true,
+      })
+    }
 
     // Create the claim
+    const claimData: any = {
+      patient_id: patient.id,
+      patient_name: patient.full_name,
+      mrn: patient.mrn || '',
+      policy_number: patient.policy_number || null,
+      tpa_name: patient.policy_tpa_name || null,
+      insurance_company: null,
+      claim_amount: Number(claim_amount) || 0,
+      status: trigger === 'admission' ? 'pre_auth_pending' : 'pre_auth_pending',
+      diagnosis: diagnosis || null,
+      surgery_name: surgery_name || null,
+      admission_date: admission_date || null,
+      discharge_date: discharge_date || null,
+      notes: `Auto-created from ${trigger} on ${new Date().toLocaleDateString('en-IN')}`,
+      created_by: 'system',
+      documents_sent: false,
+    }
+
+    // If triggered by discharge, set claim_submitted status
+    if (trigger === 'discharge') {
+      claimData.status = 'claim_submitted'
+      claimData.notes = `Claim auto-submitted after discharge on ${new Date().toLocaleDateString('en-IN')}`
+    }
+
     const { data: newClaim, error: insertErr } = await supabase
       .from('insurance_claims')
-      .insert({
-        patient_id: patient.id,
-        patient_name: patient.full_name,
-        mrn: patient.mrn || '',
-        policy_number: patient.policy_number || null,
-        tpa_name: patient.policy_tpa_name || null,
-        insurance_company: patient.insurance_company || null,
-        claim_amount: 0,
-        status: 'pre_auth_pending',
-        diagnosis: admission?.diagnosis_on_admission || null,
-        admission_date: admission?.admission_date || null,
-        notes: `Auto-created: ${trigger === 'manual' ? 'Manual sync from Insured Patients list' : trigger === 'admission' ? 'Patient admitted to IPD' : 'Patient discharged from IPD'}. Insurance: ${patient.mediclaim === 'Yes' ? 'Mediclaim' : ''}${patient.cashless === 'Yes' ? ' Cashless' : ''}.`,
-      })
+      .insert(claimData)
       .select('id')
       .single()
 
@@ -197,14 +228,96 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: insertErr.message }, { status: 500 })
     }
 
+    // Log to history
+    await supabase.from('insurance_claim_history').insert({
+      claim_id: newClaim.id,
+      old_status: null,
+      new_status: claimData.status,
+      notes: claimData.notes,
+      done_by: 'system',
+    }).then(() => {})
+
     return NextResponse.json({
       ok: true,
       claim_id: newClaim.id,
-      patient_name: patient.full_name,
-      message: `Insurance claim created for ${patient.full_name}`,
+      message: `Insurance claim auto-created for ${patient.full_name}`,
+      trigger,
     })
   } catch (err: any) {
-    console.error('[insurance/sync] POST error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ── PATCH: Update claim based on patient events ───────────────
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { claim_id, patient_id, event, data: eventData } = body
+
+    // Find the claim
+    let claimQuery = supabase.from('insurance_claims').select('*')
+    if (claim_id) {
+      claimQuery = claimQuery.eq('id', claim_id)
+    } else if (patient_id) {
+      claimQuery = claimQuery.eq('patient_id', patient_id).not('status', 'in', '("settled","rejected")').order('created_at', { ascending: false }).limit(1)
+    }
+    const { data: claims } = await claimQuery
+    const claim = claims?.[0]
+    if (!claim) {
+      return NextResponse.json({ ok: false, message: 'No active claim found' })
+    }
+
+    // Handle different events
+    let updates: any = { updated_at: new Date().toISOString() }
+
+    switch (event) {
+      case 'bill_generated':
+        // When bill is generated, update claim amount
+        if (eventData?.bill_amount) {
+          updates.claim_amount = Number(eventData.bill_amount)
+        }
+        break
+
+      case 'bill_paid':
+        // When patient pays (reimbursement case), mark as settled
+        if (!claim.cashless) {
+          updates.status = 'settled'
+          updates.approved_amount = Number(eventData?.paid_amount) || claim.claim_amount
+          updates.settlement_date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+        }
+        break
+
+      case 'discharge':
+        // Auto-advance to claim_submitted after discharge
+        if (['pre_auth_pending', 'pre_auth_approved'].includes(claim.status)) {
+          updates.status = 'claim_submitted'
+          updates.discharge_date = eventData?.discharge_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+        }
+        break
+
+      case 'documents_submitted':
+        updates.documents_sent = true
+        break
+
+      default:
+        return NextResponse.json({ ok: false, message: `Unknown event: ${event}` })
+    }
+
+    await supabase.from('insurance_claims').update(updates).eq('id', claim.id)
+
+    // Log history
+    if (updates.status && updates.status !== claim.status) {
+      await supabase.from('insurance_claim_history').insert({
+        claim_id: claim.id,
+        old_status: claim.status,
+        new_status: updates.status,
+        notes: `Auto-updated from event: ${event}`,
+        done_by: 'system',
+      }).then(() => {})
+    }
+
+    return NextResponse.json({ ok: true, claim_id: claim.id, updates })
+  } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
