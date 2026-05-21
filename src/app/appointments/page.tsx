@@ -4,9 +4,10 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
+import { escapeLike, formatDate, getHospitalSettings, isSunday } from '@/lib/utils'
 import { createAppointment } from '@/lib/services/appointmentService'
 import { getIndiaToday } from '@/lib/utils'
+import DatePickerNoSunday from '@/components/shared/DatePickerNoSunday'
 
 import {
   Calendar, Plus, Search, X, CheckCircle,
@@ -215,6 +216,12 @@ function AppointmentsContent() {
   // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
+
+    // Validate: Clinic is closed on Sundays — no bookings allowed
+    if (isSunday(apptDate)) {
+      setSaveError('Clinic is closed on Sundays. Please select a different date.')
+      return
+    }
 
     // Validate: if date is today, time must be in the future
     if (apptDate === today) {
@@ -556,8 +563,12 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="label">Date</label>
-                <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
+                <DatePickerNoSunday
+                  value={apptDate}
+                  onChange={val => setApptDate(val)}
+                  min={today}
+                  className="input"
+                />
               </div>
               <div>
                 <label className="label">Time</label>

@@ -182,7 +182,8 @@ const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
 export default function FundPage() {
   const { user, isAdmin: isAdminCtx, loading: authLoading } = useAuth()
   const hs        = typeof window !== 'undefined' ? getHospitalSettings() : {} as any
-  const isAdmin   = isAdminCtx
+  // FIX: Use both context isAdmin AND direct role check for resilience
+  const isAdmin   = isAdminCtx || user?.role === 'admin'
   const roleLoading = authLoading
 
   // FIX: Timeout for role loading — prevent permanent spinner
@@ -373,6 +374,13 @@ export default function FundPage() {
               <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
                 <TrendingUp className="w-4 h-4" /> Add Funds
+              </button>
+            )}
+            {/* Show Add Funds button optimistically while auth is loading for admin-like users */}
+            {!isAdmin && authLoading && (
+              <button disabled
+                className="flex items-center gap-2 bg-gray-300 text-gray-500 font-bold text-sm px-4 py-2 rounded-xl cursor-not-allowed">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading...
               </button>
             )}
 
