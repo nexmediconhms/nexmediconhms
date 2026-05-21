@@ -281,7 +281,7 @@ export default function FundPage() {
     setFundReport(computeFundReport(allTransactions, from, to, label))
   }
 
-  // Submit expense
+  // Submit expense — auto-approved (no admin approval needed for operational expenses)
   async function submitExpense() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
@@ -291,7 +291,9 @@ export default function FundPage() {
       amount: Number(expenseForm.amount),
       description: expenseForm.description.trim(),
       receipt_note: expenseForm.receipt_note.trim() || null,
-      submitted_by: user?.full_name || 'Unknown', status: 'pending',
+      submitted_by: user?.full_name || 'Unknown',
+      approved_by: user?.full_name || 'Auto',
+      status: 'approved',
     })
     setSaving(false)
     if (error) { setSaveError(`Failed to submit: ${error.message}`); return }

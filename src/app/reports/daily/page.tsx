@@ -21,8 +21,7 @@ import {
   TrendingUp, Users, Stethoscope, BedDouble,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
-import CAReportButton from '@/components/reports/CAReportButton'
-import type { CAReportData } from '@/components/reports/CAReportButton'
+
 
 interface DailyPatient {
   patient_id:     string
@@ -223,27 +222,6 @@ export default function DailyReportPage() {
               className="btn-secondary flex items-center gap-2 text-xs">
               <Printer className="w-3.5 h-3.5" /> Print Report
             </button>
-            <CAReportButton
-              reportData={stats && stats.patients && stats.patients.length > 0 ? {
-                title: 'Daily Patient Report',
-                period: dateLabel,
-                fromDate: date,
-                toDate: date,
-                summaryRows: [
-                  { label: 'Total Patients', value: String(stats.total_patients) },
-                  { label: 'OPD', value: String(stats.opd_count) },
-                  { label: 'IPD', value: String(stats.ipd_count) },
-                  { label: 'Revenue', value: `₹${stats.total_revenue.toLocaleString('en-IN')}` },
-                ],
-                tableHeaders: ['Patient', 'MRN', 'Type', 'Diagnosis', 'Amount Paid'],
-                tableRows: stats.patients.slice(0, 50).map((p: any) => [
-                  p.patient_name, p.mrn, p.type,
-                  p.diagnosis || '—',
-                  `₹${p.total_paid.toLocaleString('en-IN')}`,
-                ]),
-                totalRow: ['TOTAL', '', '', '', `₹${stats.total_revenue.toLocaleString('en-IN')}`],
-              } : null}
-            />
             <button onClick={() => loadDay(date)}
               className="btn-secondary flex items-center gap-2 text-xs">
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
