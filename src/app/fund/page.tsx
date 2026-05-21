@@ -286,12 +286,14 @@ export default function FundPage() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true); setSaveError('')
+    // Build description with receipt ref and submitter appended (these columns don't exist in DB)
+    const descParts = [expenseForm.description.trim()]
+    if (expenseForm.receipt_note.trim()) descParts.push(`[Ref: ${expenseForm.receipt_note.trim()}]`)
+    descParts.push(`[By: ${user?.full_name || 'Unknown'}]`)
     const { error } = await supabase.from('hospital_fund').insert({
       type: 'expense', category: expenseForm.category,
       amount: Number(expenseForm.amount),
-      description: expenseForm.description.trim(),
-      receipt_note: expenseForm.receipt_note.trim() || null,
-      submitted_by: user?.full_name || 'Unknown',
+      description: descParts.join(' '),
       approved_by: user?.full_name || 'Auto',
       status: 'approved',
     })
