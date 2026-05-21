@@ -214,7 +214,7 @@ function NextOPDPatientCard() {
           patient_id, patients!inner(full_name, mrn, mobile)
         `)
         .eq('queue_date', today)
-        .in('status', ['in_progress', 'waiting'])
+        .in('status', ['in_progress', 'vitals_done', 'waiting'])
         .order('status', { ascending: false })  // in_progress first
         .order('token_number', { ascending: true })
         .limit(5)
@@ -222,7 +222,7 @@ function NextOPDPatientCard() {
       if (queueData && queueData.length > 0) {
         // Find current (in_progress) and next (first waiting)
         const inProgress = queueData.find((q: any) => q.status === 'in_progress')
-        const waiting = queueData.filter((q: any) => q.status === 'waiting')
+        const waiting = queueData.filter((q: any) => q.status === 'waiting' || q.status === 'vitals_done')
 
         if (inProgress) {
           setCurrentPatient({

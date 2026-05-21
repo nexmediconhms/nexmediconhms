@@ -217,14 +217,14 @@ function OPDQueueBanner() {
         .from('opd_queue')
         .select('id, token_number, status, patient_id, patients!inner(full_name, mrn, mobile)')
         .eq('queue_date', today)
-        .in('status', ['in_progress', 'waiting'])
+        .in('status', ['in_progress', 'vitals_done', 'waiting'])
         .order('status', { ascending: false })
         .order('token_number', { ascending: true })
         .limit(10)
 
       if (data && data.length > 0) {
         const inProgress = data.find((q: any) => q.status === 'in_progress')
-        const waiting = data.filter((q: any) => q.status === 'waiting')
+        const waiting = data.filter((q: any) => q.status === 'waiting' || q.status === 'vitals_done')
         setCurrent(inProgress ? { ...inProgress, patient_name: (inProgress.patients as any)?.full_name, mrn: (inProgress.patients as any)?.mrn } : null)
         setNext(waiting.length > 0 ? { ...waiting[0], patient_name: (waiting[0].patients as any)?.full_name, mrn: (waiting[0].patients as any)?.mrn } : null)
         setQueueCount(waiting.length)

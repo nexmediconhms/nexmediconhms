@@ -21,11 +21,11 @@ import { audit } from '@/lib/audit'
 import { escapeLike, formatDateTime } from '@/lib/utils'
 import { handleVisitCompletion } from '@/lib/services/appointmentService'
 import {
-  Users, Plus, X, Clock, CheckCircle, Play,
+  Users, Plus, X, Clock, CheckCircle, Play, Stethoscope,
   AlertTriangle, Loader2, RefreshCw, Zap,
 } from 'lucide-react'
 
-type QueueStatus = 'waiting' | 'in_progress' | 'done' | 'cancelled'
+type QueueStatus = 'waiting' | 'vitals_done' | 'in_progress' | 'done' | 'cancelled'
 type Priority = 'normal' | 'urgent' | 'emergency'
 
 interface QueueEntry {
@@ -48,6 +48,7 @@ interface QueueEntry {
 
 const STATUS_LABELS: Record<QueueStatus, string> = {
   waiting: 'Waiting',
+  vitals_done: 'Vitals Done',
   in_progress: 'In Progress',
   done: 'Done',
   cancelled: 'Cancelled',
@@ -61,6 +62,7 @@ const PRIORITY_STYLES: Record<Priority, string> = {
 
 const STATUS_STYLES: Record<QueueStatus, string> = {
   waiting: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+  vitals_done: 'bg-purple-50 border-purple-200 text-purple-800',
   in_progress: 'bg-blue-50 border-blue-200 text-blue-800',
   done: 'bg-green-50 border-green-200 text-green-700',
   cancelled: 'bg-gray-50 border-gray-200 text-gray-500',
@@ -357,6 +359,7 @@ function QueueContent() {
 
   // ── Stats ──────────────────────────────────────────────────
   const waiting = queue.filter(q => q.status === 'waiting').length
+  const vitalsDone = queue.filter(q => q.status === 'vitals_done').length
   const inProgress = queue.filter(q => q.status === 'in_progress').length
   const done = queue.filter(q => q.status === 'done').length
 
@@ -425,9 +428,10 @@ function QueueContent() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: 'Waiting', count: waiting, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+            { label: 'Vitals Done', count: vitalsDone, color: 'text-purple-700 bg-purple-50 border-purple-200' },
             { label: 'In Progress', count: inProgress, color: 'text-blue-700 bg-blue-50 border-blue-200' },
             { label: 'Done', count: done, color: 'text-green-700 bg-green-50 border-green-200' },
           ].map(s => (
@@ -460,7 +464,7 @@ function QueueContent() {
         ) : (
           <div className="space-y-2">
             {/* Active first */}
-            {['in_progress', 'waiting', 'done', 'cancelled'].map(statusGroup =>
+            {['in_progress', 'vitals_done', 'waiting', 'done', 'cancelled'].map(statusGroup =>
               queue.filter(q => q.status === statusGroup).map(entry => (
                 <div key={entry.id}
                   className={`border rounded-xl px-4 py-3 ${STATUS_STYLES[entry.status]} transition-colors`}>
@@ -493,6 +497,10 @@ function QueueContent() {
                     <div className="flex gap-2 flex-shrink-0">
                       {entry.status === 'waiting' && (
                         <>
+                          <button onClick={() => updateStatus(entry, 'vitals_done')}
+                            className="flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-medium px-2.5 py-1.5 rounded-lg">
+                            <Stethoscope className="w-3 h-3" /> Vitals
+                          </button>
                           <button onClick={() => {
                             updateStatus(entry, 'in_progress')
                             // Navigate to OPD consultation for this patient
@@ -510,6 +518,25 @@ function QueueContent() {
                           <button onClick={() => handleRemoveFromQueue(entry)}
                             className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
                             title="Remove from queue">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {entry.status === 'vitals_done' && (
+                        <>
+                          <button onClick={() => {
+                            updateStatus(entry, 'in_progress')
+                            window.location.href = `/opd/new?patient=${entry.patient_id}`
+                          }}
+                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                            <Play className="w-3 h-3" /> Start OPD
+                          </button>
+                          <button onClick={() => handleRemindPatient(entry)}
+                            className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-lg">
+                            <Clock className="w-3 h-3" /> Remind
+                          </button>
+                          <button onClick={() => handleRemoveFromQueue(entry)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
                             <X className="w-4 h-4" />
                           </button>
                         </>

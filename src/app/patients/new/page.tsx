@@ -561,6 +561,39 @@ export default function NewPatientPage() {
     setPaymentConfirmed(true)
   }
 
+  // Gap 4: Register & add to queue WITHOUT taking payment now.
+  // Used when reception wants to defer billing (insurance, corporate, emergency, etc.)
+  async function handleSkipPayment() {
+    if (!success) return
+
+    if (addToQueue) {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const { data: lastToken } = await supabase
+          .from('opd_queue')
+          .select('token_number')
+          .eq('queue_date', today)
+          .order('token_number', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const nextToken = (lastToken?.token_number || 0) + 1
+        await supabase.from('opd_queue').insert({
+          patient_id: successId,
+          queue_date: today,
+          token_number: nextToken,
+          status: 'waiting',
+          priority: 'normal',
+          notes: 'Registered: payment pending',
+        })
+      } catch (e) {
+        // Non-fatal
+        console.warn('[Registration] queue insert failed:', e)
+      }
+    }
+
+    setPaymentConfirmed(true)
+  }
+
   // ══════════════════════════════════════════════════════════════
   // PAYMENT COLLECTION STEP (shown after patient saved, before success)
   // ══════════════════════════════════════════════════════════════
@@ -661,6 +694,12 @@ export default function NewPatientPage() {
                   : 'bg-gray-300 cursor-not-allowed'
               }`}>
               ✓ Confirm Payment — ₹{paymentAmount || '0'}
+            </button>
+
+            <button
+              onClick={handleSkipPayment}
+              className="w-full mt-2 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 font-medium text-xs transition-all">
+              Skip — Add to Queue, Collect Later
             </button>
 
             <p className="text-xs text-gray-400 text-center mt-3">

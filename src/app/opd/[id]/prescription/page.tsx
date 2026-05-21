@@ -134,6 +134,7 @@ export default function PrescriptionPage() {
   const [dietaryAdvice, setDietaryAdvice] = useState('')
   const [reportsNeeded, setReportsNeeded] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
+  const [followUpTime, setFollowUpTime] = useState('10:00')
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -333,6 +334,7 @@ export default function PrescriptionPage() {
             mrn: patient?.mrn || '',
             mobile: patient?.mobile || null,
             encounterDateLabel: encounter?.encounter_date || '',
+            followUpTime: followUpTime || '10:00',
           }
         )
         console.log('[Prescription] Follow-up synced:', followUpDate)
@@ -372,6 +374,7 @@ export default function PrescriptionPage() {
           mrn: patient.mrn,
           mobile: patient.phone ?? patient.mobile ?? null,
           encounterDateLabel: encounter?.encounter_date || 'recent visit',
+          followUpTime: followUpTime || '10:00',
         })
       } catch (e) {
         console.warn('[Prescription] follow-up creation failed:', e)
@@ -678,6 +681,19 @@ export default function PrescriptionPage() {
                   }
                 }}
               />
+
+              {followUpDate && (
+                <div className="flex items-center gap-2 mt-2">
+                  <label className="text-xs text-gray-500">Time:</label>
+                  <input
+                    className="input py-1 px-2 text-sm w-28"
+                    type="time"
+                    value={followUpTime}
+                    onChange={(e) => setFollowUpTime(e.target.value || '10:00')}
+                  />
+                  <span className="text-xs text-gray-400">Default 10:00 AM</span>
+                </div>
+              )}
 
               {followUpDate && isSunday(followUpDate) ? (
                 <p className="text-xs text-orange-500 mt-1">Sundays excluded — date moved to Monday</p>

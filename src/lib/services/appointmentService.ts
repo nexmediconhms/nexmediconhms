@@ -18,6 +18,8 @@ type CreateFollowUpMeta = {
   mrn?: string
   mobile?: string | null
   encounterDateLabel?: string
+  // Gap 6: optional follow-up appointment time in HH:mm. Defaults to '10:00'.
+  followUpTime?: string
 }
 
 function nowISO() {
@@ -167,7 +169,7 @@ export async function createFollowUp(
         mrn: meta?.mrn ?? '',
         mobile: meta?.mobile ?? '',
         date: new Date(followUpDate).toISOString().split('T')[0],
-        time: '10:00',
+        time: meta?.followUpTime ?? '10:00',
         type: 'follow_up',
         notes,
         status: 'scheduled',
@@ -215,7 +217,7 @@ export async function createFollowUp(
       mrn: meta?.mrn ?? '',
       mobile: meta?.mobile ?? '',
       date: new Date(followUpDate).toISOString().split('T')[0],
-      time: '10:00',
+      time: meta?.followUpTime ?? '10:00',
       type: 'follow_up',
       notes,
       status: 'scheduled',
@@ -283,7 +285,7 @@ export async function handleVisitCompletion(
       .update(patch)
       .eq('patient_id', patientId)
       .eq('queue_date', today)
-      .in('status', ['waiting', 'in_progress'])
+      .in('status', ['waiting', 'vitals_done', 'in_progress'])
   } catch (err) {
     // Non-fatal — visit completion (follow_ups + appointments) already succeeded.
     console.warn('[handleVisitCompletion] queue close failed (non-fatal):', err)

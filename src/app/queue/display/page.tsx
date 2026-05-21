@@ -40,7 +40,7 @@ export default function QueueDisplayPage() {
     if (!data) return
 
     const serving = data.filter(q => q.status === 'serving')
-    const waitingList = data.filter(q => q.status === 'waiting')
+    const waitingList = data.filter(q => q.status === 'waiting' || q.status === 'vitals_done')
 
     setWaiting(waitingList.length)
     

@@ -576,18 +576,50 @@ function NewConsultationContent() {
         .is('encounter_id', null)
     } catch { /* tables may not exist yet — ignore */ }
 
-    // Link today's OPD queue row to this encounter (Gap 2)
-    // Non-fatal: queue row may not exist if patient was started outside the queue.
+    // Sync today's OPD queue row with this encounter (Gap 2 + Gap 3)
+    // - If a queue row exists: link encounter_id + flip status to in_progress.
+    // - If no queue row exists (walk-in / bypass): auto-create one in_progress
+    //   so the queue stays the source of truth for visit counts and stats.
     try {
       const todayDate = getIndiaToday()
-      await supabase
+      const { data: existingRow } = await supabase
         .from('opd_queue')
-        .update({ encounter_id: enc.id, updated_at: new Date().toISOString() })
+        .select('id, status, encounter_id, token_number')
         .eq('patient_id', patientId)
         .eq('queue_date', todayDate)
-        .is('encounter_id', null)
-    } catch {
-      // non-fatal: queue may not have a row for this patient
+        .maybeSingle()
+
+      if (existingRow) {
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (!existingRow.encounter_id) patch.encounter_id = enc.id
+        if (existingRow.status === 'waiting' || existingRow.status === 'vitals_done') {
+          patch.status = 'in_progress'
+          patch.called_at = new Date().toISOString()
+        }
+        await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
+      } else {
+        const { data: maxRow } = await supabase
+          .from('opd_queue')
+          .select('token_number')
+          .eq('queue_date', todayDate)
+          .order('token_number', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const nextToken = ((maxRow?.token_number as number) || 0) + 1
+        await supabase.from('opd_queue').insert({
+          patient_id: patientId,
+          queue_date: todayDate,
+          token_number: nextToken,
+          status: 'in_progress',
+          priority: 'normal',
+          notes: 'Auto-created from direct consultation',
+          called_at: new Date().toISOString(),
+          encounter_id: enc.id,
+        })
+      }
+    } catch (queueErr) {
+      // non-fatal: encounter save succeeded; queue sync can be retried by reception
+      console.warn('[OPD] queue sync failed (non-fatal):', queueErr)
     }
 
     // Clear draft after successful save
