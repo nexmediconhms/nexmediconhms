@@ -504,9 +504,16 @@ export default function DashboardPage() {
   // ── Data loaders ────────────────────────────────────────────
 
   async function loadRevenue(today: string, weekAgo: string) {
-    const [todayBills, weekBills, targetSetting] = await Promise.all([
+    const [todayBills, todayPayments, weekBills, targetSetting] = await Promise.all([
+      // Bills created today
       supabase.from('bills')
-        .select('total, paid, due, status')
+        .select('total, paid, due, status, net_amount')
+        .gte('created_at', today + 'T00:00:00')
+        .lte('created_at', today + 'T23:59:59'),
+
+      // Payments received today (including for older bills paid today)
+      supabase.from('bill_payments')
+        .select('amount')
         .gte('created_at', today + 'T00:00:00')
         .lte('created_at', today + 'T23:59:59'),
 
@@ -520,10 +527,15 @@ export default function DashboardPage() {
         .single(),
     ])
 
-    const bills        = todayBills.data || []
-    const todayRevenue = bills.reduce((s, b) => s + Number(b.paid || 0), 0)
-    const pending      = bills.filter(b => b.status !== 'paid')
-    const weekRevenue  = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+    const bills = todayBills.data || []
+    // Today's revenue = sum of all payments received today (most accurate)
+    // Fallback to bill.paid if bill_payments table has no data
+    const paymentsToday = todayPayments.data || []
+    const todayRevenue = paymentsToday.length > 0
+      ? paymentsToday.reduce((s, p) => s + Number(p.amount || 0), 0)
+      : bills.reduce((s, b) => s + Number(b.paid || 0), 0)
+    const pending = bills.filter(b => b.status !== 'paid')
+    const weekRevenue = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
 
     setData(d => ({
       ...d,
@@ -531,7 +543,7 @@ export default function DashboardPage() {
       weekRevenue,
       todayTarget:       Number(targetSetting.data?.value || 0),
       pendingBillsCount: pending.length,
-      pendingBillsAmt:   pending.reduce((s, b) => s + Number(b.due || 0), 0),
+      pendingBillsAmt:   pending.reduce((s, b) => s + Number(b.due || b.net_amount || 0), 0),
     }))
 
     // Billing actions

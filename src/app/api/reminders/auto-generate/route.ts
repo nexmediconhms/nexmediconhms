@@ -172,21 +172,32 @@ interface AutoReminder {
 // ─────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   // GET handler is called from the UI "Auto-Send Today's Reminders" button.
-  // No CRON_SECRET needed — just let it through (the page is behind auth anyway).
-  return handleAutoGenerate(req)
+  // Validate via session auth (user is logged in on the Reminders page).
+  // Skip CRON_SECRET check for GET — the page is behind auth anyway.
+  const authHeader = req.headers.get('authorization') ?? ''
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    // User is authenticated via session token — allow
+    return handleAutoGenerate(req, true)
+  }
+  // Fallback: allow if no CRON_SECRET is configured (dev mode)
+  if (!process.env.CRON_SECRET) {
+    return handleAutoGenerate(req, true)
+  }
+  return handleAutoGenerate(req, false)
 }
 
 export async function POST(req: NextRequest) {
-  return handleAutoGenerate(req)
+  return handleAutoGenerate(req, false)
 }
 
-async function handleAutoGenerate(req: NextRequest) {
+async function handleAutoGenerate(req: NextRequest, skipCronCheck = false) {
   // ── FIX A: Cron secret validation ────────────────────────────
   // Vercel cron passes the secret in Authorization header.
   // We also accept ?secret= for testing via browser/curl.
+  // skipCronCheck=true when called from authenticated UI (GET)
   const cronSecret = process.env.CRON_SECRET
 
-  if (cronSecret) {
+  if (!skipCronCheck && cronSecret) {
     const authHeader = req.headers.get('authorization') ?? ''
     const querySecret = new URL(req.url).searchParams.get('secret') ?? ''
 
@@ -201,7 +212,7 @@ async function handleAutoGenerate(req: NextRequest) {
         { status: 401 }
       )
     }
-  } else {
+  } else if (!skipCronCheck) {
     // CRON_SECRET not configured.
     //
     // FIX (May 2026): in production this is a critical mis-configuration

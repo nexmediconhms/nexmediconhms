@@ -25,6 +25,19 @@ function nowISO() {
 }
 
 /**
+ * Skip Sundays: if a given date falls on a Sunday, move it to the next Monday.
+ * This ensures no appointments or follow-ups are booked on Sundays.
+ */
+export function skipSunday(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00+05:30') // IST
+  if (d.getDay() === 0) {
+    // Sunday → move to Monday (add 1 day)
+    d.setDate(d.getDate() + 1)
+  }
+  return d.toISOString().split('T')[0]
+}
+
+/**
  * Cancels only FOLLOW-UP related active appointments.
  * DOES NOT cancel manual visits.
  */
@@ -61,6 +74,9 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
     type = 'manual',
   } = params
 
+  // ✅ FIX: Skip Sundays — auto-move to Monday
+  const adjustedDate = skipSunday(date)
+
   // 1) Cancel any existing ACTIVE appointment (scheduled/confirmed)
   await cancelActiveAppointment(patientId)
 
@@ -72,7 +88,7 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
       patient_name: patientName,
       mrn,
       mobile,
-      date,
+      date: adjustedDate,
       time,
       type,
       notes,
@@ -92,7 +108,7 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
 
   // Send notification for new appointment
   try {
-    await notify.appointmentCreated(patientId, patientName, date, time, type)
+    await notify.appointmentCreated(patientId, patientName, adjustedDate, time, type)
   } catch {
     // Non-fatal
   }
@@ -112,6 +128,9 @@ export async function createFollowUp(
   followUpDate: string,
   meta?: CreateFollowUpMeta
 ) {
+  // ✅ FIX: Skip Sundays — auto-move to Monday
+  const adjustedDate = skipSunday(followUpDate)
+
   // 0) Cancel any active appointment first (required by unique index)
   await cancelActiveAppointment(patientId)
 
@@ -127,7 +146,7 @@ export async function createFollowUp(
   // ✅ Prevent duplicate same-date follow-ups
   if (
     existingFu &&
-    existingFu.recommended_date === followUpDate
+    existingFu.recommended_date === adjustedDate
   ) {
     return {
       id: existingFu.id,
@@ -145,7 +164,7 @@ export async function createFollowUp(
     // 2A) Update follow-up date
     const { error: fuUpdateErr } = await supabase
       .from('follow_ups')
-      .update({ recommended_date: followUpDate })
+      .update({ recommended_date: adjustedDate })
       .eq('id', existingFu.id)
 
     if (fuUpdateErr) throw fuUpdateErr
@@ -166,7 +185,7 @@ export async function createFollowUp(
         patient_name: meta?.patientName ?? '',
         mrn: meta?.mrn ?? '',
         mobile: meta?.mobile ?? '',
-        date: new Date(followUpDate).toISOString().split('T')[0],
+        date: adjustedDate,
         time: '10:00',
         type: 'follow_up',
         notes,
@@ -198,7 +217,7 @@ export async function createFollowUp(
     .insert({
       patient_id: patientId,
       created_from_visit_id: encounterId,
-      recommended_date: followUpDate,
+      recommended_date: adjustedDate,
       status: 'pending',
     })
     .select('id')
@@ -214,7 +233,7 @@ export async function createFollowUp(
       patient_name: meta?.patientName ?? '',
       mrn: meta?.mrn ?? '',
       mobile: meta?.mobile ?? '',
-      date: new Date(followUpDate).toISOString().split('T')[0],
+      date: adjustedDate,
       time: '10:00',
       type: 'follow_up',
       notes,

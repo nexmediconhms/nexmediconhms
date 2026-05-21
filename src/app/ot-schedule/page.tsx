@@ -191,6 +191,22 @@ export default function OTSchedulePage() {
     useEffect(() => { loadSchedules() }, [loadSchedules])
     useEffect(() => { if (hs.doctorName && !form.surgeon) setForm(p => ({ ...p, surgeon: hs.doctorName })) }, [hs.doctorName])
 
+    // ✅ FIX: Auto-calculate end time from start_time + estimated_duration_min
+    useEffect(() => {
+        if (!form.start_time || !form.estimated_duration_min) return
+        const durationMin = parseInt(form.estimated_duration_min) || 60
+        const [hh, mm] = form.start_time.split(':').map(Number)
+        const startMinutes = hh * 60 + mm
+        const endMinutes = startMinutes + durationMin
+        const endHH = Math.floor(endMinutes / 60) % 24
+        const endMM = endMinutes % 60
+        const endTime = `${String(endHH).padStart(2, '0')}:${endMM === 0 ? '00' : '30'}`
+        // Only auto-update if end time would be different (avoid infinite loops)
+        if (endTime !== form.end_time) {
+            setForm(p => ({ ...p, end_time: endTime }))
+        }
+    }, [form.start_time, form.estimated_duration_min])
+
     useEffect(() => {
         if (typeof window === 'undefined') return
         const params = new URLSearchParams(window.location.search)
@@ -271,7 +287,7 @@ Post-Op: ${notes}` : ''}`,
         setForm({ surgery_name: SURGERIES[0], surgery_date: today, start_time: '09:00', end_time: '10:00', surgeon: hs.doctorName || '', anesthetist: '', ot_room: 'OT-1', priority: 'elective', anesthesia_type: '', estimated_duration_min: '60', pre_op_notes: '', consent_taken: false, blood_arranged: false, fasting_confirmed: false })
     }
 
-    function changeDate(n: number) { const d = new Date(date); d.setDate(d.getDate() + n); setDate(d.toISOString().split('T')[0]) }
+    function changeDate(n: number) { const d = new Date(date); d.setDate(d.getDate() + n); const newDate = d.toISOString().split('T')[0]; if (newDate >= today) setDate(newDate) }
     const activeCount = schedules.filter(s => s.status === 'scheduled' || s.status === 'in_progress').length
 
     // ═══ NEW BOOKING ═══
@@ -352,7 +368,8 @@ Post-Op: ${notes}` : ''}`,
                             <div><label className="label">Date *</label><input className="input" type="date" min={today} value={form.surgery_date} onChange={e => setForm(p => ({ ...p, surgery_date: e.target.value }))} /></div>
                             <div><label className="label">Priority</label><select className="input" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as any }))}><option value="elective">Elective</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select></div>
                             <div><label className="label">Start *</label><select className="input" value={form.start_time} onChange={e => setForm(p => ({ ...p, start_time: e.target.value }))}>{TIME_SLOTS.map(t => <option key={t}>{t}</option>)}</select></div>
-                            <div><label className="label">End *</label><select className="input" value={form.end_time} onChange={e => setForm(p => ({ ...p, end_time: e.target.value }))}>{TIME_SLOTS.map(t => <option key={t}>{t}</option>)}</select></div>
+                            <div><label className="label">Duration (min)</label><input className="input" type="number" min="15" step="15" value={form.estimated_duration_min} onChange={e => setForm(p => ({ ...p, estimated_duration_min: e.target.value }))} placeholder="60" /></div>
+                            <div><label className="label">End (auto)</label><input className="input bg-gray-50 text-gray-600" value={form.end_time} readOnly title="Auto-calculated from start time + duration" /></div>
                             <div><label className="label">Surgeon *</label><input className="input" value={form.surgeon} onChange={e => setForm(p => ({ ...p, surgeon: e.target.value }))} /></div>
                             <div><label className="label">Anesthetist</label><input className="input" value={form.anesthetist} onChange={e => setForm(p => ({ ...p, anesthetist: e.target.value }))} /></div>
                             <div><label className="label">OT Room</label><select className="input" value={form.ot_room} onChange={e => setForm(p => ({ ...p, ot_room: e.target.value }))}><option>OT-1</option><option>OT-2</option><option>Minor OT</option></select></div>
@@ -392,11 +409,15 @@ Post-Op: ${notes}` : ''}`,
                     </div>
                 </div>
                 <div className="card p-3 mb-4 flex items-center gap-3">
-                    <button onClick={() => changeDate(-1)} className="p-2 border rounded-lg hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
-                    <input type="date" className="input w-48 text-center font-semibold" value={date} onChange={e => setDate(e.target.value)} />
+                    <button onClick={() => changeDate(-1)} disabled={date <= today} className="p-2 border rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft className="w-4 h-4" /></button>
+                    <input type="date" className="input w-48 text-center font-semibold" min={today} value={date} onChange={e => {
+                        const val = e.target.value
+                        if (val >= today) setDate(val)
+                    }} />
                     <button onClick={() => changeDate(1)} className="p-2 border rounded-lg hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
                     {date !== today && <button onClick={() => setDate(today)} className="text-xs text-blue-600 font-medium">Today</button>}
                     <button onClick={loadSchedules} className="p-2 border rounded-lg hover:bg-gray-50"><RefreshCw className="w-4 h-4" /></button>
+                    {date < today && <span className="text-xs text-red-500 font-medium">Cannot view past dates</span>}
                 </div>
                 <div className="flex items-center gap-3 mb-4">
                     <label className="text-xs font-semibold text-gray-500">Surgeon:</label>

@@ -57,22 +57,145 @@ body {
   animation: ocr-fill 1.5s ease-out forwards;
 }
 
-/* Print styles */
+/* Print styles — Premium PDF-quality print output */
 @media print {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  body { background: white; font-size: 12px; }
+
+  /* Base print setup */
+  * { box-sizing: border-box; }
+  html, body {
+    background: white !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+    color: #1a1a1a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Remove all layout chrome */
+  aside, nav, header, footer,
+  [class*="sidebar"], [class*="Sidebar"],
+  [class*="bottom-nav"], [class*="mobile-nav"] {
+    display: none !important;
+    position: static !important;
+  }
+
+  /* Main content full-width */
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Container spacing */
   .print-container { padding: 0; margin: 0; }
-  /* Hide all navigation elements */
-  aside, nav, header, footer { display: none !important; position: static !important; }
-  /* Remove left margin from sidebar */
-  main { margin-left: 0 !important; width: 100% !important; padding-bottom: 0 !important; }
-  /* Hide bottom mobile nav */
-  nav { display: none !important; }
-  /* Clean card borders for print */
-  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
-  /* Avoid page breaks inside cards */
-  .card, tr { page-break-inside: avoid; }
+
+  /* Premium card styling for print */
+  .card {
+    box-shadow: none !important;
+    border: 1.5px solid #d1d5db !important;
+    border-radius: 8px !important;
+    page-break-inside: avoid;
+    margin-bottom: 12pt !important;
+    padding: 16pt !important;
+  }
+
+  /* Table styling for premium print */
+  table {
+    border-collapse: collapse;
+    width: 100% !important;
+    font-size: 10pt !important;
+  }
+  th {
+    background-color: #1e40af !important;
+    color: white !important;
+    font-weight: 700 !important;
+    padding: 8pt 12pt !important;
+    text-align: left;
+    font-size: 9pt !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 8pt 12pt !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+  tr:nth-child(even) td {
+    background-color: #f8fafc !important;
+  }
+  tbody tr { page-break-inside: avoid; }
+
+  /* Headings */
+  h1 {
+    font-size: 18pt !important;
+    font-weight: 800 !important;
+    color: #1e40af !important;
+    border-bottom: 3px solid #1e40af !important;
+    padding-bottom: 8pt !important;
+    margin-bottom: 12pt !important;
+  }
+  h2 {
+    font-size: 13pt !important;
+    font-weight: 700 !important;
+    color: #1e3a5f !important;
+    margin-bottom: 8pt !important;
+  }
+  h3 {
+    font-size: 11pt !important;
+    font-weight: 600 !important;
+    color: #374151 !important;
+  }
+
+  /* Badge styles preserved in print */
+  .badge-green, .badge-red, .badge-yellow,
+  [class*="bg-green-"], [class*="bg-red-"], [class*="bg-blue-"],
+  [class*="bg-purple-"], [class*="bg-orange-"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Buttons hidden in print */
+  button, a[class*="btn-"], [class*="btn-primary"], [class*="btn-secondary"] {
+    display: none !important;
+  }
+
+  /* Input fields show as text in print */
+  input, select, textarea {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+  }
+
+  /* Page break controls */
+  .page-break-before { page-break-before: always; }
+  .page-break-after { page-break-after: always; }
+  .no-page-break { page-break-inside: avoid; }
+
+  /* Print header branding */
+  .print-header {
+    text-align: center;
+    border-bottom: 3px solid #1e40af;
+    padding-bottom: 12pt;
+    margin-bottom: 16pt;
+  }
+
+  /* Premium stat cards for print */
+  [class*="grid-cols-"] {
+    gap: 8pt !important;
+  }
+
+  /* Links show URL in print */
+  a[href]::after {
+    content: none; /* Don't show URLs in medical documents */
+  }
+
+  /* Ensure page margins */
+  @page {
+    size: A4;
+    margin: 15mm 12mm 15mm 12mm;
+  }
 }
 .print-only { display: none; }
 

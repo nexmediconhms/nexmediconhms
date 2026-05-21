@@ -237,7 +237,67 @@ export async function POST(req: NextRequest) {
 
     const reportId = report.id
 
-    // ── Step 4: Create reminders for doctor & patient ─────────
+    // ── Step 4: AI PDF Value Extraction ─────────────────────────
+    let extractedValues: Record<string, string> = {}
+    let abnormalValues: string[] = []
+
+    if (pdfFile && pdfFile.size > 0) {
+      try {
+        // Use the extract-values logic inline (avoid internal fetch)
+        const buffer = await pdfFile.arrayBuffer()
+        const base64 = Buffer.from(buffer).toString('base64')
+
+        // Try AI extraction
+        const { analyzePDF, hasAnyAIKey } = await import('@/lib/ai-client')
+        if (hasAnyAIKey()) {
+          const result = await analyzePDF({
+            base64,
+            prompt: 'Extract all lab test values from this PDF report. List each test name and its numeric value with unit.',
+          })
+          if (result?.text) {
+            // Parse extracted text for structured lab values
+            const LAB_PATTERNS = [
+              { name: 'Haemoglobin', pattern: /h[ae]moglobin[:\s]+(\d+\.?\d*)/i, unit: 'g/dL', low: 11.5, high: 16.5 },
+              { name: 'WBC', pattern: /(?:WBC|TLC|Total\s*Count)[:\s]+(\d+[\.,]?\d*)/i, unit: 'cells/µL', low: 4000, high: 11000 },
+              { name: 'Platelet', pattern: /Platelet[s]?[:\s]+(\d+[\.,]?\d*)/i, unit: 'cells/µL', low: 150000, high: 400000 },
+              { name: 'Blood Sugar Fasting', pattern: /(?:Fasting|FBS)[:\s]*(?:Blood\s*)?(?:Sugar|Glucose)?[:\s]+(\d+\.?\d*)/i, unit: 'mg/dL', low: 70, high: 100 },
+              { name: 'HbA1c', pattern: /HbA1c[:\s]+(\d+\.?\d*)/i, unit: '%', low: 0, high: 5.7 },
+              { name: 'TSH', pattern: /TSH[:\s]+(\d+\.?\d*)/i, unit: 'mIU/L', low: 0.4, high: 4.0 },
+              { name: 'Creatinine', pattern: /Creatinine[:\s]+(\d+\.?\d*)/i, unit: 'mg/dL', low: 0.6, high: 1.2 },
+              { name: 'SGPT', pattern: /(?:SGPT|ALT)[:\s]+(\d+\.?\d*)/i, unit: 'U/L', low: 7, high: 56 },
+              { name: 'SGOT', pattern: /(?:SGOT|AST)[:\s]+(\d+\.?\d*)/i, unit: 'U/L', low: 10, high: 40 },
+              { name: 'Cholesterol', pattern: /(?:Total\s*)?Cholesterol[:\s]+(\d+\.?\d*)/i, unit: 'mg/dL', low: 0, high: 200 },
+            ]
+
+            for (const test of LAB_PATTERNS) {
+              const match = result.text.match(test.pattern)
+              if (match?.[1]) {
+                const numVal = parseFloat(match[1].replace(/,/g, ''))
+                if (!isNaN(numVal)) {
+                  extractedValues[test.name] = `${numVal} ${test.unit}`
+                  if (numVal < test.low || numVal > test.high) {
+                    const status = numVal < test.low ? 'LOW' : 'HIGH'
+                    abnormalValues.push(`${test.name}: ${numVal} ${test.unit} [${status}] (Normal: ${test.low}–${test.high})`)
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[lab-portal] AI extraction failed (non-fatal):', e)
+      }
+
+      // Save extracted values to the report record
+      if (Object.keys(extractedValues).length > 0) {
+        await supabase.from('lab_reports').update({
+          extracted_values: { values: extractedValues, abnormals: abnormalValues },
+          updated_at: new Date().toISOString(),
+        }).eq('id', reportId)
+      }
+    }
+
+    // ── Step 4b: Create reminders for doctor & patient ────────
     // Doctor reminder
     if (doctorId) {
       await createReminder({
@@ -270,18 +330,45 @@ export async function POST(req: NextRequest) {
         uploaded_by: portalUser.name,
         mrn,
         attachment:  !!attachmentUrl,
+        extracted_values_count: Object.keys(extractedValues).length,
+        abnormal_count: abnormalValues.length,
       }),
       user_id:    'lab_portal',
       user_email: portalUser.name,
       user_role:  'lab_partner',
     })
 
-    // ── Step 5b: Create in-app notification for staff/doctor ──
+    // ── Step 5b: Create doctor alert for abnormal values ──────
+    if (abnormalValues.length > 0 && patientId) {
+      const severity = abnormalValues.some(v => v.includes('HIGH') && (v.includes('Creatinine') || v.includes('Sugar')))
+        ? 'critical' : 'warning'
+
+      await supabase.from('doctor_alerts').insert({
+        patient_id: patientId,
+        patient_name: resolvedName,
+        mrn: resolvedMrn,
+        alert_type: 'lab_abnormal',
+        alert_data: {
+          report_name: reportName,
+          abnormal_values: abnormalValues,
+          lab_partner: labName,
+          report_type: 'lab_report',
+          total_abnormal: abnormalValues.length,
+          extracted_values: extractedValues,
+        },
+        severity,
+        source: labName,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      })
+    }
+
+    // ── Step 5c: Create in-app notification for staff/doctor ──
     await supabase.from('clinic_notifications').insert({
       title: `Lab Report: ${reportName}`,
-      message: `${labName} uploaded "${reportName}" for ${resolvedName} (${mrn || 'N/A'}). Review in patient profile.`,
+      message: `${labName} uploaded "${reportName}" for ${resolvedName} (${mrn || 'N/A'}).${abnormalValues.length > 0 ? ` ⚠️ ${abnormalValues.length} ABNORMAL value(s)!` : ''} Review in patient profile.`,
       type: 'lab_report',
-      severity: 'normal',
+      severity: abnormalValues.length > 0 ? 'warning' : 'normal',
       source: 'lab_portal',
       entity_type: 'lab_report',
       entity_id: reportId,
@@ -294,8 +381,51 @@ export async function POST(req: NextRequest) {
         uploaded_by: portalUser.name,
         report_name: reportName,
         has_attachment: !!attachmentUrl,
+        abnormal_count: abnormalValues.length,
+        extracted_values: extractedValues,
       }),
     })
+
+    // ── Step 5d: Trigger WhatsApp "Report Ready" notifications ──
+    try {
+      const { data: patientData } = await supabase
+        .from('patients')
+        .select('mobile')
+        .eq('id', patientId)
+        .single()
+
+      const patientMobile = patientData?.mobile || ''
+
+      // Log WhatsApp notifications for doctor, patient, staff
+      const { data: settingsData } = await supabase
+        .from('clinic_settings')
+        .select('key, value')
+        .in('key', ['doctorMobile', 'staffMobile'])
+
+      const settingsMap: Record<string, string> = {}
+      for (const s of settingsData || []) settingsMap[s.key] = s.value
+
+      const recipients = [
+        { type: 'patient', mobile: patientMobile },
+        { type: 'doctor', mobile: settingsMap.doctorMobile || '' },
+        { type: 'staff', mobile: settingsMap.staffMobile || '' },
+      ].filter(r => r.mobile)
+
+      for (const r of recipients) {
+        await supabase.from('whatsapp_notifications').insert({
+          patient_id: patientId,
+          patient_name: resolvedName,
+          mobile: r.mobile,
+          notification_type: 'report_ready',
+          message_preview: `Lab report "${reportName}" ready for ${resolvedName}. Lab: ${labName}${abnormalValues.length > 0 ? '. ABNORMAL values detected!' : ''}`,
+          recipient_type: r.type,
+          status: 'generated',
+          metadata: { report_name: reportName, report_id: reportId, lab_partner: labName, has_abnormals: abnormalValues.length > 0 },
+        })
+      }
+    } catch (e) {
+      console.warn('[lab-portal] WhatsApp notification failed (non-fatal):', e)
+    }
 
     // ── Step 6: Update portal user last_used_at ───────────────
     await supabase.from('lab_portal_users')
@@ -310,7 +440,9 @@ export async function POST(req: NextRequest) {
       reportName,
       hasAttachment:  !!attachmentUrl,
       notified:       true,
-      message:        `Report "${reportName}" uploaded successfully for ${resolvedName}. Doctor and patient have been notified.`,
+      extractedValues: extractedValues,
+      abnormalValues:  abnormalValues,
+      message:        `Report "${reportName}" uploaded successfully for ${resolvedName}. Doctor and patient have been notified.${abnormalValues.length > 0 ? ` ${abnormalValues.length} abnormal value(s) detected — doctor alerted.` : ''}`,
     })
 
   } catch (err: any) {

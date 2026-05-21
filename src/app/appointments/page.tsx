@@ -34,9 +34,9 @@ interface Appointment {
 }
 
 const APPT_TYPES = [
-  'ANC Follow-up',
-  'Follow-up',
   'OPD Consultation',
+  'Follow-up',
+  'ANC Follow-up',
   'Pre-Surgery Assessment',
   'Post-op Review',
   'Lab Report Discussion',
@@ -215,6 +215,18 @@ function AppointmentsContent() {
   // ✅ BOOK appointment using service (constraint-safe)
   async function bookAppointment() {
     if (!selPatient || !apptDate || !apptTime) return
+
+    // ✅ FIX: Prevent booking on Sundays — auto-move to Monday
+    const selectedDay = new Date(apptDate + 'T00:00:00+05:30').getDay()
+    let finalDate = apptDate
+    if (selectedDay === 0) {
+      const monday = new Date(apptDate + 'T00:00:00+05:30')
+      monday.setDate(monday.getDate() + 1)
+      finalDate = monday.toISOString().split('T')[0]
+      setSaveError(`Sundays are closed. Appointment moved to Monday (${finalDate}).`)
+      setApptDate(finalDate)
+      return
+    }
 
     // Validate: if date is today, time must be in the future
     if (apptDate === today) {
@@ -557,7 +569,19 @@ ${medsText ? `\n\n💊 *Current Medications*\n${medsText}` : ''}`
               <div>
                 <label className="label">Date</label>
                 <input className="input" type="date" min={today}
-                  value={apptDate} onChange={e => setApptDate(e.target.value)} />
+                  value={apptDate} onChange={e => {
+                    const val = e.target.value
+                    const day = new Date(val + 'T00:00:00+05:30').getDay()
+                    if (day === 0) {
+                      setSaveError('Sundays are closed. Please select another day (will auto-move to Monday if booked).')
+                    } else {
+                      setSaveError('')
+                    }
+                    setApptDate(val)
+                  }} />
+                {new Date(apptDate + 'T00:00:00+05:30').getDay() === 0 && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">Sunday — clinic closed. Will book on Monday.</p>
+                )}
               </div>
               <div>
                 <label className="label">Time</label>
