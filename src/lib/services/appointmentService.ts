@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { getIndiaToday } from '../utils'
+import notify from '@/lib/notifications'
 
 type CreateAppointmentParams = {
   patientId: string
@@ -87,6 +88,13 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
   if (error) {
     // If a race condition happens and DB constraint blocks it, show clean error.
     throw new Error(error.message)
+  }
+
+  // Send notification for new appointment
+  try {
+    await notify.appointmentCreated(patientId, patientName, date, time, type)
+  } catch {
+    // Non-fatal
   }
 
   return data.id as string

@@ -6,11 +6,13 @@
  * Connection Status Banner — Clinic Mode Indicator
  *
  * Shows a banner when:
- *   - Browser is offline
- *   - Supabase is unreachable (Clinic Mode)
- *   - Pending sync items exist
+ *   - Browser is offline (navigator.onLine === false)
  *
- * Automatically checks connection every 30 seconds.
+ * FIX: Previously showed "Database unreachable" because checkSupabaseConnection()
+ * used a HEAD request to /rest/v1/ which returns 401 without auth context.
+ * Now only shows offline banner when the browser itself reports no network.
+ * Supabase connectivity is implicitly tested by all the other real-time
+ * queries happening across the app — if those fail, they show their own errors.
  */
 
 import { useEffect, useState } from 'react'
@@ -30,7 +32,6 @@ export default function ConnectionBanner() {
     const handleOnline = () => {
       setIsOnline(true)
       setIsClinicMode(false)
-      // Auto-sync when coming back online
       handleSync()
     }
     const handleOffline = () => {
@@ -41,34 +42,18 @@ export default function ConnectionBanner() {
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
 
-    // Check Supabase connectivity periodically
-    const interval = setInterval(async () => {
-      try {
-        const { checkSupabaseConnection, getCacheStats } = await import('@/lib/offline-store')
-        const reachable = await checkSupabaseConnection()
-        setIsClinicMode(!reachable)
-
-        const stats = await getCacheStats()
-        setPendingSync(stats.pendingSync)
-        setLastSync(stats.lastSync)
-      } catch {
-        // Offline store not available
+    // FIX: Only check offline status via browser API, not via Supabase ping.
+    // The previous HEAD request to /rest/v1/ returned 401 (not 200) because
+    // it requires proper authorization headers, causing false "Database unreachable".
+    // Real connectivity is verified by the actual queries the app makes.
+    const interval = setInterval(() => {
+      setIsOnline(navigator.onLine)
+      if (!navigator.onLine) {
+        setIsClinicMode(true)
+      } else {
+        setIsClinicMode(false)
       }
     }, 30000)
-
-    // Initial check
-    ;(async () => {
-      try {
-        const { checkSupabaseConnection, getCacheStats } = await import('@/lib/offline-store')
-        const reachable = await checkSupabaseConnection()
-        setIsClinicMode(!reachable)
-        const stats = await getCacheStats()
-        setPendingSync(stats.pendingSync)
-        setLastSync(stats.lastSync)
-      } catch {
-        // Offline store not available
-      }
-    })()
 
     return () => {
       window.removeEventListener('online', handleOnline)

@@ -4,8 +4,9 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getIndiaToday } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 import type { Bed } from '@/types'
-import { BedDouble, Search, X, CheckCircle, User } from 'lucide-react'
+import { BedDouble, Search, X, CheckCircle, User, Plus, Trash2, Settings } from 'lucide-react'
 
 type BedStatus = Bed['status']
 
@@ -17,6 +18,7 @@ const STATUS_CONFIG: Record<BedStatus, { label: string; bg: string; border: stri
 }
 
 export default function BedsPage() {
+  const { user, can } = useAuth()
   const [beds, setBeds] = useState<Bed[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ bed: Bed; action: 'admit' | 'discharge' } | null>(null)
@@ -27,6 +29,15 @@ export default function BedsPage() {
   const [selectedPatient, setSelectedPatient] = useState<any>(null)
   const [expectedDischarge, setExpectedDischarge] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+
+  // Add Bed form (admin only)
+  const [showAddBed, setShowAddBed] = useState(false)
+  const [showManageBeds, setShowManageBeds] = useState(false)
+  const [newBed, setNewBed] = useState({ bed_number: '', ward: 'General Ward', floor: '1', bed_type: 'General' })
+  const [addBedLoading, setAddBedLoading] = useState(false)
+  const [addBedError, setAddBedError] = useState('')
+  const [bulkCount, setBulkCount] = useState(1)
+  const [bulkPrefix, setBulkPrefix] = useState('')
 
   useEffect(() => {
     loadBeds()
@@ -181,6 +192,73 @@ export default function BedsPage() {
     else if (bed.status === 'occupied') setModal({ bed, action: 'discharge' })
   }
 
+  // ── Admin: Add Bed(s) ─────────────────────────────────────
+  async function handleAddBed() {
+    setAddBedError('')
+    if (bulkCount === 1) {
+      if (!newBed.bed_number.trim()) { setAddBedError('Bed number is required'); return }
+      // Check if bed number already exists
+      const existing = beds.find(b => b.bed_number === newBed.bed_number.trim())
+      if (existing) { setAddBedError(`Bed ${newBed.bed_number} already exists`); return }
+    } else {
+      if (!bulkPrefix.trim()) { setAddBedError('Prefix is required for bulk add'); return }
+    }
+
+    setAddBedLoading(true)
+    try {
+      const bedsToInsert = []
+      if (bulkCount === 1) {
+        bedsToInsert.push({
+          bed_number: newBed.bed_number.trim(),
+          ward: newBed.ward,
+          floor: newBed.floor,
+          bed_type: newBed.bed_type,
+          status: 'available' as const,
+        })
+      } else {
+        for (let i = 1; i <= bulkCount; i++) {
+          bedsToInsert.push({
+            bed_number: `${bulkPrefix.trim()}${i}`,
+            ward: newBed.ward,
+            floor: newBed.floor,
+            bed_type: newBed.bed_type,
+            status: 'available' as const,
+          })
+        }
+      }
+
+      const { error } = await supabase.from('beds').insert(bedsToInsert)
+      if (error) {
+        if (error.message.includes('duplicate') || error.message.includes('unique')) {
+          setAddBedError('One or more bed numbers already exist. Use a different prefix.')
+        } else {
+          setAddBedError(`Failed to add bed(s): ${error.message}`)
+        }
+      } else {
+        setShowAddBed(false)
+        setNewBed({ bed_number: '', ward: 'General Ward', floor: '1', bed_type: 'General' })
+        setBulkCount(1)
+        setBulkPrefix('')
+        setAddBedError('')
+        loadBeds()
+      }
+    } catch (err: any) {
+      setAddBedError(`Error: ${err.message}`)
+    }
+    setAddBedLoading(false)
+  }
+
+  // ── Admin: Delete Bed ─────────────────────────────────────
+  async function handleDeleteBed(bedId: string, bedNumber: string) {
+    if (!confirm(`Are you sure you want to delete bed ${bedNumber}? This action cannot be undone.`)) return
+    const { error } = await supabase.from('beds').delete().eq('id', bedId)
+    if (error) {
+      alert(`Failed to delete bed: ${error.message}`)
+    } else {
+      loadBeds()
+    }
+  }
+
   // ── Group by ward ─────────────────────────────────────────
   const wards = Array.from(new Set(beds.map(b => b.ward)))
   const stats = {
@@ -201,7 +279,145 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
+          {user?.role === 'admin' && (
+            <div className="flex gap-2">
+              <button onClick={() => setShowManageBeds(!showManageBeds)}
+                className="btn-secondary flex items-center gap-2 text-xs">
+                <Settings className="w-3.5 h-3.5" /> Manage
+              </button>
+              <button onClick={() => setShowAddBed(true)}
+                className="btn-primary flex items-center gap-2 text-xs">
+                <Plus className="w-3.5 h-3.5" /> Add Bed
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Add Bed Modal (Admin) */}
+        {showAddBed && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowAddBed(false) }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Plus className="w-5 h-5 text-blue-600" /> Add New Bed(s)
+                </h3>
+                <button onClick={() => { setShowAddBed(false); setAddBedError('') }} className="text-gray-400 hover:text-gray-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {addBedError && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
+                  {addBedError}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* Single or Bulk */}
+                <div>
+                  <label className="label">Number of Beds to Add</label>
+                  <input type="number" min="1" max="50" className="input w-24"
+                    value={bulkCount} onChange={e => setBulkCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))} />
+                  <p className="text-xs text-gray-400 mt-1">Add up to 50 beds at once</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Bed Number / Prefix</label>
+                    <input className="input" placeholder={bulkCount > 1 ? 'e.g. GW- (creates GW-1, GW-2...)' : 'e.g. GW-101'}
+                      value={bulkCount > 1 ? bulkPrefix : newBed.bed_number}
+                      onChange={e => bulkCount > 1 ? setBulkPrefix(e.target.value) : setNewBed(prev => ({ ...prev, bed_number: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Ward</label>
+                    <select className="input" value={newBed.ward}
+                      onChange={e => setNewBed(prev => ({ ...prev, ward: e.target.value }))}>
+                      <option>General Ward</option>
+                      <option>Private Ward</option>
+                      <option>Semi-Private Ward</option>
+                      <option>ICU</option>
+                      <option>NICU</option>
+                      <option>Labour Ward</option>
+                      <option>Post-Op Ward</option>
+                      <option>Pediatric Ward</option>
+                      <option>Emergency Ward</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Floor</label>
+                    <select className="input" value={newBed.floor}
+                      onChange={e => setNewBed(prev => ({ ...prev, floor: e.target.value }))}>
+                      <option value="G">Ground Floor</option>
+                      <option value="1">1st Floor</option>
+                      <option value="2">2nd Floor</option>
+                      <option value="3">3rd Floor</option>
+                      <option value="4">4th Floor</option>
+                      <option value="5">5th Floor</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Bed Type</label>
+                    <select className="input" value={newBed.bed_type}
+                      onChange={e => setNewBed(prev => ({ ...prev, bed_type: e.target.value }))}>
+                      <option>General</option>
+                      <option>Semi-Private</option>
+                      <option>Private</option>
+                      <option>Deluxe</option>
+                      <option>ICU</option>
+                      <option>NICU</option>
+                      <option>Ventilator</option>
+                      <option>Cradle</option>
+                    </select>
+                  </div>
+                </div>
+
+                {bulkCount > 1 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                    <strong>Preview:</strong> Will create {bulkCount} beds: {bulkPrefix || 'BED-'}1, {bulkPrefix || 'BED-'}2, ... {bulkPrefix || 'BED-'}{bulkCount}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => { setShowAddBed(false); setAddBedError('') }} className="btn-secondary flex-1">Cancel</button>
+                  <button onClick={handleAddBed} disabled={addBedLoading}
+                    className="btn-primary flex-1 disabled:opacity-50">
+                    {addBedLoading ? 'Adding...' : `Add ${bulkCount > 1 ? `${bulkCount} Beds` : 'Bed'}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manage Beds Panel (Admin) — Delete / Edit beds */}
+        {showManageBeds && user?.role === 'admin' && (
+          <div className="mb-6 card p-4 border-2 border-orange-200 bg-orange-50/30">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-orange-600" /> Bed Administration
+              </h3>
+              <button onClick={() => setShowManageBeds(false)} className="text-xs text-gray-500 hover:text-gray-700">Close</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Click the ✕ button on any available/reserved bed below to delete it. Occupied beds cannot be deleted.</p>
+            <div className="flex flex-wrap gap-2">
+              {beds.filter(b => b.status !== 'occupied').map(bed => (
+                <div key={bed.id} className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="font-mono font-bold text-gray-700">{bed.bed_number}</span>
+                  <span className="text-gray-400">({bed.ward})</span>
+                  <button onClick={() => handleDeleteBed(bed.id, bed.bed_number)}
+                    className="ml-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-colors"
+                    title={`Delete bed ${bed.bed_number}`}>
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {beds.filter(b => b.status !== 'occupied').length === 0 && (
+                <p className="text-xs text-gray-400 italic">All beds are currently occupied. Discharge patients first to manage beds.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Summary Stats */}
         <div className="grid grid-cols-4 gap-4 mb-6">

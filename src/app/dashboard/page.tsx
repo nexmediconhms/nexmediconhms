@@ -498,7 +498,20 @@ export default function DashboardPage() {
   useEffect(() => {
     load()
     const interval = setInterval(load, 5 * 60 * 1000)  // refresh every 5 min
-    return () => clearInterval(interval)
+
+    // ── Realtime subscription — auto-refresh dashboard on data changes ──
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters' }, () => load())
+      .subscribe()
+
+    return () => {
+      clearInterval(interval)
+      supabase.removeChannel(channel)
+    }
   }, [load])
 
   // ── Data loaders ────────────────────────────────────────────
