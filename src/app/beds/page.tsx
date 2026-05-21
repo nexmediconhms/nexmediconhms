@@ -279,7 +279,7 @@ export default function BedsPage() {
             </h1>
             <p className="text-sm text-gray-500">Click any bed to admit or discharge a patient. Refreshes every 30 seconds.</p>
           </div>
-          {user?.role === 'admin' && (
+          {(user?.role === 'admin' || can('beds.manage')) && (
             <div className="flex gap-2">
               <button onClick={() => setShowManageBeds(!showManageBeds)}
                 className="btn-secondary flex items-center gap-2 text-xs">
@@ -449,6 +449,20 @@ export default function BedsPage() {
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : beds.length === 0 ? (
+          <div className="text-center py-16">
+            <BedDouble className="w-16 h-16 mx-auto text-gray-200 mb-4" />
+            <h3 className="text-lg font-bold text-gray-700 mb-2">No Beds Configured</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Add your first bed to start managing IPD admissions.
+            </p>
+            {(user?.role === 'admin' || can('beds.manage')) && (
+              <button onClick={() => setShowAddBed(true)}
+                className="btn-primary flex items-center gap-2 mx-auto">
+                <Plus className="w-4 h-4" /> Add Your First Bed
+              </button>
+            )}
           </div>
         ) : (
           wards.map(ward => {

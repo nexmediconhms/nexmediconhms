@@ -158,6 +158,45 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Doctor Digital Signature */}
+        <div className="card p-6 mb-5">
+          <h2 className="section-title flex items-center gap-2">
+            ✍️ Doctor Digital Signature
+          </h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Upload a signature image (PNG with transparent background recommended). This appears on printed prescriptions, bills, and lab reports.
+          </p>
+          {form.doctorSignatureUrl && (
+            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <p className="text-xs text-gray-500 mb-2">Current Signature:</p>
+              <img src={form.doctorSignatureUrl} alt="Doctor Signature" className="max-h-16 object-contain" />
+              <button onClick={() => set('doctorSignatureUrl', '')}
+                className="mt-2 text-xs text-red-600 hover:text-red-800">Remove Signature</button>
+            </div>
+          )}
+          <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 font-medium cursor-pointer hover:bg-blue-100 transition-colors">
+            <Upload className="w-4 h-4" />
+            {form.doctorSignatureUrl ? 'Replace Signature' : 'Upload Signature Image'}
+            <input
+              type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]; if (!file) return
+                e.target.value = ''
+                try {
+                  const path = `signatures/doctor-signature-${Date.now()}.${file.name.split('.').pop()}`
+                  const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true })
+                  if (error) { alert(`Upload failed: ${error.message}`); return }
+                  const { data } = supabase.storage.from('documents').getPublicUrl(path)
+                  if (data?.publicUrl) {
+                    set('doctorSignatureUrl', data.publicUrl)
+                  }
+                } catch (err: any) { alert(`Upload error: ${err.message}`) }
+              }}
+            />
+          </label>
+          <p className="text-xs text-gray-400 mt-2">Recommended: PNG image with transparent background, max 400×150px</p>
+        </div>
+
         {/* Payment Settings */}
         <div className="card p-6 mb-5">
           <h2 className="section-title flex items-center gap-2">
