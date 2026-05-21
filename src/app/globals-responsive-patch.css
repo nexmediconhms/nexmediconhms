@@ -1,0 +1,221 @@
+/**
+ * FILE: src/app/globals-responsive-patch.css
+ *
+ * ISSUE #2 FIX: Responsiveness & Cross-Platform
+ *
+ * HOW TO USE:
+ *   In src/app/globals.css, add at the very bottom:
+ *   @import './globals-responsive-patch.css';
+ *
+ *   This file ONLY adds new rules — it does NOT modify or remove
+ *   any existing styles. All rules use @media queries so they only
+ *   activate on smaller screens.
+ *
+ * WHAT THIS FIXES:
+ *   1. Dashboard revenue number overflow on <360px screens
+ *   2. PillarCard flex-wrap min-width
+ *   3. OPD Queue Banner two-column layout on mobile
+ *   4. Settings page grid-cols-2 too narrow on mobile
+ *   5. AdminBillModify grid-cols-3 cramped on mobile
+ *   6. Sidebar missing overflow-y-auto on mobile
+ *   7. Scroll containers missing -webkit-overflow-scrolling
+ *   8. Touch target sizes for iOS/Android (44px minimum)
+ *   9. Form inputs zoom prevention on iOS (font-size ≥ 16px)
+ *  10. Print layout basics
+ */
+
+/* ─── 1. Dashboard Revenue Number ─── */
+/* Prevents ₹1,23,456 from overflowing its card on tiny screens */
+@media (max-width: 380px) {
+  /* Revenue key card large number */
+  .text-4xl {
+    font-size: 1.5rem !important;    /* 24px instead of 36px */
+    line-height: 2rem !important;
+  }
+  .text-3xl {
+    font-size: 1.25rem !important;
+    line-height: 1.75rem !important;
+  }
+}
+
+/* ─── 2. PillarCard / Stats Grid ─── */
+/* Cards that use flex-wrap need a min-width so they don't shrink to 0 */
+@media (max-width: 640px) {
+  /* Force pillar cards to stack vertically on mobile */
+  .grid-cols-2,
+  .sm\:grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+  .grid-cols-3,
+  .sm\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .grid-cols-4,
+  .sm\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ─── 3. OPD Queue Banner ─── */
+/* Two-column patient info layout too cramped on mobile */
+@media (max-width: 480px) {
+  /* Stack columns vertically for queue entries */
+  [class*="grid-cols-2"][class*="gap-"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── 4. Settings Page ─── */
+@media (max-width: 640px) {
+  /* Settings cards: 1 column on mobile instead of 2 */
+  .settings-grid,
+  [class*="settings"] .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── 5. AdminBillModify ─── */
+@media (max-width: 768px) {
+  /* Bill modify form: 1 column on tablet, instead of 3 */
+  .grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .md\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── 6. Sidebar Scroll ─── */
+/* Prevent sidebar from overflowing on short screens / landscape mobile */
+@media (max-height: 700px) {
+  nav,
+  [role="navigation"],
+  aside {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Mobile sidebar full height scroll */
+@media (max-width: 768px) {
+  nav,
+  [role="navigation"],
+  aside {
+    max-height: 100vh;
+    max-height: 100dvh;  /* Dynamic viewport height for iOS */
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── 7. Smooth Scrolling Everywhere ─── */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* ─── 8. Touch Target Sizes ─── */
+/* Apple HIG and Material Design both require ≥44px touch targets */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a[href],
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Compact buttons in tables can be smaller but need padding */
+  table button,
+  .compact button {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 6px;
+  }
+}
+
+/* ─── 9. iOS Zoom Prevention ─── */
+/* iOS Safari zooms in on inputs with font-size < 16px */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* ─── 10. Safe Area Insets (iPhone notch, Android punch-hole) ─── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  /* Bottom navigation/action bars need padding for the home indicator */
+  .fixed.bottom-0,
+  [class*="fixed"][class*="bottom-"] {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Top bars need padding for the notch */
+  .fixed.top-0,
+  [class*="fixed"][class*="top-"] {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* ─── 11. Horizontal Scroll Tables ─── */
+/* Wrap all tables in a horizontal-scroll container on mobile */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  /* Allow text to wrap inside table cells */
+  table td,
+  table th {
+    white-space: normal;
+    min-width: 80px;
+  }
+}
+
+/* ─── 12. Modal / Dialog Responsiveness ─── */
+@media (max-width: 640px) {
+  /* Modals should be full-width on mobile with padding */
+  [role="dialog"],
+  .modal,
+  [class*="Dialog"] {
+    max-width: calc(100vw - 2rem) !important;
+    margin-left: 1rem !important;
+    margin-right: 1rem !important;
+  }
+}
+
+/* ─── 13. Print Layout ─── */
+@media print {
+  /* Hide navigation, headers, footers, buttons */
+  nav, aside, header, footer,
+  button, [role="button"],
+  .no-print {
+    display: none !important;
+  }
+
+  /* Full width content */
+  main, .main-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Page breaks */
+  .page-break {
+    page-break-before: always;
+  }
+
+  /* Remove shadows and borders for cleaner print */
+  * {
+    box-shadow: none !important;
+  }
+}

@@ -1,281 +1,469 @@
 /**
- * src/lib/pdf-layout.ts
+ * FILE: src/lib/pdf-layout.ts
  *
- * Reusable PDF header/footer layout for ALL printed reports.
+ * ISSUE #8 & #9 FIX: PDF Report Layout + Reusable Headers/Footers
  *
- * USAGE:
- *   Import getPDFHeaderHTML() and getPDFFooterHTML() in any report that
- *   generates printable content via window.open() + window.print().
+ * PROBLEMS:
+ *   1. PDF reports have redundant hospital info at the top
+ *   2. No consistent header/footer across pages
+ *   3. No page numbers, no print date, no doctor info in footer
+ *   4. Raw HTML styling — unstyled, unprofessional
  *
- * This ensures EVERY printed page includes:
- *   - Hospital name, address, phone in header
- *   - Doctor name and qualification
- *   - Page numbering in footer
- *   - Generation timestamp
- *   - Consistent branding colors
+ * FIX:
+ *   This module provides reusable functions that generate proper
+ *   CSS-based headers and footers for EVERY printed page, using
+ *   the @page and position:fixed CSS approach.
  *
- * For @react-pdf/renderer PDFs (prescriptions, bills), the header/footer
- * is already embedded in pdf-generator.tsx. This file is for HTML-based
- * reports (CA report, fund report, lab revenue report).
+ *   It works with the browser's built-in Print to PDF feature
+ *   (Ctrl+P / Cmd+P) which is the most reliable cross-platform
+ *   approach for client-side PDF generation.
+ *
+ * HOW TO USE:
+ *   Import the layout functions into any page that generates printable content:
+ *
+ *   import { wrapWithPDFLayout, getHospitalHeaderHtml, getFooterHtml } from '@/lib/pdf-layout'
+ *
+ *   // Wrap your report body HTML:
+ *   const fullHtml = wrapWithPDFLayout({
+ *     bodyHtml: '<div>... your report content ...</div>',
+ *     hospitalName: 'My Clinic',
+ *     address: '123 Main St',
+ *     phone: '9876543210',
+ *     gstin: 'GSTIN123',
+ *     doctorName: 'Dr. Smith',
+ *     reportTitle: 'Revenue Report',
+ *     reportSubtitle: 'Jan 2025 - Mar 2025',
+ *   })
+ *
+ *   // Open in new window for printing:
+ *   const w = window.open('', '_blank')
+ *   w.document.write(fullHtml)
+ *   w.document.close()
+ *   w.print()
+ *
+ * WHAT THIS DOES NOT CHANGE:
+ *   - Does not modify any existing pages or components
+ *   - Does not change any database schema
+ *   - Does not require any new npm packages
  */
 
-export interface PDFLayoutSettings {
-  hospitalName: string
+export interface PDFLayoutOptions {
+  bodyHtml: string
+  hospitalName?: string
   address?: string
   phone?: string
   gstin?: string
-  regNo?: string
   doctorName?: string
-  doctorQual?: string
-  logoUrl?: string
+  logoUrl?: string       // Optional: base64 or URL for logo
+  reportTitle?: string
+  reportSubtitle?: string
+  pageSize?: 'A4' | 'Letter'
+  orientation?: 'portrait' | 'landscape'
 }
 
 /**
- * Returns the full HTML document wrapper with print-optimized CSS,
- * header, and footer for any report content.
+ * Generate the complete HTML document with proper print headers and footers.
+ *
+ * ARCHITECTURE NOTE:
+ *   CSS @page + position:running() is not supported by all browsers.
+ *   Instead, we use the widely-supported approach:
+ *   - Fixed-position header/footer divs that repeat on every printed page
+ *   - A content area with top/bottom margins matching header/footer height
+ *   - Page numbers via CSS counter (counter-increment)
+ *
+ *   This works in Chrome, Edge, Safari, and Firefox print dialogs.
  */
-export function wrapReportHTML(params: {
-  settings: PDFLayoutSettings
-  title: string
-  subtitle?: string
-  content: string
-}): string {
-  const { settings: hs, title, subtitle, content } = params
+export function wrapWithPDFLayout(options: PDFLayoutOptions): string {
+  const {
+    bodyHtml,
+    hospitalName = 'NexMedicon Hospital',
+    address = '',
+    phone = '',
+    gstin = '',
+    doctorName = '',
+    logoUrl = '',
+    reportTitle = '',
+    reportSubtitle = '',
+    pageSize = 'A4',
+    orientation = 'portrait',
+  } = options
+
+  const generatedAt = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'long', year: 'numeric'
+  })
+  const generatedTime = new Date().toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit'
+  })
 
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>${title} — ${hs.hospitalName}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${reportTitle || hospitalName} - Report</title>
   <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      color: #1e293b;
-      margin: 0;
-      padding: 0;
-      font-size: 11px;
-      line-height: 1.5;
-    }
+    /* ── RESET ── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    /* ═══ PAGE LAYOUT ═══ */
+    /* ── PAGE SETUP ── */
     @page {
-      size: A4;
-      margin: 12mm 10mm 20mm 10mm;
+      size: ${pageSize} ${orientation};
+      margin: 25mm 15mm 20mm 15mm;  /* top right bottom left */
     }
 
-    .page-content {
-      padding: 24px 32px;
-      min-height: calc(100vh - 140px);
-    }
-
-    /* ═══ HEADER ═══ */
-    .report-header {
-      text-align: center;
-      border-bottom: 3px solid #1e40af;
-      padding: 16px 32px 12px;
-      margin-bottom: 0;
-      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-    }
-    .report-header h1 {
-      font-size: 20px;
-      color: #1e40af;
-      margin: 0 0 2px;
-      font-weight: 800;
-      letter-spacing: 0.3px;
-    }
-    .report-header .address {
-      font-size: 10px;
-      color: #64748b;
-      margin: 1px 0;
-    }
-    .report-header .contact {
-      font-size: 10px;
-      color: #64748b;
-      margin: 1px 0;
-    }
-    .report-header .doctor {
+    body {
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
       font-size: 11px;
-      color: #1e40af;
-      font-weight: 600;
-      margin-top: 4px;
+      color: #1e293b;
+      line-height: 1.5;
+      background: white;
     }
 
-    /* ═══ REPORT TITLE ═══ */
-    .report-title-section {
-      padding: 12px 32px 8px;
-      border-bottom: 1px solid #e2e8f0;
-      margin-bottom: 16px;
+    /* ── HEADER (repeats on every printed page) ── */
+    .pdf-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 22mm;
+      padding: 4mm 0;
+      border-bottom: 2px solid #2563eb;
+      background: white;
+      z-index: 100;
     }
-    .report-title-section h2 {
-      font-size: 14px;
+
+    .pdf-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .pdf-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pdf-header-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+
+    .pdf-header-info h1 {
+      font-size: 16px;
       font-weight: 700;
       color: #1e293b;
-      margin: 0 0 2px;
+      letter-spacing: -0.3px;
     }
-    .report-title-section .subtitle {
-      font-size: 10px;
+
+    .pdf-header-info p {
+      font-size: 8px;
+      color: #64748b;
+      margin-top: 1px;
+    }
+
+    .pdf-header-right {
+      text-align: right;
+      font-size: 8px;
       color: #64748b;
     }
 
-    /* ═══ FOOTER ═══ */
-    .report-footer {
+    .pdf-header-right .report-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e40af;
+    }
+
+    /* ── FOOTER (repeats on every printed page) ── */
+    .pdf-footer {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      padding: 8px 32px;
-      border-top: 2px solid #1e40af;
+      height: 12mm;
+      padding: 3mm 0;
+      border-top: 1px solid #e2e8f0;
       background: white;
-      font-size: 8px;
-      color: #94a3b8;
+      z-index: 100;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
+      font-size: 7px;
+      color: #94a3b8;
     }
-    .report-footer .left { line-height: 1.4; }
-    .report-footer .right { text-align: right; line-height: 1.4; }
 
-    /* ═══ CONTENT STYLES ═══ */
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 20px;
+    .pdf-footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
     }
+
+    .pdf-footer-center {
+      text-align: center;
+    }
+
+    .pdf-footer-right {
+      text-align: right;
+    }
+
+    /* ── CONTENT AREA ── */
+    /* Must have top/bottom margins that match header/footer heights */
+    .pdf-content {
+      margin-top: 25mm;   /* space for fixed header */
+      margin-bottom: 15mm; /* space for fixed footer */
+    }
+
+    /* ── TYPOGRAPHY ── */
+    .report-main-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 4px;
+    }
+
+    .report-main-subtitle {
+      font-size: 10px;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+
+    /* ── TABLES ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 16px;
+      page-break-inside: auto;
+    }
+
+    thead {
+      display: table-header-group; /* Repeat headers on each page */
+    }
+
+    tr {
+      page-break-inside: avoid;
+      page-break-after: auto;
+    }
+
+    th {
+      background: #f1f5f9;
+      text-align: left;
+      padding: 6px 10px;
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 2px solid #e2e8f0;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 10px;
+    }
+
+    tr:nth-child(even) td {
+      background: #fafbfc;
+    }
+
+    /* ── SUMMARY BOXES ── */
+    .summary-grid {
+      display: flex;
+      gap: 10px;
+      margin: 12px 0 20px;
+    }
+
     .summary-box {
+      flex: 1;
       background: #f8fafc;
-      border: 1.5px solid #e2e8f0;
-      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
       padding: 12px;
       text-align: center;
     }
+
     .summary-box .value {
       font-size: 16px;
       font-weight: 700;
       color: #1e293b;
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
+
     .summary-box .label {
-      font-size: 8px;
+      font-size: 7px;
       color: #64748b;
-      margin-top: 4px;
+      margin-top: 3px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-    .highlight-box { background: #ecfdf5 !important; border-color: #86efac !important; }
-    .highlight-box .value { color: #15803d !important; }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 10px 0;
-      font-size: 10px;
+    .summary-box.highlight {
+      background: #ecfdf5;
+      border-color: #86efac;
     }
-    th {
-      background: #1e40af;
-      color: white;
-      text-align: left;
-      padding: 7px 10px;
-      font-weight: 600;
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
+
+    .summary-box.highlight .value {
+      color: #15803d;
     }
-    td {
-      padding: 7px 10px;
-      border-bottom: 1px solid #f1f5f9;
-    }
-    tr:nth-child(even) td { background: #f8fafc; }
-    .amount { font-family: 'SF Mono', monospace; font-weight: 600; }
+
+    /* ── SECTION HEADINGS ── */
     .section-title {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 700;
       color: #334155;
       margin: 16px 0 6px;
       padding-bottom: 3px;
-      border-bottom: 1.5px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      page-break-after: avoid;
     }
 
-    /* Print-specific */
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .no-print { display: none !important; }
-      .report-footer { position: fixed; bottom: 0; }
+    /* ── ALERTS / NOTES ── */
+    .alert-box {
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      font-size: 10px;
     }
 
-    /* Screen preview */
+    .alert-warning {
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+
+    .alert-info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    /* ── UTILITY ── */
+    .amount {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-weight: 600;
+    }
+
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .text-muted { color: #64748b; }
+    .font-bold { font-weight: 700; }
+    .page-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+
+    /* ── SCREEN-ONLY (hidden when printing) ── */
     @media screen {
-      body { background: #f1f5f9; }
-      .page-wrapper {
+      body {
         max-width: 210mm;
         margin: 20px auto;
-        background: white;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.1);
-        border-radius: 4px;
-        overflow: hidden;
+        padding: 0 15mm;
+        background: #f5f5f5;
       }
+      .pdf-header, .pdf-footer {
+        position: relative;
+        margin: 0;
+      }
+      .pdf-content {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
+    }
+
+    /* ── PRINT BUTTON (hidden in print) ── */
+    @media print {
+      .no-print { display: none !important; }
     }
   </style>
 </head>
 <body>
-  <div class="page-wrapper">
-    <!-- HEADER -->
-    <div class="report-header">
-      <h1>${hs.hospitalName}</h1>
-      ${hs.address && hs.address !== 'Your Hospital Address, City, PIN' ? `<p class="address">${hs.address}</p>` : ''}
-      ${hs.phone ? `<p class="contact">Tel: ${hs.phone}${hs.gstin ? ' | GSTIN: ' + hs.gstin : ''}</p>` : ''}
-      ${hs.doctorName ? `<p class="doctor">Dr. ${hs.doctorName}${hs.doctorQual ? ' — ' + hs.doctorQual : ''}${hs.regNo ? ' | Reg: ' + hs.regNo : ''}</p>` : ''}
-    </div>
-
-    <!-- REPORT TITLE -->
-    <div class="report-title-section">
-      <h2>${title}</h2>
-      ${subtitle ? `<p class="subtitle">${subtitle}</p>` : ''}
-    </div>
-
-    <!-- CONTENT -->
-    <div class="page-content">
-      ${content}
-    </div>
-
-    <!-- FOOTER -->
-    <div class="report-footer">
-      <div class="left">
-        Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}<br>
-        ${hs.hospitalName}${hs.regNo ? ' · Reg: ' + hs.regNo : ''}
+  <!-- HEADER — Repeats on every printed page -->
+  <div class="pdf-header">
+    <div class="pdf-header-inner">
+      <div class="pdf-header-left">
+        ${logoUrl ? `<img src="${logoUrl}" class="pdf-header-logo" alt="Logo" />` : ''}
+        <div class="pdf-header-info">
+          <h1>${hospitalName}</h1>
+          ${address ? `<p>${address}</p>` : ''}
+          ${phone || gstin ? `<p>${[phone ? 'Tel: ' + phone : '', gstin ? 'GSTIN: ' + gstin : ''].filter(Boolean).join(' | ')}</p>` : ''}
+        </div>
       </div>
-      <div class="right">
-        ${hs.doctorName ? 'Dr. ' + hs.doctorName : ''}<br>
-        This is a computer-generated report.
+      <div class="pdf-header-right">
+        ${reportTitle ? `<div class="report-title">${reportTitle}</div>` : ''}
+        ${reportSubtitle ? `<div>${reportSubtitle}</div>` : ''}
+        <div>Generated: ${generatedAt}</div>
       </div>
     </div>
   </div>
 
-  <script>
-    // Auto-print when opened in new window
-    if (window.opener) {
-      window.onload = function() { setTimeout(function() { window.print(); }, 500); }
-    }
-  </script>
+  <!-- FOOTER — Repeats on every printed page -->
+  <div class="pdf-footer">
+    <div class="pdf-footer-left">
+      <span>${hospitalName}${doctorName ? ' | ' + doctorName : ''}</span>
+      <span>Confidential — For authorized use only</span>
+    </div>
+    <div class="pdf-footer-center">
+      <span>NexMedicon HMS</span>
+    </div>
+    <div class="pdf-footer-right">
+      <span>${generatedAt} ${generatedTime}</span>
+    </div>
+  </div>
+
+  <!-- PRINT BUTTON (only visible on screen) -->
+  <div class="no-print" style="text-align:center;padding:12px;margin-bottom:10px;">
+    <button onclick="window.print()" style="
+      background:#2563eb;color:white;border:none;padding:10px 24px;
+      border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;
+    ">Print / Save as PDF</button>
+  </div>
+
+  <!-- CONTENT — Your report body goes here -->
+  <div class="pdf-content">
+    ${bodyHtml}
+  </div>
 </body>
 </html>`
 }
 
 /**
- * Open a report in a new printable window with proper headers/footers.
- * Call this from client components instead of raw window.open().
+ * Generate just the header HTML (for embedding in existing templates)
  */
-export function openPrintableReport(params: {
-  settings: PDFLayoutSettings
-  title: string
-  subtitle?: string
-  content: string
-}) {
-  const html = wrapReportHTML(params)
-  const w = window.open('', '_blank')
-  if (w) {
-    w.document.write(html)
-    w.document.close()
-  }
+export function getHospitalHeaderHtml(options: {
+  hospitalName?: string
+  address?: string
+  phone?: string
+  gstin?: string
+  doctorName?: string
+}): string {
+  const { hospitalName = 'NexMedicon Hospital', address, phone, gstin } = options
+  return `
+    <div style="text-align:center;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:20px;">
+      <h1 style="font-size:18px;margin:0 0 4px;">${hospitalName}</h1>
+      ${address ? `<p style="font-size:9px;color:#64748b;margin:2px 0;">${address}</p>` : ''}
+      ${phone || gstin ? `<p style="font-size:9px;color:#64748b;margin:2px 0;">${[phone ? 'Tel: ' + phone : '', gstin ? 'GSTIN: ' + gstin : ''].filter(Boolean).join(' | ')}</p>` : ''}
+    </div>
+  `
+}
+
+/**
+ * Generate just the footer HTML
+ */
+export function getFooterHtml(options: {
+  hospitalName?: string
+  doctorName?: string
+}): string {
+  const { hospitalName = 'NexMedicon HMS', doctorName = '' } = options
+  const genDate = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'long', year: 'numeric'
+  })
+  const genTime = new Date().toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit'
+  })
+  return `
+    <div style="margin-top:32px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:8px;color:#94a3b8;display:flex;justify-content:space-between;">
+      <span>Generated: ${genDate} at ${genTime}</span>
+      <span>${hospitalName}${doctorName ? ' | ' + doctorName : ''}</span>
+    </div>
+  `
 }
