@@ -37,6 +37,7 @@ export interface HospitalSettings {
   caName: string
   caWhatsApp: string
   caEmail: string
+  doctorSignatureUrl: string
 }
 
 export const DEFAULTS: HospitalSettings = {
@@ -60,6 +61,7 @@ export const DEFAULTS: HospitalSettings = {
   caName: '',
   caWhatsApp: '',
   caEmail: '',
+  doctorSignatureUrl: '',
 }
 
 /**

@@ -149,9 +149,22 @@ export default function MonthlyReportPage() {
 
   return (
     <AppShell>
+      {/* Print styles to remove browser header/footer */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { margin: 12mm 10mm; size: A4; }
+          header, footer, nav, aside { display: none !important; }
+          main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+          .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+        }
+        .print-only { display: none; }
+      `}</style>
       <div className="p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 no-print">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-6 h-6 text-blue-600"/> Monthly Report

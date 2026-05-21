@@ -370,17 +370,16 @@ export default function FundPage() {
               {showCAReport ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
-            {isAdmin && (
-              <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
-                <TrendingUp className="w-4 h-4" /> Add Funds
-              </button>
-            )}
-            {/* Show Add Funds button optimistically while auth is loading for admin-like users */}
-            {!isAdmin && authLoading && (
-              <button disabled
-                className="flex items-center gap-2 bg-gray-300 text-gray-500 font-bold text-sm px-4 py-2 rounded-xl cursor-not-allowed">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+            {(isAdmin || authLoading) && (
+              <button onClick={() => { if (!isAdmin) return; setShowTopupForm(!showTopupForm); setSaveError('') }}
+                disabled={authLoading && !isAdmin}
+                className={`flex items-center gap-2 font-bold text-sm px-4 py-2 rounded-xl shadow-sm transition-colors ${
+                  authLoading && !isAdmin 
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                }`}>
+                {authLoading && !isAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                {authLoading && !isAdmin ? 'Loading...' : 'Add Funds'}
               </button>
             )}
 
