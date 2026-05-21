@@ -14,13 +14,14 @@ import { loadSettings, type HospitalSettings } from '@/lib/settings'
 import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
 import AdminBillModify from '@/components/billing/AdminBillModify'
+import RefundModal from '@/components/billing/RefundModal'
 import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
   ArrowLeft, Receipt, AlertCircle, Calculator, Mail,
-  MessageCircle, ChevronDown, ChevronUp, Calendar,
+  MessageCircle, ChevronDown, ChevronUp, Calendar, RotateCcw,
 } from 'lucide-react'
 
 // ── Common fee presets ────────────────────────────────────────
@@ -335,6 +336,9 @@ function BillingContent() {
   // Filters
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending'>('all')
   const [filterMode, setFilterMode] = useState<'all' | 'cash' | 'upi' | 'card'>('all')
+
+  // Refund modal state
+  const [showRefundModal, setShowRefundModal] = useState(false)
 
   // CA Report state
   const [showCAReport, setShowCAReport] = useState(false)
@@ -727,6 +731,25 @@ function BillingContent() {
           <div className="no-print mt-4">
             <AdminBillModify bill={selectedBill} onUpdated={() => { loadBills(); }} />
           </div>
+          {/* Admin: Refund bill */}
+          {selectedBill.status === 'paid' && (
+            <div className="no-print mt-3">
+              <button
+                onClick={() => setShowRefundModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-orange-200 text-orange-700 hover:bg-orange-50 font-semibold text-sm transition-colors w-full justify-center"
+              >
+                <RotateCcw className="w-4 h-4" /> Initiate Refund
+              </button>
+            </div>
+          )}
+          {/* Refund Modal */}
+          {showRefundModal && selectedBill && (
+            <RefundModal
+              bill={selectedBill}
+              onClose={() => setShowRefundModal(false)}
+              onRefunded={() => { setShowRefundModal(false); loadBills(); }}
+            />
+          )}
         </div>
         <div className="print-only p-8"><ReceiptDoc bill={selectedBill} hs={hs} /></div>
       </AppShell>

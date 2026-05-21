@@ -12,12 +12,14 @@
  * Replaces the simple "markDischarged" confirmation in IPD Census.
  */
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LogOut, X, CheckCircle, Loader2, AlertCircle,
   Calendar, FileText, Heart, Pill, User, BedDouble,
 } from 'lucide-react'
+import DischargeClearance from '@/components/ipd/DischargeClearance'
+import type { ClearanceCategory } from '@/lib/discharge-clearance'
 
 interface Admission {
   id: string
@@ -53,6 +55,16 @@ export default function DischargeModal({
   const [result, setResult] = useState<any>(null)
   const [errorMsg, setErrorMsg] = useState('')
 
+  // Discharge clearance state
+  const [canDischarge, setCanDischarge] = useState(false)
+  const [nursingCleared, setNursingCleared] = useState(false)
+  const [consentCleared, setConsentCleared] = useState(false)
+  const [pharmacyCleared, setPharmacyCleared] = useState(false)
+
+  const handleClearanceChange = useCallback((cleared: boolean) => {
+    setCanDischarge(cleared)
+  }, [])
+
   const [form, setForm] = useState({
     discharge_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
     discharge_time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }),
@@ -64,6 +76,15 @@ export default function DischargeModal({
     follow_up_note: '',
     discharged_by: currentDoctor || admission.admitting_doctor || '',
   })
+
+  // Build manual clearance checks (depends on form state above)
+  const manualChecks: Partial<Record<ClearanceCategory, { cleared: boolean; by?: string }>> = {
+    nursing: { cleared: nursingCleared, by: 'nurse' },
+    consent: { cleared: consentCleared, by: 'staff' },
+    pharmacy: { cleared: pharmacyCleared, by: 'pharmacy' },
+    // Doctor is auto-cleared when form has final_diagnosis + condition
+    doctor: { cleared: !!(form.final_diagnosis && form.condition_at_discharge), by: currentDoctor || 'doctor' },
+  }
 
   function setField(key: string, value: string) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -224,14 +245,53 @@ export default function DischargeModal({
               </div>
             </div>
 
+            {/* Discharge Clearance Checklist */}
+            <div className="mt-5 pt-5 border-t border-gray-200">
+              <DischargeClearance
+                admissionId={admission.id}
+                onClearanceChange={handleClearanceChange}
+                manualChecks={manualChecks}
+                isAdmin={true}
+                currentUser={currentDoctor || 'Admin'}
+              />
+
+              {/* Manual checkboxes for clearance items */}
+              <div className="mt-4 space-y-2 bg-gray-50 rounded-xl p-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={nursingCleared}
+                    onChange={e => setNursingCleared(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 accent-green-600" />
+                  <span className="text-xs font-medium text-gray-700">Nursing sign-off (final vitals recorded)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={consentCleared}
+                    onChange={e => setConsentCleared(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 accent-green-600" />
+                  <span className="text-xs font-medium text-gray-700">Discharge consent signed by patient/attendant</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={pharmacyCleared}
+                    onChange={e => setPharmacyCleared(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 accent-green-600" />
+                  <span className="text-xs font-medium text-gray-700">Pharmacy cleared (medicines dispensed)</span>
+                </label>
+              </div>
+            </div>
+
             {/* Actions */}
             <div className="flex gap-3 mt-6">
               <button onClick={onClose} className="flex-1 py-2.5 px-4 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50">
                 Cancel
               </button>
               <button onClick={handleDischarge}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm flex items-center justify-center gap-2">
-                <LogOut className="w-4 h-4" /> Confirm Discharge
+                disabled={!canDischarge}
+                className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
+                  canDischarge
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+                title={!canDischarge ? 'Complete all required clearance items above' : ''}>
+                <LogOut className="w-4 h-4" /> {canDischarge ? 'Confirm Discharge' : 'Clearance Required'}
               </button>
             </div>
           </div>
