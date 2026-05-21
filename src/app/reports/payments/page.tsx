@@ -8,6 +8,8 @@ import {
   IndianRupee, Printer, RefreshCw, Download,
   Users, Stethoscope, BedDouble, TrendingUp, Search
 } from 'lucide-react'
+import CAReportButton from '@/components/reports/CAReportButton'
+import type { CAReportData } from '@/components/reports/CAReportButton'
 
 interface PatientPayment {
   patient_id:   string
@@ -132,10 +134,34 @@ export default function PaymentReportPage() {
             </h1>
             <p className="text-sm text-gray-500">Payments per patient — OPD &amp; IPD breakdown</p>
           </div>
-          <button onClick={() => window.print()}
-            className="btn-secondary flex items-center gap-2 text-xs no-print">
-            <Printer className="w-3.5 h-3.5"/> Print Report
-          </button>
+          <div className="flex items-center gap-2">
+            <CAReportButton
+              reportData={rows.length > 0 ? {
+                title: 'Patient Payment Report',
+                period: `${from} to ${to}`,
+                fromDate: from,
+                toDate: to,
+                summaryRows: [
+                  { label: 'Total Collected', value: `₹${filtered.reduce((s, r) => s + r.total_paid, 0).toLocaleString('en-IN')}` },
+                  { label: 'Pending', value: `₹${filtered.reduce((s, r) => s + r.total_pending, 0).toLocaleString('en-IN')}` },
+                  { label: 'Patients', value: String(filtered.length) },
+                  { label: 'Bills', value: String(filtered.reduce((s, r) => s + r.bills.length, 0)) },
+                ],
+                tableHeaders: ['Patient', 'MRN', 'Type', 'Total Paid', 'Pending', 'Last Visit'],
+                tableRows: filtered.slice(0, 50).map(r => [
+                  r.patient_name, r.mrn, r.encounter_type,
+                  `₹${r.total_paid.toLocaleString('en-IN')}`,
+                  `₹${r.total_pending.toLocaleString('en-IN')}`,
+                  formatDate(r.last_visit),
+                ]),
+                totalRow: ['TOTAL', '', '', `₹${filtered.reduce((s, r) => s + r.total_paid, 0).toLocaleString('en-IN')}`, `₹${filtered.reduce((s, r) => s + r.total_pending, 0).toLocaleString('en-IN')}`, ''],
+              } : null}
+            />
+            <button onClick={() => window.print()}
+              className="btn-secondary flex items-center gap-2 text-xs no-print">
+              <Printer className="w-3.5 h-3.5"/> Print Report
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

@@ -1446,96 +1446,122 @@ function BillingContent() {
   )
 }
 
-// ── Receipt document component ────────────────────────────────
+// ── Receipt document component — PROFESSIONAL REDESIGN ────────────────────────
 function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
   const items = Array.isArray(bill.items) ? bill.items : []
-  // ─── BUG #3 FIX — Read GST safely from bill ─────────────────────────────
-  // Older bills (pre-fix) don't have these fields. Number(undefined || 0) = 0,
-  // so the GST line just won't render — receipt looks identical to before.
   const billGstPercent = Number(bill.gst_percent || 0)
   const billGstAmount = Number(bill.gst_amount || 0)
   const showGst = billGstPercent > 0 && billGstAmount > 0
-  // ────────────────────────────────────────────────────────────────────────
+  const receiptNo = bill.id.slice(-10).toUpperCase()
+  const billDate = new Date(bill.created_at).toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  })
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
-      <div className="text-center pb-4 mb-5 border-b-2 border-gray-800">
-        <div className="text-xl font-bold tracking-wide uppercase">{hs.hospitalName || 'NexMedicon Hospital'}</div>
-        {hs.address && <div className="text-sm text-gray-500">{hs.address}</div>}
-        {hs.phone && <div className="text-sm text-gray-500">Tel: {hs.phone}</div>}
-        {(hs.regNo || hs.gstin) && (
-          <div className="text-xs text-gray-400">
-            {hs.regNo && `Reg: ${hs.regNo}`}{hs.regNo && hs.gstin && ' · '}{hs.gstin && `GSTIN: ${hs.gstin}`}
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden max-w-2xl mx-auto">
+      {/* Header — Professional clinic branding */}
+      <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 px-8 py-5 text-white text-center">
+        <h1 className="text-xl font-bold tracking-wide uppercase">
+          {hs.hospitalName || 'NexMedicon Hospital'}
+        </h1>
+        {hs.address && hs.address !== 'Your Hospital Address, City, PIN' && (
+          <p className="text-blue-200 text-xs mt-0.5">{hs.address}</p>
+        )}
+        {hs.phone && (
+          <p className="text-blue-200 text-xs">
+            Tel: {hs.phone}
+            {hs.regNo && <span className="ml-3">Reg: {hs.regNo}</span>}
+          </p>
+        )}
+      </div>
+
+      {/* Title bar */}
+      <div className="bg-gray-50 border-b border-gray-200 px-8 py-3 text-center">
+        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-widest">Payment Receipt</h2>
+      </div>
+
+      {/* Patient + Receipt info */}
+      <div className="px-8 py-5">
+        <div className="flex justify-between items-start mb-5 pb-4 border-b border-dashed border-gray-200">
+          <div className="space-y-1">
+            <div className="text-sm"><span className="font-bold text-gray-800">Patient:</span> <span className="text-gray-700">{bill.patient_name}</span></div>
+            <div className="text-sm"><span className="font-bold text-gray-800">MRN:</span> <span className="font-mono text-gray-600">{bill.mrn}</span></div>
+          </div>
+          <div className="text-right space-y-1">
+            <div className="text-sm"><span className="font-bold text-gray-800">Receipt No:</span> <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{receiptNo}</span></div>
+            <div className="text-sm"><span className="font-bold text-gray-800">Date:</span> <span className="text-gray-700">{billDate}</span></div>
+          </div>
+        </div>
+
+        {/* Items table */}
+        <table className="w-full text-sm mb-5">
+          <thead>
+            <tr className="border-b-2 border-gray-800">
+              <th className="text-left py-2.5 pr-4 font-bold text-gray-700 w-10">#</th>
+              <th className="text-left py-2.5 font-bold text-gray-700">Description</th>
+              <th className="text-right py-2.5 font-bold text-gray-700 w-28">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any, i: number) => (
+              <tr key={i} className="border-b border-gray-100">
+                <td className="py-2.5 pr-4 text-gray-400 font-mono text-xs">{i + 1}</td>
+                <td className="py-2.5 text-gray-800">{item.label}</td>
+                <td className="py-2.5 text-right font-mono font-semibold text-gray-800">₹{Number(item.amount).toLocaleString('en-IN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Totals section */}
+        <div className="border-t-2 border-gray-200 pt-3 space-y-1.5">
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Subtotal</span>
+            <span className="font-mono">₹{Number(bill.subtotal).toLocaleString('en-IN')}</span>
+          </div>
+          {Number(bill.discount) > 0 && (
+            <div className="flex justify-between text-sm text-green-700">
+              <span>Discount</span>
+              <span className="font-mono">− ₹{Number(bill.discount).toLocaleString('en-IN')}</span>
+            </div>
+          )}
+          {showGst && (
+            <div className="flex justify-between text-sm text-amber-700">
+              <span>GST @ {billGstPercent}%</span>
+              <span className="font-mono">+ ₹{billGstAmount.toLocaleString('en-IN')}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-gray-800">
+            <span className="text-base font-bold text-gray-900">Net Amount Paid</span>
+            <span className="text-lg font-bold font-mono text-gray-900">₹{Number(bill.net_amount).toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+
+        {/* Payment status badge */}
+        <div className="mt-5 flex justify-between items-center border border-green-200 rounded-xl px-5 py-3 bg-green-50">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+            </div>
+            <span className="font-bold text-green-800 text-sm">Payment Received</span>
+          </div>
+          <div className="text-sm text-gray-600">
+            Mode: <strong className="capitalize">{bill.payment_mode}</strong>
+          </div>
+        </div>
+
+        {bill.notes && !bill.notes.includes('[ADMIN MODIFIED]') && (
+          <div className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            <span className="font-semibold">Notes:</span> {bill.notes}
           </div>
         )}
-        <div className="text-lg font-bold mt-2 uppercase tracking-wider">Payment Receipt</div>
       </div>
-      <div className="grid grid-cols-2 gap-4 mb-5 text-sm">
-        <div className="space-y-1">
-          <div><span className="font-semibold">Patient: </span>{bill.patient_name}</div>
-          <div><span className="font-semibold">MRN: </span><span className="font-mono">{bill.mrn}</span></div>
-        </div>
-        <div className="space-y-1 text-right">
-          <div><span className="font-semibold">Receipt No: </span><span className="font-mono text-xs">{bill.id.slice(-10).toUpperCase()}</span></div>
-          <div><span className="font-semibold">Date: </span>{formatDate(bill.created_at)}</div>
-        </div>
-      </div>
-      <table className="w-full text-sm mb-4">
-        <thead>
-          <tr className="border-b-2 border-gray-300">
-            <th className="text-left py-2 pr-4 font-semibold text-gray-600">#</th>
-            <th className="text-left py-2 font-semibold text-gray-600">Description</th>
-            <th className="text-right py-2 font-semibold text-gray-600">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item: any, i: number) => (
-            <tr key={i} className="border-b border-gray-100">
-              <td className="py-2 pr-4 text-gray-400">{i + 1}</td>
-              <td className="py-2">{item.label}</td>
-              <td className="py-2 text-right font-mono">{inr(Number(item.amount))}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-gray-200">
-            <td colSpan={2} className="py-2 text-right text-gray-500 pr-4">Subtotal</td>
-            <td className="py-2 text-right font-mono">{inr(Number(bill.subtotal))}</td>
-          </tr>
-          {Number(bill.discount) > 0 && (
-            <tr>
-              <td colSpan={2} className="py-1 text-right text-gray-500 pr-4">Discount</td>
-              <td className="py-1 text-right font-mono text-green-700">− {inr(Number(bill.discount))}</td>
-            </tr>
-          )}
-          {/* ─── BUG #3 FIX — Render GST line on the printed receipt ───────── */}
-          {showGst && (
-            <tr>
-              <td colSpan={2} className="py-1 text-right text-gray-500 pr-4">GST @ {billGstPercent}%</td>
-              <td className="py-1 text-right font-mono text-amber-700">+ {inr(billGstAmount)}</td>
-            </tr>
-          )}
-          {/* ─────────────────────────────────────────────────────────────── */}
-          <tr className="border-t-2 border-gray-800">
-            <td colSpan={2} className="py-2 text-right font-bold text-base pr-4">Net Amount Paid</td>
-            <td className="py-2 text-right font-bold font-mono text-base">{inr(Number(bill.net_amount))}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div className="flex justify-between items-center border border-green-200 rounded-lg px-4 py-3 mb-4 bg-green-50">
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600" />
-          <span className="font-semibold text-green-800">Payment Received</span>
-        </div>
-        <div className="text-sm text-gray-600">
-          Mode: <strong className="capitalize">{bill.payment_mode}</strong>
-          {bill.razorpay_payment_id && (
-            <span className="ml-2 text-xs text-gray-400 font-mono">Ref: {bill.razorpay_payment_id}</span>
-          )}
-        </div>
-      </div>
-      {bill.notes && <div className="text-xs text-gray-500 mb-3">Notes: {bill.notes}</div>}
-      <div className="text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
-        Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
+
+      {/* Footer */}
+      <div className="bg-gray-50 border-t border-gray-200 px-8 py-3 text-center">
+        <p className="text-xs text-green-700 font-medium">
+          Thank you for choosing {hs.hospitalName || 'NexMedicon Hospital'}. Wishing you good health!
+        </p>
       </div>
     </div>
   )

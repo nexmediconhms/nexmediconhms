@@ -138,6 +138,7 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [fhirExporting, setFhirExporting] = useState(false)
+  const [totalVisitCount, setTotalVisitCount] = useState(0)
 
   // AI summary state
   const [summary, setSummary] = useState('')
@@ -173,18 +174,25 @@ export default function PatientDetailPage() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }] = await Promise.all([
+    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }, { data: queueData }] = await Promise.all([
       supabase.from('patients').select('*').eq('id', id).single(),
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('discharge_summaries').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('bills').select('*').eq('patient_id', id).order('created_at', { ascending: false }).limit(20),
+      // FIX: Also count OPD queue visits (done status = completed visit)
+      supabase.from('opd_queue').select('id, status, queue_date').eq('patient_id', id),
     ])
     setPatient(p)
     setEncounters(enc || [])
     setPrescriptions(rx || [])
     setDischarges(ds || [])
     setBills(billsData || [])
+    // Calculate total visits: encounters + completed queue visits (to avoid double-counting, use max)
+    const encCount = (enc || []).length
+    const queueDoneCount = (queueData || []).filter((q: any) => q.status === 'done' || q.status === 'in_progress').length
+    // Total visits = max of encounters and queue entries (they overlap in most cases)
+    setTotalVisitCount(Math.max(encCount, queueDoneCount) || encCount)
     setLoading(false)
   }
 
@@ -534,10 +542,62 @@ export default function PatientDetailPage() {
           )
         })()}
 
+        {/* ═══ PAYMENT & CASE STATUS BANNER ═══════════════════════ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+          {/* Payment Status */}
+          <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
+            hasBills ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+          }`}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+              hasBills ? 'bg-green-100' : 'bg-amber-100'
+            }`}>
+              <IndianRupee className={`w-4 h-4 ${hasBills ? 'text-green-600' : 'text-amber-600'}`} />
+            </div>
+            <div>
+              <div className={`text-sm font-bold ${hasBills ? 'text-green-800' : 'text-amber-800'}`}>
+                {hasBills
+                  ? `₹${totalBilled.toLocaleString('en-IN')} Paid`
+                  : 'No Payment Collected Yet'}
+              </div>
+              <div className="text-xs text-gray-500">
+                {hasBills
+                  ? `${paidBills.length} bill${paidBills.length > 1 ? 's' : ''} · Last: ${formatDate(paidBills[0]?.created_at)}`
+                  : 'Collect consultation fee before or after visit'}
+              </div>
+            </div>
+          </div>
+
+          {/* Patient Case Type */}
+          <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
+            encounters.length > 1 ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200'
+          }`}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+              encounters.length > 1 ? 'bg-blue-100' : 'bg-purple-100'
+            }`}>
+              <User className={`w-4 h-4 ${encounters.length > 1 ? 'text-blue-600' : 'text-purple-600'}`} />
+            </div>
+            <div>
+              <div className={`text-sm font-bold ${encounters.length > 1 ? 'text-blue-800' : 'text-purple-800'}`}>
+                {encounters.length > 1 ? 'Returning Patient' : 'New Patient'}
+                {encounters.length > 1 && encounters[0]?.diagnosis && (
+                  <span className="font-normal text-xs text-gray-500 ml-2">
+                    · Last: {encounters[0].diagnosis.slice(0, 40)}{encounters[0].diagnosis.length > 40 ? '...' : ''}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-gray-500">
+                {encounters.length > 1
+                  ? `${encounters.length} consultations · Registered ${formatDate(patient.created_at)}`
+                  : `Registered ${formatDate(patient.created_at)} · First consultation pending`}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Stats row */}
-        <div className="grid grid-cols-4 gap-4 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
           {[
-            { icon: Stethoscope, color: 'blue', val: encounters.length, label: 'Total Visits' },
+            { icon: Stethoscope, color: 'blue', val: totalVisitCount || encounters.length, label: 'Total Visits' },
             { icon: Pill, color: 'green', val: prescriptions.length, label: 'Prescriptions' },
             { icon: FileText, color: 'purple', val: discharges.length, label: 'Discharge Summaries' },
             {

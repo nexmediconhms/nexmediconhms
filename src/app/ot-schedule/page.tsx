@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getHospitalSettings, getIndiaToday } from '@/lib/utils'
+import { formatDate, getHospitalSettings, getIndiaToday, isSunday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
     Scissors, Plus, X, Clock, CheckCircle, AlertTriangle,
@@ -215,6 +215,11 @@ export default function OTSchedulePage() {
 
     async function handleBook() {
         if (!selPatient) { setError('Select a patient'); return }
+        // Block Sunday — clinic is closed
+        if (isSunday(form.surgery_date)) {
+            setError('Clinic is closed on Sundays. Please select a different date for surgery.')
+            return
+        }
         setSaving(true); setError('')
         const { data: conflicts } = await supabase.from('ot_schedules').select('id,patient_name,surgery_name,start_time,end_time')
             .eq('surgery_date', form.surgery_date).eq('ot_room', form.ot_room).neq('status', 'cancelled')
