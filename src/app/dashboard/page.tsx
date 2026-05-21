@@ -526,6 +526,7 @@ export default function DashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, debouncedLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters' }, debouncedLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, debouncedLoad)
       .subscribe((status, err) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[Dashboard Realtime] Subscription issue:', status, err)
