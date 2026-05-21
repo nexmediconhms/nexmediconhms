@@ -65,6 +65,7 @@ export interface PDFPrescriptionData {
     doctorReg?:   string
     footerNote?:  string
     logoUrl?:     string
+    doctorSignatureUrl?: string
   }
 }
 
@@ -140,7 +141,7 @@ const C = {
 // ─── Prescription PDF ─────────────────────────────────────────
 
 export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promise<Buffer> {
-  const { renderToBuffer, Document, Page, Text, View, StyleSheet } = await import('@react-pdf/renderer')
+  const { renderToBuffer, Document, Page, Text, View, StyleSheet, Image } = await import('@react-pdf/renderer')
 
   const s = StyleSheet.create({
     page:         { fontFamily: 'Helvetica', fontSize: 9, paddingHorizontal: 36, paddingVertical: 28, backgroundColor: C.white },
@@ -299,7 +300,11 @@ export async function generatePrescriptionPDF(data: PDFPrescriptionData): Promis
             {hs.gstin  ? `   GSTIN: ${hs.gstin}` : ''}
           </Text>
           <View style={s.sigArea}>
-            <Text style={{ ...s.sigLine, marginBottom: 18 }}> </Text>
+            {hs.doctorSignatureUrl ? (
+              <Image src={hs.doctorSignatureUrl} style={{ width: 100, height: 40, marginBottom: 4 }} />
+            ) : (
+              <Text style={{ ...s.sigLine, marginBottom: 18 }}> </Text>
+            )}
             <Text style={s.sigLine}>________________________________</Text>
             <Text style={s.sigName}>Dr. {hs.doctorName}</Text>
             {hs.doctorQual && <Text style={s.sigQual}>{hs.doctorQual}</Text>}

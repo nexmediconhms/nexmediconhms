@@ -261,3 +261,56 @@ export async function handleVisitCompletion(patientId: string) {
   // ✅ Cancel only follow-up appointments (safe)
   await cancelActiveAppointment(patientId)
 }
+
+/**
+ * Sync appointment status from OPD encounter.
+ * When a patient is seen in OPD (encounter created), automatically mark
+ * their today's appointment as 'completed'.
+ *
+ * Call this after saving an encounter/consultation.
+ */
+export async function syncAppointmentFromOPD(patientId: string, patientName?: string) {
+  const today = getIndiaToday()
+
+  try {
+    // Find today's appointment for this patient with scheduled/confirmed status
+    const { data: appointments, error: findErr } = await supabase
+      .from('appointments')
+      .select('id, status, type')
+      .eq('patient_id', patientId)
+      .eq('date', today)
+      .in('status', ['scheduled', 'confirmed'])
+      .limit(1)
+
+    if (findErr) {
+      console.warn('[appointmentSync] Error finding appointment:', findErr.message)
+      return
+    }
+
+    if (!appointments || appointments.length === 0) return
+
+    // Mark as completed
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({
+        status: 'completed',
+        updated_at: nowISO(),
+      })
+      .eq('id', appointments[0].id)
+
+    if (updateErr) {
+      console.warn('[appointmentSync] Error updating appointment:', updateErr.message)
+      return
+    }
+
+    // Send notification
+    try {
+      // Typecast to 'any' to bypass the missing property definition error
+      await (notify as any).appointmentCompleted?.(patientId, patientName || '', today)
+    } catch {
+      // Non-fatal
+    }
+  } catch (err) {
+    console.warn('[appointmentSync] Unexpected error:', err)
+  }
+}

@@ -16,7 +16,7 @@ import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { Plus, Trash2, Printer, ArrowLeft, CheckCircle, Shield } from 'lucide-react'
 import SmartMic from '@/components/shared/SmartMic'
-import { createFollowUp, handleVisitCompletion } from '@/lib/services/appointmentService'
+import { createFollowUp, handleVisitCompletion, syncAppointmentFromOPD } from '@/lib/services/appointmentService'
 
 const ROUTES = ['Oral', 'IV', 'IM', 'Topical', 'Sublingual', 'Inhalation', 'Rectal', 'Nasal']
 const FREQS = [
@@ -355,6 +355,13 @@ export default function PrescriptionPage() {
       await handleVisitCompletion(patient.id)
     } catch (e) {
       console.warn('[VisitCompletion] failed:', e)
+    }
+
+    // ✅ Auto-sync appointment status to 'completed'
+    try {
+      await syncAppointmentFromOPD(patient.id, patient.full_name)
+    } catch (e) {
+      console.warn('[AppointmentSync] failed:', e)
     }
 
     // ✅ Follow-up handling (already fixed earlier)
