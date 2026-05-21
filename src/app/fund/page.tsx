@@ -350,16 +350,12 @@ export default function FundPage() {
               {showCAReport ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
-            {roleLoading ? (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checking role…
-              </div>
-            ) : isAdmin ? (
+            {isAdmin && (
               <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
                 <TrendingUp className="w-4 h-4" /> Add Funds
               </button>
-            ) : null}
+            )}
 
             <button onClick={() => { setShowAddForm(!showAddForm); setSaveError('') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">

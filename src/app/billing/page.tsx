@@ -1274,16 +1274,22 @@ function BillingContent() {
                           if (data.method === 'email') {
                             alert(`Report sent successfully to ${caSettings.caEmail}!`)
                           } else {
-                            // Client fallback: open PDF in new window for download
-                            const w = window.open('', '_blank')
-                            if (w && data.pdfHtml) {
-                              w.document.write(data.pdfHtml)
-                              w.document.close()
-                              setTimeout(() => w.print(), 500)
-                            }
-                            // Also open mailto if available
+                            // Client fallback: open mailto first (opens email client with CA's email pre-filled)
                             if (data.mailtoUrl) {
-                              window.location.href = data.mailtoUrl
+                              window.open(data.mailtoUrl, '_self')
+                              // Show instruction to user
+                              setTimeout(() => {
+                                alert('Your email client has been opened with the report summary.\n\nTo attach the PDF:\n1. Click "Save as PDF" button to download the report\n2. Attach the downloaded PDF to the email')
+                              }, 500)
+                            } else {
+                              // No email configured — just show PDF for download
+                              const w = window.open('', '_blank')
+                              if (w && data.pdfHtml) {
+                                w.document.write(data.pdfHtml)
+                                w.document.close()
+                                setTimeout(() => w.print(), 500)
+                              }
+                              alert('No CA email configured. PDF opened for download. Configure CA email in Settings.')
                             }
                           }
                         } else {
