@@ -281,20 +281,19 @@ export default function FundPage() {
     setFundReport(computeFundReport(allTransactions, from, to, label))
   }
 
-  // Submit expense
+  // Submit expense — auto-approved (no admin approval needed for operational expenses)
   async function submitExpense() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true); setSaveError('')
-    // Build description with receipt ref and submitter info appended
-    const descParts = [expenseForm.description.trim()]
-    if (expenseForm.receipt_note.trim()) descParts.push(`[Ref: ${expenseForm.receipt_note.trim()}]`)
-    descParts.push(`[By: ${user?.full_name || 'Unknown'}]`)
     const { error } = await supabase.from('hospital_fund').insert({
       type: 'expense', category: expenseForm.category,
       amount: Number(expenseForm.amount),
-      description: descParts.join(' '),
-      status: 'pending',
+      description: expenseForm.description.trim(),
+      receipt_note: expenseForm.receipt_note.trim() || null,
+      submitted_by: user?.full_name || 'Unknown',
+      approved_by: user?.full_name || 'Auto',
+      status: 'approved',
     })
     setSaving(false)
     if (error) { setSaveError(`Failed to submit: ${error.message}`); return }
@@ -310,7 +309,7 @@ export default function FundPage() {
     const { data, error } = await supabase.from('hospital_fund').insert({
       type: 'topup', category: 'topup', amount: Number(topupForm.amount),
       description: topupForm.note || `Fund top-up by ${user?.full_name}`,
-      approved_by: user?.full_name || 'Admin', status: 'approved',
+      submitted_by: user?.full_name || 'Admin', approved_by: user?.full_name || 'Admin', status: 'approved',
     }).select().single()
     setSaving(false)
     if (error) { setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`); return }
@@ -333,7 +332,7 @@ export default function FundPage() {
   async function updateStatus(id: string, status: 'approved' | 'rejected') {
     await supabase
       .from('hospital_fund')
-      .update({ status, approved_by: user?.full_name })
+      .update({ status, approved_by: user?.full_name, updated_at: new Date().toISOString() })
       .eq('id', id)
     await Promise.all([loadAllTransactions(), loadFilteredTransactions()])
   }
