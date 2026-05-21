@@ -370,19 +370,10 @@ export default function FundPage() {
               {showCAReport ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
-            {isAdmin && (
-              <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
-                <TrendingUp className="w-4 h-4" /> Add Funds
-              </button>
-            )}
-            {/* Show Add Funds button optimistically while auth is loading for admin-like users */}
-            {!isAdmin && authLoading && (
-              <button disabled
-                className="flex items-center gap-2 bg-gray-300 text-gray-500 font-bold text-sm px-4 py-2 rounded-xl cursor-not-allowed">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading...
-              </button>
-            )}
+            <button onClick={() => { setShowTopupForm(!showTopupForm); setSaveError('') }}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-emerald-200 transition-colors">
+              <TrendingUp className="w-4 h-4" /> Add Funds
+            </button>
 
             <button onClick={() => { setShowAddForm(!showAddForm); setSaveError('') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2 rounded-xl shadow-sm shadow-blue-200 transition-colors">
@@ -420,7 +411,7 @@ export default function FundPage() {
         </div>
 
         {/* Top-up form */}
-        {showTopupForm && isAdmin && (
+        {showTopupForm && (
           <div className="card p-5 mb-5 border-l-4 border-emerald-400">
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-500" /> Add Funds to Hospital Account
