@@ -289,9 +289,9 @@ export default function FundPage() {
     const { error } = await supabase.from('hospital_fund').insert({
       type: 'expense', category: expenseForm.category,
       amount: Number(expenseForm.amount),
-      description: expenseForm.description.trim(),
+      description: `${expenseForm.description.trim()} [By: ${user?.full_name || 'Unknown'}]`,
       receipt_note: expenseForm.receipt_note.trim() || null,
-      submitted_by: user?.full_name || 'Unknown', status: 'pending',
+      status: 'pending',
     })
     setSaving(false)
     if (error) { setSaveError(`Failed to submit: ${error.message}`); return }
@@ -307,7 +307,7 @@ export default function FundPage() {
     const { data, error } = await supabase.from('hospital_fund').insert({
       type: 'topup', category: 'topup', amount: Number(topupForm.amount),
       description: topupForm.note || `Fund top-up by ${user?.full_name}`,
-      submitted_by: user?.full_name || 'Admin', approved_by: user?.full_name || 'Admin', status: 'approved',
+      approved_by: user?.full_name || 'Admin', status: 'approved',
     }).select().single()
     setSaving(false)
     if (error) { setSaveError(`Failed to add funds: ${error.message}. Check that the hospital_fund table exists and RLS allows inserts.`); return }
@@ -796,7 +796,7 @@ export default function FundPage() {
                           {tx.type === 'topup' ? '+' : ''}{inr(tx.amount)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{tx.submitted_by}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{tx.submitted_by || '—'}</td>
                       <td className="px-4 py-3">{statusBadge(tx.status)}</td>
                       {isAdmin && (
                         <td className="px-4 py-3">
