@@ -402,12 +402,17 @@ function QueueContent() {
                     <div className="flex gap-2 flex-shrink-0">
                       {entry.status === 'waiting' && (
                         <>
-                          <button onClick={() => updateStatus(entry, 'in_progress')}
+                          <button onClick={() => {
+                            updateStatus(entry, 'in_progress')
+                            // Navigate to OPD consultation for this patient
+                            window.location.href = `/opd/new?patient=${entry.patient_id}`
+                          }}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                            <Play className="w-3 h-3" /> Call
+                            <Play className="w-3 h-3" /> Start OPD
                           </button>
                           <button onClick={() => updateStatus(entry, 'cancelled')}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                            title="Remove from queue">
                             <X className="w-4 h-4" />
                           </button>
                         </>

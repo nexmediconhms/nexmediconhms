@@ -754,9 +754,9 @@ function BillingContent() {
             </div>
           )}
 
-          <div className="grid grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             {/* Left: fee selection */}
-            <div className="col-span-3 space-y-5">
+            <div className="lg:col-span-3 space-y-5">
               {/* Step 1: Patient */}
               <div className="card p-5">
                 <h2 className="section-title">1. Select Patient</h2>
@@ -817,7 +817,7 @@ function BillingContent() {
             </div>
 
             {/* Right: bill summary */}
-            <div className="col-span-2 space-y-5">
+            <div className="lg:col-span-2 space-y-5">
               <div className="card p-5 sticky top-20">
                 <h2 className="section-title">Bill Summary</h2>
                 {billItems.length === 0 ? (
@@ -1274,16 +1274,12 @@ function BillingContent() {
                           if (data.method === 'email') {
                             alert(`Report sent successfully to ${caSettings.caEmail}!`)
                           } else {
-                            // Client fallback: open PDF in new window for download
-                            const w = window.open('', '_blank')
-                            if (w && data.pdfHtml) {
-                              w.document.write(data.pdfHtml)
-                              w.document.close()
-                              setTimeout(() => w.print(), 500)
-                            }
-                            // Also open mailto if available
+                            // Client fallback: open email client with CA email pre-filled
                             if (data.mailtoUrl) {
-                              window.location.href = data.mailtoUrl
+                              window.open(data.mailtoUrl, '_self')
+                              alert('Your email client has been opened with the report summary pre-filled.\n\nTo attach the PDF report:\n1. Click "Save as PDF" button separately\n2. Attach the downloaded file to the email\n3. Send to your CA')
+                            } else if (!caSettings.caEmail) {
+                              alert('No CA email configured. Please add CA email in Settings → CA Details.')
                             }
                           }
                         } else {
