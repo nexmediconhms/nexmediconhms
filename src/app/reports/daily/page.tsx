@@ -180,39 +180,95 @@ export default function DailyReportPage() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => {
-              // Open clean print window without browser header/footer/URL
-              const printContent = document.querySelector('.print-only')?.outerHTML || ''
-              const pageContent = document.querySelector('.card')?.parentElement?.innerHTML || ''
+              if (!stats) return
+              // Build patient rows for the table
+              const patientRows = stats.patients.map((p, i) => {
+                const cash = p.bills.filter(b => b.payment_mode === 'cash' && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                const upi  = p.bills.filter(b => b.payment_mode === 'upi'  && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                const card = p.bills.filter(b => b.payment_mode === 'card' && b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
+                const pend = p.bills.filter(b => b.status === 'pending').reduce((s, b) => s + b.net_amount, 0)
+                return `<tr>
+                  <td>${i+1}</td>
+                  <td style="font-weight:600;">${p.patient_name}</td>
+                  <td style="font-family:monospace;font-size:10px;">${p.mrn}</td>
+                  <td><span style="background:${p.type==='IPD'?'#f3e8ff':'#dbeafe'};color:${p.type==='IPD'?'#7e22ce':'#1d4ed8'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">${p.type}</span></td>
+                  <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.diagnosis || '—'}</td>
+                  <td style="font-family:monospace;color:#15803d;">${cash > 0 ? INR(cash) : '—'}</td>
+                  <td style="font-family:monospace;color:#1d4ed8;">${upi > 0 ? INR(upi) : '—'}</td>
+                  <td style="font-family:monospace;color:#7e22ce;">${card > 0 ? INR(card) : '—'}</td>
+                  <td style="font-family:monospace;font-weight:700;">${p.total_paid > 0 ? INR(p.total_paid) : '₹0'}</td>
+                  <td style="font-family:monospace;color:#ea580c;">${pend > 0 ? INR(pend) : '—'}</td>
+                </tr>`
+              }).join('')
+
               const w = window.open('', '_blank')
               if (w) {
-                w.document.write(`<!DOCTYPE html><html><head><title>Daily Report</title>
+                w.document.write(`<!DOCTYPE html><html><head><title>Daily Report — ${dateLabel}</title>
                 <style>
-                  body { font-family: Inter, Arial, sans-serif; color: #1e293b; padding: 20px; margin: 0; }
-                  @page { margin: 15mm; size: A4; }
-                  .no-print { display: none !important; }
-                  .print-only { display: block !important; }
-                  .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
-                  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-                  th { background: #f8fafc; text-align: left; padding: 8px 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
-                  td { padding: 6px 12px; border-bottom: 1px solid #f1f5f9; }
-                  .section-title { font-size: 14px; font-weight: 700; color: #1e293b; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
-                  .grid { display: grid; gap: 12px; }
-                  .grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-                  .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-                  .font-mono { font-family: monospace; }
-                  .font-bold { font-weight: bold; }
-                  .text-center { text-align: center; }
+                  * { box-sizing: border-box; margin: 0; padding: 0; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif; color: #1e293b; padding: 24px; margin: 0; font-size: 12px; }
+                  @page { margin: 12mm; size: A4; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+                  th { background: #f8fafc; text-align: left; padding: 8px 10px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+                  td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; font-size: 11px; }
+                  tr:last-child td { border-bottom: none; }
+                  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+                  .summary-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; }
+                  .summary-card .value { font-size: 18px; font-weight: 700; font-family: monospace; }
+                  .summary-card .label { font-size: 10px; font-weight: 600; color: #64748b; margin-top: 4px; }
+                  .revenue-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0; }
+                  .revenue-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; }
+                  .revenue-card .value { font-size: 14px; font-weight: 700; font-family: monospace; }
+                  .revenue-card .label { font-size: 10px; font-weight: 600; margin-top: 2px; }
+                  .section-title { font-size: 13px; font-weight: 700; color: #1e293b; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; margin: 16px 0 8px 0; }
+                  .totals-row td { font-weight: 700; background: #f8fafc; border-top: 2px solid #e2e8f0; }
                 </style></head><body>
-                  <div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:20px;">
-                    <div style="font-size:20px;font-weight:700;">${hs.hospitalName || 'NexMedicon Hospital'}</div>
-                    ${hs.address ? `<div style="font-size:11px;color:#555;margin-top:2px;">${hs.address}</div>` : ''}
-                    ${hs.phone ? `<div style="font-size:11px;color:#555;">${hs.phone}</div>` : ''}
-                    <div style="font-size:15px;font-weight:700;margin-top:10px;color:#1d4ed8;">Daily Report — ${dateLabel}</div>
+                  <div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:16px;">
+                    <div style="font-size:18px;font-weight:700;">${hs.hospitalName || 'NexMedicon Hospital'}</div>
+                    ${hs.address ? `<div style="font-size:10px;color:#555;margin-top:2px;">${hs.address}</div>` : ''}
+                    ${hs.phone ? `<div style="font-size:10px;color:#555;">${hs.phone}</div>` : ''}
+                    <div style="font-size:14px;font-weight:700;margin-top:8px;color:#1d4ed8;">Daily Report — ${dateLabel}</div>
                   </div>
-                  ${pageContent}
-                  <div style="margin-top:24px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between;">
+
+                  <div class="summary-grid">
+                    <div class="summary-card"><div class="value" style="color:#1d4ed8;">${stats.total_patients}</div><div class="label">Total Patients</div></div>
+                    <div class="summary-card"><div class="value" style="color:#4338ca;">${stats.opd_count}</div><div class="label">OPD Visits</div></div>
+                    <div class="summary-card"><div class="value" style="color:#7e22ce;">${stats.ipd_count}</div><div class="label">IPD Admissions</div></div>
+                    <div class="summary-card"><div class="value" style="color:#15803d;">${INR(stats.total_revenue)}</div><div class="label">Today's Revenue</div></div>
+                  </div>
+
+                  <div class="section-title">Revenue Breakdown</div>
+                  <div class="revenue-grid">
+                    <div class="revenue-card"><div class="value" style="color:#15803d;">${INR(stats.cash_revenue)}</div><div class="label">Cash</div></div>
+                    <div class="revenue-card"><div class="value" style="color:#1d4ed8;">${INR(stats.upi_revenue)}</div><div class="label">UPI</div></div>
+                    <div class="revenue-card"><div class="value" style="color:#7e22ce;">${INR(stats.card_revenue)}</div><div class="label">Card</div></div>
+                    <div class="revenue-card"><div class="value" style="color:#ea580c;">${INR(stats.pending)}</div><div class="label">Pending</div></div>
+                  </div>
+
+                  <div class="section-title">Patient Details — ${dateLabel}</div>
+                  ${stats.patients.length === 0
+                    ? '<p style="text-align:center;color:#94a3b8;padding:24px 0;">No patients recorded on this date</p>'
+                    : `<table>
+                      <thead><tr>
+                        <th>#</th><th>Patient</th><th>MRN</th><th>Type</th><th>Diagnosis</th><th>Cash</th><th>UPI</th><th>Card</th><th>Total</th><th>Pending</th>
+                      </tr></thead>
+                      <tbody>
+                        ${patientRows}
+                        <tr class="totals-row">
+                          <td colspan="5" style="text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;">Day Total</td>
+                          <td style="font-family:monospace;color:#15803d;">${INR(stats.cash_revenue)}</td>
+                          <td style="font-family:monospace;color:#1d4ed8;">${INR(stats.upi_revenue)}</td>
+                          <td style="font-family:monospace;color:#7e22ce;">${INR(stats.card_revenue)}</td>
+                          <td style="font-family:monospace;">${INR(stats.total_revenue)}</td>
+                          <td style="font-family:monospace;color:#ea580c;">${INR(stats.pending)}</td>
+                        </tr>
+                      </tbody>
+                    </table>`
+                  }
+
+                  <div style="margin-top:24px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8;display:flex;justify-content:space-between;">
                     <span>Generated: ${new Date().toLocaleString('en-IN')}</span>
-                    <span>${hs.hospitalName || 'NexMedicon HMS'}</span>
+                    <span>Confidential — ${hs.hospitalName || 'NexMedicon HMS'}</span>
                   </div>
                 </body></html>`)
                 w.document.close()
