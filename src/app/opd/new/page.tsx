@@ -7,17 +7,57 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
-import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings } from '@/lib/utils'
-import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry } from '@/types'
+import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings, getIndiaToday, formatDate, minFollowUpDate, isSunday } from '@/lib/utils'
+import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry, Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
-import { getIndiaToday } from '@/lib/utils'
-import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, Save, ChevronRight, AlertCircle, ScanLine, Camera, Loader2, Sparkles, X, Plus, Trash2, CheckCircle, Shield } from 'lucide-react'
 import Toast from '@/components/shared/Toast'
 import AutoSaveIndicator from '@/components/shared/AutoSaveIndicator'
 import type { AutoSaveStatus } from '@/lib/useAutoSave'
+import { searchDrugs } from '@/lib/drug-database'
+import { runPrescriptionSafetyChecks } from '@/lib/prescription-safety'
+import type { ClinicalAlert } from '@/components/clinical/ClinicalSafetyModal'
+import ClinicalSafetyModal from '@/components/clinical/ClinicalSafetyModal'
+import { audit, auditSafetyOverride } from '@/lib/audit'
+import { createFollowUp, handleVisitCompletion, syncAppointmentFromOPD } from '@/lib/services/appointmentService'
+
+// ── Prescription constants ────────────────────────────────────
+const RX_ROUTES = ['Oral', 'IV', 'IM', 'Topical', 'Sublingual', 'Inhalation', 'Rectal', 'Nasal']
+const RX_FREQS = [
+  'Once daily', 'Twice daily', 'Thrice daily', 'Four times daily',
+  'Every 6 hours', 'Every 8 hours', 'At bedtime', 'SOS / As needed', 'Once weekly',
+]
+const RX_COMMON_DRUGS = [
+  'Folic Acid 5mg', 'Iron + Folic Acid', 'Calcium 500mg', 'Vitamin D3 60000 IU',
+  'Progesterone 200mg SR', 'Dydrogesterone 10mg', 'Methyldopa 250mg', 'Labetalol 100mg',
+  'Nifedipine 10mg', 'Nifedipine 30mg SR', 'Metformin 500mg', 'Metformin 1000mg',
+  'Tranexamic acid 500mg', 'Mefenamic acid 500mg', 'Norethisterone 5mg',
+  'Clomiphene 50mg', 'Letrozole 2.5mg', 'Azithromycin 500mg', 'Amoxicillin 500mg',
+  'Metronidazole 400mg', 'Ondansetron 4mg', 'Domperidone 10mg', 'Pantoprazole 40mg',
+  'Paracetamol 500mg', 'Ibuprofen 400mg',
+]
+const RX_REPORT_OPTIONS = [
+  'CBC (Complete Blood Count)', 'Hb (Haemoglobin)', 'Blood group & Rh',
+  'Blood sugar fasting', 'Blood sugar PP (post-prandial)', 'HbA1c',
+  'Thyroid function test (TSH, T3, T4)', 'LH / FSH', 'Prolactin',
+  'AMH (Anti-Mullerian Hormone)', 'Beta-hCG (Pregnancy test)', 'CA-125',
+  'Lipid profile', 'Liver function test (LFT)', 'Kidney function test (KFT)',
+  'Coagulation profile (PT, INR, aPTT)', 'Serum iron & ferritin',
+  'Vitamin D3', 'Vitamin B12',
+  'Urine routine & microscopy', 'Urine culture & sensitivity',
+  'USG Pelvis (Transvaginal)', 'USG Pelvis (Transabdominal)', 'USG Abdomen',
+  'USG Pelvis for follicular study', 'USG Obstetric (dating / anomaly)',
+  'Fetal growth scan', 'Colour Doppler study', 'Mammography',
+  'PAP smear / cervical cytology', 'High vaginal swab (HVS) culture', 'Colposcopy',
+  'ECG', 'ECHO (Echocardiogram)',
+  'OGTT (Glucose tolerance test)', 'Semen analysis (husband)',
+]
+const emptyMed = (): Medication => ({
+  drug: '', dose: '', route: 'Oral', frequency: 'Twice daily', duration: '', instructions: '',
+})
 
 // ── Tab types ─────────────────────────────────────────────────
-type Tab = 'vitals' | 'consultation' | 'obgyn'
+type Tab = 'vitals' | 'consultation' | 'obgyn' | 'prescription'
 
 // ── Vitals state ──────────────────────────────────────────────
 interface Vitals {
@@ -76,6 +116,20 @@ function NewConsultationContent() {
 
   // ── Draft auto-save status (for visual indicator) ──
   const [draftStatus, setDraftStatus] = useState<AutoSaveStatus>('idle')
+
+  // ── Prescription state (combined on same page) ──────────────
+  const [rxMeds, setRxMeds] = useState<Medication[]>([emptyMed()])
+  const [rxAdvice, setRxAdvice] = useState('')
+  const [rxDietaryAdvice, setRxDietaryAdvice] = useState('')
+  const [rxReportsNeeded, setRxReportsNeeded] = useState('')
+  const [rxFollowUpDate, setRxFollowUpDate] = useState('')
+  const [rxFollowUpTime, setRxFollowUpTime] = useState('10:00')
+  const [rxDrugSuggestion, setRxDrugSuggestion] = useState<{ idx: number; list: string[] } | null>(null)
+  const [rxSafetyAlerts, setRxSafetyAlerts] = useState<ClinicalAlert[]>([])
+  const [rxShowSafetyModal, setRxShowSafetyModal] = useState(false)
+  const [rxSafetyChecked, setRxSafetyChecked] = useState(false)
+  const [showBillingPrompt, setShowBillingPrompt] = useState(false)
+  const [savedEncounterId, setSavedEncounterId] = useState<string | null>(null)
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -497,6 +551,217 @@ function NewConsultationContent() {
     setTimeout(() => setNoteApplied(false), 4000)
   }, [patient])
 
+  // ── Prescription helper functions ─────────────────────────────
+  function updateRxMed(idx: number, field: keyof Medication, val: string) {
+    setRxMeds(prev => prev.map((m, i) => (i === idx ? { ...m, [field]: val } : m)))
+  }
+  function addRxMed() { setRxMeds(prev => [...prev, emptyMed()]) }
+  function removeRxMed(idx: number) {
+    setRxMeds(prev => (prev.length === 1 ? [emptyMed()] : prev.filter((_, i) => i !== idx)))
+  }
+  function handleRxDrugInput(idx: number, val: string) {
+    updateRxMed(idx, 'drug', val)
+    setRxSafetyChecked(false)
+    if (val.length >= 2) {
+      const dbMatches = searchDrugs(val, 4).map(d => `${d.generic} ${d.strengths[0] ?? ''}`.trim())
+      const commonMatches = RX_COMMON_DRUGS.filter(d => d.toLowerCase().includes(val.toLowerCase()))
+      const allMatches = Array.from(new Set([...dbMatches, ...commonMatches])).slice(0, 8)
+      setRxDrugSuggestion(allMatches.length ? { idx, list: allMatches } : null)
+    } else {
+      setRxDrugSuggestion(null)
+    }
+  }
+
+  // ── Save All (Encounter + Prescription) ───────────────────────
+  async function handleSaveAll() {
+    if (!patientId) return
+    if (!chiefComplaint.trim() && !diagnosis.trim()) {
+      setError('Please enter at least a chief complaint or diagnosis.')
+      return
+    }
+
+    // Run safety check on medications if any exist
+    const validMeds = rxMeds.filter(m => m.drug.trim())
+    if (validMeds.length > 0 && !rxSafetyChecked) {
+      const isPregnant = !!(ob.lmp || ob.edd)
+      const result = await runPrescriptionSafetyChecks({
+        medications: validMeds,
+        patientId: patientId,
+        patientAge: patient?.age,
+        patientWeight: vitals.weight ? parseFloat(vitals.weight) : undefined,
+        isPregnant,
+        gestationalAge: ga || undefined,
+      })
+      if (result.hasAlerts) {
+        setRxSafetyAlerts(result.alerts)
+        setRxShowSafetyModal(true)
+        return
+      }
+      setRxSafetyChecked(true)
+    }
+
+    setSaving(true)
+    setError('')
+
+    const today = getIndiaToday()
+
+    const obPayload: OBData = { ...ob }
+    if (ob.lmp) { obPayload.edd = edd; obPayload.gestational_age = ga }
+
+    // ── Step 1: Save encounter ──────────────────────────────────
+    const { data: enc, error: encErr } = await supabase
+      .from('encounters')
+      .insert({
+        patient_id: patientId,
+        encounter_type: 'OPD',
+        encounter_date: today,
+        chief_complaint: chiefComplaint.trim() || null,
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : null,
+        bp_systolic: vitals.bp_systolic ? parseInt(vitals.bp_systolic) : null,
+        bp_diastolic: vitals.bp_diastolic ? parseInt(vitals.bp_diastolic) : null,
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : null,
+        spo2: vitals.spo2 ? parseInt(vitals.spo2) : null,
+        weight: vitals.weight ? parseFloat(vitals.weight) : null,
+        height: vitals.height ? parseFloat(vitals.height) : null,
+        diagnosis: diagnosis.trim() || null,
+        notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
+        ob_data: obPayload,
+        procedures: procedures.length > 0 ? procedures : null,
+        doctor_name: user?.full_name || getHospitalSettings().doctorName,
+      })
+      .select('id')
+      .single()
+
+    if (encErr || !enc) {
+      setSaving(false)
+      setError(`Failed to save encounter: ${encErr?.message}`)
+      return
+    }
+
+    // ── Step 2: Save prescription ───────────────────────────────
+    if (validMeds.length > 0 || rxAdvice.trim() || rxReportsNeeded.trim() || rxFollowUpDate) {
+      const rxPayload = {
+        encounter_id: enc.id,
+        patient_id: patientId,
+        medications: validMeds,
+        advice: rxAdvice.trim() || null,
+        dietary_advice: rxDietaryAdvice.trim() || null,
+        reports_needed: rxReportsNeeded.trim() || null,
+        follow_up_date: rxFollowUpDate || null,
+      }
+      const { error: rxErr } = await supabase.from('prescriptions').insert(rxPayload)
+      if (rxErr) {
+        console.warn('[OPD] prescription save failed (non-fatal):', rxErr.message)
+        // Non-fatal — encounter was already saved successfully
+      }
+    }
+
+    // ── Step 3: Post-save actions (same as before) ──────────────
+    // Notification
+    try {
+      const { default: notify } = await import('@/lib/notifications')
+      await notify.opdConsultationSaved(patientId!, patient?.full_name || '', diagnosis.trim() || undefined)
+    } catch { /* non-fatal */ }
+
+    // Link attachments
+    try {
+      await supabase.from('consultation_attachments')
+        .update({ encounter_id: enc.id })
+        .eq('patient_id', patientId)
+        .is('encounter_id', null)
+      await supabase.from('consultation_files_db')
+        .update({ encounter_id: enc.id })
+        .eq('patient_id', patientId)
+        .is('encounter_id', null)
+    } catch { /* non-fatal */ }
+
+    // Queue sync
+    try {
+      const todayDate = getIndiaToday()
+      const { data: existingRow } = await supabase
+        .from('opd_queue')
+        .select('id, status, encounter_id, token_number')
+        .eq('patient_id', patientId)
+        .eq('queue_date', todayDate)
+        .maybeSingle()
+
+      if (existingRow) {
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (!existingRow.encounter_id) patch.encounter_id = enc.id
+        if (existingRow.status === 'waiting' || existingRow.status === 'vitals_done') {
+          patch.status = 'in_progress'
+          patch.called_at = new Date().toISOString()
+        }
+        await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
+      } else {
+        const { data: maxRow } = await supabase
+          .from('opd_queue')
+          .select('token_number')
+          .eq('queue_date', todayDate)
+          .order('token_number', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const nextToken = ((maxRow?.token_number as number) || 0) + 1
+        await supabase.from('opd_queue').insert({
+          patient_id: patientId,
+          queue_date: todayDate,
+          token_number: nextToken,
+          status: 'in_progress',
+          priority: 'normal',
+          notes: 'Auto-created from consultation',
+          called_at: new Date().toISOString(),
+          encounter_id: enc.id,
+        })
+      }
+    } catch (queueErr) {
+      console.warn('[OPD] queue sync failed (non-fatal):', queueErr)
+    }
+
+    // Audit
+    try { await audit('create', 'prescription', enc.id, patient?.full_name ?? '') } catch { /* non-fatal */ }
+
+    // Visit completion + appointment sync
+    try { await handleVisitCompletion(patientId) } catch { /* non-fatal */ }
+    try { await syncAppointmentFromOPD(patientId, patient?.full_name || '') } catch { /* non-fatal */ }
+
+    // Follow-up creation
+    if (rxFollowUpDate) {
+      try {
+        await createFollowUp(patientId, enc.id, rxFollowUpDate, {
+          patientName: patient?.full_name || '',
+          mrn: patient?.mrn || '',
+          mobile: (patient as any)?.mobile || null,
+          encounterDateLabel: today || '',
+          followUpTime: rxFollowUpTime || '10:00',
+        })
+      } catch (err) {
+        console.warn('[OPD] follow-up creation failed (non-fatal):', err)
+      }
+    }
+
+    // Clear draft
+    if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch { } }
+
+    setSaving(false)
+    setSavedEncounterId(enc.id)
+    setShowBillingPrompt(true)
+  }
+
+  // ── Safety acknowledge handler ────────────────────────────────
+  async function handleRxSafetyAcknowledge(overrideReason?: string) {
+    setRxShowSafetyModal(false)
+    setRxSafetyChecked(true)
+    if (overrideReason && savedEncounterId) {
+      await auditSafetyOverride('drug_interaction', savedEncounterId, patient?.full_name ?? '', {
+        alerts: rxSafetyAlerts.map(a => ({ level: a.level, title: a.title, category: a.category })),
+        overrideReason,
+        medications: rxMeds.filter(m => m.drug.trim()).map(m => m.drug),
+      })
+    }
+    // Re-trigger save after safety acknowledged
+    handleSaveAll()
+  }
+
 
   async function handleSave() {
     if (!patientId) return
@@ -663,13 +928,23 @@ function NewConsultationContent() {
           <div className="flex gap-2 items-center">
             <AutoSaveIndicator status={draftStatus} className="mr-2" />
             <Link href={`/patients/${patient.id}`} className="btn-secondary text-xs">Cancel</Link>
-            <button onClick={handleSave} disabled={saving}
-              className="btn-primary flex items-center gap-2 disabled:opacity-60">
-              {saving
-                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <Save className="w-4 h-4" />}
-              Save & Continue to Prescription
-            </button>
+            {tab === 'prescription' ? (
+              <button onClick={handleSaveAll} disabled={saving}
+                className="btn-primary flex items-center gap-2 disabled:opacity-60">
+                {saving
+                  ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <CheckCircle className="w-4 h-4" />}
+                Save All & Bill
+              </button>
+            ) : (
+              <button onClick={handleSave} disabled={saving}
+                className="btn-primary flex items-center gap-2 disabled:opacity-60">
+                {saving
+                  ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <Save className="w-4 h-4" />}
+                Save & Continue to Prescription
+              </button>
+            )}
           </div>
         </div>
 
@@ -805,6 +1080,7 @@ function NewConsultationContent() {
             { id: 'vitals' as Tab, label: 'Vitals & Complaints' },
             { id: 'consultation' as Tab, label: 'Consultation & Diagnosis' },
             { id: 'obgyn' as Tab, label: 'Gynecology / OB Exam' },
+            { id: 'prescription' as Tab, label: '💊 Prescription' },
           ]).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2
@@ -1775,18 +2051,242 @@ function NewConsultationContent() {
               <button onClick={() => setTab('consultation')} className="btn-secondary flex items-center gap-2">
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
-              <button onClick={handleSave} disabled={saving}
-                className="btn-primary flex items-center gap-2 px-8 disabled:opacity-60">
-                {saving
-                  ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <Save className="w-4 h-4" />}
-                Save & Continue to Prescription
+              <button onClick={() => setTab('prescription')} className="btn-primary flex items-center gap-2">
+                Next: Prescription <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
       </div>
+
+      {/* ════════════════════════════════════════════════════════
+          TAB 4 — PRESCRIPTION (Combined on same page)
+      ════════════════════════════════════════════════════════ */}
+      {tab === 'prescription' && (
+        <div className="p-6 max-w-5xl mx-auto space-y-5">
+
+          {/* Medications */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-title mb-0">Medications</h2>
+              <button onClick={addRxMed} className="btn-secondary text-xs flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Add Medicine
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {rxMeds.map((med, idx) => (
+                <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-4 relative">
+                      <label className="label">Medicine Name</label>
+                      <input className="input bg-white" placeholder="e.g. Folic Acid 5mg"
+                        value={med.drug}
+                        onChange={e => handleRxDrugInput(idx, e.target.value)}
+                        onBlur={() => setTimeout(() => setRxDrugSuggestion(null), 200)}
+                      />
+                      {rxDrugSuggestion?.idx === idx && rxDrugSuggestion.list.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-30 bg-white border border-gray-200 rounded-lg shadow-lg mt-1">
+                          {rxDrugSuggestion.list.map(d => (
+                            <button key={d} type="button"
+                              onMouseDown={() => { updateRxMed(idx, 'drug', d); setRxDrugSuggestion(null) }}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0">
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label">Dose</label>
+                      <input className="input bg-white" placeholder="500mg"
+                        value={med.dose} onChange={e => updateRxMed(idx, 'dose', e.target.value)} />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label">Route</label>
+                      <select className="input bg-white" value={med.route}
+                        onChange={e => updateRxMed(idx, 'route', e.target.value)}>
+                        {RX_ROUTES.map(r => <option key={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label">Frequency</label>
+                      <select className="input bg-white" value={med.frequency}
+                        onChange={e => updateRxMed(idx, 'frequency', e.target.value)}>
+                        {RX_FREQS.map(f => <option key={f}>{f}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-1">
+                      <label className="label">Duration</label>
+                      <input className="input bg-white" placeholder="7 days"
+                        value={med.duration} onChange={e => updateRxMed(idx, 'duration', e.target.value)} />
+                    </div>
+                    <div className="col-span-1 flex items-end">
+                      <button type="button" onClick={() => removeRxMed(idx)}
+                        className="w-full p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                        <Trash2 className="w-4 h-4 mx-auto" />
+                      </button>
+                    </div>
+                    <div className="col-span-11">
+                      <label className="label">Instructions</label>
+                      <input className="input bg-white" placeholder="e.g. Take after food"
+                        value={med.instructions ?? ''}
+                        onChange={e => updateRxMed(idx, 'instructions', e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Advice & Follow-up */}
+          <div className="card p-5">
+            <h2 className="section-title">Advice & Follow-up</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label flex items-center gap-2">
+                  Specific Advice
+                  <SmartMic field="rx_advice" value={rxAdvice} onChange={setRxAdvice} context="Patient advice and instructions" size="sm" />
+                </label>
+                <textarea className="input resize-none" rows={3}
+                  placeholder="Rest, avoid intercourse, etc."
+                  value={rxAdvice} onChange={e => setRxAdvice(e.target.value)} />
+              </div>
+              <div>
+                <label className="label flex items-center gap-2">
+                  Dietary Advice
+                  <SmartMic field="rx_dietary" value={rxDietaryAdvice} onChange={setRxDietaryAdvice} context="Dietary advice and nutrition" size="sm" />
+                </label>
+                <textarea className="input resize-none" rows={3}
+                  placeholder="High protein diet, iron-rich foods..."
+                  value={rxDietaryAdvice} onChange={e => setRxDietaryAdvice(e.target.value)} />
+              </div>
+
+              <div className="col-span-2">
+                <label className="label">Reports / Investigations Needed</label>
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  <select className="input flex-1 text-sm py-1.5"
+                    onChange={e => {
+                      const val = e.target.value
+                      if (!val) return
+                      setRxReportsNeeded(prev => {
+                        const existing = prev.trim()
+                        if (existing.includes(val)) return prev
+                        return existing ? existing + ',\n' + val : val
+                      })
+                      e.target.value = ''
+                    }}>
+                    <option value="">+ Add from common list...</option>
+                    {RX_REPORT_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <textarea className="input resize-none font-mono text-sm" rows={3}
+                  placeholder="Selected investigations appear here. You can also type freely."
+                  value={rxReportsNeeded} onChange={e => setRxReportsNeeded(e.target.value)} />
+              </div>
+
+              <div>
+                <label className="label">Follow-up Date</label>
+                <input className="input" type="date" min={minFollowUpDate()}
+                  value={rxFollowUpDate}
+                  onChange={e => {
+                    const val = e.target.value
+                    if (!val) { setRxFollowUpDate(''); return }
+                    if (isSunday(val)) {
+                      const d = new Date(val); d.setDate(d.getDate() + 1)
+                      setRxFollowUpDate(d.toISOString().split('T')[0])
+                    } else {
+                      setRxFollowUpDate(val)
+                    }
+                  }} />
+                {rxFollowUpDate && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-xs text-gray-500">Time:</label>
+                    <input className="input py-1 px-2 text-sm w-28" type="time"
+                      value={rxFollowUpTime} onChange={e => setRxFollowUpTime(e.target.value || '10:00')} />
+                  </div>
+                )}
+                <div className="flex gap-2 mt-2">
+                  {[{ l: '+1 week', d: 7 }, { l: '+2 weeks', d: 14 }, { l: '+1 month', d: 30 }, { l: '+3 months', d: 90 }].map(({ l, d }) => (
+                    <button key={l} type="button"
+                      onClick={() => {
+                        const dt = new Date(); dt.setDate(dt.getDate() + d)
+                        if (dt.getDay() === 0) dt.setDate(dt.getDate() + 1)
+                        setRxFollowUpDate(dt.toISOString().split('T')[0])
+                      }}
+                      className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100">
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Save All button */}
+          <div className="flex justify-between items-center">
+            <button onClick={() => setTab('obgyn')} className="btn-secondary flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" /> Back to OB/GYN
+            </button>
+            <div className="flex gap-3">
+              <button onClick={handleSave} disabled={saving}
+                className="btn-secondary flex items-center gap-2 text-xs disabled:opacity-60">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Encounter Only (Old Flow)
+              </button>
+              <button onClick={handleSaveAll} disabled={saving}
+                className="btn-primary flex items-center gap-2 px-6 disabled:opacity-60">
+                {saving
+                  ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <CheckCircle className="w-4 h-4" />}
+                Save All & Generate Bill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ BILLING PROMPT — Shows after combined save ═══ */}
+      {showBillingPrompt && patient && savedEncounterId && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-white border-2 border-green-300 shadow-2xl rounded-2xl px-6 py-4 flex items-center gap-4 max-w-lg">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900">Consultation & Prescription saved!</p>
+              <p className="text-xs text-gray-500">Generate bill for {patient.full_name}?</p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Link
+                href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(patient.full_name ?? 'Patient')}&mrn=${patient.mrn ?? ''}&encounterType=OPD&view=new`}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors shadow-sm">
+                💳 Bill Now
+              </Link>
+              <Link
+                href={`/opd/${savedEncounterId}/prescription`}
+                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-2 font-medium">
+                View/Print Rx
+              </Link>
+              <button onClick={() => setShowBillingPrompt(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-2">
+                Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clinical Safety Modal */}
+      {rxShowSafetyModal && rxSafetyAlerts.length > 0 && (
+        <ClinicalSafetyModal
+          alerts={rxSafetyAlerts}
+          onAcknowledge={handleRxSafetyAcknowledge}
+          onCancel={() => setRxShowSafetyModal(false)}
+          patientName={patient?.full_name}
+        />
+      )}
 
       {/* Files & Photos — scoped to patient (no encounterId yet, available after save) */}
       {patientId && (
