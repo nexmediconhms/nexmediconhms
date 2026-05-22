@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest --run --config vitest.config.mts",
+    "test:watch": "vitest --config vitest.config.mts",
+    "test:coverage": "vitest --run --coverage --config vitest.config.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
