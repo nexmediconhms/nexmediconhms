@@ -46,10 +46,11 @@ function NewConsultationContent() {
   const searchParams = useSearchParams()
   const patientId = searchParams.get('patient')
   const prefillFlag = searchParams.get('prefill')
+  const initialTab = searchParams.get('tab') as Tab | null
   const { user } = useAuth()
 
   const [patient, setPatient] = useState<Patient | null>(null)
-  const [tab, setTab] = useState<Tab>('vitals')
+  const [tab, setTab] = useState<Tab>(initialTab && ['vitals', 'consultation', 'obgyn'].includes(initialTab) ? initialTab : 'vitals')
   const [vitals, setVitals] = useState<Vitals>(EMPTY_VITALS)
   const [ob, setOB] = useState<OBData>({})
   const [chiefComplaint, setChiefComplaint] = useState('')

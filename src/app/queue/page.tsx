@@ -449,13 +449,17 @@ function QueueContent() {
               <Clock className="w-4 h-4 text-blue-500" />
               <span className="text-sm text-blue-700">
                 <strong>Estimated wait:</strong>{' '}
-                {waiting * 8 < 60
-                  ? `~${waiting * 8} min`
-                  : `~${Math.floor((waiting * 8) / 60)}h ${(waiting * 8) % 60}min`}
+                {(() => {
+                  const AVG_CONSULT_MIN = 10 // avg consultation time in minutes
+                  const totalWait = waiting * AVG_CONSULT_MIN
+                  return totalWait < 60
+                    ? `~${totalWait} min`
+                    : `~${Math.floor(totalWait / 60)}h ${totalWait % 60}min`
+                })()}
                 {' '}for last patient in queue
               </span>
             </div>
-            <span className="text-xs text-blue-500">(~8 min/patient avg)</span>
+            <span className="text-xs text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">(~10 min/consult avg)</span>
           </div>
         )}
 
@@ -510,8 +514,9 @@ function QueueContent() {
                           const ahead = queue.filter(q =>
                             (q.status === 'waiting' || q.status === 'vitals_done') && q.token_number < entry.token_number
                           ).length
+                          const waitMin = ahead * 10 // avg 10 min/consult
                           return ahead > 0
-                            ? <span className="text-blue-600 font-medium">· ~{ahead * 8} min wait ({ahead} ahead)</span>
+                            ? <span className="text-blue-600 font-medium">· ~{waitMin} min wait ({ahead} ahead)</span>
                             : <span className="text-green-600 font-medium">· Next up!</span>
                         })()}
                         {entry.notes && <span className="ml-1">· {entry.notes}</span>}
@@ -522,19 +527,19 @@ function QueueContent() {
                     <div className="flex gap-2 flex-shrink-0">
                       {entry.status === 'waiting' && (
                         <>
-                          <button onClick={() => updateStatus(entry, 'vitals_done')}
+                          <Link
+                            href={`/opd/new?patient=${entry.patient_id}&tab=vitals`}
+                            onClick={() => updateStatus(entry, 'vitals_done')}
                             className="flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-medium px-2.5 py-1.5 rounded-lg">
                             <Stethoscope className="w-3 h-3" /> Vitals
-                          </button>
-                          <button onClick={() => {
-                            updateStatus(entry, 'in_progress')
-                            // Navigate to OPD consultation for this patient
-                            window.location.href = `/opd/new?patient=${entry.patient_id}`
-                          }}
+                          </Link>
+                          <Link
+                            href={`/opd/new?patient=${entry.patient_id}`}
+                            onClick={() => updateStatus(entry, 'in_progress')}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                             title="Start OPD consultation">
                             <Play className="w-3 h-3" /> Start OPD
-                          </button>
+                          </Link>
                           <button onClick={() => handleRemindPatient(entry)}
                             className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-lg"
                             title="Send reminder to patient">
@@ -549,13 +554,12 @@ function QueueContent() {
                       )}
                       {entry.status === 'vitals_done' && (
                         <>
-                          <button onClick={() => {
-                            updateStatus(entry, 'in_progress')
-                            window.location.href = `/opd/new?patient=${entry.patient_id}`
-                          }}
+                          <Link
+                            href={`/opd/new?patient=${entry.patient_id}`}
+                            onClick={() => updateStatus(entry, 'in_progress')}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
                             <Play className="w-3 h-3" /> Start OPD
-                          </button>
+                          </Link>
                           <button onClick={() => handleRemindPatient(entry)}
                             className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-lg">
                             <Clock className="w-3 h-3" /> Remind
@@ -572,22 +576,13 @@ function QueueContent() {
                           className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
                           <CheckCircle className="w-3 h-3" /> Done
                         </button>
-                        <button
-                          onClick={() => {
-                            updateStatus(entry, 'done')
-                            const params = new URLSearchParams({
-                              patientId: entry.patient_id,
-                              patientName: entry.patient_name || '',
-                              mrn: entry.mrn || '',
-                              encounterType: 'OPD',
-                              view: 'new',
-                            })
-                            window.location.href = `/billing?${params.toString()}`
-                          }}
+                        <Link
+                          href={`/billing?patientId=${entry.patient_id}&patientName=${encodeURIComponent(entry.patient_name || '')}&mrn=${entry.mrn || ''}&encounterType=OPD&view=new`}
+                          onClick={() => updateStatus(entry, 'done')}
                           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                         >
                           <CheckCircle className="w-3 h-3" /> Done + Bill
-                        </button>
+                        </Link>
                         </>
                       )}
                       {entry.patient_id && (
