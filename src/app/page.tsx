@@ -11,9 +11,31 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { saveSettings } from '@/lib/settings'
 
 export default function Home() {
   const router = useRouter()
+
+  useEffect(() => {
+  async function migrateSettings() {
+    const { data } = await supabase
+      .from('clinic_settings')
+      .select('key')
+      .limit(1)
+    
+    if (!data || data.length === 0) {
+      // No settings in DB, migrate from localStorage
+      const localSettings = localStorage.getItem('nexmedicon_settings')
+      if (localSettings) {
+        const settings = JSON.parse(localSettings)
+        // Save to DB
+        await saveSettings(settings)
+        console.log('✅ Settings migrated to database')
+      }
+    }
+  }
+  migrateSettings()
+}, [])
 
   useEffect(() => {
     let redirected = false
