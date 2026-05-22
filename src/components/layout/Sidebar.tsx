@@ -1,16 +1,17 @@
 'use client'
 /**
- * src/components/layout/Sidebar.tsx — BUG 6 FIX
+ * src/components/layout/Sidebar.tsx — BUG 6 FIX + FAVORITES
  *
  * WHAT CHANGED:
  * - When you navigate to a page, the sidebar auto-opens ONLY the 
  *   section containing that page and collapses all others
  * - You don't have to manually open/close dropdowns anymore
  * - If you manually click a section header, it toggles as before
- *
- * COPY THIS ENTIRE FILE and replace src/components/layout/Sidebar.tsx
+ * - NEW: "Favorites" section — users can pin up to 5 most-used pages
+ *   to a persistent "Favorites" section at the top of the sidebar
+ *   (persisted in localStorage per user)
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -25,6 +26,7 @@ import {
   Search as SearchIcon, Sparkles, ClipboardList, Shield,
   BellRing, Pill, Scissors,
   BedSingle, PiggyBank, UserCog, ExternalLink,
+  Star, Pin,
 } from 'lucide-react'
 
 
@@ -50,6 +52,37 @@ export default function Sidebar() {
 
   // BUG 6 FIX: Start with all sections collapsed
   const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  // ── Favorites / Pinned items (max 5) ──────────────────────────
+  const FAVORITES_KEY = user ? `sidebar_favorites_${user.id}` : 'sidebar_favorites'
+  const MAX_FAVORITES = 5
+  const [favorites, setFavorites] = useState<string[]>([])
+
+  // Load favorites from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(FAVORITES_KEY)
+      if (stored) setFavorites(JSON.parse(stored))
+    } catch { /* ignore */ }
+  }, [FAVORITES_KEY])
+
+  // Save favorites to localStorage
+  const saveFavorites = useCallback((newFavs: string[]) => {
+    setFavorites(newFavs)
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(newFavs)) } catch { /* ignore */ }
+  }, [FAVORITES_KEY])
+
+  function toggleFavorite(href: string) {
+    if (favorites.includes(href)) {
+      saveFavorites(favorites.filter(f => f !== href))
+    } else if (favorites.length < MAX_FAVORITES) {
+      saveFavorites([...favorites, href])
+    }
+  }
+
+  function isFavorite(href: string) {
+    return favorites.includes(href)
+  }
 
   // Live badge count
   const [reminderBadge, setReminderBadge] = useState(0)
@@ -168,7 +201,8 @@ export default function Sidebar() {
 
   function NavLink({ href, icon: Icon, label, badge, external }: NavItemDef) {
     const active = isActive(href)
-    const baseClass = `flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
+    const pinned = isFavorite(href)
+    const baseClass = `group flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
       ${active
         ? 'bg-blue-50 text-blue-700'
         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
@@ -184,8 +218,22 @@ export default function Sidebar() {
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {active && (badge == null || badge === 0) && (
+        {active && (badge == null || badge === 0) && !pinned && (
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>
+        )}
+        {/* Pin/Unpin button — visible on hover */}
+        {!external && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(href) }}
+            className={`flex-shrink-0 p-0.5 rounded transition-all ${
+              pinned
+                ? 'text-amber-500 opacity-100'
+                : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-amber-500'
+            }`}
+            title={pinned ? 'Unpin from Favorites' : `Pin to Favorites${favorites.length >= MAX_FAVORITES ? ' (max 5)' : ''}`}
+          >
+            <Star className={`w-3 h-3 ${pinned ? 'fill-amber-400' : ''}`} />
+          </button>
         )}
         {external && <ExternalLink className="w-3 h-3 text-gray-300 flex-shrink-0"/>}
       </>
@@ -228,6 +276,29 @@ export default function Sidebar() {
 
       {/* Nav — scrollable */}
       <nav className="flex-1 overflow-y-auto px-2 py-2">
+
+        {/* ═══ FAVORITES / PINNED SECTION ═══ */}
+        {favorites.length > 0 && (
+          <div className="mb-2 pb-2 border-b border-gray-100">
+            <div className="flex items-center gap-1.5 px-2 py-1 mb-0.5">
+              <Star className="w-3 h-3 text-amber-500 fill-amber-400" />
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-widest">
+                Favorites
+              </span>
+            </div>
+            <div className="space-y-0.5 ml-1">
+              {favorites.map(href => {
+                // Find the item definition from all nav groups
+                const allItems = [...NAV_GROUPS.flatMap(g => g.items), ...FOOTER_LINKS]
+                const item = allItems.find(i => i.href === href)
+                if (!item) return null
+                if (item.permission && !can(item.permission)) return null
+                return <NavLink key={`fav-${item.href}`} {...item} />
+              })}
+            </div>
+          </div>
+        )}
+
         {NAV_GROUPS.map(group => {
           const filteredItems = filterItems(group.items)
           if (filteredItems.length === 0) return null
