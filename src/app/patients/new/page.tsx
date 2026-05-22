@@ -745,7 +745,8 @@ export default function NewPatientPage() {
               <div className="text-4xl font-bold text-blue-700 font-mono tracking-wide">{success.mrn}</div>
             </div>
 
-            {/* Step 1: Payment */}
+            {/* Step 1: Payment — Only show if payment was NOT already collected inline */}
+            {!paymentConfirmed && (
             <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-left">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">
                 💳 Step 1 — Collect Payment First
@@ -785,10 +786,24 @@ export default function NewPatientPage() {
                 ) : null}
               </div>
             </div>
+            )}
+
+            {/* Payment confirmed badge — show when payment was collected inline */}
+            {paymentConfirmed && (
+              <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-bold text-green-800">Payment Collected ✓</p>
+                  <p className="text-xs text-green-600">₹{paymentAmount} via {paymentMethod} — Patient is ready for consultation</p>
+                </div>
+              </div>
+            )}
 
             {/* Step 2: Consultation */}
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
-              🩺 Step 2 — After Payment
+              🩺 {paymentConfirmed ? 'Next Step — Start Consultation' : 'Step 2 — After Payment'}
             </p>
             <div className="grid grid-cols-1 gap-2 mb-5">
               <Link href={`/opd/new?patient=${successId}`}

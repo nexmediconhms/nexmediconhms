@@ -428,7 +428,7 @@ function QueueContent() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {[
             { label: 'Waiting', count: waiting, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
             { label: 'Vitals Done', count: vitalsDone, color: 'text-purple-700 bg-purple-50 border-purple-200' },
@@ -441,6 +441,23 @@ function QueueContent() {
             </div>
           ))}
         </div>
+
+        {/* Estimated wait time indicator */}
+        {waiting > 0 && (
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-blue-500" />
+              <span className="text-sm text-blue-700">
+                <strong>Estimated wait:</strong>{' '}
+                {waiting * 8 < 60
+                  ? `~${waiting * 8} min`
+                  : `~${Math.floor((waiting * 8) / 60)}h ${(waiting * 8) % 60}min`}
+                {' '}for last patient in queue
+              </span>
+            </div>
+            <span className="text-xs text-blue-500">(~8 min/patient avg)</span>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center gap-2">
@@ -489,6 +506,14 @@ function QueueContent() {
                         <Clock className="w-3 h-3" />
                         Added {formatDateTime(entry.created_at)}
                         {entry.called_at && <span>· Called {formatDateTime(entry.called_at)}</span>}
+                        {entry.status === 'waiting' && (() => {
+                          const ahead = queue.filter(q =>
+                            (q.status === 'waiting' || q.status === 'vitals_done') && q.token_number < entry.token_number
+                          ).length
+                          return ahead > 0
+                            ? <span className="text-blue-600 font-medium">· ~{ahead * 8} min wait ({ahead} ahead)</span>
+                            : <span className="text-green-600 font-medium">· Next up!</span>
+                        })()}
                         {entry.notes && <span className="ml-1">· {entry.notes}</span>}
                       </div>
                     </div>
@@ -542,10 +567,28 @@ function QueueContent() {
                         </>
                       )}
                       {entry.status === 'in_progress' && (
+                        <>
                         <button onClick={() => updateStatus(entry, 'done')}
                           className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
                           <CheckCircle className="w-3 h-3" /> Done
                         </button>
+                        <button
+                          onClick={() => {
+                            updateStatus(entry, 'done')
+                            const params = new URLSearchParams({
+                              patientId: entry.patient_id,
+                              patientName: entry.patient_name || '',
+                              mrn: entry.mrn || '',
+                              encounterType: 'OPD',
+                              view: 'new',
+                            })
+                            window.location.href = `/billing?${params.toString()}`
+                          }}
+                          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                        >
+                          <CheckCircle className="w-3 h-3" /> Done + Bill
+                        </button>
+                        </>
                       )}
                       {entry.patient_id && (
                         <Link href={`/patients/${entry.patient_id}`}
