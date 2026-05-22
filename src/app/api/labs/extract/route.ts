@@ -22,16 +22,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { auth: { persistSession: false } }
-)
 
 // Reference ranges for common Indian lab tests
 const REFERENCE_RANGES: Record<string, { low: number; high: number; unit: string }> = {
@@ -90,6 +85,13 @@ function detectAbnormalValues(results: Array<{ name: string; value: string | num
 }
 
 export async function POST(req: NextRequest) {
+  // ── SECURITY FIX: Require authentication ──────────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
+  // Use admin client for database operations (runs server-side only)
+  const supabase = getSupabaseAdmin()
+
   try {
     const body = await req.json()
     const { report_id, base64_data, mime_type } = body
