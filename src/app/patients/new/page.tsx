@@ -778,7 +778,8 @@ export default function NewPatientPage() {
             </div>
 
             <button
-              onClick={handlePaymentConfirm}
+              type="button"
+              onClick={() => handlePaymentConfirm()} // 🚀 Fix: Wrapped inside an anonymous function
               disabled={!paymentMethod}
               className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all duration-200 ${
                 paymentMethod
@@ -789,14 +790,12 @@ export default function NewPatientPage() {
             </button>
 
             <button
+              type="button"
               onClick={handleSkipPayment}
-              className="w-full mt-2 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 font-medium text-xs transition-all">
-              Skip — Add to Queue, Collect Later
+              className="w-full mt-3 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all duration-200"
+            >
+              Skip Payment / Pay Later
             </button>
-
-            <p className="text-xs text-gray-400 text-center mt-3">
-              Payment will be recorded and patient number will be generated.
-            </p>
           </div>
         </div>
       </AppShell>
