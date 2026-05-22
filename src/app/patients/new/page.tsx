@@ -39,7 +39,7 @@ interface FormData {
   cashless: string
   reference_source: string
   reference_detail: string
-  // ── Insurance policy details (NEW) ────────────────────────
+  // ── Insurance policy details ────────────────────────
   policy_tpa_name: string
   policy_number: string
 }
@@ -73,7 +73,7 @@ export default function NewPatientPage() {
 
   // Payment collection state (inline payment before showing success)
   const [showPaymentStep, setShowPaymentStep] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | ''>('')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'credit' | ''>('')
   const [paymentAmount, setPaymentAmount] = useState('500')
   const [paymentConfirmed, setPaymentConfirmed] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
@@ -100,7 +100,6 @@ export default function NewPatientPage() {
 
   // Save draft on every form change
   useEffect(() => {
-    // Don't save drafts if the form is entirely empty (matches EMPTY)
     const hasData = form.full_name.trim() || form.mobile.trim() || form.age.trim()
     if (hasData) saveDraft(form)
   }, [form, saveDraft])
@@ -225,7 +224,6 @@ export default function NewPatientPage() {
       if (result.success && result.profile) {
         setAbhaVerified(true)
         setAbhaProfile(result.profile)
-        // Auto-fill patient details from ABDM profile
         const p = result.profile
         if (p.name && !form.full_name.trim()) set('full_name', p.name)
         if (p.gender) {
@@ -240,7 +238,6 @@ export default function NewPatientPage() {
         }
         if (p.mobile && !form.mobile.trim()) set('mobile', p.mobile)
         if (p.address && !form.address.trim()) set('address', p.address)
-        // Format and set the ABHA number
         set('abha_id', formatABHANumber(abha))
       } else {
         setAbhaError(result.error || 'Verification failed')
@@ -256,7 +253,6 @@ export default function NewPatientPage() {
     const e: Partial<FormData> = {}
     if (!form.full_name.trim())
       e.full_name = 'Patient name is required'
-    // Normalize Gujarati/Hindi digits before validation
     const normalizedMobile = normalizePhone(form.mobile)
     if (!normalizedMobile)
       e.mobile = 'Mobile number is required'
@@ -279,8 +275,6 @@ export default function NewPatientPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
-        // Session expired — fall back to manual reception message rather
-        // than silently failing or hard-erroring the registration flow.
         setPayLink({ type: 'manual', whatsappText: fallbackMsg })
         setPayLinkLoading(false)
         return
@@ -301,7 +295,6 @@ export default function NewPatientPage() {
       if (!res.ok) throw new Error('Payment link API error')
       const data = await res.json()
       if (data.error || !data.whatsappText) {
-        // API returned error or missing whatsappText — use fallback
         setPayLink({
           type: data.type || 'manual',
           url: data.url,
@@ -393,7 +386,6 @@ export default function NewPatientPage() {
     setDuplicates([])
     setSaving(true)
 
-    // Normalize Gujarati/Hindi digits before saving to database
     const normalizedMobile = normalizePhone(form.mobile)
     const normalizedAge = form.age ? parseInt(normalizeDigits(form.age)) : null
     const normalizedAadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
@@ -439,32 +431,22 @@ export default function NewPatientPage() {
 
     setSuccessId(data.id)
     setSuccessMobile(form.mobile.trim())
-    // Clear draft after successful registration
     clearDraft()
 
-    // Show payment step first (before final success)
     setShowPaymentStep(true)
-    // Store success data for later
     setSuccess({ mrn: data.mrn, name: data.full_name })
     generatePayLink(data.id, data.full_name, form.mobile.trim())
 
-    // ── Create notification for new patient registration ──
     try {
       const { notify } = await import('@/lib/notifications')
       await notify.patientRegistered(data.id, data.full_name, data.mrn)
-    } catch {
-      // Non-fatal: notification failure should not block registration
-    }
+    } catch { /* Non-fatal */ }
 
-    // ── Create audit log entry for patient registration ──
     try {
       const { audit } = await import('@/lib/audit')
       await audit('create', 'patient', data.id, data.full_name)
-    } catch {
-      // Non-fatal: audit failure should not block registration
-    }
+    } catch { /* Non-fatal */ }
 
-    // ── Auto-sync insurance: if patient has mediclaim/cashless, create claim entry ──
     if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
       try {
         await fetch('/api/insurance/sync', {
@@ -473,13 +455,11 @@ export default function NewPatientPage() {
           body: JSON.stringify({
             patient_id: data.id,
             trigger: 'registration',
-            claim_amount: 0,  // Will be updated when bill is generated
+            claim_amount: 0,
             diagnosis: null,
           }),
         })
-      } catch {
-        // Non-fatal: insurance sync failure should not block registration
-      }
+      } catch { /* Non-fatal */ }
     }
   }
 
@@ -504,7 +484,6 @@ export default function NewPatientPage() {
   async function handlePaymentConfirm() {
     if (!paymentMethod || !success) return
 
-    // Record payment via registration-payment API (creates bill + payment atomically)
     try {
       await fetch('/api/billing/registration-payment', {
         method: 'POST',
@@ -520,22 +499,19 @@ export default function NewPatientPage() {
           type: 'registration',
         }),
       })
-    } catch {
-      // Non-fatal — payment recording failure shouldn't block flow
-    }
+    } catch { /* Non-fatal */ }
 
-    // Auto-add to OPD queue if selected
     if (addToQueue) {
       try {
         const today = new Date().toISOString().slice(0, 10)
-        // Get next token number
+        // FIX 1: Change .single() to .maybeSingle() to support first patient of the day
         const { data: lastToken } = await supabase
           .from('opd_queue')
           .select('token_number')
           .eq('queue_date', today)
           .order('token_number', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
 
         const nextToken = (lastToken?.token_number || 0) + 1
 
@@ -549,22 +525,34 @@ export default function NewPatientPage() {
           patient_name: success?.name || '',
           mrn: success?.mrn || '',
         })
-      } catch {
-        // Non-fatal
+
+        // FIX 3: Added missing automation engine trigger for upfront payments
+        try {
+          const { fireAutomation } = await import('@/lib/automation-engine')
+          await fireAutomation('queue_added', {
+            patientId: successId,
+            patientName: success?.name || '',
+            mobile: successMobile,
+            mrn: success?.mrn || '',
+            tokenNumber: nextToken,
+          })
+        } catch { /* non-fatal */ }
+
+      } catch (e) {
+        console.warn('[Registration] Queue insert setup encountered an error:', e)
       }
     }
 
-    // Send payment received notification
+    // FIX 2: Standardized the import variable mapping structure
     try {
-      const { default: notify } = await import('@/lib/notifications')
+      const { notify } = await import('@/lib/notifications')
       await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, paymentMethod)
     } catch { /* non-fatal */ }
 
     setPaymentConfirmed(true)
   }
 
-  // Gap 4: Register & add to queue WITHOUT taking payment now.
-  // Used when reception wants to defer billing (insurance, corporate, emergency, etc.)
+  // Register & add to queue WITHOUT taking payment now.
   async function handleSkipPayment() {
     if (!success) return
 
@@ -590,10 +578,9 @@ export default function NewPatientPage() {
           mrn: success?.mrn || '',
         })
 
-        // Fire automation for queue addition (WhatsApp token notification)
         try {
           const { fireAutomation } = await import('@/lib/automation-engine')
-          fireAutomation('queue_added', {
+          await fireAutomation('queue_added', {
             patientId: successId,
             patientName: success?.name || '',
             mobile: successMobile,
@@ -602,7 +589,6 @@ export default function NewPatientPage() {
           })
         } catch { /* non-fatal */ }
       } catch (e) {
-        // Non-fatal
         console.warn('[Registration] queue insert failed:', e)
       }
     }
@@ -610,16 +596,22 @@ export default function NewPatientPage() {
     setPaymentConfirmed(true)
   }
 
+  // FIX 4: Hardcoded classes map for Tailwind compiler lookup safety
+  const paymentMethodClasses: Record<string, string> = {
+    cash: 'border-green-400 bg-green-50 text-green-700 ring-2 ring-green-200',
+    upi: 'border-purple-400 bg-purple-50 text-purple-700 ring-2 ring-purple-200',
+    card: 'border-blue-400 bg-blue-50 text-blue-700 ring-2 ring-blue-200',
+    credit: 'border-indigo-400 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-200',
+  }
+
   // ══════════════════════════════════════════════════════════════
-  // PAYMENT COLLECTION STEP (shown after patient saved, before success)
+  // PAYMENT COLLECTION STEP
   // ══════════════════════════════════════════════════════════════
   if (showPaymentStep && success && !paymentConfirmed) {
-
     return (
       <AppShell>
         <div className="p-6 max-w-lg mx-auto mt-8">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-            {/* Patient registered badge */}
             <div className="flex items-center gap-3 mb-6 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
               <div>
@@ -628,7 +620,6 @@ export default function NewPatientPage() {
               </div>
             </div>
 
-            {/* Payment Collection */}
             <h2 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
               💳 Collect Payment
             </h2>
@@ -636,7 +627,6 @@ export default function NewPatientPage() {
               Accept registration/consultation fee before proceeding.
             </p>
 
-            {/* Amount */}
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount (₹)</label>
               <input
@@ -648,21 +638,20 @@ export default function NewPatientPage() {
               />
             </div>
 
-            {/* Payment Method */}
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { key: 'cash', label: '💵 Cash', color: 'green' },
-                  { key: 'upi', label: '📱 UPI', color: 'purple' },
-                  { key: 'card', label: '💳 Debit Card', color: 'blue' },
-                  { key: 'credit', label: '💳 Credit Card', color: 'indigo' },
-                ].map(({ key, label, color }) => (
+                  { key: 'cash', label: '💵 Cash' },
+                  { key: 'upi', label: '📱 UPI' },
+                  { key: 'card', label: '💳 Debit Card' },
+                  { key: 'credit', label: '💳 Credit Card' },
+                ].map(({ key, label }) => (
                   <button key={key} type="button"
                     onClick={() => setPaymentMethod(key as any)}
                     className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all duration-200 ${
                       paymentMethod === key
-                        ? `border-${color}-400 bg-${color}-50 text-${color}-700 ring-2 ring-${color}-200`
+                        ? paymentMethodClasses[key]
                         : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                     }`}>
                     {label}
@@ -671,7 +660,6 @@ export default function NewPatientPage() {
               </div>
             </div>
 
-            {/* Reference (for UPI/Card) */}
             {paymentMethod && paymentMethod !== 'cash' && (
               <div className="mb-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -686,7 +674,6 @@ export default function NewPatientPage() {
               </div>
             )}
 
-            {/* Add to OPD Queue checkbox */}
             <div className="mb-6 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
               <input
                 type="checkbox"
@@ -700,7 +687,6 @@ export default function NewPatientPage() {
               </label>
             </div>
 
-            {/* Confirm Button */}
             <button
               onClick={handlePaymentConfirm}
               disabled={!paymentMethod}
@@ -728,7 +714,7 @@ export default function NewPatientPage() {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // SUCCESS SCREEN (shown after payment is confirmed)
+  // SUCCESS SCREEN
   // ══════════════════════════════════════════════════════════════
   if (success && (paymentConfirmed || !showPaymentStep)) {
     return (
@@ -745,7 +731,6 @@ export default function NewPatientPage() {
               <div className="text-4xl font-bold text-blue-700 font-mono tracking-wide">{success.mrn}</div>
             </div>
 
-            {/* Step 1: Payment — Only show if payment was NOT already collected inline */}
             {!paymentConfirmed && (
             <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-left">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">
@@ -788,7 +773,6 @@ export default function NewPatientPage() {
             </div>
             )}
 
-            {/* Payment confirmed badge — show when payment was collected inline */}
             {paymentConfirmed && (
               <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -801,7 +785,6 @@ export default function NewPatientPage() {
               </div>
             )}
 
-            {/* Step 2: Consultation */}
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
               🩺 {paymentConfirmed ? 'Next Step — Start Consultation' : 'Step 2 — After Payment'}
             </p>
@@ -850,7 +833,6 @@ export default function NewPatientPage() {
     <AppShell>
       <div className="p-4 sm:p-6 max-w-4xl mx-auto">
 
-        {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <Link href="/patients" className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -864,7 +846,6 @@ export default function NewPatientPage() {
           </div>
         </div>
 
-        {/* ═══ 4 INTAKE METHODS ═══════════════════════════════════ */}
         <div className="mb-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Registration Methods</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -914,7 +895,6 @@ export default function NewPatientPage() {
           </div>
         </div>
 
-        {/* ═══ PHOTO UPLOAD / FORM SCANNER ═══════════════════════ */}
         <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <ScanLine className="w-4 h-4 text-blue-500" />
@@ -930,14 +910,12 @@ export default function NewPatientPage() {
           </p>
         </div>
 
-        {/* Divider */}
         <div className="flex items-center gap-3 mb-6">
           <div className="flex-1 h-px bg-gray-200"></div>
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Or fill manually below</span>
           <div className="flex-1 h-px bg-gray-200"></div>
         </div>
 
-        {/* Draft restored banner */}
         {hasDraft() && form.full_name.trim() && (
           <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-blue-700">
             <ScanLine className="w-4 h-4 flex-shrink-0 text-blue-500" />
@@ -964,7 +942,6 @@ export default function NewPatientPage() {
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {/* Full Name */}
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Full Name <span className="text-red-500">*</span>
@@ -978,7 +955,6 @@ export default function NewPatientPage() {
                   <FieldError field="full_name" />
                 </div>
 
-                {/* Gender */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Gender</label>
                   <div className="flex gap-2">
@@ -997,7 +973,6 @@ export default function NewPatientPage() {
                   </div>
                 </div>
 
-                {/* Blood Group */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Blood Group</label>
                   <div className="grid grid-cols-4 gap-1.5">
@@ -1014,7 +989,6 @@ export default function NewPatientPage() {
                   </div>
                 </div>
 
-                {/* Date of Birth */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Date of Birth</label>
                   <input className={inputClass('date_of_birth')} type="date"
@@ -1025,7 +999,6 @@ export default function NewPatientPage() {
                   <p className="text-xs text-gray-400 mt-1">Auto-calculates age</p>
                 </div>
 
-                {/* Age */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Age (years)</label>
                   <input className={inputClass('age')} type="number" min="0" max="150"
@@ -1050,7 +1023,6 @@ export default function NewPatientPage() {
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {/* Mobile */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Mobile Number <span className="text-red-500">*</span>
@@ -1067,7 +1039,6 @@ export default function NewPatientPage() {
                   <FieldError field="mobile" />
                 </div>
 
-                {/* Aadhaar Card No */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Aadhaar Card No
@@ -1082,7 +1053,6 @@ export default function NewPatientPage() {
                   <FieldError field="aadhaar_no" />
                 </div>
 
-                {/* ABHA ID with Verification */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     <Shield className="w-3.5 h-3.5 inline mr-1 text-green-500" />
@@ -1136,7 +1106,6 @@ export default function NewPatientPage() {
                   )}
                 </div>
 
-                {/* Address */}
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     <MapPin className="w-3.5 h-3.5 inline mr-1 text-gray-400" />
@@ -1149,7 +1118,6 @@ export default function NewPatientPage() {
                   />
                 </div>
 
-                {/* Emergency Contact */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     <Heart className="w-3.5 h-3.5 inline mr-1 text-red-400" />
@@ -1190,7 +1158,6 @@ export default function NewPatientPage() {
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                {/* Mediclaim */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Mediclaim / Insurance</label>
                   <div className="flex gap-2">
@@ -1207,7 +1174,6 @@ export default function NewPatientPage() {
                   </div>
                 </div>
 
-                {/* Cashless */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Cashless Option</label>
                   <div className="flex gap-2">
@@ -1229,7 +1195,6 @@ export default function NewPatientPage() {
                   )}
                 </div>
 
-                {/* Referral Source */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Referred By / Source</label>
                   <select className={inputClass('reference_source')}
@@ -1254,10 +1219,8 @@ export default function NewPatientPage() {
                 </div>
               </div>
 
-              {/* Mediclaim guidance */}
               {form.mediclaim === 'Yes' && (
                 <>
-                  {/* Policy details — new fields */}
                   <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-5 mt-1">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -1312,7 +1275,6 @@ export default function NewPatientPage() {
                   </div>
                 </>
               )}
-
 
             </div>
           </div>
@@ -1389,7 +1351,6 @@ export default function NewPatientPage() {
 
           {/* ═══ FORM SUMMARY & SUBMIT ═══════════════════════════ */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            {/* Quick summary of filled fields */}
             <div className="flex flex-wrap gap-2 mb-4">
               {form.full_name && (
                 <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full">
@@ -1431,7 +1392,6 @@ export default function NewPatientPage() {
               )}
             </div>
 
-            {/* Action buttons */}
             <div className="flex items-center justify-between">
               <Link href="/patients"
                 className="text-sm text-gray-500 hover:text-gray-700 font-medium px-5 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
