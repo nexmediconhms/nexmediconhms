@@ -16,6 +16,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import RevenueEngine from '@/components/dashboard/RevenueEngine'
 import { formatCurrency, todayIST, tomorrowIST, daysFromNowIST } from '@/lib/business-logic'
 import {
   IndianRupee, AlertCircle, Clock, Users,
@@ -844,6 +845,8 @@ export default function DashboardPage() {
 
             {/* DOCTOR ALERTS — Abnormal Lab Values */}
             <DoctorAlertsSection />
+
+            <RevenueEngine />
 
             {/* TODAY SUMMARY */}
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
