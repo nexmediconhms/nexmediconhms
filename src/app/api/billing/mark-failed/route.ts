@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   // ── Verify bill exists and is in a valid state ────────────
   const { data: bill, error: fetchError } = await supabase
     .from('bills')
-    .select('id, status, patient_id, total_amount, razorpay_payment_id')
+    .select('id, status, patientid, net_amount, razorpay_payment_id')
     .eq('id', bill_id)
     .single()
 
@@ -99,8 +99,8 @@ export async function POST(req: NextRequest) {
   try {
     await supabase.from('payment_attempts').insert({
       bill_id,
-      patient_id: bill.patient_id,
-      amount: bill.total_amount,
+      patient_id: bill.patientid,
+      amount: bill.net_amount,
       status: newStatus,
       failure_reason: reason.trim(),
       marked_by: auth.clinicUserId,
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
         previous_status: bill.status,
         new_status: newStatus,
         reason: reason.trim(),
-        amount: bill.total_amount,
+        amount: bill.net_amount,
       }),
     })
   } catch (e) {

@@ -24,7 +24,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'bills' AND column_name = 'modified_by'
   ) THEN
-    ALTER TABLE bills ADD COLUMN modified_by UUID REFERENCES clinicusers(id);
+    ALTER TABLE bills ADD COLUMN modified_by UUID REFERENCES clinic_users(id);
   END IF;
 
   -- modified_at: When the last modification happened
@@ -50,9 +50,9 @@ RETURNS TRIGGER AS $$
 BEGIN
   -- Only set modified_at if the bill content actually changed
   -- (not just status updates from webhooks)
-  IF OLD.totalamount IS DISTINCT FROM NEW.totalamount
+  IF OLD.net_amount IS DISTINCT FROM NEW.net_amount
      OR OLD.discount IS DISTINCT FROM NEW.discount
-     OR OLD.items IS DISTINCT FROM NEW.items
+     OR OLD.subtotal IS DISTINCT FROM NEW.subtotal
   THEN
     NEW.modified_at = NOW();
   END IF;
