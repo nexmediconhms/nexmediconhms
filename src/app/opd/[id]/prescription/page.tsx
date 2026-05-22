@@ -138,6 +138,7 @@ export default function PrescriptionPage() {
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [showBillingPrompt, setShowBillingPrompt] = useState(false)
 
   const [drugSuggestion, setDrugSuggestion] = useState<{ idx: number; list: string[] } | null>(null)
   const [safetyAlerts, setSafetyAlerts] = useState<ClinicalAlert[]>([])
@@ -383,6 +384,7 @@ export default function PrescriptionPage() {
 
     setSaving(false)
     setSaved(true)
+    setShowBillingPrompt(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
@@ -725,6 +727,37 @@ export default function PrescriptionPage() {
           </div>
         </div>
       </div>
+
+      {/* ═══ BILLING PROMPT — Shows after prescription is saved ═══ */}
+      {showBillingPrompt && patient && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-white border-2 border-green-300 shadow-2xl rounded-2xl px-6 py-4 flex items-center gap-4 max-w-lg">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900">Prescription saved!</p>
+              <p className="text-xs text-gray-500">Generate bill for {patient.full_name}?</p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Link
+                href={`/billing?patientId=${patient.id}&patientName=${encodeURIComponent(
+                  patient.full_name ?? 'Patient'
+                )}&mrn=${patient.mrn ?? ''}&encounterType=${encounter?.encounter_type ?? 'OPD'}&view=new`}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors shadow-sm"
+              >
+                💳 Bill Now
+              </Link>
+              <button
+                onClick={() => setShowBillingPrompt(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-2"
+              >
+                Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PRINT VIEW */}
       <div className="print-only print-container p-8 max-w-[700px] mx-auto">
