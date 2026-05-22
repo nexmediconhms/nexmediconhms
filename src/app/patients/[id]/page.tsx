@@ -172,6 +172,28 @@ export default function PatientDetailPage() {
       })()
   }, [id])
 
+  // ── Realtime: auto-refresh patient data when bills/encounters change ──
+  useEffect(() => {
+    if (!id) return
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { loadAll() }, 1000)
+    }
+
+    const channel = supabase
+      .channel(`patient-profile-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills', filter: `patient_id=eq.${id}` }, debouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters', filter: `patient_id=eq.${id}` }, debouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue', filter: `patient_id=eq.${id}` }, debouncedReload)
+      .subscribe()
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      supabase.removeChannel(channel)
+    }
+  }, [id])
+
   async function loadAll() {
     setLoading(true)
     const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }, { data: queueData }] = await Promise.all([
