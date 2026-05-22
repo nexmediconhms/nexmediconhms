@@ -57,6 +57,28 @@ export default function RevenueEngine() {
 
   useEffect(() => {
     loadData()
+
+    // ── Realtime subscription — auto-refresh when billing/appointments change ──
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { loadData() }, 1000)
+    }
+
+    const channel = supabase
+      .channel('revenue-engine-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'follow_ups' }, debouncedLoad)
+      .subscribe()
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      supabase.removeChannel(channel)
+    }
   }, [period])
 
   async function loadData() {

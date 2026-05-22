@@ -378,6 +378,26 @@ function BillingContent() {
 
   useEffect(() => { loadBills() }, [loadBills])
 
+  // ── Realtime: auto-refresh bills list when payments/bills change ──
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { loadBills() }, 1000)
+    }
+
+    const channel = supabase
+      .channel('billing-page-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, debouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, debouncedReload)
+      .subscribe()
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      supabase.removeChannel(channel)
+    }
+  }, [loadBills])
+
   // Auto-open "new bill" form if view=new in URL
   useEffect(() => {
     const viewParam = searchParams.get('view')

@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import FormScanner from '@/components/shared/FormScanner'
+import UPIPaymentFlow from '@/components/payment/UPIPaymentFlow'
+import PaymentReceipt from '@/components/payment/PaymentReceipt'
 import { supabase } from '@/lib/supabase'
 import type { OCRResult } from '@/lib/ocr'
 import { normalizePhone, normalizeDigits, indicDigitsToAscii, getIndiaToday } from '@/lib/utils'
@@ -78,6 +80,9 @@ export default function NewPatientPage() {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
   const [addToQueue, setAddToQueue] = useState(true)
+  const [showUPIFlow, setShowUPIFlow] = useState(false)
+  const [paymentBillId, setPaymentBillId] = useState<string>('')
+  const [paymentInvoiceNumber, setPaymentInvoiceNumber] = useState<string>('')
 
   // Duplicate detection
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
@@ -481,11 +486,13 @@ export default function NewPatientPage() {
   }
 
   // ── Payment confirmation handler ────────────────────────────────
-  async function handlePaymentConfirm() {
-    if (!paymentMethod || !success) return
+  async function handlePaymentConfirm(overrideMethod?: string, overrideRef?: string) {
+    const method = overrideMethod || paymentMethod
+    const ref = overrideRef || paymentRef
+    if (!method || !success) return
 
     try {
-      await fetch('/api/billing/registration-payment', {
+      const res = await fetch('/api/billing/registration-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -493,12 +500,15 @@ export default function NewPatientPage() {
           patient_name: success.name,
           mrn: success.mrn,
           amount: parseFloat(paymentAmount) || 500,
-          payment_method: paymentMethod,
-          payment_ref: paymentRef || null,
+          payment_method: method,
+          payment_ref: ref || null,
           description: 'OPD Registration Fee',
           type: 'registration',
         }),
       })
+      const data = await res.json()
+      if (data?.bill_id) setPaymentBillId(data.bill_id)
+      if (data?.invoice_number) setPaymentInvoiceNumber(data.invoice_number)
     } catch { /* Non-fatal */ }
 
     if (addToQueue) {
@@ -553,8 +563,28 @@ export default function NewPatientPage() {
   }
 
   // Register & add to queue WITHOUT taking payment now.
+  // Creates a pending bill so dashboard tiles stay in sync.
   async function handleSkipPayment() {
     if (!success) return
+
+    // Create a PENDING bill so the dashboard Pending tile reflects this
+    try {
+      await fetch('/api/billing/registration-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: successId,
+          patient_name: success.name,
+          mrn: success.mrn,
+          amount: parseFloat(paymentAmount) || 500,
+          payment_method: 'pending', // Special flag: creates pending bill
+          payment_ref: null,
+          description: 'OPD Registration Fee',
+          type: 'registration',
+          skip_payment: true, // API will create bill with status='pending'
+        }),
+      })
+    } catch { /* Non-fatal — bill will be created later at billing page */ }
 
     if (addToQueue) {
       try {
@@ -608,6 +638,58 @@ export default function NewPatientPage() {
   // PAYMENT COLLECTION STEP
   // ══════════════════════════════════════════════════════════════
   if (showPaymentStep && success && !paymentConfirmed) {
+    // Show UPI Payment Flow when UPI is selected
+    if (showUPIFlow) {
+      return (
+        <AppShell>
+          <div className="p-6 max-w-lg mx-auto mt-8">
+            <div className="mb-4 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-green-800 text-sm">{success.name} registered</div>
+                <div className="text-xs text-green-600">MRN: <span className="font-mono font-bold">{success.mrn}</span></div>
+              </div>
+            </div>
+            <UPIPaymentFlow
+              amount={parseFloat(paymentAmount) || 500}
+              patientName={success.name}
+              patientId={successId}
+              mrn={success.mrn}
+              context="opd"
+              mobile={successMobile}
+              description="OPD Registration Fee"
+              onPaymentVerified={(ref) => {
+                setPaymentRef(ref)
+                setPaymentMethod('upi')
+                setShowUPIFlow(false)
+                // Call payment confirm with explicit params (state may not update in time)
+                handlePaymentConfirm('upi', ref)
+              }}
+              onCancel={() => {
+                setShowUPIFlow(false)
+                setPaymentMethod('')
+              }}
+              onSendPaymentLink={() => {
+                generatePayLink(successId, success.name, successMobile)
+              }}
+            />
+            <div className="mt-3 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <input
+                type="checkbox"
+                id="addToQueueUPI"
+                checked={addToQueue}
+                onChange={e => setAddToQueue(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <label htmlFor="addToQueueUPI" className="text-sm font-medium text-blue-800 cursor-pointer">
+                Auto-add patient to today&apos;s OPD Queue
+              </label>
+            </div>
+          </div>
+        </AppShell>
+      )
+    }
+
     return (
       <AppShell>
         <div className="p-6 max-w-lg mx-auto mt-8">
@@ -643,12 +725,20 @@ export default function NewPatientPage() {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { key: 'cash', label: '💵 Cash' },
-                  { key: 'upi', label: '📱 UPI' },
+                  { key: 'upi', label: '📱 UPI (QR)' },
                   { key: 'card', label: '💳 Debit Card' },
                   { key: 'credit', label: '💳 Credit Card' },
                 ].map(({ key, label }) => (
                   <button key={key} type="button"
-                    onClick={() => setPaymentMethod(key as any)}
+                    onClick={() => {
+                      if (key === 'upi') {
+                        setPaymentMethod('upi')
+                        setShowUPIFlow(true)
+                      } else {
+                        setPaymentMethod(key as any)
+                        setShowUPIFlow(false)
+                      }
+                    }}
                     className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all duration-200 ${
                       paymentMethod === key
                         ? paymentMethodClasses[key]
@@ -660,14 +750,14 @@ export default function NewPatientPage() {
               </div>
             </div>
 
-            {paymentMethod && paymentMethod !== 'cash' && (
+            {paymentMethod && paymentMethod !== 'cash' && paymentMethod !== 'upi' && (
               <div className="mb-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Transaction Reference (optional)
                 </label>
                 <input
                   className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="UPI Ref / Card last 4 digits"
+                  placeholder="Card last 4 digits / Transaction ID"
                   value={paymentRef}
                   onChange={e => setPaymentRef(e.target.value)}
                 />
@@ -773,14 +863,30 @@ export default function NewPatientPage() {
             </div>
             )}
 
-            {paymentConfirmed && (
+            {paymentConfirmed && paymentBillId && paymentInvoiceNumber && (
+              <div className="mb-5 text-left">
+                <PaymentReceipt
+                  billId={paymentBillId}
+                  invoiceNumber={paymentInvoiceNumber}
+                  patientName={success.name}
+                  patientId={successId}
+                  mrn={success.mrn}
+                  amount={parseFloat(paymentAmount) || 500}
+                  paymentMethod={paymentMethod}
+                  paymentRef={paymentRef}
+                  description="OPD Registration Fee"
+                />
+              </div>
+            )}
+
+            {paymentConfirmed && !paymentBillId && (
               <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                   <CheckCircle className="w-5 h-5 text-green-600" />
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-bold text-green-800">Payment Collected ✓</p>
-                  <p className="text-xs text-green-600">₹{paymentAmount} via {paymentMethod} — Patient is ready for consultation</p>
+                  <p className="text-xs text-green-600">{`\u20B9${paymentAmount}`} via {paymentMethod} — Patient is ready for consultation</p>
                 </div>
               </div>
             )}
