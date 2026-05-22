@@ -37,7 +37,13 @@ const supabase = createClient(
 // Validate webhook secret (for email parser integrations)
 function validateWebhookAuth(req: NextRequest): boolean {
   const secret = process.env.LAB_IMPORT_SECRET || process.env.CRON_SECRET
-  if (!secret) return true // Allow in dev
+  if (!secret) {
+    // SECURITY FIX: If no secret is configured, REJECT the request
+    // instead of silently allowing it. This prevents unauthenticated
+    // access when the environment variable is not set.
+    console.error('[lab-import] LAB_IMPORT_SECRET not configured — rejecting request')
+    return false
+  }
 
   const authHeader = req.headers.get('x-webhook-secret') ||
     req.headers.get('authorization')?.replace('Bearer ', '') || ''

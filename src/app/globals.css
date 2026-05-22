@@ -143,3 +143,7 @@ button, a, [role="button"] {
     padding-bottom: 80px;
   }
 }
+
+
+/* ── Responsive Patch — Cross-platform fixes ─────────────────── */
+@import './globals-responsive-patch.css';

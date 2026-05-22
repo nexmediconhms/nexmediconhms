@@ -161,9 +161,9 @@ export default function Sidebar() {
   ]
 
   const FOOTER_LINKS: NavItemDef[] = [
-    { href: '/ai-setup',   icon: Sparkles,      label: 'AI Status'                               },
-    { href: '/abdm-setup', icon: Shield,        label: 'ABDM / FHIR'                             },
-    { href: '/setup',      icon: BookOpen,      label: 'Setup Guide'                             },
+    { href: '/ai-setup',   icon: Sparkles,      label: 'AI Status',   permission: 'settings.edit' },
+    { href: '/abdm-setup', icon: Shield,        label: 'ABDM / FHIR', permission: 'settings.edit' },
+    { href: '/setup',      icon: BookOpen,      label: 'Setup Guide',  permission: 'settings.edit' },
     { href: '/settings',   icon: Settings,      label: 'Settings',   permission: 'settings.view' },
   ]
 

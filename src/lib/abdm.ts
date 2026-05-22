@@ -68,42 +68,28 @@ export interface ABHACreateResult {
 }
 
 // ── Settings Storage ─────────────────────────────────────────
-// Supabase-backed with localStorage as offline fallback (mirrors hospital settings pattern)
+// SECURITY FIX: ABDM credentials (clientId, clientSecret) are now
+// stored ONLY server-side via environment variables (ABDM_CLIENT_ID,
+// ABDM_CLIENT_SECRET). The client-side config only stores non-secret
+// preferences (environment, enabled).
 import { supabase } from './supabase'
 
-const ABDM_SETTINGS_KEY = 'nexmedicon_abdm_settings'
 const ABDM_SUPABASE_KEY = 'abdm_settings'
 
 const ABDM_DEFAULTS: ABDMConfig = {
-  clientId:     '',
-  clientSecret: '',
+  clientId:     '',       // NOT stored — read from env on server
+  clientSecret: '',       // NOT stored — read from env on server
   environment:  'sandbox',
   enabled:      false,
 }
 
-// In-memory cache for synchronous access
+// In-memory cache for synchronous access (non-secret fields only)
 let _abdmCache: ABDMConfig = { ...ABDM_DEFAULTS }
 let _abdmInitialized = false
 
-function readABDMFromLocalStorage(): ABDMConfig | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(ABDM_SETTINGS_KEY)
-    if (raw) return { ...ABDM_DEFAULTS, ...JSON.parse(raw) }
-  } catch {}
-  return null
-}
-
-function persistABDMToLocalStorage(config: ABDMConfig): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(ABDM_SETTINGS_KEY, JSON.stringify(config))
-  } catch {}
-}
-
 /**
- * Initialize ABDM config from Supabase → localStorage → defaults.
- * Call once on app boot (called from initABDMConfig or lazily).
+ * Initialize ABDM config from Supabase (non-secret fields only).
+ * Credentials come from server env vars, NEVER from the client.
  */
 export async function initABDMConfig(): Promise<ABDMConfig> {
   try {
@@ -114,28 +100,34 @@ export async function initABDMConfig(): Promise<ABDMConfig> {
       .maybeSingle()
 
     if (!error && data?.value) {
-      const remote = { ...ABDM_DEFAULTS, ...JSON.parse(data.value) }
+      const parsed = JSON.parse(data.value)
+      // SECURITY: Strip any credentials that may have been stored previously
+      const remote: ABDMConfig = {
+        clientId: '',
+        clientSecret: '',
+        environment: parsed.environment || 'sandbox',
+        enabled: parsed.enabled ?? false,
+      }
       _abdmCache = remote
       _abdmInitialized = true
-      persistABDMToLocalStorage(remote)
       return _abdmCache
     }
   } catch {}
 
-  // Fallback: localStorage (auto-migrate to Supabase if found)
-  const local = readABDMFromLocalStorage()
-  if (local) {
-    _abdmCache = local
-    _abdmInitialized = true
-    // Auto-migrate to Supabase (fire-and-forget)
-    ;(async () => {
-      try {
-        await supabase
-          .from('clinic_settings')
-          .upsert({ key: ABDM_SUPABASE_KEY, value: JSON.stringify(local), updated_at: new Date().toISOString() }, { onConflict: 'key' })
-      } catch { /* non-fatal */ }
-    })()
-    return _abdmCache
+  // Clean up legacy localStorage data (remove credentials)
+  if (typeof window !== 'undefined') {
+    try {
+      const legacyKey = 'nexmedicon_abdm_settings'
+      const raw = localStorage.getItem(legacyKey)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        // If credentials were stored in localStorage, remove them
+        if (parsed.clientId || parsed.clientSecret) {
+          localStorage.removeItem(legacyKey)
+          console.warn('[abdm] Removed legacy credentials from localStorage (security fix)')
+        }
+      }
+    } catch {}
   }
 
   _abdmCache = { ...ABDM_DEFAULTS }
@@ -144,35 +136,35 @@ export async function initABDMConfig(): Promise<ABDMConfig> {
 }
 
 /**
- * Synchronous read — returns cached config (falls back to localStorage → defaults).
+ * Synchronous read — returns cached config (non-secret fields only).
  */
 export function loadABDMConfig(): ABDMConfig {
   if (_abdmInitialized) return _abdmCache
-  const local = readABDMFromLocalStorage()
-  if (local) {
-    _abdmCache = local
-    return _abdmCache
-  }
   return ABDM_DEFAULTS
 }
 
 /**
- * Save ABDM config to Supabase + cache + localStorage.
+ * Save ABDM config to Supabase (non-secret fields only).
+ * Credentials are managed via environment variables on the server.
  */
 export async function saveABDMConfig(config: ABDMConfig): Promise<void> {
-  _abdmCache = { ...config }
+  // SECURITY: Never persist credentials to Supabase or localStorage
+  const safeConfig = {
+    environment: config.environment,
+    enabled: config.enabled,
+  }
+  _abdmCache = { ...ABDM_DEFAULTS, ...safeConfig }
   _abdmInitialized = true
-  persistABDMToLocalStorage(config)
 
   try {
     await supabase
       .from('clinic_settings')
       .upsert(
-        { key: ABDM_SUPABASE_KEY, value: JSON.stringify(config), updated_at: new Date().toISOString() },
+        { key: ABDM_SUPABASE_KEY, value: JSON.stringify(safeConfig), updated_at: new Date().toISOString() },
         { onConflict: 'key' }
       )
   } catch {
-    console.warn('[abdm] Saved to localStorage only — Supabase write failed')
+    console.warn('[abdm] Supabase write failed for ABDM settings')
   }
 }
 

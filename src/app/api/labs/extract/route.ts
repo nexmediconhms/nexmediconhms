@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -90,6 +91,10 @@ function detectAbnormalValues(results: Array<{ name: string; value: string | num
 }
 
 export async function POST(req: NextRequest) {
+  // ── AUTH CHECK: Require authenticated clinic user ──────────────
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const { report_id, base64_data, mime_type } = body

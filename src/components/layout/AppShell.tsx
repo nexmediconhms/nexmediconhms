@@ -28,6 +28,7 @@ import { AlertTriangle, X } from 'lucide-react'
 import SessionTimeout from './SessionTimeout';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotificationPanel from './NotificationPanel';
+import OfflineSyncManager from './OfflineSyncManager';
 
 const ROLE_OVERRIDE_KEY = 'nexmedicon_role_override'
 
@@ -238,20 +239,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="no-print">
             <ConnectionBanner />
+            <OfflineSyncManager />
           </div>
 
-          {/* Config warning banner */}
-          {configWarn.length > 0 && !warnDismissed && (
+          {/* Config warning banner — ONLY visible to admin (developer) */}
+          {configWarn.length > 0 && !warnDismissed && effectiveUser?.role === 'admin' && (
             <div className="no-print bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-amber-800 mb-0.5">Setup incomplete</p>
+                <p className="text-xs font-semibold text-amber-800 mb-0.5">Setup incomplete (Admin only)</p>
                 {configWarn.map(w => (
-                  <p key={w} className="text-xs text-amber-700">⚠ {w}</p>
+                  <p key={w} className="text-xs text-amber-700">{w}</p>
                 ))}
                 <div className="flex gap-3 mt-1">
                   <Link href="/ai-setup" className="text-xs text-amber-800 underline font-semibold">
-                    Fix AI Setup →
+                    Fix AI Setup
                   </Link>
                   <Link href="/setup" className="text-xs text-amber-700 underline">
                     Setup Guide

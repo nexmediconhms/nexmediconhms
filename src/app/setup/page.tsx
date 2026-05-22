@@ -2,10 +2,11 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
+import { useAuth } from '@/lib/auth'
 import {
   CheckCircle, Circle, ExternalLink, ChevronRight,
   Database, Settings, Users, Stethoscope, IndianRupee,
-  Key, Sparkles, AlertCircle, Copy, Check
+  Key, Sparkles, AlertCircle, Copy, Check, ShieldAlert
 } from 'lucide-react'
 
 interface Step {
@@ -57,18 +58,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # ── ANTHROPIC (required for AI features) ─────────────
 # Get from: console.anthropic.com → API Keys
-# Enables: OCR scanning, AI summaries, voice correction
 ANTHROPIC_API_KEY=sk-ant-your-real-key-here
 
 # ── RAZORPAY (optional - for card/UPI payments) ───────
-# Get from: dashboard.razorpay.com → Settings → API Keys
-NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxx   # for checkout widget
-RAZORPAY_KEY_ID=rzp_test_xxxx               # for payment links
-RAZORPAY_KEY_SECRET=your-secret-here        # for payment links
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxx
+RAZORPAY_KEY_ID=rzp_test_xxxx
+RAZORPAY_KEY_SECRET=your-secret-here
 
-# ── UPI DEEPLINK (optional - simpler than Razorpay) ──
-# Fallback UPI ID - used when OPD/IPD specific UPIs not set in Settings
-# You can also set separate OPD & IPD UPI IDs from the Settings page
+# ── UPI DEEPLINK (optional) ──────────────────────────
 NEXT_PUBLIC_UPI_ID=yourhospital@upibank
 
 # ── HOSPITAL NAME (for WhatsApp messages) ────────────
@@ -97,7 +94,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000`,
     icon: Settings,
     action: 'Open Settings',
     actionHref: '/settings',
-    tip: 'Settings are saved locally. After setting up, print a test prescription to verify the header looks correct.',
+    tip: 'Settings are saved to the database. After setting up, print a test prescription to verify the header looks correct.',
   },
   {
     id: 'beds',
@@ -108,10 +105,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000`,
 INSERT INTO beds (bed_number, ward, status) VALUES
   ('ICU-01', 'ICU', 'available'),
   ('ICU-02', 'ICU', 'available'),
-  ('LW-03', 'Labour Ward', 'available');
-
--- Or update existing bed ward names:
-UPDATE beds SET ward = 'Maternity Ward' WHERE ward = 'Labour Ward';`,
+  ('LW-03', 'Labour Ward', 'available');`,
     tip: 'Bed numbers should match your physical bed labels for easy identification.',
   },
   {
@@ -121,7 +115,7 @@ UPDATE beds SET ward = 'Maternity Ward' WHERE ward = 'Labour Ward';`,
     icon: Stethoscope,
     action: 'Register Test Patient',
     actionHref: '/patients/new',
-    tip: 'Use the seed_demo_data.sql to load 15 realistic patients instantly — perfect for showing the system to the pilot doctor.',
+    tip: 'Use seed_demo_data.sql to load 15 realistic patients instantly — perfect for showing the system to the pilot doctor.',
   },
   {
     id: 'payment',
@@ -161,7 +155,30 @@ function CodeBlock({ code }: { code: string }) {
 }
 
 export default function SetupPage() {
+  const { user, isAdmin } = useAuth()
   const [done, setDone] = useState<Set<string>>(new Set())
+
+  // ─── SECURITY FIX: Only admin can view developer setup guide ───
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto mt-20">
+          <div className="card p-8 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ShieldAlert className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Access Restricted</h2>
+            <p className="text-gray-500 text-sm mb-4">
+              The Setup Guide is only available to system administrators.
+            </p>
+            <Link href="/dashboard" className="btn-primary inline-flex items-center gap-2">
+              Go to Dashboard <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
 
   function toggle(id: string) {
     setDone(prev => {
@@ -186,6 +203,9 @@ export default function SetupPage() {
           <p className="text-gray-500 text-sm">
             Follow these steps to get the system fully operational for your pilot hospital.
           </p>
+          <p className="text-xs text-amber-600 mt-1 font-medium">
+            This page is only visible to administrators.
+          </p>
 
           {/* Progress bar */}
           <div className="mt-4 bg-gray-100 rounded-full h-2.5 overflow-hidden">
@@ -207,7 +227,6 @@ export default function SetupPage() {
               <div key={step.id}
                 className={`card p-5 border transition-all ${isDone ? 'border-green-200 bg-green-50/30' : 'border-gray-100'}`}>
                 <div className="flex items-start gap-4">
-                  {/* Step number / done toggle */}
                   <button onClick={() => toggle(step.id)}
                     className="flex-shrink-0 mt-0.5 transition-colors">
                     {isDone
@@ -222,7 +241,7 @@ export default function SetupPage() {
                       </span>
                       {isDone && (
                         <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                          ✓ Done
+                          Done
                         </span>
                       )}
                     </div>
@@ -242,7 +261,7 @@ export default function SetupPage() {
 
                     {step.tip && (
                       <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mt-2 text-xs text-blue-700">
-                        <span className="flex-shrink-0">💡</span>
+                        <span className="flex-shrink-0">Tip:</span>
                         {step.tip}
                       </div>
                     )}
@@ -275,7 +294,7 @@ export default function SetupPage() {
         {done.size === STEPS.length && (
           <div className="mt-6 card p-6 bg-green-50 border-green-200 text-center">
             <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-3" />
-            <h3 className="font-bold text-green-800 text-lg mb-1">System is ready! 🎉</h3>
+            <h3 className="font-bold text-green-800 text-lg mb-1">System is ready!</h3>
             <p className="text-green-700 text-sm mb-4">
               NexMedicon HMS is fully configured and ready for your pilot hospital.
             </p>
