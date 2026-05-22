@@ -269,6 +269,16 @@ export async function handleVisitCompletion(
   // ✅ Cancel only follow-up appointments (safe)
   await cancelActiveAppointment(patientId)
 
+  // ✅ NEW: If patient visits BEFORE their scheduled follow-up date,
+  // auto-cancel future follow-ups and their linked appointments.
+  // This prevents duplicate reminders and false "overdue" flags.
+  try {
+    const { cancelFutureFollowUpsOnEarlyVisit } = await import('@/lib/revenue-lifecycle')
+    await cancelFutureFollowUpsOnEarlyVisit(patientId, encounterId)
+  } catch {
+    // Non-fatal — early visit detection is a bonus, not critical
+  }
+
   // ✅ Close today's OPD queue token for this patient (Gap 1)
   // Only touches rows that are still open (waiting / in_progress).
   // Never reopens a row that was already marked done or cancelled.
