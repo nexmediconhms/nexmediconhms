@@ -40,16 +40,35 @@ export async function GET(req: NextRequest) {
   try {
     const filter = req.nextUrl.searchParams.get('filter') // 'no_claim' | 'all' | 'pending' | 'settled'
 
-    // Get all patients with insurance (mediclaim = true OR cashless = true OR policy_tpa_name is not null)
-    const { data: insuredPatients, error: pErr } = await supabase
+    // Get all patients with insurance
+    // FIX: The patients table stores mediclaim/cashless as TEXT ('Yes'/'No'),
+    // NOT boolean. The old query `.or('mediclaim.eq.true,...')` never matched.
+    // Also check insurance_name and insurance_id fields which are set during
+    // admission/checkout but were previously ignored.
+    const { data: allPatients, error: pErr } = await supabase
       .from('patients')
-      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at')
-      .or('mediclaim.eq.true,cashless.eq.true,policy_tpa_name.neq.')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, insurance_name, insurance_id, created_at')
+      .eq('is_active', true)
       .order('created_at', { ascending: false })
+
+    // Client-side filter for insured patients since we need case-insensitive
+    // matching on TEXT fields with multiple possible truthy values
+    const insuredPatients = (allPatients || []).filter((p: any) => {
+      const mediclaim = String(p.mediclaim || '').trim().toLowerCase()
+      const cashless = String(p.cashless || '').trim().toLowerCase()
+      const hasMediclaim = mediclaim === 'yes' || mediclaim === 'true'
+      const hasCashless = cashless === 'yes' || cashless === 'true'
+      const hasTPA = !!(p.policy_tpa_name && p.policy_tpa_name.trim())
+      const hasInsName = !!(p.insurance_name && p.insurance_name.trim())
+      const hasInsId = !!(p.insurance_id && p.insurance_id.trim())
+      return hasMediclaim || hasCashless || hasTPA || hasInsName || hasInsId
+    })
 
     if (pErr) {
       return NextResponse.json({ error: pErr.message }, { status: 500 })
     }
+
+    // insuredPatients is now the filtered array from above
 
     // Get all existing claims
     const { data: existingClaims, error: cErr } = await supabase
@@ -165,7 +184,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify patient actually has insurance
-    if (!patient.mediclaim && !patient.cashless && !patient.policy_tpa_name) {
+    // FIX: Check TEXT fields correctly ('Yes'/'true' instead of boolean true)
+    const mediclaim = String(patient.mediclaim || '').trim().toLowerCase()
+    const cashless = String(patient.cashless || '').trim().toLowerCase()
+    const hasMediclaim = mediclaim === 'yes' || mediclaim === 'true'
+    const hasCashless = cashless === 'yes' || cashless === 'true'
+    const hasTPA = !!(patient.policy_tpa_name && patient.policy_tpa_name.trim())
+
+    if (!hasMediclaim && !hasCashless && !hasTPA) {
       return NextResponse.json({
         ok: false,
         message: 'Patient does not have insurance/mediclaim. No claim created.',
