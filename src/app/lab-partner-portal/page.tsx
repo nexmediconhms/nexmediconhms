@@ -43,7 +43,7 @@ export default function LabPartnerPortalPage() {
   const [mrn, setMrn] = useState('')
   const [patientName, setPatientName] = useState('')
   const [reportName, setReportName] = useState('')
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0])
+  const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }))
   const [notes, setNotes] = useState('')
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -138,7 +138,7 @@ export default function LabPartnerPortalPage() {
         setReportName('')
         setNotes('')
         setPdfFile(null)
-        setReportDate(new Date().toISOString().split('T')[0])
+        setReportDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }))
         // Add to history
         setHistory(prev => [{
           id: data.reportId,

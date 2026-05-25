@@ -18,7 +18,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
-import { formatDate, formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime, getIndiaToday } from '@/lib/utils'
 import FormScanner from '@/components/shared/FormScanner'
 import type { OCRResult } from '@/lib/ocr'
 import {
@@ -223,7 +223,7 @@ function LabsContent() {
   const [encounterId, setEncounterId] = useState(searchParams.get('encounter') ?? '')
   const [patientName, setPatientName] = useState('')
   const [mrn, setMrn] = useState('')
-  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10))
+  const [reportDate, setReportDate] = useState(getIndiaToday())
   const [labName, setLabName] = useState('')
   const [notes, setNotes] = useState('')
   const [entries, setEntries] = useState<LabEntry[]>([normaliseEntry({})])
@@ -501,7 +501,7 @@ function LabsContent() {
     setPatientId(searchParams.get('patient') ?? '')
     setEncounterId(searchParams.get('encounter') ?? '')
     setPatientName(''); setMrn('')
-    setReportDate(new Date().toISOString().slice(0, 10))
+    setReportDate(getIndiaToday())
     setLabName(''); setNotes('')
     setEntries([normaliseEntry({})])
     setTestSearch('')

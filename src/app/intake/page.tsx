@@ -169,7 +169,7 @@ function IntakeContent() {
       address:                 form.address.trim() || null,
       emergency_contact_name:  form.emergency_contact_name.trim()  || null,
       emergency_contact_phone: normalizePhone(form.emergency_contact_phone) || null,
-      mediclaim:               form.mediclaim === 'Yes',
+      mediclaim:               form.mediclaim === 'Yes' ? 'Yes' : 'No',
       reference_source:        appointmentId ? 'Online Self-Registration' : 'Walk-in Self-Registration',
     }
 

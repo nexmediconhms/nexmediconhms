@@ -30,7 +30,7 @@ interface Report {
 }
 
 export default function ValueReportPage() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 7)
   const [month,   setMonth]   = useState(thisMonth)
   const [report,  setReport]  = useState<Report | null>(null)
   const [loading, setLoading] = useState(false)

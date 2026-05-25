@@ -1,6 +1,6 @@
 'use client'
 /**
- * src/app/settings/lab-partners/page.tsx — v33 FIX
+ * src/app/settings/lab-partners/page.tsx — v34 FIX
  *
  * FIX #12: Lab partners page now checks for admin role.
  * Doctors and staff see a "read-only" view — they can see which labs are configured
@@ -9,6 +9,11 @@
  *
  * FIX #2/#3: Lab partner revenue data (percentages) is sensitive financial info —
  * only admins should see it. Doctors see lab names only (for assigning to reports).
+ *
+ * FIX (v34): Corrected column names to match actual DB schema.
+ *   - INSERT uses `phone` instead of non-existent `contact` column
+ *   - SELECT maps `hospital_pct`/`lab_pct` with fallback to `hospitalshare`/`labshare`
+ *   - Added error handling so failures are visible instead of silent spinner
  */
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
@@ -19,7 +24,8 @@ import { Plus, Trash2, Save, FlaskConical, Percent, Lock, AlertCircle } from 'lu
 interface LabPartner {
   id: string
   name: string
-  contact: string
+  phone: string | null
+  email: string | null
   hospital_pct: number
   lab_pct: number
   is_active: boolean
@@ -29,30 +35,60 @@ export default function LabPartnersPage() {
   const { isAdmin, loading: authLoading } = useAuth()
   const [partners, setPartners] = useState<LabPartner[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', contact: '', hospital_pct: '60', lab_pct: '40' })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('lab_partners').select('*').order('name')
-    setPartners((data || []) as LabPartner[])
+    setLoadError('')
+    const { data, error } = await supabase.from('lab_partners').select('*').order('name')
+    if (error) {
+      console.error('[lab-partners] Load error:', error.message)
+      setLoadError(error.message)
+      setPartners([])
+    } else {
+      // Map columns with fallback for different schema versions
+      const mapped: LabPartner[] = (data || []).map((p: any) => ({
+        id: p.id,
+        name: p.name || '',
+        phone: p.phone || p.contact_person || p.contact || null,
+        email: p.email || null,
+        hospital_pct: Number(p.hospital_pct) || Number(p.default_hospital_pct) || Number(p.hospitalshare) || 30,
+        lab_pct: Number(p.lab_pct) || Number(p.default_lab_pct) || Number(p.labshare) || 70,
+        is_active: p.is_active !== undefined ? p.is_active : (p.isactive !== undefined ? p.isactive : true),
+      }))
+      setPartners(mapped)
+    }
     setLoading(false)
   }
 
   async function addPartner() {
     if (!form.name.trim() || !isAdmin) return
     setSaving(true)
+    setSaveError('')
     const hospitalPct = Number(form.hospital_pct) || 60
     const labPct = Number(form.lab_pct) || 40
-    await supabase.from('lab_partners').insert({
+    // Use column names that exist in the DB schema
+    // The lab_partners table has: name, phone, email, address, is_active
+    // Plus hospital_pct/lab_pct (added by migrations) OR hospitalshare/labshare (original schema)
+    const { error } = await supabase.from('lab_partners').insert({
       name: form.name.trim(),
-      contact: form.contact.trim() || null,
+      phone: form.contact.trim() || null,
       hospital_pct: hospitalPct,
       lab_pct: labPct,
+      is_active: true,
     })
+    if (error) {
+      console.error('[lab-partners] Insert error:', error.message)
+      setSaveError(`Failed to add partner: ${error.message}`)
+      setSaving(false)
+      return
+    }
     setForm({ name: '', contact: '', hospital_pct: '60', lab_pct: '40' })
     setShowForm(false)
     setSaving(false)
@@ -117,6 +153,11 @@ export default function LabPartnersPage() {
         {isAdmin && showForm && (
           <div className="card p-5 mb-5 border-l-4 border-indigo-400">
             <h3 className="font-semibold text-gray-800 mb-3">New Lab Partner</h3>
+            {saveError && (
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />{saveError}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 mb-3">
               <div>
                 <label className="label">Lab Name *</label>
@@ -124,7 +165,7 @@ export default function LabPartnersPage() {
                   value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
               </div>
               <div>
-                <label className="label">Contact (optional)</label>
+                <label className="label">Contact Phone / Email (optional)</label>
                 <input className="input" placeholder="Phone or email"
                   value={form.contact} onChange={e => setForm(p => ({ ...p, contact: e.target.value }))} />
               </div>
@@ -157,6 +198,13 @@ export default function LabPartnersPage() {
 
         {loading ? (
           <div className="text-center py-12 text-gray-400">Loading…</div>
+        ) : loadError ? (
+          <div className="card p-8 text-center">
+            <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400" />
+            <p className="font-medium text-red-700 mb-2">Failed to load lab partners</p>
+            <p className="text-sm text-gray-500 mb-3">{loadError}</p>
+            <button onClick={load} className="btn-secondary text-xs">Retry</button>
+          </div>
         ) : partners.length === 0 ? (
           <div className="card p-12 text-center text-gray-400">
             <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -170,8 +218,8 @@ export default function LabPartnersPage() {
               <div key={p.id} className={`card p-4 flex items-center gap-4 ${!p.is_active ? 'opacity-50' : ''}`}>
                 <div className="flex-1">
                   <div className="font-semibold text-gray-900">{p.name}</div>
-                  {/* FIX #12: Contact shown to all, but only for info */}
-                  <div className="text-xs text-gray-500">{p.contact || 'No contact info'}</div>
+                  {/* FIX: Use phone/email instead of non-existent 'contact' column */}
+                  <div className="text-xs text-gray-500">{p.phone || p.email || 'No contact info'}</div>
                 </div>
                 {/* FIX #12: Revenue percentages shown to admins only */}
                 {isAdmin ? (

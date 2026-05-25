@@ -314,8 +314,8 @@ function AppointmentsContent() {
 
     const [{ data: patient }, { data: lastEnc }, { data: lastRx }] = await Promise.all([
       supabase.from('patients').select('full_name, age, date_of_birth, gender, blood_group, abha_id, address, mediclaim, cashless, policy_tpa_name').eq('id', appt.patient_id).single(),
-      supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).single(),
-      supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).single(),
+      supabase.from('encounters').select('encounter_date, encounter_type, diagnosis, chief_complaint, bp_systolic, bp_diastolic, pulse, weight, ob_data').eq('patient_id', appt.patient_id).order('encounter_date', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('prescriptions').select('medications, follow_up_date, advice, reports_needed').eq('patient_id', appt.patient_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
 
     const p = patient ?? ({} as any)
