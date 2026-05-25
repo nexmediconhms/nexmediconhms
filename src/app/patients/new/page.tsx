@@ -97,10 +97,13 @@ export default function NewPatientPage() {
   const abdmConfig = typeof window !== 'undefined' ? loadABDMConfig() : { enabled: false } as any
 
   // ── Auto-save draft: persist partially-filled form to sessionStorage ──
+  // FIX: Disable draft auto-restore when OCR prefill param is in URL
+  // to prevent stale draft from overwriting freshly-scanned OCR data
+  const hasPrefillParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('prefill')
   const { saveDraft, clearDraft, hasDraft } = useFormDraft<FormData>({
     key: 'patient_registration_draft',
     setter: setForm,
-    enabled: true,
+    enabled: !hasPrefillParam,
   })
 
   // Save draft on every form change
@@ -347,7 +350,7 @@ export default function NewPatientPage() {
       const { data: nameMatches } = await supabase
         .from('patients')
         .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .ilike('full_name', name)
+        .ilike('full_name', `%${name}%`)
         .limit(10)
       if (nameMatches) {
         for (const p of nameMatches) {
@@ -410,8 +413,8 @@ export default function NewPatientPage() {
         aadhaar_no: normalizedAadhaar || null,
         emergency_contact_name: form.emergency_contact_name.trim() || null,
         emergency_contact_phone: normalizedEmergPhone || null,
-        mediclaim: form.mediclaim === 'Yes',
-        cashless: form.cashless === 'Yes',
+        mediclaim: form.mediclaim === 'Yes' ? 'Yes' : 'No',
+        cashless: form.cashless === 'Yes' ? 'Yes' : 'No',
         reference_source: form.reference_source
           ? (form.reference_detail.trim()
             ? `${form.reference_source} — ${form.reference_detail.trim()}`
@@ -513,7 +516,7 @@ export default function NewPatientPage() {
 
     if (addToQueue) {
       try {
-        const today = new Date().toISOString().slice(0, 10)
+        const today = getIndiaToday()
         // FIX 1: Change .single() to .maybeSingle() to support first patient of the day
         const { data: lastToken } = await supabase
           .from('opd_queue')
@@ -588,7 +591,7 @@ export default function NewPatientPage() {
 
     if (addToQueue) {
       try {
-        const today = new Date().toISOString().slice(0, 10)
+        const today = getIndiaToday()
         const { data: lastToken } = await supabase
           .from('opd_queue')
           .select('token_number')

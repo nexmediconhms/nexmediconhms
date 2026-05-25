@@ -18,7 +18,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
-import { escapeLike, formatDateTime } from '@/lib/utils'
+import { escapeLike, formatDateTime, getIndiaToday } from '@/lib/utils'
 import { handleVisitCompletion } from '@/lib/services/appointmentService'
 import {
   Users, Plus, X, Clock, CheckCircle, Play, Stethoscope,
@@ -134,7 +134,7 @@ function QueueContent() {
     setPatientSearch(''); setPatientResults([])
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getIndiaToday()
   const [queueDate, setQueueDate] = useState(today)  // ← Date filter state
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
@@ -373,8 +373,7 @@ function QueueContent() {
           <div>
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-600" /> OPD Queue
-              <span className="ml-2 flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full
-                border {realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">
+              <span className={`ml-2 flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${realtimeOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
                 {realtimeOk
                   ? <><Zap className="w-3 h-3" /> Live</>
                   : <><RefreshCw className="w-3 h-3" /> Connecting…</>}

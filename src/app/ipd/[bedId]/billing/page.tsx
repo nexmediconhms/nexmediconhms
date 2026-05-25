@@ -94,7 +94,7 @@ export default function IPDBillingPage() {
 
   // New charge form
   const [newCharge, setNewCharge] = useState<IPDCharge>({
-    charge_date: new Date().toISOString().slice(0, 10),
+    charge_date: getIndiaToday(),
     category: 'bed',
     description: '',
     quantity: 1,
@@ -255,7 +255,7 @@ export default function IPDBillingPage() {
 
     // Reset form
     setNewCharge({
-      charge_date: new Date().toISOString().slice(0, 10),
+      charge_date: getIndiaToday(),
       category: 'bed',
       description: '',
       quantity: 1,

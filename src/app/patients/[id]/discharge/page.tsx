@@ -134,7 +134,7 @@ export default function DischargeSummaryPage() {
       supabase.from('patients').select('*').eq('id', patientId).single(),
       supabase.from('encounters').select('*').eq('patient_id', patientId).order('encounter_date', { ascending: true }),
       supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
-      supabase.from('discharge_summaries').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1).single(),
+      supabase.from('discharge_summaries').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     setPatient(p); setEncounters(enc || []); setPrescriptions(rx || [])
 
