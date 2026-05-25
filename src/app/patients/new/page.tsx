@@ -80,6 +80,7 @@ export default function NewPatientPage() {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
   const [addToQueue, setAddToQueue] = useState(true)
+  const [queuedTokenNumber, setQueuedTokenNumber] = useState<number | null>(null)  // Tracks if patient was auto-added to queue
   const [showUPIFlow, setShowUPIFlow] = useState(false)
   const [paymentBillId, setPaymentBillId] = useState<string>('')
   const [paymentInvoiceNumber, setPaymentInvoiceNumber] = useState<string>('')
@@ -539,6 +540,9 @@ export default function NewPatientPage() {
           mrn: success?.mrn || '',
         })
 
+        // Track that patient was auto-queued (used to hide redundant button on success screen)
+        setQueuedTokenNumber(nextToken)
+
         // FIX 3: Added missing automation engine trigger for upfront payments
         try {
           const { fireAutomation } = await import('@/lib/automation-engine')
@@ -610,6 +614,9 @@ export default function NewPatientPage() {
           patient_name: success?.name || '',
           mrn: success?.mrn || '',
         })
+
+        // Track that patient was auto-queued (used to hide redundant button on success screen)
+        setQueuedTokenNumber(nextToken)
 
         try {
           const { fireAutomation } = await import('@/lib/automation-engine')
@@ -905,6 +912,20 @@ export default function NewPatientPage() {
                   <div className="text-xs text-blue-200">Record vitals, diagnosis, prescription</div>
                 </div>
               </Link>
+              {queuedTokenNumber ? (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-green-50 border border-green-200 text-green-800 text-sm font-semibold">
+                <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                </div>
+                <div className="text-left">
+                  <div className="font-semibold">✓ Added to OPD Queue — Token #{queuedTokenNumber}</div>
+                  <div className="text-xs text-green-600 font-normal">Patient is in today's queue and waiting</div>
+                </div>
+                <Link href="/queue" className="ml-auto text-xs font-medium text-green-700 underline hover:text-green-900">
+                  View Queue
+                </Link>
+              </div>
+              ) : (
               <Link
                 href={`/queue?patient=${successId}&patientName=${encodeURIComponent(success.name)}&mrn=${success.mrn}`}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold transition-all shadow-sm">
@@ -914,6 +935,7 @@ export default function NewPatientPage() {
                   <div className="text-xs text-green-100">Assign token number for today</div>
                 </div>
               </Link>
+              )}
               <Link href={`/patients/${successId}`}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold transition-colors">
                 <User className="w-5 h-5 text-gray-400" />
