@@ -9,30 +9,30 @@
  * When connection restores, queued operations are synced automatically.
  *
  * Supported operations:
- *   - Patient registration
- *   - Encounter/consultation save
- *   - Prescription save
- *   - Bill creation
- *   - Appointment booking
+ * - Patient registration
+ * - Encounter/consultation save
+ * - Prescription save
+ * - Bill creation
+ * - Appointment booking
  *
  * Usage:
- *   import { offlineQueue, useOnlineStatus } from '@/lib/offline-queue'
+ * import { offlineQueue, useOnlineStatus } from '@/lib/offline-queue'
  *
- *   // Queue an operation when offline
- *   if (!navigator.onLine) {
- *     await offlineQueue.enqueue({
- *       type: 'patient_register',
- *       table: 'patients',
- *       method: 'INSERT',
- *       data: patientData,
- *     })
- *   }
+ * // Queue an operation when offline
+ * if (!navigator.onLine) {
+ * await offlineQueue.enqueue({
+ * type: 'patient_register',
+ * table: 'patients',
+ * method: 'INSERT',
+ * data: patientData,
+ * })
+ * }
  *
- *   // Check pending count
- *   const count = await offlineQueue.getPendingCount()
+ * // Check pending count
+ * const count = await offlineQueue.getPendingCount()
  *
- *   // Manual sync trigger
- *   await offlineQueue.syncAll()
+ * // Manual sync trigger
+ * await offlineQueue.syncAll()
  */
 
 // ── Types ────────────────────────────────────────────────────
@@ -338,26 +338,10 @@ if (typeof window !== 'undefined') {
 /**
  * React hook to track online/offline status reactively.
  * Returns { isOnline, pendingCount }
- *
- * BUG FIX H4: Previously this hook returned a STATIC value computed once
- * on render and never updated when network state changed. Components using
- * it would never re-render when going offline/online, making the offline
- * banner and pending-count indicators completely non-functional.
- *
- * NEW BEHAVIOUR:
- *   - Subscribes to browser 'online'/'offline' events → triggers re-render
- *   - Subscribes to offlineQueue.onPendingChange → updates pending count
- *   - Properly cleans up listeners on unmount
- *
- * Usage:
- *   const { isOnline, pendingCount } = useOnlineStatus()
  */
 export function useOnlineStatus(): { isOnline: boolean; pendingCount: number } {
-  // Import React hooks inline to keep this file compatible with non-React
-  // environments (e.g. service worker context where the module is loaded
-  // but the hook is never called). The hook itself is only called from
-  // React components.
-  const { useState, useEffect } = require('react')
+  // FIXED: Explicitly cast 'require' response to full React types to resolve untyped generic calls
+  const { useState, useEffect } = require('react') as typeof import('react')
 
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true)
   const [pendingCount, setPendingCount] = useState<number>(0)
