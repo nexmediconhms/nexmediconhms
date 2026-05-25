@@ -687,9 +687,17 @@ function BillingContent() {
   }
 
   // ── Derived stats ────────────────────────────────────────────
-  const todayStr = new Date().toDateString()
-  const todayBills = bills.filter(b => new Date(b.created_at).toDateString() === todayStr && b.status === 'paid')
+  // BUG FIX H1: Use getIndiaToday() for IST-accurate "today" comparison.
+  // Previously used `new Date().toDateString()` which uses browser local timezone.
+  // Between midnight and 5:30 AM IST, UTC date is still "yesterday", so
+  // todayBills would be empty and "Today's Revenue" would show ₹0.
+  const todayIST = getIndiaToday()
+  const todayBills = bills.filter(b => {
+    const billDate = new Date(b.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    return billDate === todayIST && b.status === 'paid'
+  })
   const todayTotal = todayBills.reduce((s, b) => s + b.net_amount, 0)
+  // BUG FIX M3: Label clarification — this only reflects loaded bills (last 30 days)
   const allTotal = bills.filter(b => b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
   const filtered = bills.filter(b => {
     const statusOk = filterStatus === 'all' || b.status === filterStatus
@@ -1008,7 +1016,7 @@ function BillingContent() {
           </div>
           <div className="card p-5 bg-blue-50">
             <div className="text-3xl font-bold text-blue-700 mb-1">
-              {bills.filter(b => new Date(b.created_at).toDateString() === todayStr).length}
+              {bills.filter(b => new Date(b.created_at).toDateString() === todayIST).length}
             </div>
             <div className="text-xs font-semibold text-gray-600">Bills Today</div>
             <div className="text-xs text-gray-400">all statuses</div>
@@ -1016,7 +1024,7 @@ function BillingContent() {
           <div className="card p-5 bg-purple-50">
             <div className="text-3xl font-bold text-purple-700 mb-1">{inr(allTotal)}</div>
             <div className="text-xs font-semibold text-gray-600">Total Collected</div>
-            <div className="text-xs text-gray-400">all time</div>
+            <div className="text-xs text-gray-400">last 30 days</div>
           </div>
         </div>
 

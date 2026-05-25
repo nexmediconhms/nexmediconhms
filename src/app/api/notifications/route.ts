@@ -11,24 +11,31 @@
  * visible to staff + doctor roles. Insurance updates go to admin + staff.
  *
  * This solves the "how will staff know when lab partner uploads report?" problem.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * BUG FIX C1: Added authentication to all endpoints (was completely open before)
+ * BUG FIX C2: Replaced top-level createClient with lazy getSupabaseAdmin()
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { auth: { persistSession: false } }
-)
-
 // ── GET: Fetch notifications ──────────────────────────────────
 export async function GET(req: NextRequest) {
+  // BUG FIX C1: Require authentication — only logged-in clinic users can read notifications
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
-    const role = req.nextUrl.searchParams.get('role') || 'staff'
+    const supabase = getSupabaseAdmin()
+
+    // BUG FIX C1: Use the authenticated user's role instead of trusting query param
+    const role = auth.role || 'staff'
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '30', 10)
     const unreadOnly = req.nextUrl.searchParams.get('unread') === 'true'
 
@@ -67,7 +74,13 @@ export async function GET(req: NextRequest) {
 
 // ── POST: Create notification ─────────────────────────────────
 export async function POST(req: NextRequest) {
+  // BUG FIX C1: Require authentication — only logged-in clinic users can create notifications
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
+    const supabase = getSupabaseAdmin()
+
     const body = await req.json()
     const {
       title,
@@ -103,6 +116,7 @@ export async function POST(req: NextRequest) {
         mrn: mrn || null,
         target_roles,
         metadata: metadata ? JSON.stringify(metadata) : null,
+        created_by: auth.fullName || auth.email,
       })
       .select('id')
       .single()
@@ -119,17 +133,25 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH: Mark notifications as read ─────────────────────────
 export async function PATCH(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const { ids, mark_all, role, read_by } = body
+  // BUG FIX C1: Require authentication — only logged-in clinic users can mark as read
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
 
-    if (mark_all && role) {
+  try {
+    const supabase = getSupabaseAdmin()
+
+    const body = await req.json()
+    const { ids, mark_all } = body
+
+    if (mark_all) {
+      // BUG FIX C1: Use authenticated user's role, not client-supplied role
+      const role = auth.role
       // Mark all unread for this role as read
       const { error } = await supabase
         .from('clinic_notifications')
         .update({
           is_read: true,
-          read_by: read_by || role,
+          read_by: auth.fullName || auth.email,
           read_at: new Date().toISOString(),
         })
         .contains('target_roles', [role])
@@ -146,7 +168,7 @@ export async function PATCH(req: NextRequest) {
         .from('clinic_notifications')
         .update({
           is_read: true,
-          read_by: read_by || 'user',
+          read_by: auth.fullName || auth.email,
           read_at: new Date().toISOString(),
         })
         .in('id', ids)
@@ -157,7 +179,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true, marked: ids.length })
     }
 
-    return NextResponse.json({ error: 'Provide ids[] or mark_all=true with role' }, { status: 400 })
+    return NextResponse.json({ error: 'Provide ids[] or mark_all=true' }, { status: 400 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

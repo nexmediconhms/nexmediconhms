@@ -48,8 +48,17 @@ export async function cancelActiveAppointment(patientId: string) {
 /**
  * Create a MANUAL appointment.
  * Guarantees DB constraint safety:
- * - cancels any existing active appointment first
+ * - cancels any existing active FOLLOW-UP appointment for same date first
  * - then inserts new scheduled appointment
+ *
+ * BUG FIX L3: Previously called cancelActiveAppointment() unconditionally,
+ * which cancelled ALL active follow-up appointments for this patient regardless
+ * of date. This meant booking a "Lab Report Discussion" on Thursday would
+ * silently cancel the patient's "ANC Follow-up" scheduled for next week.
+ *
+ * NEW BEHAVIOUR: Only cancels follow-up appointments on the SAME DATE as the
+ * new appointment (prevents time-slot conflicts) while preserving future
+ * follow-ups on different dates.
  */
 export async function createAppointment(params: CreateAppointmentParams): Promise<string> {
   const {
@@ -63,8 +72,22 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
     type = 'manual',
   } = params
 
-  // 1) Cancel any existing ACTIVE appointment (scheduled/confirmed)
-  await cancelActiveAppointment(patientId)
+  // 1) Cancel any existing ACTIVE follow-up appointment on the SAME DATE only
+  // BUG FIX L3: Added .eq('date', date) to scope cancellation to conflicting date
+  const { error: cancelErr } = await supabase
+    .from('appointments')
+    .update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString()
+    })
+    .eq('patient_id', patientId)
+    .in('status', ['scheduled', 'confirmed'])
+    .eq('type', 'follow_up')
+    .eq('date', date)
+
+  if (cancelErr) {
+    console.warn('[createAppointment] cancel conflicting follow-up failed (non-fatal):', cancelErr.message)
+  }
 
   // 2) Insert new appointment
   const { data, error } = await supabase
@@ -344,9 +367,12 @@ export async function syncAppointmentFromOPD(patientId: string, patientName?: st
     }
 
     // Send notification
+    // BUG FIX H2: notify.appointmentCompleted() does not exist on the notify object.
+    // The correct method is notify.opdConsultationSaved() which is the semantic match
+    // for "patient was seen and consultation is complete". Previously this was a silent
+    // no-op (optional chaining on undefined), so staff never received completion notifications.
     try {
-      // Typecast to 'any' to bypass the missing property definition error
-      await (notify as any).appointmentCompleted?.(patientId, patientName || '', today)
+      await notify.opdConsultationSaved(patientId, patientName || '')
     } catch {
       // Non-fatal
     }
