@@ -445,7 +445,7 @@ function BillingContent() {
       const safe = escapeLike(q)
       const { data } = await supabase.from('patients')
         .select('id, full_name, mrn, age, mobile')
-        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
+        .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`)
         .limit(6)
       setPatientResults(data || [])
     }, 300)
@@ -687,8 +687,13 @@ function BillingContent() {
   }
 
   // ── Derived stats ────────────────────────────────────────────
-  const todayStr = new Date().toDateString()
-  const todayBills = bills.filter(b => new Date(b.created_at).toDateString() === todayStr && b.status === 'paid')
+  // FIX CRITICAL #4: Use IST date for "today" comparison instead of browser timezone
+  const todayIST = getIndiaToday()
+  const todayBills = bills.filter(b => {
+    // Compare bill date in IST against today's IST date
+    const billDate = new Date(b.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    return billDate === todayIST && b.status === 'paid'
+  })
   const todayTotal = todayBills.reduce((s, b) => s + b.net_amount, 0)
   const allTotal = bills.filter(b => b.status === 'paid').reduce((s, b) => s + b.net_amount, 0)
   const filtered = bills.filter(b => {

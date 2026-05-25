@@ -243,11 +243,13 @@ export default function FundPage() {
     setLoading(true)
     const { from, to } = getPeriodDates(activePeriod, customFrom, customTo)
 
+    // FIX MAJOR #2: Use IST timezone offset (+05:30) instead of UTC (Z) for correct
+    // date filtering in Indian timezone
     let q = supabase
       .from('hospital_fund')
       .select('*')
-      .gte('created_at', `${from}T00:00:00.000Z`)
-      .lte('created_at', `${to}T23:59:59.999Z`)
+      .gte('created_at', `${from}T00:00:00+05:30`)
+      .lte('created_at', `${to}T23:59:59.999+05:30`)
       .order('created_at', { ascending: false })
 
     // Also apply status tab filter at DB level
@@ -281,21 +283,29 @@ export default function FundPage() {
     setFundReport(computeFundReport(allTransactions, from, to, label))
   }
 
-  // Submit expense — auto-approved (no admin approval needed for operational expenses)
+  // Submit expense — FIX MAJOR #1: Expenses above ₹500 require admin approval
+  // Small operational expenses (≤₹500) are auto-approved for workflow efficiency
+  // Larger expenses go to 'pending' for admin review
   async function submitExpense() {
     if (!expenseForm.description.trim()) { alert('Please enter a description'); return }
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) { alert('Enter a valid amount'); return }
     setSaving(true); setSaveError('')
+
+    const amount = Number(expenseForm.amount)
+    const AUTO_APPROVE_THRESHOLD = 500 // ₹500 auto-approve limit
+    const needsApproval = amount > AUTO_APPROVE_THRESHOLD && !isAdmin
+
     // Build description with receipt ref and submitter appended (these columns don't exist in DB)
     const descParts = [expenseForm.description.trim()]
     if (expenseForm.receipt_note.trim()) descParts.push(`[Ref: ${expenseForm.receipt_note.trim()}]`)
     descParts.push(`[By: ${user?.full_name || 'Unknown'}]`)
     const { error } = await supabase.from('hospital_fund').insert({
       type: 'expense', category: expenseForm.category,
-      amount: Number(expenseForm.amount),
+      amount: amount,
       description: descParts.join(' '),
-      approved_by: user?.full_name || 'Auto',
-      status: 'approved',
+      submitted_by: user?.full_name || 'Unknown',
+      approved_by: needsApproval ? null : (user?.full_name || 'Auto'),
+      status: needsApproval ? 'pending' : 'approved',
     })
     setSaving(false)
     if (error) { setSaveError(`Failed to submit: ${error.message}`); return }
@@ -537,14 +547,14 @@ export default function FundPage() {
 
             <div className="text-xs text-gray-500 mb-3 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5" />
-              Submitted by <strong>{user?.full_name}</strong> · Will be sent for admin approval
+              Submitted by <strong>{user?.full_name}</strong> · {isAdmin ? 'Auto-approved (admin)' : 'Amounts >₹500 need admin approval'}
             </div>
 
             <div className="flex gap-3">
               <button onClick={submitExpense} disabled={saving}
                 className="btn-primary text-xs flex items-center gap-2 disabled:opacity-60">
                 {saving ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                {saving ? 'Submitting…' : 'Submit for Approval'}
+                {saving ? 'Submitting…' : 'Submit Expense'}
               </button>
               <button onClick={() => { setShowAddForm(false); setSaveError('') }} className="btn-secondary text-xs">Cancel</button>
             </div>

@@ -232,9 +232,11 @@ export async function getRevenueMetrics(date: string): Promise<RevenuePipelineMe
   const totalNoShow = appts.filter(a => a.status === 'no-show' || a.visit_status === 'no_show').length
 
   // Revenue tracking
-  const billedEncounterIds = new Set(billsList.map(b => b.patient_id))
+  // FIX MAJOR #5: Use patient_id set correctly — variable name was misleading
+  // but the logic needs to compare encounter patient_ids against billed patient_ids
+  const billedPatientIds = new Set(billsList.map(b => b.patient_id))
   const totalBilled = billsList.length
-  const totalNotBilled = encs.filter(e => !billedEncounterIds.has(e.patient_id)).length
+  const totalNotBilled = encs.filter(e => !billedPatientIds.has(e.patient_id)).length
   const totalPaid = billsList.filter(b => b.status === 'paid').length
 
   // Lost revenue = no-shows × avg fee
@@ -248,7 +250,7 @@ export async function getRevenueMetrics(date: string): Promise<RevenuePipelineMe
 
   // Unbilled visits (encounters without corresponding bills)
   const unbilledVisits = encs
-    .filter(e => !billedEncounterIds.has(e.patient_id))
+    .filter(e => !billedPatientIds.has(e.patient_id))
     .map(e => ({
       patientName: '',
       patientId: e.patient_id,
