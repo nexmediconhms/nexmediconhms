@@ -96,7 +96,8 @@ function statusBadge(s: IPDAdmission['status']) {
 }
 
 function daysSince(dateStr: string) {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+  return Math.max(0, days) // Never show negative days
 }
 
 // ── Main Component ─────────────────────────────────────────────
@@ -420,7 +421,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     const { data } = await supabase
       .from('patients')
       .select('id, full_name, mrn, age, gender, mobile')
-      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`).limit(6)
+      .or(`full_name.ilike.%${safe}%,mrn.ilike.%${safe}%,mobile.ilike.%${safe}%`)
       .limit(8)
     setPatientResults(data || [])
   }, [])
@@ -480,6 +481,7 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       bedId: payload.bed_id ?? null,
     })
     if (!ipdGuard.ok) {
+      setSaving(false)
       alert(ipdGuard.reason)
       return
     }

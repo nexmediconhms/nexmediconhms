@@ -134,6 +134,9 @@ function NewConsultationContent() {
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
 
+  // FIX CRITICAL #1: Guard flag to prevent auto-save from firing during initial reset
+  const [draftReady, setDraftReady] = useState(false)
+
   // Voice state removed — SmartMic component handles everything
 
   // Derived
@@ -218,6 +221,10 @@ function NewConsultationContent() {
     setNoteOcrError('')
     setNoteOcrPreview(null)
     setNoteMedsQueue('')
+
+    // FIX CRITICAL #1: Mark draft as NOT ready during reset, then enable after a tick
+    setDraftReady(false)
+    setTimeout(() => setDraftReady(true), 100)
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId])
@@ -327,6 +334,8 @@ function NewConsultationContent() {
   // Auto-save draft to sessionStorage on any change
   useEffect(() => {
     if (!patientId) return
+    // FIX CRITICAL #1: Don't auto-save until the initial reset is complete
+    if (!draftReady) return
     const key = `opd_draft_${patientId}`
     try {
       sessionStorage.setItem(key, JSON.stringify({ vitals, ob, chiefComplaint, hpi, diagnosis, notes }))
@@ -335,7 +344,7 @@ function NewConsultationContent() {
       const t = setTimeout(() => setDraftStatus('idle'), 2000)
       return () => clearTimeout(t)
     } catch { /* ignore */ }
-  }, [vitals, ob, chiefComplaint, hpi, diagnosis, notes, patientId])
+  }, [vitals, ob, chiefComplaint, hpi, diagnosis, notes, patientId, draftReady])
 
   // ── Field setters ─────────────────────────────────────────────
   function setV(k: keyof Vitals, v: string) { setVitals(p => ({ ...p, [k]: v })) }
@@ -739,6 +748,17 @@ function NewConsultationContent() {
       }
     }
 
+    // FIX CRITICAL #3: Mark queue entry as 'completed' after successful save
+    try {
+      const todayForQueue = getIndiaToday()
+      await supabase
+        .from('opd_queue')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('patient_id', patientId)
+        .eq('queue_date', todayForQueue)
+        .in('status', ['in_progress', 'vitals_done', 'waiting'])
+    } catch { /* non-fatal */ }
+
     // Clear draft
     if (patientId) { try { sessionStorage.removeItem(`opd_draft_${patientId}`) } catch { } }
 
@@ -758,8 +778,10 @@ function NewConsultationContent() {
         medications: rxMeds.filter(m => m.drug.trim()).map(m => m.drug),
       })
     }
-    // Re-trigger save after safety acknowledged
-    handleSaveAll()
+    // FIX MAJOR #6: Use setTimeout(0) to let React state update (rxSafetyChecked=true)
+    // before re-triggering save. Without this, handleSaveAll reads stale state and
+    // re-triggers the safety modal in an infinite loop.
+    setTimeout(() => handleSaveAll(), 0)
   }
 
 
