@@ -336,16 +336,57 @@ if (typeof window !== 'undefined') {
 // ── React Hook: useOnlineStatus ──────────────────────────────
 
 /**
- * React hook to track online/offline status.
+ * React hook to track online/offline status reactively.
  * Returns { isOnline, pendingCount }
+ *
+ * BUG FIX H4: Previously this hook returned a STATIC value computed once
+ * on render and never updated when network state changed. Components using
+ * it would never re-render when going offline/online, making the offline
+ * banner and pending-count indicators completely non-functional.
+ *
+ * NEW BEHAVIOUR:
+ *   - Subscribes to browser 'online'/'offline' events → triggers re-render
+ *   - Subscribes to offlineQueue.onPendingChange → updates pending count
+ *   - Properly cleans up listeners on unmount
  *
  * Usage:
  *   const { isOnline, pendingCount } = useOnlineStatus()
  */
-export function useOnlineStatus() {
-  // This is a simple implementation — import in components that need it
-  // For React usage, use the OfflineBanner component which handles state
-  return {
-    isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
-  }
+export function useOnlineStatus(): { isOnline: boolean; pendingCount: number } {
+  // Import React hooks inline to keep this file compatible with non-React
+  // environments (e.g. service worker context where the module is loaded
+  // but the hook is never called). The hook itself is only called from
+  // React components.
+  const { useState, useEffect } = require('react')
+
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  )
+  const [pendingCount, setPendingCount] = useState<number>(0)
+
+  useEffect(() => {
+    // Network status listeners
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    // Pending count listener — fires whenever an item is enqueued or synced
+    const unsubscribe = offlineQueue.onPendingChange((count: number) => {
+      setPendingCount(count)
+    })
+
+    // Initial pending count load
+    offlineQueue.getPendingCount().then((count: number) => {
+      setPendingCount(count)
+    }).catch(() => { /* ignore — IndexedDB may not be available in SSR */ })
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      unsubscribe()
+    }
+  }, [])
+
+  return { isOnline, pendingCount }
 }

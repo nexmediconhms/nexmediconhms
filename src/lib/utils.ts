@@ -285,14 +285,43 @@ export function getIndiaToday(): string {
 }
 
 /**
- * Returns the current IST datetime as an ISO string.
- * Use this when you need the full timestamp, not just the date.
+ * Returns the current IST datetime as a formatted string.
+ *
+ * BUG FIX H3: Previously this returned a `new Date(...)` object with manually
+ * offset milliseconds. That Date's internal epoch time was WRONG — 5:30 hours
+ * ahead of real UTC. If anyone called `.getTime()`, `.toISOString()`, or
+ * passed it to Supabase, timestamps would be corrupted.
+ *
+ * NEW BEHAVIOUR:
+ *   - getIndiaNow()        → returns a locale-formatted IST string (for display)
+ *   - getIndiaNowISO()     → returns ISO string of current time in IST (display only)
+ *   - For DB writes, ALWAYS use `new Date().toISOString()` (stores UTC correctly)
+ *
+ * The old return type was `Date` — now it's `string`. If any caller needs a Date
+ * object for comparison, they should use `new Date()` directly (which is always
+ * correct UTC internally) and format for display separately.
  */
-export function getIndiaNow(): Date {
+export function getIndiaNow(): string {
+  return new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+}
+
+/**
+ * Returns the current IST datetime in ISO-like format: "2026-05-25T14:30:00"
+ * This is for DISPLAY purposes only — do NOT store this in the database.
+ * For database timestamps, use: new Date().toISOString()
+ */
+export function getIndiaNowISO(): string {
   const now = new Date()
-  const IST_OFFSET_MINUTES = 5 * 60 + 30
-  const utcMs = now.getTime() + (now.getTimezoneOffset() * 60 * 1000)
-  return new Date(utcMs + (IST_OFFSET_MINUTES * 60 * 1000))
+  return now.toLocaleString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).replace(', ', 'T')
 }
 
 

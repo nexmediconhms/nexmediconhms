@@ -202,14 +202,30 @@ export async function initSettings(): Promise<HospitalSettings> {
 /**
  * Save settings to Supabase + update cache + localStorage.
  * Returns true if Supabase write succeeded.
+ *
+ * BUG FIX H5: Previously, _cache was updated BEFORE the Supabase write.
+ * If two tabs called saveSettings() simultaneously:
+ *   - Tab A sets _cache = settingsA, starts Supabase write
+ *   - Tab B sets _cache = settingsB, starts Supabase write
+ *   - Tab B's write finishes last → Supabase has settingsB
+ *   - But Tab A's in-memory cache briefly held settingsA (stale)
+ *
+ * NEW BEHAVIOUR: Cache and localStorage are only updated AFTER a
+ * successful Supabase write. If the write fails, cache remains
+ * unchanged (consistent with what's in the DB). localStorage is still
+ * written as a last-resort offline fallback.
  */
 export async function saveSettings(settings: HospitalSettings): Promise<boolean> {
-  _cache = { ...settings }
-  persistToLocalStorage(settings)
-
   const ok = await writeToSupabase(settings)
-  if (!ok) {
-    console.warn('[settings] Saved to localStorage only — Supabase write failed')
+  if (ok) {
+    // Only update cache after confirmed DB write to prevent stale reads
+    _cache = { ...settings }
+    persistToLocalStorage(settings)
+  } else {
+    // Supabase write failed — still save to localStorage as offline fallback
+    // but do NOT update the in-memory cache (it should reflect last known DB state)
+    persistToLocalStorage(settings)
+    console.warn('[settings] Saved to localStorage only — Supabase write failed. Cache not updated.')
   }
   return ok
 }

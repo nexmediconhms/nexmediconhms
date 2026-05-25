@@ -143,35 +143,55 @@ function AppointmentsContent() {
   useEffect(() => { fetchAppts() }, [fetchAppts])
 
   // ✅ REALTIME AUTO-REFRESH: when prescription updates follow-up -> appointments change -> refresh here
+  // BUG FIX M4: Added debouncing (1s) to prevent cascading refetches in busy clinics.
+  // Previously every single INSERT/UPDATE/DELETE on the appointments table triggered
+  // an immediate fetchAppts() for ALL connected browsers. In a 50-appointment-per-day
+  // clinic, this caused excessive Supabase API calls (4x per change × connected clients).
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { fetchAppts() }, 1000)
+    }
+
     const ch = supabase
       .channel('appointments-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'appointments' },
-        () => fetchAppts()
+        () => debouncedFetch()
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(ch) }
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      supabase.removeChannel(ch)
+    }
   }, [fetchAppts])
 
   const [todayCount, setTodayCount] = useState(0)
   const [upcomingCount, setUpcomingCount] = useState(0)
   const [pastCount, setPastCount] = useState(0)
 
+  // BUG FIX M4: Batch count queries into a single function and only run on
+  // fetchAppts completion (via appts state change), not on every render.
+  // Also added a small delay to avoid firing during rapid state transitions.
   useEffect(() => {
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .eq('date', today).neq('status', 'cancelled')
-      .then(({ count }) => setTodayCount(count || 0))
+    const timer = setTimeout(() => {
+      supabase.from('appointments').select('id', { count: 'exact', head: true })
+        .eq('date', today).neq('status', 'cancelled')
+        .then(({ count }) => setTodayCount(count || 0))
 
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .gt('date', today).in('status', ['scheduled', 'confirmed'])
-      .then(({ count }) => setUpcomingCount(count || 0))
+      supabase.from('appointments').select('id', { count: 'exact', head: true })
+        .gt('date', today).in('status', ['scheduled', 'confirmed'])
+        .then(({ count }) => setUpcomingCount(count || 0))
 
-    supabase.from('appointments').select('id', { count: 'exact', head: true })
-      .lt('date', today)
-      .then(({ count }) => setPastCount(count || 0))
+      supabase.from('appointments').select('id', { count: 'exact', head: true })
+        .lt('date', today)
+        .then(({ count }) => setPastCount(count || 0))
+    }, 300) // Small debounce to batch with rapid state changes
+
+    return () => clearTimeout(timer)
   }, [appts, today])
 
   // ── OT Schedule display in Appointments page ────────────────

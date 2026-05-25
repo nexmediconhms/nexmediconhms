@@ -212,9 +212,12 @@ export async function getRevenueMetrics(date: string): Promise<RevenuePipelineMe
     .eq('encounter_date', date)
 
   // Fetch all bills for the date
+  // BUG FIX C3: Also select encounter_id so we can accurately track which
+  // encounters have been billed (previously used patient_id which missed
+  // multiple encounters for the same patient on the same day)
   const { data: bills } = await supabase
     .from('bills')
-    .select('id, patient_id, net_amount, total, paid, status')
+    .select('id, patient_id, encounter_id, net_amount, total, paid, status')
     .gte('created_at', date + 'T00:00:00')
     .lte('created_at', date + 'T23:59:59')
 
@@ -232,9 +235,22 @@ export async function getRevenueMetrics(date: string): Promise<RevenuePipelineMe
   const totalNoShow = appts.filter(a => a.status === 'no-show' || a.visit_status === 'no_show').length
 
   // Revenue tracking
-  const billedEncounterIds = new Set(billsList.map(b => b.patient_id))
+  // BUG FIX C3: Use encounter_id from bills (not patient_id) to determine which
+  // encounters have been billed. Previously, if patient "Ramesh" had 2 encounters
+  // (OPD morning + procedure afternoon) but only OPD was billed, both were
+  // considered "billed" because patient_id matched — hiding missed revenue.
+  // Now we track by encounter_id for accurate per-encounter billing status.
+  // Fallback: if encounter_id is null on a bill, fall back to patient_id matching.
+  const billedEncounterIds = new Set(
+    billsList.map(b => b.encounter_id).filter(Boolean)
+  )
+  const billedPatientIds = new Set(
+    billsList.filter(b => !b.encounter_id).map(b => b.patient_id)
+  )
   const totalBilled = billsList.length
-  const totalNotBilled = encs.filter(e => !billedEncounterIds.has(e.patient_id)).length
+  const totalNotBilled = encs.filter(e =>
+    !billedEncounterIds.has(e.id) && !e.bill_id && !billedPatientIds.has(e.patient_id)
+  ).length
   const totalPaid = billsList.filter(b => b.status === 'paid').length
 
   // Lost revenue = no-shows × avg fee
@@ -247,8 +263,9 @@ export async function getRevenueMetrics(date: string): Promise<RevenuePipelineMe
   const collectionRate = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 0
 
   // Unbilled visits (encounters without corresponding bills)
+  // BUG FIX C3: Use encounter_id matching (not patient_id) for accurate detection
   const unbilledVisits = encs
-    .filter(e => !billedEncounterIds.has(e.patient_id))
+    .filter(e => !billedEncounterIds.has(e.id) && !e.bill_id && !billedPatientIds.has(e.patient_id))
     .map(e => ({
       patientName: '',
       patientId: e.patient_id,
