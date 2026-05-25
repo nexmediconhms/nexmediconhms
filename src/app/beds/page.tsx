@@ -251,9 +251,38 @@ export default function BedsPage() {
   // ── Admin: Delete Bed ─────────────────────────────────────
   async function handleDeleteBed(bedId: string, bedNumber: string) {
     if (!confirm(`Are you sure you want to delete bed ${bedNumber}? This action cannot be undone.`)) return
+
+    // First check if bed has any linked admissions (past or present)
+    const { count } = await supabase
+      .from('ipd_admissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('bed_id', bedId)
+
+    if (count && count > 0) {
+      alert(
+        `Cannot delete bed ${bedNumber} because it has ${count} admission record(s) linked to it.\n\n` +
+        `To delete this bed:\n` +
+        `1. First discharge any current patient\n` +
+        `2. Go to Supabase Dashboard → Table Editor → ipd_admissions\n` +
+        `3. Update old admission records to remove the bed_id reference\n` +
+        `4. Then you can delete the bed\n\n` +
+        `This restriction exists to preserve admission history.`
+      )
+      return
+    }
+
     const { error } = await supabase.from('beds').delete().eq('id', bedId)
     if (error) {
-      alert(`Failed to delete bed: ${error.message}`)
+      // Handle FK constraint error gracefully
+      if (error.message.includes('foreign key') || error.message.includes('fkey')) {
+        alert(
+          `Cannot delete bed ${bedNumber}: It has linked admission records.\n\n` +
+          `Occupied beds cannot be deleted. Please discharge the patient first, ` +
+          `then remove any historical admission references.`
+        )
+      } else {
+        alert(`Failed to delete bed: ${error.message}`)
+      }
     } else {
       loadBeds()
     }
