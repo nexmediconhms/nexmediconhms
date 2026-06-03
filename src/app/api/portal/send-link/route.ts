@@ -18,7 +18,12 @@ import { randomInt } from 'crypto'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const siteUrl      = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
+// FIX: Remove trailing slash from site URL to prevent double-slash in generated links
+// e.g. "https://example.vercel.app/" + "/portal/verify" would produce "//portal/verify"
+const rawSiteUrl   = process.env.NEXT_PUBLIC_SITE_URL
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+  || 'https://your-domain.vercel.app'
+const siteUrl      = rawSiteUrl.replace(/\/+$/, '')
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 export async function POST(req: NextRequest) {

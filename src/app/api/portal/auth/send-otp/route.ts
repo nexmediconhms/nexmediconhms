@@ -16,7 +16,8 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const siteUrl      = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+// FIX: Remove trailing slash from site URL to prevent double-slash in generated links
+const siteUrl      = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 export async function POST(req: NextRequest) {
