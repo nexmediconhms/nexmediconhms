@@ -30,6 +30,7 @@
 
 import { useState } from 'react'
 import { ExternalLink, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   patientId: string
@@ -78,9 +79,22 @@ export default function PatientPortalLinkButton({
     setErrorMsg('')
 
     try {
+      // Get staff session token for authenticated API call
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        setErrorMsg('Your session has expired. Please log in again.')
+        setState('error')
+        setTimeout(() => setState('idle'), 4000)
+        return
+      }
+
       const res = await fetch('/api/portal/send-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           patient_id:   patientId,
           mrn,

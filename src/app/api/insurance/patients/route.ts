@@ -24,6 +24,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/api-auth'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
@@ -31,6 +32,10 @@ export const dynamic = 'force-dynamic'
 
 // ── GET: Fetch all insured patients with correct field matching ───
 export async function GET(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
     const filter = req.nextUrl.searchParams.get('filter') || 'all'
     const sb = getSupabaseAdmin()
@@ -171,6 +176,10 @@ export async function GET(req: NextRequest) {
 // Called when a patient's insurance fields are updated during
 // admission or checkout, ensuring immediate visibility.
 export async function POST(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const { patient_id, insurance_data } = body

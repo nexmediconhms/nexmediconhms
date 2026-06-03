@@ -46,15 +46,19 @@ export async function POST(req: NextRequest) {
   const portalToken = crypto.randomUUID()
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-  // Expire any existing tokens for this MRN
-  await supabase
+  // Expire any existing unused tokens for this MRN (non-fatal if fails)
+  const { error: expireTokenErr } = await supabase
     .from('portal_tokens')
     .update({ is_used: true })
     .eq('mrn', mrn)
     .eq('is_used', false)
 
+  if (expireTokenErr) {
+    console.warn('[send-link] Could not expire old tokens:', expireTokenErr.message)
+  }
+
   // Insert new token
-  await supabase
+  const { error: insertTokenErr } = await supabase
     .from('portal_tokens')
     .insert({
       mrn,
@@ -65,6 +69,14 @@ export async function POST(req: NextRequest) {
       created_by: auth.userId,
     })
 
+  if (insertTokenErr) {
+    console.error('[send-link] portal_tokens insert failed:', insertTokenErr.message)
+    return NextResponse.json(
+      { error: 'Failed to generate portal link. Please ensure the database migration has been run.' },
+      { status: 500 }
+    )
+  }
+
   // ── 2. Generate new OTP + magic link ─────────────────────────
   let otpCode = ''
   let magicLinkToken = ''
@@ -74,15 +86,19 @@ export async function POST(req: NextRequest) {
     magicLinkToken = crypto.randomUUID()
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-    // Expire old OTPs
-    await supabase
+    // Expire old OTPs (non-fatal)
+    const { error: expireOtpErr } = await supabase
       .from('portal_otp')
       .update({ verified: true })
       .eq('mobile', normalizedMobile)
       .eq('verified', false)
 
+    if (expireOtpErr) {
+      console.warn('[send-link] Could not expire old OTPs:', expireOtpErr.message)
+    }
+
     // Insert new OTP
-    await supabase
+    const { error: insertOtpErr } = await supabase
       .from('portal_otp')
       .insert({
         mobile:     normalizedMobile,
@@ -92,6 +108,13 @@ export async function POST(req: NextRequest) {
         mrn:        mrn,
         expires_at: otpExpiry,
       })
+
+    if (insertOtpErr) {
+      // Non-fatal: fall back to legacy link only
+      console.warn('[send-link] portal_otp insert failed (using legacy link):', insertOtpErr.message)
+      otpCode = ''
+      magicLinkToken = ''
+    }
   }
 
   // ── Build URLs ───────────────────────────────────────────────
