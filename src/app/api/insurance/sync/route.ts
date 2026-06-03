@@ -21,10 +21,13 @@
  *   - After discharge, claim documents are submitted
  *   - TPA reviews → approves/rejects → settlement
  *   - This API keeps the insurance module in sync with all of this automatically
+ *
+ * SECURITY FIX: Added requireAuth() middleware to all endpoints
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,6 +40,9 @@ const supabase = createClient(
 
 // ── GET: Fetch all insured patients and their claim status ────
 export async function GET(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
   try {
     const filter = req.nextUrl.searchParams.get('filter') // 'no_claim' | 'all' | 'pending' | 'settled'
 
@@ -155,6 +161,9 @@ export async function GET(req: NextRequest) {
 
 // ── POST: Auto-create insurance claim from patient event ──────
 export async function POST(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
   try {
     const body = await req.json()
     const {
@@ -274,6 +283,9 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH: Update claim based on patient events ───────────────
 export async function PATCH(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
   try {
     const body = await req.json()
     const { claim_id, patient_id, event, data: eventData } = body

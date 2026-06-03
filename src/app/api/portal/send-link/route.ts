@@ -47,14 +47,19 @@ export async function POST(req: NextRequest) {
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
   // Expire any existing tokens for this MRN
-  await supabase
+  const { error: expireError } = await supabase
     .from('portal_tokens')
     .update({ is_used: true })
     .eq('mrn', mrn)
     .eq('is_used', false)
+  
+  if (expireError) {
+    console.error('[send-link] Failed to expire old tokens:', expireError)
+    // Non-fatal - continue with new token generation
+  }
 
   // Insert new token
-  await supabase
+  const { error: insertError } = await supabase
     .from('portal_tokens')
     .insert({
       mrn,
@@ -64,6 +69,11 @@ export async function POST(req: NextRequest) {
       is_used:     false,
       created_by: auth.userId,
     })
+  
+  if (insertError) {
+    console.error('[send-link] Failed to create portal token:', insertError)
+    return NextResponse.json({ error: 'Failed to generate portal link' }, { status: 500 })
+  }
 
   // ── 2. Generate new OTP + magic link ─────────────────────────
   let otpCode = ''
@@ -75,14 +85,19 @@ export async function POST(req: NextRequest) {
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
     // Expire old OTPs
-    await supabase
+    const { error: expireOtpError } = await supabase
       .from('portal_otp')
       .update({ verified: true })
       .eq('mobile', normalizedMobile)
       .eq('verified', false)
+    
+    if (expireOtpError) {
+      console.error('[send-link] Failed to expire old OTPs:', expireOtpError)
+      // Non-fatal - continue with new OTP generation
+    }
 
     // Insert new OTP
-    await supabase
+    const { error: insertOtpError } = await supabase
       .from('portal_otp')
       .insert({
         mobile:     normalizedMobile,
@@ -92,6 +107,13 @@ export async function POST(req: NextRequest) {
         mrn:        mrn,
         expires_at: otpExpiry,
       })
+    
+    if (insertOtpError) {
+      console.error('[send-link] Failed to create OTP:', insertOtpError)
+      // Fall back to legacy link only
+      otpCode = ''
+      magicLinkToken = ''
+    }
   }
 
   // ── Build URLs ───────────────────────────────────────────────
