@@ -3,31 +3,61 @@
  * src/app/portal/verify/page.tsx
  *
  * Magic Link Verification Page
- * Handles the ?token=xxx parameter from magic links sent via WhatsApp
- * Verifies the token and redirects to dashboard
+ * Handles the ?token=xxx parameter from magic links sent via WhatsApp.
+ * Verifies the token and redirects to dashboard.
+ *
+ * BULLETPROOF VERSION (2026-06-03):
+ *   - Detects token in URL even if path normalization issues occurred
+ *   - Falls back to extracting token from window.location if useSearchParams fails
+ *   - Shows clear error messages with retry options
+ *   - Auto-recovers from common URL issues
  */
 
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Heart } from 'lucide-react'
+import { CheckCircle, AlertCircle, Heart, RefreshCw } from 'lucide-react'
 
 function VerifyContent() {
   const router = useRouter()
   const params = useSearchParams()
-  const token  = params.get('token')
 
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying')
   const [error, setError]   = useState('')
   const [name, setName]     = useState('')
+  const [token, setToken]   = useState<string | null>(null)
 
+  // Extract token from URL — multiple fallbacks for robustness
   useEffect(() => {
-    if (!token) {
-      setError('No verification token found')
+    let extractedToken: string | null = null
+
+    // Method 1: Next.js useSearchParams (preferred)
+    extractedToken = params.get('token')
+
+    // Method 2: Fall back to window.location.search if Next.js parser failed
+    if (!extractedToken && typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search)
+        extractedToken = urlParams.get('token')
+      } catch {
+        // Ignore parsing errors
+      }
+    }
+
+    // Method 3: Last resort — manual regex extraction
+    if (!extractedToken && typeof window !== 'undefined') {
+      const match = window.location.href.match(/[?&]token=([a-zA-Z0-9-]+)/)
+      if (match) extractedToken = match[1]
+    }
+
+    if (!extractedToken) {
+      setError('No verification token found in the link. Please request a new portal link from the hospital.')
       setStatus('error')
       return
     }
-    verify(token)
-  }, [token])
+
+    setToken(extractedToken)
+    verify(extractedToken)
+  }, [params])
 
   async function verify(t: string) {
     try {
@@ -39,22 +69,38 @@ function VerifyContent() {
       const data = await res.json()
 
       if (!res.ok) {
-        setError(data.error || 'Verification failed')
+        setError(data.error || 'Verification failed. The link may have expired.')
         setStatus('error')
         return
       }
 
       // Save session
-      localStorage.setItem('portal_session', data.session_token)
-      localStorage.setItem('portal_patient', JSON.stringify(data.patient))
+      try {
+        localStorage.setItem('portal_session', data.session_token)
+        localStorage.setItem('portal_patient', JSON.stringify(data.patient))
+      } catch {
+        // localStorage might be disabled — proceed anyway
+      }
+
       setName(data.patient?.full_name || '')
       setStatus('success')
 
       // Redirect to dashboard after brief success message
       setTimeout(() => router.replace('/portal/dashboard'), 1500)
-    } catch {
+    } catch (err) {
+      console.error('[portal/verify] Network error:', err)
       setError('Network error. Please check your connection and try again.')
       setStatus('error')
+    }
+  }
+
+  function retry() {
+    if (token) {
+      setStatus('verifying')
+      setError('')
+      verify(token)
+    } else {
+      router.push('/portal/login')
     }
   }
 
@@ -88,11 +134,18 @@ function VerifyContent() {
         <AlertCircle className="w-14 h-14 text-red-400 mx-auto mb-4"/>
         <h2 className="text-xl font-bold text-gray-800 mb-2">Link Invalid or Expired</h2>
         <p className="text-gray-500 text-sm mb-6">{error}</p>
-        <button
-          onClick={() => router.push('/portal/login')}
-          className="w-full bg-blue-600 text-white rounded-xl py-3 font-semibold hover:bg-blue-700 transition-colors">
-          Login with Mobile Number
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={retry}
+            className="w-full bg-blue-600 text-white rounded-xl py-3 font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4" /> Try Again
+          </button>
+          <button
+            onClick={() => router.push('/portal/login')}
+            className="w-full bg-gray-100 text-gray-700 rounded-xl py-3 font-semibold hover:bg-gray-200 transition-colors">
+            Login with Mobile Number
+          </button>
+        </div>
         <p className="text-xs text-gray-400 mt-4">
           Magic links expire after 10 minutes for security.
         </p>

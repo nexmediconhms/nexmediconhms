@@ -12,5 +12,55 @@
       "path": "/api/backup",
       "schedule": "30 20 * * *"
     }
+  ],
+  "redirects": [
+    {
+      "source": "//portal/verify",
+      "destination": "/portal/verify",
+      "statusCode": 308
+    },
+    {
+      "source": "//portal/login",
+      "destination": "/portal/login",
+      "statusCode": 308
+    },
+    {
+      "source": "//portal/dashboard",
+      "destination": "/portal/dashboard",
+      "statusCode": 308
+    },
+    {
+      "source": "//portal",
+      "destination": "/portal",
+      "statusCode": 308
+    },
+    {
+      "source": "//portal/:path*",
+      "destination": "/portal/:path*",
+      "statusCode": 308
+    },
+    {
+      "source": "/portal//:path*",
+      "destination": "/portal/:path*",
+      "statusCode": 308
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "//portal/verify",
+      "destination": "/portal/verify"
+    },
+    {
+      "source": "//portal/login",
+      "destination": "/portal/login"
+    },
+    {
+      "source": "//portal/dashboard",
+      "destination": "/portal/dashboard"
+    },
+    {
+      "source": "//portal/:path*",
+      "destination": "/portal/:path*"
+    }
   ]
 }
