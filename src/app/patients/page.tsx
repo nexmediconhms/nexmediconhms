@@ -1,14 +1,14 @@
 'use client'
 /**
- * src/app/patients/page.tsx — UPDATED v2
+ * src/app/patients/page.tsx — UPDATED v3
  *
  * ADDITIONS (no existing code removed):
- *   1. "Start OPD" quick-action button on every patient row — links to
- *      /opd?patientId=<id> which immediately bridges to /opd/new?patient=<id>
- *   2. Real-time subscription refreshes list when new patients are added
- *      from other sessions (staff registers on iPad, doctor sees it on PC).
- *   3. Added "Admit" quick link button to jump to /ipd with patient pre-filled.
- *   4. All original code (search, filters, pagination, error handling) preserved.
+ *   1. "Start OPD" quick-action button on every patient row (v2)
+ *   2. Real-time subscription (v2)
+ *   3. "Admit" quick link button (v2)
+ *   4. "Send Portal Link" button — sends magic link via WhatsApp (v3 NEW)
+ *      Uses the new PatientPortalLinkButton component.
+ *   All original code (search, filters, pagination, error handling) preserved.
  */
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -17,6 +17,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, ageFromDOB, escapeLike } from '@/lib/utils'
 import { Search, UserPlus, ChevronRight, User, Filter, X, AlertCircle, Stethoscope, BedDouble, Zap } from 'lucide-react'
+import PatientPortalLinkButton from '@/components/shared/PatientPortalLinkButton'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
@@ -190,7 +191,7 @@ export default function PatientsPage() {
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
-              {/* Auto-suggestion dropdown — shows recent patients when search is empty and focused */}
+              {/* Auto-suggestion dropdown */}
               {showSuggestions && !query.trim() && recentPatients.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
                   <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
@@ -256,6 +257,7 @@ export default function PatientsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
+                {/* ── CHANGED: added "Portal" column header ── */}
                 {['Patient', 'MRN', 'Age / Gender', 'Mobile', 'Blood Group', 'Registered', 'Quick Actions'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
@@ -303,7 +305,8 @@ export default function PatientsPage() {
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(p.created_at)}</td>
-                    {/* NEW: Quick action buttons — Start OPD & Admit */}
+
+                    {/* ── Quick action buttons — OPD, Admit, and NEW: Send Portal Link ── */}
                     <td className="px-4 py-3">
                       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                         <Link
@@ -316,6 +319,14 @@ export default function PatientsPage() {
                           className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors font-medium whitespace-nowrap">
                           <BedDouble className="w-3 h-3" /> Admit
                         </Link>
+                        {/* ── NEW: Magic Link / Portal button ── */}
+                        <PatientPortalLinkButton
+                          patientId={p.id}
+                          mrn={p.mrn}
+                          mobile={p.mobile}
+                          patientName={p.full_name}
+                          label="Portal"
+                        />
                       </div>
                     </td>
                   </tr>
@@ -367,6 +378,15 @@ export default function PatientsPage() {
                     className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 font-medium">
                     <BedDouble className="w-3.5 h-3.5" /> Admit
                   </Link>
+                  {/* ── NEW: Portal link button on mobile ── */}
+                  <PatientPortalLinkButton
+                    patientId={p.id}
+                    mrn={p.mrn}
+                    mobile={p.mobile}
+                    patientName={p.full_name}
+                    label="Portal"
+                    className="flex-1 justify-center py-2"
+                  />
                 </div>
               </div>
             )
