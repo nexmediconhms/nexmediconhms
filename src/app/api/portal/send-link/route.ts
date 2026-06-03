@@ -4,11 +4,15 @@
  * Patient Portal — Send Magic Link (Staff-initiated)
  *
  * Called by clinic staff to send a patient their portal access link.
- * Now generates BOTH:
+ * Generates BOTH:
  *  1. Legacy magic link (portal_tokens) for backward compat
  *  2. New OTP + magic link (portal_otp) for the new login flow
  *
  * The WhatsApp message includes both the direct link and OTP.
+ *
+ * REQUIRES: migration 015_portal_schema_fix.sql to have been run so that
+ *   portal_tokens has (mrn, is_used, created_by) and
+ *   portal_otp table exists.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -46,15 +50,20 @@ export async function POST(req: NextRequest) {
   const portalToken = crypto.randomUUID()
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-  // Expire any existing tokens for this MRN
-  await supabase
+  // Expire any existing unused tokens for this MRN (non-fatal if it fails)
+  const { error: expireTokenErr } = await supabase
     .from('portal_tokens')
     .update({ is_used: true })
     .eq('mrn', mrn)
     .eq('is_used', false)
 
-  // Insert new token
-  await supabase
+  if (expireTokenErr) {
+    // Log but do not abort — the new token insert will still succeed
+    console.warn('[send-link] Could not expire old portal_tokens:', expireTokenErr.message)
+  }
+
+  // Insert new token — this is the primary link that must succeed
+  const { error: insertTokenErr } = await supabase
     .from('portal_tokens')
     .insert({
       mrn,
@@ -62,27 +71,43 @@ export async function POST(req: NextRequest) {
       token:       portalToken,
       expires_at:  expiresAt,
       is_used:     false,
-      created_by: auth.userId,
+      created_by:  auth.userId,
     })
 
+  if (insertTokenErr) {
+    // This is a hard failure — we cannot generate any portal link without this
+    console.error('[send-link] portal_tokens insert failed:', insertTokenErr.message)
+    return NextResponse.json(
+      { error: 'Failed to generate portal link. Please try again or contact support.' },
+      { status: 500 }
+    )
+  }
+
   // ── 2. Generate new OTP + magic link ─────────────────────────
-  let otpCode = ''
+  // Only attempted when patient has both a mobile number AND a patient_id.
+  // If this block fails for any reason we fall back gracefully to the
+  // legacy link (already generated above) — so we never abort the whole request.
+  let otpCode        = ''
   let magicLinkToken = ''
 
   if (normalizedMobile && patient_id) {
-    otpCode = String(randomInt(100000, 999999))
+    otpCode        = String(randomInt(100000, 999999))
     magicLinkToken = crypto.randomUUID()
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-    // Expire old OTPs
-    await supabase
+    // Expire any previous unverified OTPs for this mobile (non-fatal)
+    const { error: expireOtpErr } = await supabase
       .from('portal_otp')
       .update({ verified: true })
       .eq('mobile', normalizedMobile)
       .eq('verified', false)
 
-    // Insert new OTP
-    await supabase
+    if (expireOtpErr) {
+      console.warn('[send-link] Could not expire old portal_otp rows:', expireOtpErr.message)
+    }
+
+    // Insert new OTP row
+    const { error: insertOtpErr } = await supabase
       .from('portal_otp')
       .insert({
         mobile:     normalizedMobile,
@@ -92,15 +117,23 @@ export async function POST(req: NextRequest) {
         mrn:        mrn,
         expires_at: otpExpiry,
       })
+
+    if (insertOtpErr) {
+      // Non-fatal: fall back to legacy link only
+      console.warn('[send-link] portal_otp insert failed (using legacy link):', insertOtpErr.message)
+      otpCode        = ''
+      magicLinkToken = ''
+    }
   }
 
-  // ── Build URLs ───────────────────────────────────────────────
-  const legacyUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
+  // ── 3. Build URLs ─────────────────────────────────────────────
+  // Prefer the new OTP magic-link URL; fall back to legacy token URL
+  const legacyUrl    = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
   const newPortalUrl = magicLinkToken
     ? `${siteUrl}/portal/verify?token=${encodeURIComponent(magicLinkToken)}`
     : `${siteUrl}/portal/login`
 
-  // ── Build WhatsApp message ───────────────────────────────────
+  // ── 4. Build WhatsApp message ─────────────────────────────────
   const firstName = (patient_name || 'Patient').split(' ')[0]
   let waMessage = `Namaste ${firstName} ji,\n\n`
   waMessage += `Your ${hospitalName} Patient Portal is ready! 🏥\n\n`
@@ -129,6 +162,7 @@ export async function POST(req: NextRequest) {
     expires_at:    expiresAt,
     whatsapp_link: waLink,
     message:       waMessage,
+    // Only expose OTP code in development for testing
     otp_code:      process.env.NODE_ENV === 'development' ? otpCode : undefined,
   })
 }
