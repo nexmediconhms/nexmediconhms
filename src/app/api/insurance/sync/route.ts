@@ -21,8 +21,6 @@
  *   - After discharge, claim documents are submitted
  *   - TPA reviews → approves/rejects → settlement
  *   - This API keeps the insurance module in sync with all of this automatically
- *
- * SECURITY FIX: Added requireAuth() middleware to all endpoints
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -43,6 +41,7 @@ export async function GET(req: NextRequest) {
   // SECURITY FIX: Require authentication
   const auth = await requireAuth(req)
   if (auth instanceof Response) return auth
+
   try {
     const filter = req.nextUrl.searchParams.get('filter') // 'no_claim' | 'all' | 'pending' | 'settled'
 
@@ -164,6 +163,7 @@ export async function POST(req: NextRequest) {
   // SECURITY FIX: Require authentication
   const auth = await requireAuth(req)
   if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const {
@@ -286,6 +286,7 @@ export async function PATCH(req: NextRequest) {
   // SECURITY FIX: Require authentication
   const auth = await requireAuth(req)
   if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const { claim_id, patient_id, event, data: eventData } = body
