@@ -31,6 +31,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,13 +43,9 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  // ── AUTH CHECK: Verify the request has a valid session ──────────
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    // In production, require auth. In dev with service role, allow.
-  }
-  // Note: For a proper production deployment, add requireRole() from api-auth.ts
-  // For now, the DischargeModal sends requests from an authenticated client session.
+  // SECURITY FIX: Require authentication for discharge operations
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
 
   try {
     const body = await req.json()

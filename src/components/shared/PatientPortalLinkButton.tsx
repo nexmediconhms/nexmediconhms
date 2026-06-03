@@ -30,6 +30,7 @@
 
 import { useState } from 'react'
 import { ExternalLink, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   patientId: string
@@ -78,9 +79,26 @@ export default function PatientPortalLinkButton({
     setErrorMsg('')
 
     try {
+      // FIX: Get staff session token for authenticated API call
+      // The /api/portal/send-link endpoint requires Bearer token authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        setErrorMsg('Your session has expired. Please log in again.')
+        setState('error')
+        setTimeout(() => {
+          setState('idle')
+          window.location.href = '/login'
+        }, 2000)
+        return
+      }
+
       const res = await fetch('/api/portal/send-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           patient_id:   patientId,
           mrn,
@@ -92,9 +110,16 @@ export default function PatientPortalLinkButton({
       const data = await res.json()
 
       if (!res.ok) {
-        setErrorMsg(data.error || 'Failed to generate link')
+        // Specific error handling for auth failures
+        if (res.status === 401) {
+          setErrorMsg('Session expired. Please log in again.')
+          setTimeout(() => window.location.href = '/login', 2000)
+        } else if (res.status === 403) {
+          setErrorMsg('Access denied. You do not have permission.')
+        } else {
+          setErrorMsg(data.error || 'Failed to generate link')
+        }
         setState('error')
-        // Reset to idle after 4 seconds so staff can retry
         setTimeout(() => setState('idle'), 4000)
         return
       }

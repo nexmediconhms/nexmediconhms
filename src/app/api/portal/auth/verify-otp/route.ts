@@ -67,11 +67,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Too many attempts. Please request a new OTP.' }, { status: 429 })
       }
 
-      // Increment attempts
-      await supabase
+      // FIX: Increment attempts BEFORE verifying OTP (prevents race condition
+      // where concurrent requests could bypass the 5-attempt limit)
+      const { error: incrementErr } = await supabase
         .from('portal_otp')
         .update({ attempts: (otpRecord.attempts || 0) + 1 })
         .eq('id', otpRecord.id)
+
+      if (incrementErr) {
+        console.error('[verify-otp] Failed to increment attempts:', incrementErr)
+        return NextResponse.json({ error: 'Verification failed. Please try again.' }, { status: 500 })
+      }
 
       // Verify OTP code
       if (otpRecord.otp_code !== otp.trim()) {
@@ -83,6 +89,11 @@ export async function POST(req: NextRequest) {
 
     // Check expiry
     if (new Date(otpRecord.expires_at) < new Date()) {
+      // FIX: Mark expired OTP as verified to prevent reuse attempts
+      await supabase
+        .from('portal_otp')
+        .update({ verified: true })
+        .eq('id', otpRecord.id)
       return NextResponse.json({ error: 'OTP has expired. Please request a new one.' }, { status: 401 })
     }
 
