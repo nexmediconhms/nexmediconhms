@@ -23,10 +23,13 @@
  *
  * GET /api/ipd/files?admission_id=XXX — Get all files for an admission
  * DELETE /api/ipd/files?file_id=XXX — Delete a file
+ *
+ * SECURITY FIX: Added authentication to all endpoints
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth, requireRole } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -135,6 +138,10 @@ Be accurate and concise. Use Indian medical terminology where appropriate.`
 
 // ── GET — List files for an admission ─────────────────────────
 export async function GET(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  
   const admissionId = req.nextUrl.searchParams.get('admission_id')
   const patientId = req.nextUrl.searchParams.get('patient_id')
 
@@ -161,6 +168,10 @@ export async function GET(req: NextRequest) {
 
 // ── POST — Upload a file ──────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // SECURITY FIX: Require authentication
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+  
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
@@ -259,6 +270,10 @@ export async function POST(req: NextRequest) {
 
 // ── DELETE — Remove a file ────────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  // SECURITY FIX: Admin/Doctor only
+  const auth = await requireRole(req, ['admin', 'doctor'])
+  if (auth instanceof Response) return auth
+  
   const fileId = req.nextUrl.searchParams.get('file_id')
   if (!fileId) {
     return NextResponse.json({ error: 'file_id required' }, { status: 400 })

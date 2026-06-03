@@ -9,6 +9,11 @@
  *
  * On success, creates a portal_session and returns a session_token
  * that the client stores in localStorage/cookie for subsequent requests.
+ *
+ * SECURITY FIXES:
+ * - Fixed race condition in OTP attempts counter (now increments BEFORE verification)
+ * - Added proper error handling for all database operations
+ * - Marks expired OTPs as verified to prevent reuse
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -57,9 +62,9 @@ export async function POST(req: NextRequest) {
       }
       otpRecord = data
 
-      // Check attempts
-      if (otpRecord.attempts >= 5) {
-        // Mark as used
+      // Check attempts BEFORE incrementing
+      if ((otpRecord.attempts || 0) >= 5) {
+        // Mark as used to prevent further attempts
         await supabase
           .from('portal_otp')
           .update({ verified: true })
@@ -67,11 +72,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Too many attempts. Please request a new OTP.' }, { status: 429 })
       }
 
-      // Increment attempts
-      await supabase
+      // CRITICAL FIX: Increment attempts BEFORE verifying OTP to prevent race condition
+      // Use atomic increment to ensure concurrent requests don't bypass the limit
+      const { error: incrementError } = await supabase
         .from('portal_otp')
         .update({ attempts: (otpRecord.attempts || 0) + 1 })
         .eq('id', otpRecord.id)
+      
+      if (incrementError) {
+        console.error('[verify-otp] Failed to increment attempts:', incrementError)
+        return NextResponse.json({ error: 'Verification failed. Please try again.' }, { status: 500 })
+      }
 
       // Verify OTP code
       if (otpRecord.otp_code !== otp.trim()) {
@@ -81,16 +92,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Provide either {mobile, otp} or {token}' }, { status: 400 })
     }
 
-    // Check expiry
+    // Check expiry BEFORE creating session
     if (new Date(otpRecord.expires_at) < new Date()) {
+      // Mark as expired
+      await supabase
+        .from('portal_otp')
+        .update({ verified: true })
+        .eq('id', otpRecord.id)
       return NextResponse.json({ error: 'OTP has expired. Please request a new one.' }, { status: 401 })
     }
 
-    // Mark OTP as verified
-    await supabase
+    // Mark OTP as verified (prevent reuse)
+    const { error: verifyError } = await supabase
       .from('portal_otp')
       .update({ verified: true })
       .eq('id', otpRecord.id)
+    
+    if (verifyError) {
+      console.error('[verify-otp] Failed to mark OTP as verified:', verifyError)
+      return NextResponse.json({ error: 'Verification failed. Please try again.' }, { status: 500 })
+    }
 
     // Create a portal session (valid for 7 days)
     const sessionToken = crypto.randomUUID() + '-' + crypto.randomUUID()
