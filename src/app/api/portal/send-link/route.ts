@@ -18,7 +18,12 @@ import { randomInt } from 'crypto'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const siteUrl      = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
+// FIX (2026-06-03): Strip trailing slash from siteUrl to prevent
+// double-slash in generated URLs (e.g. "https://x.com/" + "/portal" = "//portal" → 404)
+const rawSiteUrl   = process.env.NEXT_PUBLIC_SITE_URL
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+  || 'https://your-domain.vercel.app'
+const siteUrl      = rawSiteUrl.replace(/\/+$/, '')
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 export async function POST(req: NextRequest) {
@@ -46,20 +51,19 @@ export async function POST(req: NextRequest) {
   const portalToken = crypto.randomUUID()
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-  // Expire any existing tokens for this MRN
-  const { error: expireError } = await supabase
+  // Expire any existing tokens for this MRN (non-fatal if it fails)
+  const { error: expireTokenErr } = await supabase
     .from('portal_tokens')
     .update({ is_used: true })
     .eq('mrn', mrn)
     .eq('is_used', false)
-  
-  if (expireError) {
-    console.error('[send-link] Failed to expire old tokens:', expireError)
-    // Non-fatal - continue with new token generation
+
+  if (expireTokenErr) {
+    console.warn('[send-link] Could not expire old portal_tokens:', expireTokenErr.message)
   }
 
-  // Insert new token
-  const { error: insertError } = await supabase
+  // Insert new token — primary link, must succeed
+  const { error: insertTokenErr } = await supabase
     .from('portal_tokens')
     .insert({
       mrn,
@@ -67,15 +71,19 @@ export async function POST(req: NextRequest) {
       token:       portalToken,
       expires_at:  expiresAt,
       is_used:     false,
-      created_by: auth.userId,
+      created_by:  auth.userId,
     })
-  
-  if (insertError) {
-    console.error('[send-link] Failed to create portal token:', insertError)
-    return NextResponse.json({ error: 'Failed to generate portal link' }, { status: 500 })
+
+  if (insertTokenErr) {
+    console.error('[send-link] portal_tokens insert failed:', insertTokenErr.message)
+    return NextResponse.json(
+      { error: 'Failed to generate portal link. Please ensure the database migration has been run.' },
+      { status: 500 }
+    )
   }
 
   // ── 2. Generate new OTP + magic link ─────────────────────────
+  // Non-fatal: if portal_otp insert fails, fall back to legacy link only
   let otpCode = ''
   let magicLinkToken = ''
 
@@ -84,20 +92,19 @@ export async function POST(req: NextRequest) {
     magicLinkToken = crypto.randomUUID()
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-    // Expire old OTPs
-    const { error: expireOtpError } = await supabase
+    // Expire old OTPs (non-fatal)
+    const { error: expireOtpErr } = await supabase
       .from('portal_otp')
       .update({ verified: true })
       .eq('mobile', normalizedMobile)
       .eq('verified', false)
-    
-    if (expireOtpError) {
-      console.error('[send-link] Failed to expire old OTPs:', expireOtpError)
-      // Non-fatal - continue with new OTP generation
+
+    if (expireOtpErr) {
+      console.warn('[send-link] Could not expire old portal_otp rows:', expireOtpErr.message)
     }
 
     // Insert new OTP
-    const { error: insertOtpError } = await supabase
+    const { error: insertOtpErr } = await supabase
       .from('portal_otp')
       .insert({
         mobile:     normalizedMobile,
@@ -107,10 +114,10 @@ export async function POST(req: NextRequest) {
         mrn:        mrn,
         expires_at: otpExpiry,
       })
-    
-    if (insertOtpError) {
-      console.error('[send-link] Failed to create OTP:', insertOtpError)
-      // Fall back to legacy link only
+
+    if (insertOtpErr) {
+      // Non-fatal: fall back to legacy token link only
+      console.warn('[send-link] portal_otp insert failed (using legacy link):', insertOtpErr.message)
       otpCode = ''
       magicLinkToken = ''
     }

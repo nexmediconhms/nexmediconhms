@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
 
 // ── DELETE — Remove a file ────────────────────────────────────
 export async function DELETE(req: NextRequest) {
-  // SECURITY FIX: Admin/Doctor only can delete files
+  // SECURITY FIX: Admin/Doctor only can delete patient files
   const auth = await requireRole(req, ['admin', 'doctor'])
   if (auth instanceof Response) return auth
 

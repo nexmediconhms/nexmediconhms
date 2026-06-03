@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
 // ── GET: Fetch audit log entries (for admin page) ─────────────
 export async function GET(req: NextRequest) {
-  // SECURITY FIX: Admin-only access to audit logs
+  // SECURITY FIX: Admin-only access to audit logs (sensitive data)
   const auth = await requireRole(req, 'admin')
   if (auth instanceof Response) return auth
 

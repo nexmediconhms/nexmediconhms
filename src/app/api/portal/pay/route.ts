@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         notify: { sms: true },
         reminder_enable: true,
         notes: { bill_id: bill.id, mrn: bill.mrn, patient_id: session.patient_id },
-        callback_url: `${process.env.NEXT_PUBLIC_SITE_URL || ''}/portal/dashboard?payment=success&bill_id=${bill.id}`,
+        callback_url: `${(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, '')}/portal/dashboard?payment=success&bill_id=${bill.id}`,
         callback_method: 'get',
       }
 

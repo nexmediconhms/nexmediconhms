@@ -80,23 +80,22 @@ export default function PatientPortalLinkButton({
 
     try {
       // FIX: Get staff session token for authenticated API call
+      // The /api/portal/send-link endpoint requires Bearer token authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      
+
       if (sessionError || !session?.access_token) {
         setErrorMsg('Your session has expired. Please log in again.')
         setState('error')
         setTimeout(() => {
           setState('idle')
-          // Redirect to login after showing error
           window.location.href = '/login'
         }, 2000)
         return
       }
 
-      // FIX: Include Authorization header with Bearer token
       const res = await fetch('/api/portal/send-link', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
@@ -111,7 +110,7 @@ export default function PatientPortalLinkButton({
       const data = await res.json()
 
       if (!res.ok) {
-        // Handle specific error cases
+        // Specific error handling for auth failures
         if (res.status === 401) {
           setErrorMsg('Session expired. Please log in again.')
           setTimeout(() => window.location.href = '/login', 2000)
@@ -121,7 +120,6 @@ export default function PatientPortalLinkButton({
           setErrorMsg(data.error || 'Failed to generate link')
         }
         setState('error')
-        // Reset to idle after 4 seconds so staff can retry
         setTimeout(() => setState('idle'), 4000)
         return
       }

@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Too many attempts. Please request a new OTP.' }, { status: 429 })
       }
 
-      // FIX: Increment attempts BEFORE verifying OTP (prevents race condition)
+      // FIX: Increment attempts BEFORE verifying OTP (prevents race condition
+      // where concurrent requests could bypass the 5-attempt limit)
       const { error: incrementErr } = await supabase
         .from('portal_otp')
         .update({ attempts: (otpRecord.attempts || 0) + 1 })
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     // Check expiry
     if (new Date(otpRecord.expires_at) < new Date()) {
-      // Mark expired OTP as verified to prevent reuse
+      // FIX: Mark expired OTP as verified to prevent reuse attempts
       await supabase
         .from('portal_otp')
         .update({ verified: true })
