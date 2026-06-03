@@ -110,7 +110,6 @@ export default function PatientPortalLinkButton({
       const data = await res.json()
 
       if (!res.ok) {
-        // Specific error handling for auth failures
         if (res.status === 401) {
           setErrorMsg('Session expired. Please log in again.')
           setTimeout(() => window.location.href = '/login', 2000)
