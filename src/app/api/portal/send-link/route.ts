@@ -18,8 +18,44 @@ import { randomInt } from 'crypto'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const siteUrl      = process.env.NEXT_PUBLIC_SITE_URL || 'https://your-domain.vercel.app'
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
+
+/**
+ * Get the live site origin from the incoming request.
+ *
+ * FIX (2026-06-04): Uses request host header as primary source so the
+ * generated URL ALWAYS points to the current live deployment, not a
+ * stale NEXT_PUBLIC_SITE_URL env var that points to a dead Vercel
+ * preview deployment.
+ *
+ * Returns origin like "https://example.com" — never has trailing slash.
+ */
+function getLiveSiteOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get('x-forwarded-host')
+  const host = req.headers.get('host')
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  const liveHost = forwardedHost || host
+
+  if (liveHost) {
+    try {
+      return new URL(`${proto}://${liveHost}`).origin
+    } catch {
+      // Fall through to env var
+    }
+  }
+
+  // Fallback: env var (may be stale, but better than nothing)
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL
+  if (fromEnv && fromEnv.trim()) {
+    try {
+      return new URL(fromEnv.trim()).origin
+    } catch {
+      // Fall through
+    }
+  }
+
+  return 'https://your-domain.vercel.app'
+}
 
 export async function POST(req: NextRequest) {
   // ── Auth gate ────────────────────────────────────────────────
@@ -95,10 +131,24 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Build URLs ───────────────────────────────────────────────
-  const legacyUrl = `${siteUrl}/portal?mrn=${encodeURIComponent(mrn)}&token=${encodeURIComponent(portalToken)}`
-  const newPortalUrl = magicLinkToken
-    ? `${siteUrl}/portal/verify?token=${encodeURIComponent(magicLinkToken)}`
-    : `${siteUrl}/portal/login`
+  // FIX: Use the live request host (current deployment) instead of
+  // a possibly-stale NEXT_PUBLIC_SITE_URL env var.
+  // The URL() constructor automatically prevents double slashes.
+  const liveOrigin = getLiveSiteOrigin(req)
+
+  const legacyUrlObj = new URL('/portal', liveOrigin)
+  legacyUrlObj.searchParams.set('mrn', mrn)
+  legacyUrlObj.searchParams.set('token', portalToken)
+  const legacyUrl = legacyUrlObj.toString()
+
+  let newPortalUrl: string
+  if (magicLinkToken) {
+    const u = new URL('/portal/verify', liveOrigin)
+    u.searchParams.set('token', magicLinkToken)
+    newPortalUrl = u.toString()
+  } else {
+    newPortalUrl = new URL('/portal/login', liveOrigin).toString()
+  }
 
   // ── Build WhatsApp message ───────────────────────────────────
   const firstName = (patient_name || 'Patient').split(' ')[0]
