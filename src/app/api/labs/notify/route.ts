@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolvePortalOrigin, generatePortalMagicLink } from '@/lib/portal-magic-link'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,21 @@ export async function POST(req: NextRequest) {
 
     const notifications: any[] = []
 
+    // ── ENHANCEMENT: generate a one-tap portal magic link ──────────
+    // So the "report ready" WhatsApp message can include a direct link
+    // that logs the patient in and shows the latest data instantly.
+    let portalUrl = ''
+    if (patientId) {
+      const origin = resolvePortalOrigin(req)
+      const magic = await generatePortalMagicLink(
+        supabase,
+        origin,
+        { id: patientId, mrn: resolvedMrn, mobile: patientMobile },
+        { validHours: 24 }
+      )
+      if (magic) portalUrl = magic.portalUrl
+    }
+
     // Build patient WhatsApp message
     if (patientMobile) {
       const patientMsg = `*${hospitalName}*
@@ -91,7 +107,7 @@ Your *${reportName}* is ready! ✅
 📅 *Date:* ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
 
 ${abnormalValues.length > 0 ? `⚠️ *Some values need attention.* Please visit the doctor for review.\n` : ''}Please collect your report from the hospital or ask the doctor during your next visit.
-
+${portalUrl ? `\n▶ *View your report online now:*\n${portalUrl}\n` : ''}
 📞 Contact: ${hospitalPhone}
 
 ---
@@ -208,6 +224,8 @@ Please update the patient file.`
     return NextResponse.json({
       success: true,
       notifications,
+      portalUrl,
+      patientWhatsappUrl: notifications.find(n => n.recipient === 'patient')?.whatsappUrl || null,
       alertCreated: abnormalValues.length > 0,
       message: `Notifications generated for ${notifications.length} recipient(s)`,
     })

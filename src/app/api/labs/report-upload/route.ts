@@ -28,6 +28,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { resolvePortalOrigin, generatePortalMagicLink, buildWhatsAppLink } from '@/lib/portal-magic-link'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -258,6 +259,31 @@ export async function POST(req: NextRequest) {
     }) // Non-fatal
 
     // ── §5: Notify doctor and patient ────────────────────────────
+    // ENHANCEMENT: generate a one-tap portal magic link so the patient
+    // can open the report online with the latest data. Also fetch the
+    // patient's mobile to queue a "report ready" WhatsApp notification.
+    let portalUrl = ''
+    let patientMobile = ''
+    try {
+      const { data: pat } = await sb
+        .from('patients')
+        .select('mobile')
+        .eq('id', patientId)
+        .single()
+      patientMobile = pat?.mobile || ''
+
+      const origin = resolvePortalOrigin(req)
+      const magic = await generatePortalMagicLink(
+        sb,
+        origin,
+        { id: patientId, mrn: patientMrn, mobile: patientMobile },
+        { validHours: 24 }
+      )
+      if (magic) portalUrl = magic.portalUrl
+    } catch (e: any) {
+      console.warn('[report-upload] portal link generation failed (non-fatal):', e?.message)
+    }
+
     // Doctor notification
     await sb.from('reminders').insert({
       patient_id: patientId,
@@ -273,19 +299,46 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    // Patient notification
+    // Patient notification (now includes the one-tap portal link)
     await sb.from('reminders').insert({
       patient_id: patientId,
       patient_name: patientName,
       type: 'lab_report',
-      message: `Your lab report "${reportName}" has been uploaded. Please check with your doctor.`,
+      message: `Your lab report "${reportName}" has been uploaded.${portalUrl ? ` View it online: ${portalUrl}` : ' Please check with your doctor.'}`,
       status: 'pending',
       metadata: JSON.stringify({
         report_id: newReport.id,
         report_name: reportName,
         recipient: 'patient',
+        portal_url: portalUrl || null,
       }),
     })
+
+    // Queue a "report ready" WhatsApp notification for staff to forward
+    // (the deep-link is pre-filled with the portal login link).
+    if (patientMobile) {
+      const waMessage =
+        `Namaste ${patientName.split(' ')[0]} ji,\n\n` +
+        `Your lab report "${reportName}" is ready! 🧪\n\n` +
+        (portalUrl ? `▶ View it online now:\n${portalUrl}\n\n` : '') +
+        `You can view prescriptions, lab reports, bills and book a follow-up in your portal.`
+      const waLink = buildWhatsAppLink(patientMobile, waMessage)
+      await sb.from('whatsapp_notifications').insert({
+        patient_id: patientId,
+        patient_name: patientName,
+        mobile: patientMobile,
+        notification_type: 'report_ready',
+        message_preview: waMessage.slice(0, 200),
+        recipient_type: 'patient',
+        status: 'queued',
+        metadata: {
+          report_id: newReport.id,
+          report_name: reportName,
+          portal_url: portalUrl || null,
+          whatsapp_link: waLink,
+        },
+      }).then(() => {})
+    }
 
     return NextResponse.json({
       success: true,
