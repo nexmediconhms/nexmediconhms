@@ -164,23 +164,6 @@ const nextConfig = {
     ]
   },
 
-  // ── URL Normalization Redirects ──────────────────────────────
-  // Catches malformed URLs with leading double-slash (//portal/...)
-  // and redirects to the correct single-slash path. This is a
-  // backup to the middleware fix in src/middleware.ts.
-  async redirects() {
-    return [
-      // Catch ANY double-slash in path and redirect to single-slash
-      // E.g. /portal//verify → /portal/verify
-      //      //portal/verify → /portal/verify
-      {
-        source: '/:path*//:rest*',
-        destination: '/:path*/:rest*',
-        permanent: true,
-      },
-    ]
-  },
-
   // ── Powered-by header removal ─────────────────────────────────
   // Don't advertise that this is a Next.js app (reduces attack surface)
   poweredByHeader: false,

@@ -128,51 +128,6 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const ip = getIP(req)
 
-  // ╔════════════════════════════════════════════════════════════════╗
-  // ║  DOUBLE-SLASH URL NORMALIZATION (CRITICAL FIX)                ║
-  // ║                                                                ║
-  // ║  When NEXT_PUBLIC_SITE_URL has a trailing slash, generated    ║
-  // ║  URLs become "https://domain.com//portal/verify?token=xxx".   ║
-  // ║  This double-slash path doesn't match any Next.js route,      ║
-  // ║  causing the global 404 page to render.                        ║
-  // ║                                                                ║
-  // ║  This middleware detects ANY URL with consecutive slashes      ║
-  // ║  in the path and 301-redirects to the normalized version.      ║
-  // ║                                                                ║
-  // ║  Also handles edge cases:                                      ║
-  // ║   - /portal//verify  → /portal/verify                          ║
-  // ║   - ///portal/verify → /portal/verify                          ║
-  // ║   - /portal////login → /portal/login                           ║
-  // ╚════════════════════════════════════════════════════════════════╝
-
-  // Check the raw URL for double slashes (req.nextUrl.pathname may auto-normalize on some platforms)
-  const rawUrl = req.url
-  const urlObj = new URL(rawUrl)
-
-  // Detect any double slashes in the pathname (excluding the protocol's "//")
-  if (urlObj.pathname.includes('//')) {
-    // Collapse all consecutive slashes to a single slash
-    const normalizedPath = urlObj.pathname.replace(/\/+/g, '/')
-
-    // Reconstruct the URL with the normalized path, keeping query string and hash
-    const normalizedUrl = new URL(rawUrl)
-    normalizedUrl.pathname = normalizedPath
-
-    console.log(`[middleware] Normalizing double-slash URL: ${urlObj.pathname} → ${normalizedPath}`)
-
-    // 301 permanent redirect (cached by browser, fixes the link forever)
-    return NextResponse.redirect(normalizedUrl, 301)
-  }
-
-  // Also check the pathname property in case Next.js sees it differently
-  if (pathname.includes('//')) {
-    const normalizedPath = pathname.replace(/\/+/g, '/')
-    const url = req.nextUrl.clone()
-    url.pathname = normalizedPath
-    console.log(`[middleware] Normalizing pathname: ${pathname} → ${normalizedPath}`)
-    return NextResponse.redirect(url, 301)
-  }
-
   // ── Rate limit auth-adjacent API routes ─────────────────────
   // These are our custom API routes that handle sensitive operations
   const isAuthRoute = (
@@ -250,23 +205,22 @@ export function middleware(req: NextRequest) {
   return response
 }
 
-// ─── Matcher: Run middleware on relevant paths ───────────────
-// IMPORTANT: We include /portal routes so the double-slash URL
-// normalization (above) catches malformed magic-link URLs.
-//
+// ─── Matcher: Only run middleware on relevant paths ───────────
 // Excludes static assets, images, and the _next folder to avoid
 // unnecessary processing on every static file request.
 
 export const config = {
   matcher: [
-    // ── Match all paths EXCEPT static assets ────────────────────
-    // This pattern catches everything including /portal/* so the
-    // double-slash normalizer can fix malformed magic-link URLs.
-    // Excludes:
-    //   - _next/static (build output)
-    //   - _next/image (image optimization)
-    //   - favicon.ico
-    //   - public assets (manifest, icons, etc.)
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|icons|forms).*)',
+    // API routes
+    '/api/:path*',
+    // Auth-related pages (for security headers)
+    '/login',
+    '/reset-password',
+    // Main app pages (for security headers)
+    '/dashboard/:path*',
+    '/patients/:path*',
+    '/opd/:path*',
+    '/billing/:path*',
+    '/settings/:path*',
   ],
 }
