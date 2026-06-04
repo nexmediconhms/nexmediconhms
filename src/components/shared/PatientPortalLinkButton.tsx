@@ -75,6 +75,13 @@ export default function PatientPortalLinkButton({
       if (!ok) return
     }
 
+    // FIX: Open a placeholder tab SYNCHRONOUSLY inside the click handler.
+    // Browsers only allow window.open() during a user gesture; calling it
+    // later (after the await calls below) gets blocked by the popup blocker,
+    // which is why "the WhatsApp link was not opening". We open the tab now
+    // and redirect it to the WhatsApp deep-link once the API responds.
+    const waWindow = mobile ? window.open('about:blank', '_blank') : null
+
     setState('loading')
     setErrorMsg('')
 
@@ -84,6 +91,7 @@ export default function PatientPortalLinkButton({
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
       if (sessionError || !session?.access_token) {
+        waWindow?.close()
         setErrorMsg('Your session has expired. Please log in again.')
         setState('error')
         setTimeout(() => {
@@ -110,6 +118,7 @@ export default function PatientPortalLinkButton({
       const data = await res.json()
 
       if (!res.ok) {
+        waWindow?.close()
         if (res.status === 401) {
           setErrorMsg('Session expired. Please log in again.')
           setTimeout(() => window.location.href = '/login', 2000)
@@ -127,9 +136,25 @@ export default function PatientPortalLinkButton({
 
       // Open WhatsApp if we have a deep-link
       if (data.whatsapp_link) {
-        window.open(data.whatsapp_link, '_blank', 'noopener,noreferrer')
+        if (waWindow) {
+          // Redirect the pre-opened tab — survives the popup blocker.
+          waWindow.location.href = data.whatsapp_link
+        } else {
+          // Placeholder tab was blocked (or no mobile). Try a direct open,
+          // and fall back to copying the portal link so staff can share it.
+          const opened = window.open(data.whatsapp_link, '_blank', 'noopener,noreferrer')
+          if (!opened && data.portal_url) {
+            try {
+              await navigator.clipboard.writeText(data.portal_url)
+              alert(`Could not open WhatsApp automatically.\nPortal link copied to clipboard:\n${data.portal_url}`)
+            } catch {
+              alert(`Could not open WhatsApp automatically.\nPortal link:\n${data.portal_url}`)
+            }
+          }
+        }
       } else {
         // No mobile — copy link to clipboard as fallback
+        waWindow?.close()
         if (data.portal_url) {
           try {
             await navigator.clipboard.writeText(data.portal_url)
@@ -143,6 +168,7 @@ export default function PatientPortalLinkButton({
       // Reset to idle after 3 seconds so button can be re-used
       setTimeout(() => setState('idle'), 3000)
     } catch (err) {
+      waWindow?.close()
       console.error('[PatientPortalLinkButton]', err)
       setErrorMsg('Network error. Please try again.')
       setState('error')

@@ -51,6 +51,21 @@ function PortalLoginContent() {
     }
   }, [resendTimer])
 
+  // Auto-submit once a full 6-digit OTP is entered/pasted/autofilled.
+  // Guarded by `loading` so it fires at most once per OTP value.
+  useEffect(() => {
+    if (step === 'otp' && otp.length === 6 && !loading) {
+      verifyOtp()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp, step])
+
+  // Extract up to 6 digits from any raw string (handles WhatsApp bold
+  // markers like *123456*, surrounding text, spaces, etc.)
+  function extractOtp(raw: string): string {
+    return (raw || '').replace(/\D/g, '').slice(0, 6)
+  }
+
   async function verifyMagicLink(token: string) {
     setStep('verifying')
     try {
@@ -212,10 +227,16 @@ function PortalLoginContent() {
                   <span className="px-3 py-3 bg-gray-50 text-gray-500 font-medium text-sm border-r">+91</span>
                   <input
                     type="tel"
-                    maxLength={10}
+                    inputMode="numeric"
+                    autoComplete="tel"
                     placeholder="Enter 10-digit mobile"
                     value={mobile}
                     onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onPaste={e => {
+                      e.preventDefault()
+                      const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(-10)
+                      if (digits) setMobile(digits)
+                    }}
                     onKeyDown={e => e.key === 'Enter' && sendOtp()}
                     className="flex-1 px-3 py-3 text-lg font-mono focus:outline-none"
                     autoFocus
@@ -264,10 +285,21 @@ function PortalLoginContent() {
                 </label>
                 <input
                   type="text"
-                  maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]*"
                   placeholder="● ● ● ● ● ●"
                   value={otp}
-                  onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={e => setOtp(extractOtp(e.target.value))}
+                  onPaste={e => {
+                    // Handle paste explicitly so over-length / formatted
+                    // clipboard text (e.g. "*123456*" or "OTP: 123456") is
+                    // sanitized instead of being rejected by the browser.
+                    e.preventDefault()
+                    const pasted = e.clipboardData.getData('text')
+                    const digits = extractOtp(pasted)
+                    if (digits) setOtp(digits)
+                  }}
                   onKeyDown={e => e.key === 'Enter' && verifyOtp()}
                   className="w-full text-center text-2xl font-mono tracking-[0.5em] border-2 border-gray-200 rounded-xl py-3 focus:outline-none focus:border-blue-400 transition-colors"
                   autoFocus

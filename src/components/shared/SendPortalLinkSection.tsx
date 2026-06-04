@@ -28,6 +28,7 @@
 
 import { useState } from 'react'
 import { ExternalLink, Loader2, CheckCircle, AlertCircle, Copy, MessageCircle } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   patientId: string
@@ -47,15 +48,35 @@ export default function SendPortalLinkSection({ patientId, mrn, mobile, patientN
 
   async function handleSend() {
     if (state === 'loading') return
+
+    // FIX: Open a placeholder tab synchronously (inside the click gesture)
+    // so the WhatsApp deep-link isn't blocked by the popup blocker after the
+    // async API call. The "Open WhatsApp" button below is the manual fallback.
+    const waWindow = mobile ? window.open('about:blank', '_blank') : null
+
     setState('loading')
     setErrorMsg('')
     setPortalUrl('')
     setWaLink('')
 
     try {
+      // FIX: /api/portal/send-link requires a Bearer token. Without it the
+      // request was failing with 401 and no link was ever generated.
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        waWindow?.close()
+        setErrorMsg('Your session has expired. Please log in again.')
+        setState('error')
+        return
+      }
+
       const res = await fetch('/api/portal/send-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           patient_id:   patientId,
           mrn,
@@ -67,6 +88,7 @@ export default function SendPortalLinkSection({ patientId, mrn, mobile, patientN
       const data = await res.json()
 
       if (!res.ok) {
+        waWindow?.close()
         setErrorMsg(data.error || 'Failed to generate portal link')
         setState('error')
         return
@@ -76,11 +98,16 @@ export default function SendPortalLinkSection({ patientId, mrn, mobile, patientN
       setWaLink(data.whatsapp_link || '')
       setState('done')
 
-      // Auto-open WhatsApp if available
-      if (data.whatsapp_link) {
+      // Auto-open WhatsApp in the pre-opened tab (survives popup blocker)
+      if (data.whatsapp_link && waWindow) {
+        waWindow.location.href = data.whatsapp_link
+      } else if (data.whatsapp_link) {
         window.open(data.whatsapp_link, '_blank', 'noopener,noreferrer')
+      } else {
+        waWindow?.close()
       }
     } catch {
+      waWindow?.close()
       setErrorMsg('Network error. Please check your connection.')
       setState('error')
     }
