@@ -1,21 +1,27 @@
 /**
  * src/lib/billing-gst.ts
- * D. Billing → GST + Package Billing
  *
- * Drop-in helpers used by billing/page.tsx
- * Import these into the existing billing page to add GST + package support.
+ * ═══════════════════════════════════════════════════════════════════════
+ * FIX: calculateTotals() now delegates to billing-tax-unified.ts
+ * BUG #7: Dual tax calculation → single source of truth
+ * ═══════════════════════════════════════════════════════════════════════
  *
- * INTEGRATION STEPS for billing/page.tsx:
- *   1. Add `gstPercent`, `gstAmount`, `packageId`, `packageName`, `isPackageBill`
- *      to the Bill interface and useState forms
- *   2. Replace the subtotal/total calculation with `calculateTotals()`
- *   3. Render <GSTSelector> and <PackageSelector> components in the form
- *   4. Pass gst_percent, gst_amount, package_id, package_name to Supabase insert/update
+ * WHAT CHANGED:
+ *   - calculateTotals() now calls calculateBillTax() internally
+ *   - Return shape is identical — no breaking changes
+ *   - All other functions (loadPackages, packageToItems, formatGSTLine,
+ *     gstInvoiceNote, GSTSelectorMarkup) are UNCHANGED
+ *
+ * BACKWARD COMPATIBILITY:
+ *   Same function signatures, same return types.
+ *   Any code importing calculateTotals from this file continues to work.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from '@/lib/supabase'
+import { calculateBillTax } from '@/lib/billing-tax-unified'
 
-// ── Types ────────────────────────────────────────────────────
+// ── Types (unchanged) ────────────────────────────────────────
 
 export interface BillingPackage {
   id:          string
@@ -35,16 +41,26 @@ export const GST_RATES = [
   { label: '18%',  value: 18  },
 ]
 
-/** Calculate bill totals including GST */
+/**
+ * Calculate bill totals including GST.
+ *
+ * ═══ FIX: Delegates to billing-tax-unified.ts ═══
+ * BEFORE: gstAmount = Math.round((afterDiscount * gstPercent / 100) * 100) / 100
+ * AFTER:  Uses calculateBillTax() — single source of truth for all modules
+ */
 export function calculateTotals(
   subtotal:   number,
   discount:   number,
   gstPercent: number,
 ): { afterDiscount: number; gstAmount: number; netAmount: number } {
-  const afterDiscount = Math.max(0, subtotal - discount)
-  const gstAmount     = Math.round((afterDiscount * gstPercent / 100) * 100) / 100
-  const netAmount     = afterDiscount + gstAmount
-  return { afterDiscount, gstAmount, netAmount }
+  // Delegate to the unified tax calculation
+  const taxBreakdown = calculateBillTax(subtotal, discount, gstPercent)
+
+  return {
+    afterDiscount: taxBreakdown.taxableAmount,
+    gstAmount:     taxBreakdown.gstAmount,
+    netAmount:     taxBreakdown.totalWithTax,
+  }
 }
 
 /** Load all active billing packages from Supabase */
@@ -63,24 +79,14 @@ export function packageToItems(pkg: BillingPackage): { label: string; amount: nu
   return pkg.items.map(item => ({ label: item.label, amount: item.amount }))
 }
 
-// ── React components (inline JSX — paste into billing/page.tsx) ──
+// ── React components (unchanged) ─────────────────────────────
 
-/**
- * GSTSelector — drop into the billing form beside the discount field.
- *
- * <GSTSelector
- *   gstPercent={gstPercent}
- *   onChange={setGstPercent}
- * />
- */
 export type GSTSelectorProps = {
   gstPercent: number
   onChange:   (pct: number) => void
 }
 
-// JSX version — copy into billing page as an inline component or import from here
 export function GSTSelectorMarkup(gstPercent: number, onChange: (v: number) => void) {
-  // Returns the JSX string — actual component is in BillingGSTSelector.tsx
   return `
 <div>
   <label className="label">GST</label>

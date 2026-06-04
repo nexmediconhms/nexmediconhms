@@ -14,6 +14,7 @@
  */
 
 // ── Constants ─────────────────────────────────────────────────
+import { calculateBillTax } from './billing-tax-unified'
 
 export const PAYMENT_MODES = [
   { value: 'cash',      label: '💵 Cash'      },
@@ -89,8 +90,13 @@ export function daysUntil(dateStr: string): number {
 
 /** Format a number as Indian Rupees: ₹1,23,456 */
 export function formatCurrency(amount: number | null | undefined): string {
-  const n = amount || 0
-  return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+  const n = amount ?? 0
+  // Show decimals only when there are paisa (non-zero fractional part)
+  const hasDecimal = n % 1 !== 0
+  return `₹${n.toLocaleString('en-IN', {
+    minimumFractionDigits: hasDecimal ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`
 }
 
 /** Format a date string for display: '15 Jan 2024' */
@@ -120,6 +126,7 @@ export function formatDateTime(dateStr: string | null | undefined): string {
     return dateStr
   }
 }
+
 
 // ── Billing calculations ──────────────────────────────────────
 // Match your ACTUAL bills table columns: subtotal, discount, tax, total, paid, due
@@ -152,17 +159,23 @@ export function calculateBill(
 ): BillCalculation {
   const subtotal = items.reduce((s, i) => s + (i.amount * (i.quantity ?? 1)), 0)
   const discount = Math.min(discountAmt, subtotal)
-  const taxable  = subtotal - discount
-  const tax      = Math.round(taxable * taxPct) / 100
-  const total    = taxable + tax
-  const paid     = Math.min(alreadyPaid, total)
-  const due      = Math.max(total - paid, 0)
 
-  let status: BillStatus = 'unpaid'
-  if (paid >= total && total > 0) status = 'paid'
-  else if (paid > 0)              status = 'partial'
+  // ═══ FIX: Delegate to unified tax calculation ═══
+  const taxBreakdown = calculateBillTax(subtotal, discount, taxPct)
+  const tax   = taxBreakdown.gstAmount
+  const total = taxBreakdown.totalWithTax
+  const paid  = Math.min(alreadyPaid, total)
+  const due   = Math.max(total - paid, 0)
 
-  return { subtotal, discount, tax, total, paid, due, status }
+  return {
+    subtotal,
+    discount,
+    tax,
+    total,
+    paid,
+    due,
+    status: getBillStatus(total, paid),
+  }
 }
 
 /**
@@ -170,6 +183,7 @@ export function calculateBill(
  * Use this instead of inline ternary expressions in components.
  */
 export function getBillStatus(total: number, paid: number): BillStatus {
+  if (total === 0) return 'paid'            // FIX: Zero-total bills are complete
   if (paid >= total && total > 0) return 'paid'
   if (paid > 0)                   return 'partial'
   return 'unpaid'
@@ -227,15 +241,32 @@ export function calculateANCRisk(params: {
   if ((params.riskFactors || []).length > 0) {
     reasons.push(`Pre-existing risk factors: ${params.riskFactors!.join(', ')}`)
   }
-  if ((params.gaWeeks || 0) > 40)         reasons.push('Post-dates pregnancy (>40 weeks)')
-  if ((params.gaWeeks || 0) >= 36)        reasons.push('Near-term pregnancy (≥36 weeks)')
-  if ((params.bpSystolic || 0) > 140)     reasons.push('Hypertension — SBP >140')
-  if ((params.bpDiastolic || 0) > 90)     reasons.push('Hypertension — DBP >90')
-  if ((params.hemoglobin || 99) < 8)      reasons.push('Severe anaemia (Hb <8 g/dL)')
-  else if ((params.hemoglobin || 99) < 11) reasons.push('Mild anaemia (Hb <11 g/dL)')
-  if ((params.gravida || 0) >= 5)         reasons.push('Grand multiparity (G5 or more)')
-  if ((params.age || 0) < 18)            reasons.push('Adolescent mother (<18 years)')
-  if ((params.age || 0) > 35)            reasons.push('Advanced maternal age (>35 years)')
+
+  // ═══ FIX #6: Mutually exclusive gestational age checks ═══
+  const gaWeeks = params.gaWeeks ?? 0
+  if (gaWeeks > 40) {
+    reasons.push('Post-dates pregnancy (>40 weeks)')
+  } else if (gaWeeks >= 36) {
+    // FIX: Only flag near-term when NOT post-dates (36-40 weeks)
+    reasons.push('Near-term pregnancy (≥36 weeks)')
+  }
+
+  if ((params.bpSystolic ?? 0) > 140)  reasons.push('Hypertension — SBP >140')
+  if ((params.bpDiastolic ?? 0) > 90)   reasons.push('Hypertension — DBP >90')
+
+  // ═══ FIX #18: Use nullish coalescing for hemoglobin ═══
+  // Before: (params.hemoglobin || 99) — 0 treated as falsy → 99
+  // After:  explicit null check — 0 is treated as a suspicious value
+  const hb = params.hemoglobin
+  if (hb !== undefined && hb !== null) {
+    if (hb < 8)       reasons.push('Severe anaemia (Hb <8 g/dL)')
+    else if (hb < 11) reasons.push('Mild anaemia (Hb <11 g/dL)')
+  }
+
+  if ((params.gravida ?? 0) >= 5)  reasons.push('Grand multiparity (G5 or more)')
+  if ((params.age ?? 0) < 18 && params.age !== undefined)
+    reasons.push('Adolescent mother (<18 years)')
+  if ((params.age ?? 0) > 35)      reasons.push('Advanced maternal age (>35 years)')
 
   const level: RiskLevel =
     reasons.length >= 3 ? 'high' :

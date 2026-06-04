@@ -228,12 +228,7 @@ export function calculateBillTotal(params: {
   const due = roundToTwo(Math.max(0, total - paid))
 
   // Determine status
-  let status: 'unpaid' | 'partial' | 'paid' = 'unpaid'
-  if (paid >= total && total > 0) {
-    status = 'paid'
-  } else if (paid > 0) {
-    status = 'partial'
-  }
+  const status = getBillStatus(total, paid)
 
   return {
     subtotal: roundToTwo(subtotal),
@@ -282,6 +277,7 @@ export function formatGSTInvoiceNote(
  * Single source of truth — replaces getBillStatus() in business-logic.ts.
  */
 export function getBillStatus(total: number, paid: number): 'unpaid' | 'partial' | 'paid' {
+  if (total === 0) return 'paid'            // FIX: Zero-total bills are complete
   if (paid >= total && total > 0) return 'paid'
   if (paid > 0) return 'partial'
   return 'unpaid'

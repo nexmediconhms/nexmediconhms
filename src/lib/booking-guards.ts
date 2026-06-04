@@ -53,7 +53,7 @@ export interface GuardResult {
 }
 
 export interface ConflictDescriptor {
-  table: 'appointments' | 'ot_schedules' | 'ipd_admissions' | 'patients'
+  table: 'appointments' | 'ot_schedules' | 'ipd_admissions' | 'patients' | 'system'
   id: string
   label: string
   details?: string

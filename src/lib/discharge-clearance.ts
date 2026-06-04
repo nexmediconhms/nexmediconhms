@@ -30,6 +30,7 @@
  */
 
 import { supabase } from './supabase'
+import { checkDischargeClearanceV2 } from './discharge-clearance-v2'
 
 // ── Types ────────────────────────────────────────────────────────
 
