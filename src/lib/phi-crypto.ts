@@ -25,6 +25,57 @@
  *   - Store it as HOSPITAL_ENCRYPTION_KEY in Vercel environment variables.
  *   - If the key is lost, all encrypted PHI is unrecoverable.
  *   - The key must be exactly 64 hex characters (256-bit AES key).
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * UPDATES IN THIS VERSION (June 2026) — DPDP-COMPLIANCE-CRITICAL
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *   FIX #20: STRICT KEY LENGTH VALIDATION (CRITICAL — was silently weakening AES-256)
+ *     The previous version accepted any hex key ≥ 32 chars, then padded short
+ *     keys with '0' to 64 chars:
+ *         Buffer.from(KEY_HEX.slice(0, 64).padEnd(64, '0'), 'hex')
+ *
+ *     For a 32-char key this gave: 16 bytes of real entropy + 16 bytes of zeros.
+ *     AES-256 was effectively reduced to <=128-bit security, with all PHI
+ *     vulnerable to a key-half brute-force attack.
+ *
+ *     NEW BEHAVIOR:
+ *       - getEncryptionStatus() now requires EXACTLY 64 hex chars for
+ *         'configured'. Wrong-length keys return 'invalid' (rolled into the
+ *         existing state rather than adding a new one — preserves the public
+ *         API contract with phi-client.ts PHIStatusResponse and /api/phi route).
+ *       - getKeyBuffer() no longer pads. A wrong-length key throws
+ *         PHIEncryptionError with code 'KEY_INVALID'. The error MESSAGE
+ *         distinguishes non-hex from wrong-length so admins can act on it.
+ *       - isEncryptionConfigured() returns true ONLY for status 'configured'
+ *         (was the case before; now strictly enforced at the byte level).
+ *
+ *   FIX #21: NO SILENT PLAINTEXT MOBILE STORAGE (CRITICAL — DPDP violation)
+ *     Previous version of encryptPatientPHI(): when mobile encryption failed,
+ *     it set `mobile_encrypted = null` but left the original `mobile` field
+ *     unchanged. Result: plaintext mobile saved to DB while the system pretended
+ *     to support encryption.
+ *
+ *     NEW BEHAVIOR:
+ *       - If encryptPHI succeeds, mobile_encrypted is set normally (mobile
+ *         field retained in plaintext for OTP/WhatsApp routing — this is
+ *         intentional and documented).
+ *       - If encryptPHI throws (key not configured / invalid), encryptPatientPHI
+ *         RE-THROWS the same error rather than swallowing it. The caller (API
+ *         route or admin form) decides whether mobile is critical enough to
+ *         block the save. Previously this was silently masked.
+ *       - Console warnings now include the patient context (without leaking PHI).
+ *
+ *   FIX #21b: PHI-LEAK GUARD ON encryptPatientPHI() RETURN SHAPE
+ *     Added a runtime invariant check: when aadhaar_encrypted is set, the
+ *     original `aadhaar_no` MUST be null. We assert this before returning.
+ *
+ * ALL EXISTING CALLERS REMAIN COMPATIBLE:
+ *   - encryptPHI, decryptPHI, maskAadhaar, maskMobile, getEncryptionStatus,
+ *     isEncryptionConfigured, PHIEncryptionError — signatures unchanged.
+ *   - /api/phi route continues to work without modification.
+ *   - generateEncryptionKey unchanged.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto'
@@ -45,20 +96,32 @@ const KEY_HEX = process.env.HOSPITAL_ENCRYPTION_KEY || ''
 /**
  * PHI Encryption Status
  *
- * Three states:
- *   - 'configured'   → Key is valid, encryption works normally
- *   - 'not_configured' → Key is missing/invalid, hard-stop on encrypt, passthrough on decrypt
- *   - 'invalid'      → Key format is wrong (not hex, wrong length)
+ * Three states (UNCHANGED public contract — preserved for backwards compat
+ * with phi-client.ts PHIStatusResponse and the /api/phi route):
+ *   - 'configured'     → Key is EXACTLY 64 hex chars (256-bit), encryption works
+ *   - 'not_configured' → Key is missing/empty, hard-stop on encrypt, passthrough on decrypt
+ *   - 'invalid'        → Key is malformed: contains non-hex characters
+ *                        OR is the wrong length (FIX #20 rolls wrong-length here
+ *                        instead of introducing a new 'weak' state, so the public
+ *                        API surface stays the same)
+ *
+ * The DISTINCTION between non-hex and wrong-length keys is preserved in the
+ * error MESSAGE thrown by getKeyBuffer(), not in the status string.
  */
 export type EncryptionStatus = 'configured' | 'not_configured' | 'invalid'
 
 /**
  * Get the current encryption configuration status.
  * Used by admin settings page to show warnings.
+ *
+ * FIX #20: now strictly requires EXACTLY 64 hex chars for 'configured'.
+ * Wrong-length keys (e.g., 32 chars = 128-bit) return 'invalid' rather
+ * than being silently zero-padded to a weakened AES-256 key.
  */
 export function getEncryptionStatus(): EncryptionStatus {
   if (!KEY_HEX || KEY_HEX.length === 0) return 'not_configured'
-  if (KEY_HEX.length < 32) return 'invalid'
+  // FIX #20: must be exactly 64 hex chars (256-bit key) AND all-hex
+  if (KEY_HEX.length !== 64) return 'invalid'
   if (!/^[0-9a-fA-F]+$/.test(KEY_HEX)) return 'invalid'
   return 'configured'
 }
@@ -66,6 +129,10 @@ export function getEncryptionStatus(): EncryptionStatus {
 /**
  * Check if encryption is configured and valid.
  * Used for pre-flight checks before patient creation.
+ *
+ * Returns true ONLY when status is 'configured' (exactly 64 hex chars,
+ * all valid hex). A wrong-length key is rejected here — was previously
+ * accepted and silently padded.
  */
 export function isEncryptionConfigured(): boolean {
   return getEncryptionStatus() === 'configured'
@@ -73,6 +140,10 @@ export function isEncryptionConfigured(): boolean {
 
 /**
  * Get the raw key buffer. Throws if not configured.
+ *
+ * FIX #20: no longer pads short keys with zeros. A wrong-length key
+ * throws PHIEncryptionError('KEY_INVALID') rather than silently producing
+ * a weakened AES-256 key.
  */
 function getKeyBuffer(): Buffer {
   const status = getEncryptionStatus()
@@ -87,15 +158,30 @@ function getKeyBuffer(): Buffer {
   }
 
   if (status === 'invalid') {
+    // FIX #20: differentiate the two invalid sub-states in the error MESSAGE
+    // (we keep the EncryptionStatus union at three values to preserve the
+    // public API contract with phi-client.ts and /api/phi route).
+    const isNonHex = !/^[0-9a-fA-F]+$/.test(KEY_HEX)
+    if (isNonHex) {
+      throw new PHIEncryptionError(
+        'HOSPITAL_ENCRYPTION_KEY contains non-hexadecimal characters. ' +
+        'It must be a hex string (0-9, a-f, A-F) of exactly 64 characters. ' +
+        'Generate a new key with: openssl rand -hex 32',
+        'KEY_INVALID'
+      )
+    }
+    // Otherwise: wrong-length key (was previously silently padded with zeros — REMOVED)
     throw new PHIEncryptionError(
-      'HOSPITAL_ENCRYPTION_KEY is invalid. It must be a hex string of at least 32 characters (64 recommended for AES-256). ' +
-      'Current key appears malformed. Please regenerate.',
+      `HOSPITAL_ENCRYPTION_KEY is the wrong length: got ${KEY_HEX.length} hex characters, ` +
+      'expected exactly 64 (= 256 bits = AES-256). The previous implementation padded ' +
+      'short keys with zeros, silently weakening AES-256 to <=128-bit security. ' +
+      'This is no longer allowed. Generate a proper key: openssl rand -hex 32',
       'KEY_INVALID'
     )
   }
 
-  // Take up to 64 hex chars = 32 bytes = 256-bit key
-  return Buffer.from(KEY_HEX.slice(0, 64).padEnd(64, '0'), 'hex')
+  // At this point: status === 'configured' → exactly 64 hex chars = 32 bytes
+  return Buffer.from(KEY_HEX, 'hex')
 }
 
 // ── Custom Error Class ────────────────────────────────────────
@@ -118,9 +204,11 @@ export class PHIEncryptionError extends Error {
  * Returns a base64-encoded string containing: IV (12 bytes) + ciphertext + authTag (16 bytes).
  *
  * THROWS PHIEncryptionError if:
- *   - Encryption key is not configured
- *   - Encryption key is invalid
- *   - Input is empty/whitespace-only (returns empty string without error)
+ *   - Encryption key is not configured ('KEY_NOT_CONFIGURED')
+ *   - Encryption key is invalid (non-hex)             ('KEY_INVALID')
+ *   - Encryption key is wrong length (FIX #20)        ('KEY_INVALID')
+ *
+ * For empty/whitespace-only input, returns empty string without error.
  *
  * This function will NEVER silently return plaintext. It either encrypts
  * successfully or throws an error. This prevents accidental plaintext storage.
@@ -129,7 +217,7 @@ export function encryptPHI(plaintext: string): string {
   // Allow empty/null values to pass through (no sensitive data to protect)
   if (!plaintext || !plaintext.trim()) return plaintext || ''
 
-  const key = getKeyBuffer() // throws if not configured
+  const key = getKeyBuffer() // throws if not configured / weak / invalid
   const iv = randomBytes(12)
 
   const cipher = createCipheriv('aes-256-gcm', key, iv)
@@ -162,7 +250,8 @@ export function encryptPHI(plaintext: string): string {
 export function decryptPHI(encrypted: string): string {
   if (!encrypted || !encrypted.trim()) return encrypted || ''
 
-  // If key isn't configured, we can't decrypt — return as-is (may be legacy plaintext)
+  // If key isn't 'configured' (covers not_configured / invalid / weak),
+  // we can't reliably decrypt — return as-is (may be legacy plaintext).
   const status = getEncryptionStatus()
   if (status !== 'configured') {
     return encrypted
@@ -220,13 +309,37 @@ export function maskMobile(mobile: string): string {
  * Encrypt all PHI fields in a patient record before inserting/updating.
  * Returns the record with encrypted fields added and plaintext removed.
  *
- * THROWS PHIEncryptionError if encryption key is not configured and
- * the record contains an Aadhaar number. Mobile is less sensitive
- * and is kept in plaintext for search/OTP functionality.
+ * THROWS PHIEncryptionError if:
+ *   - Encryption key is not configured ('KEY_NOT_CONFIGURED')
+ *   - Encryption key is invalid / wrong length ('KEY_INVALID') — see FIX #20
  *
  * Usage (server-side only — in API routes):
- *   const safe = encryptPatientPHI(formData)
- *   await supabase.from('patients').insert(safe)
+ *   try {
+ *     const safe = encryptPatientPHI(formData)
+ *     await supabase.from('patients').insert(safe)
+ *   } catch (err) {
+ *     if (err instanceof PHIEncryptionError) { ... show error to user ... }
+ *   }
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * FIX #21: NO MORE SILENT PLAINTEXT MOBILE STORAGE
+ *
+ * Previous behavior (REMOVED):
+ *   if (record.mobile && record.mobile.trim()) {
+ *     try { result.mobile_encrypted = encryptPHI(cleanMobile) }
+ *     catch { result.mobile_encrypted = null }  ← BUG: original `mobile` field
+ *                                                  unchanged, still plaintext
+ *   }
+ *
+ * New behavior:
+ *   - encryptPHI throws are re-thrown (caller decides if mobile is critical).
+ *   - Mobile is intentionally kept in plaintext on the `mobile` field FOR
+ *     OTP / WhatsApp routing. This is documented, explicit, and audited —
+ *     not a silent failure mode.
+ *   - aadhaar_no is unconditionally cleared after encryption, with a
+ *     runtime invariant check that ensures no plaintext Aadhaar leaks
+ *     into the database.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 export function encryptPatientPHI<T extends {
   aadhaar_no?: string | null
@@ -239,6 +352,7 @@ export function encryptPatientPHI<T extends {
 } {
   const result: any = { ...record }
 
+  // ── AADHAAR (always encrypted, plaintext cleared) ───────────
   if (record.aadhaar_no && record.aadhaar_no.trim()) {
     const cleanAadhaar = record.aadhaar_no.replace(/\D/g, '')
 
@@ -246,25 +360,62 @@ export function encryptPatientPHI<T extends {
       // This WILL throw if encryption is not configured — intentional hard stop
       result.aadhaar_encrypted = encryptPHI(cleanAadhaar)
       result.aadhaar_last4 = cleanAadhaar.slice(-4)
-      // Remove plaintext Aadhaar — NEVER store it unencrypted
+      // CRITICAL: Remove plaintext Aadhaar — NEVER store it unencrypted
       result.aadhaar_no = null
     }
   }
 
+  // ── MOBILE (FIX #21: no silent plaintext fallback) ─────────
   if (record.mobile && record.mobile.trim()) {
     const cleanMobile = record.mobile.replace(/\D/g, '').slice(-10)
 
     if (cleanMobile.length > 0) {
-      // Encrypt mobile but also keep plaintext for search/OTP
-      // Mobile is less sensitive than Aadhaar but still PHI under DPDP Act
+      // FIX #21: We deliberately do NOT swallow the error here.
+      //
+      // Why mobile is treated differently from Aadhaar:
+      //   - Aadhaar must be encrypted at rest (DPDP Act + sensitivity).
+      //   - Mobile is needed for OTP and WhatsApp routing, so we keep
+      //     the plaintext `mobile` field AND store an encrypted copy
+      //     in `mobile_encrypted` (defense in depth).
+      //
+      // If encryption fails, the OLD code silently lost mobile_encrypted
+      // and kept the plaintext mobile. That's not what the API documented.
+      //
+      // The new behavior: let the error bubble up so the caller knows
+      // PHI encryption is misconfigured and can decide what to do.
+      // For routes that want to be lenient (e.g., portal OTP requests),
+      // they should catch PHIEncryptionError explicitly.
       try {
         result.mobile_encrypted = encryptPHI(cleanMobile)
-      } catch {
-        // If encryption fails for mobile, we still allow the operation
-        // because mobile is needed for OTP/WhatsApp and is less sensitive
+      } catch (err) {
+        // We rethrow only KEY_NOT_CONFIGURED / KEY_INVALID (configuration
+        // errors). For any other unexpected error, we log and continue
+        // since mobile encryption is not strictly required by DPDP for
+        // OTP-routable numbers — but we leave a clear breadcrumb.
+        if (err instanceof PHIEncryptionError) {
+          // Re-throw so caller is forced to make an explicit decision
+          // about whether to proceed without mobile encryption.
+          throw err
+        }
+        // Unexpected runtime error in encryption: log without leaking PHI
+        console.error(
+          '[phi-crypto] Unexpected mobile encryption error (non-config). ' +
+          'Mobile will NOT be encrypted-at-rest. Investigate immediately.',
+          { errorName: (err as Error)?.name, lastFour: cleanMobile.slice(-4) },
+        )
         result.mobile_encrypted = null
       }
     }
+  }
+
+  // FIX #21b: runtime invariant — if aadhaar_encrypted is set,
+  // the plaintext aadhaar_no MUST be null.
+  if (result.aadhaar_encrypted && result.aadhaar_no) {
+    throw new PHIEncryptionError(
+      '[phi-crypto] INVARIANT VIOLATION: aadhaar_encrypted is set but ' +
+      'aadhaar_no plaintext was not cleared. This would leak PHI.',
+      'INVARIANT_VIOLATION'
+    )
   }
 
   return result

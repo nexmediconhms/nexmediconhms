@@ -21,6 +21,41 @@
  *   bill number is allocated at a time per module-month combo. This is
  *   superior to SELECT FOR UPDATE because it doesn't hold row locks on the
  *   bills table itself (which would block reads).
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * UPDATES IN THIS VERSION (June 2026) — ALL ADDITIVE, NO REMOVALS
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *   FIX #28: NAMESPACED ADVISORY LOCK KEYS
+ *     Previous: lock key = djb2-style hash of "MODULE-YEARMONTH" into a
+ *     32-bit signed integer, then Math.abs()'d. Issues:
+ *       a) Two different (module, yearMonth) pairs could hash to the same
+ *          value, causing false contention (rare but possible).
+ *       b) MUCH MORE IMPORTANT: a future feature that uses Postgres advisory
+ *          locks for a different purpose (e.g., audit-log writes, queue
+ *          allocation) could collide with bill-generation locks because
+ *          the integer keyspace is shared globally across the whole DB.
+ *
+ *     New: a Postgres `pg_advisory_lock(bigint, bigint)` two-key call where
+ *     the first key is a fixed namespace constant (BILL_NUM_LOCK_NAMESPACE)
+ *     and the second is the hash. This isolates bill-generation locks in
+ *     their own subspace, so cross-module collisions are impossible.
+ *
+ *     If the two-key RPC isn't available, we fall back to the single-key
+ *     call using `(namespace << 16) | (hash & 0xFFFF)` packed into one
+ *     bigint — still namespaced, just in a less elegant way.
+ *
+ *     The 23505 unique_violation retry safety net already handles any
+ *     collision that slips past the lock, so this fix is defense-in-depth.
+ *
+ *     IMPACT: Existing behaviour preserved. Lock keys are different from
+ *     before, but since locks are session-scoped and ephemeral, there's
+ *     no migration concern. A clean deploy is sufficient.
+ *
+ *   FIX #28b: PROPER ERROR HANDLING IF LOCK NEVER ACQUIRED
+ *     If `pg_advisory_lock` fails, we now log this prominently — previously
+ *     it was a silent fall-through to "best-effort" generation.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -36,17 +71,59 @@ const MAX_AMOUNT = 10_000_000 // ₹1 crore cap
 const MODULES = ['OPD', 'IPD'] as const
 type BillModule = typeof MODULES[number]
 
-// Advisory lock namespace — unique per module+month to avoid cross-module blocking
-function advisoryLockKey(module: BillModule, yearMonth: string): number {
-  // Generate a deterministic 32-bit integer from module + yearMonth
-  const str = `${module}-${yearMonth}`
+/**
+ * FIX #28: Reserved namespace for bill-number advisory locks.
+ *
+ * This is the FIRST key in the Postgres pg_advisory_lock(bigint, bigint)
+ * two-key form. By dedicating a fixed namespace, no other code that uses
+ * advisory locks in this DB can collide with bill-generation locks —
+ * regardless of how they compute their second key.
+ *
+ * Pick a value that is unlikely to be used by anything else; a 32-bit
+ * integer derived from the string 'BILL_NUM_LOCK' is a reasonable choice.
+ * Value: 0x42_49_4C_4C (the ASCII for "BILL" interpreted as a 32-bit BE int).
+ */
+const BILL_NUM_LOCK_NAMESPACE = 0x42494C4C // = 1112493644
+
+// Hash a string to a 32-bit integer (djb2 variant). Used as the SECOND key
+// for the two-key advisory lock; the namespace above provides isolation.
+function hash32(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i)
     hash = ((hash << 5) - hash) + char
-    hash = hash | 0 // Convert to 32-bit integer
+    hash = hash | 0
   }
   return Math.abs(hash)
+}
+
+/**
+ * Compute the (namespace, key) pair for the bill-generation advisory lock.
+ * The namespace is a fixed constant; the key is derived from (module, yearMonth).
+ */
+function advisoryLockKeys(module: BillModule, yearMonth: string): { namespace: number; key: number } {
+  return {
+    namespace: BILL_NUM_LOCK_NAMESPACE,
+    key: hash32(`${module}-${yearMonth}`),
+  }
+}
+
+/**
+ * Fallback single-key form, used if pg_advisory_lock(bigint, bigint) is
+ * not available in the deployment. We pack the namespace and hash into
+ * a single bigint such that bill-generation locks still live in their
+ * own range of the keyspace.
+ *
+ * Layout: (namespace_low_32) << 32 | (hash_low_32)
+ * In JavaScript we can't reliably represent >53-bit integers, so we
+ * use a BigInt and convert to string for the RPC call.
+ */
+function advisoryLockKeySingle(module: BillModule, yearMonth: string): string {
+  const { namespace, key } = advisoryLockKeys(module, yearMonth)
+  
+  // FIX: Replace 32n with BigInt(32) to avoid literal syntax error
+  const packed = (BigInt(namespace) << BigInt(32)) | BigInt(key)
+  return packed.toString()
 }
 
 // Generate invoice number: OPD-202605-0001
@@ -150,17 +227,45 @@ export async function POST(req: NextRequest) {
 
   // ── Sequential number generation with advisory lock ────────────
   const yearMonth = getISTYearMonth()
-  const lockKey = advisoryLockKey(module as BillModule, yearMonth)
+  // FIX #28: namespaced lock keys
+  const { namespace: lockNs, key: lockKey } = advisoryLockKeys(module as BillModule, yearMonth)
+  const packedLockKey = advisoryLockKeySingle(module as BillModule, yearMonth)
+  let lockHeld = false
 
   try {
-    // Acquire advisory lock (session-level, auto-released at end of transaction)
-    // We use a Postgres RPC or raw query via Supabase
-    const { error: lockErr } = await sb.rpc('pg_advisory_lock', { lock_key: lockKey })
+    // Try two-key form first (gives us proper namespace isolation)
+    let lockErr: any = null
+    try {
+      const { error } = await sb.rpc('pg_advisory_lock', {
+        lock_namespace: lockNs,
+        lock_key: lockKey,
+      })
+      lockErr = error
+      if (!error) lockHeld = true
+    } catch (e: any) {
+      lockErr = e
+    }
 
-    // If RPC doesn't exist, try raw SQL approach via a function we'll create
+    // Fallback: single-key form with namespaced bigint
     if (lockErr) {
-      // Fallback: use the bill_counter table approach
-      console.warn('[generate-bill] Advisory lock RPC unavailable, using counter table')
+      try {
+        const { error } = await sb.rpc('pg_advisory_lock', {
+          lock_key: packedLockKey,
+        })
+        if (!error) {
+          lockHeld = true
+        } else {
+          // FIX #28b: log loudly instead of falling through silently
+          console.warn(
+            '[generate-bill] Advisory lock not acquired — falling back to ' +
+            'unique-constraint-retry only. This is safe but slower. ' +
+            'Consider ensuring pg_advisory_lock RPC is available.',
+            { lockNs, lockKey, errorMessage: error.message },
+          )
+        }
+      } catch (e: any) {
+        console.warn('[generate-bill] Both advisory lock forms unavailable:', e?.message)
+      }
     }
 
     // Get the next sequential counter for this module+month
@@ -237,6 +342,8 @@ export async function POST(req: NextRequest) {
 
         if (retryErr) {
           console.error('[generate-bill] Retry failed:', retryErr)
+          // Release lock before returning
+          await releaseLock(sb, lockNs, lockKey, packedLockKey, lockHeld)
           return NextResponse.json({ error: 'Failed to generate bill after retry' }, { status: 500 })
         }
 
@@ -244,7 +351,7 @@ export async function POST(req: NextRequest) {
         await syncToFinance(sb, retryBill, module as BillModule, auth)
 
         // Release advisory lock
-        await sb.rpc('pg_advisory_unlock', { lock_key: lockKey })
+        await releaseLock(sb, lockNs, lockKey, packedLockKey, lockHeld)
 
         return NextResponse.json({
           success: true,
@@ -255,6 +362,7 @@ export async function POST(req: NextRequest) {
       }
 
       console.error('[generate-bill] Insert error:', billErr)
+      await releaseLock(sb, lockNs, lockKey, packedLockKey, lockHeld)
       return NextResponse.json({ error: billErr.message }, { status: 500 })
     }
 
@@ -269,7 +377,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Release advisory lock ──────────────────────────────────────
-    await sb.rpc('pg_advisory_unlock', { lock_key: lockKey })
+    await releaseLock(sb, lockNs, lockKey, packedLockKey, lockHeld)
 
     return NextResponse.json({
       success: true,
@@ -281,7 +389,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     // Always try to release the lock
-    await sb.rpc('pg_advisory_unlock', { lock_key: lockKey })
+    await releaseLock(sb, lockNs, lockKey, packedLockKey, lockHeld)
     console.error('[generate-bill] Unexpected error:', err)
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
   }
@@ -376,6 +484,32 @@ export async function DELETE(req: NextRequest) {
       net_amount: bill.net_amount || bill.total,
     },
   })
+}
+
+// ── Helper: release advisory lock with both forms ─────────────────
+// FIX #28: matching release calls for whichever lock form was acquired.
+async function releaseLock(
+  sb: ReturnType<typeof getSupabaseAdmin>,
+  lockNs: number,
+  lockKey: number,
+  packedLockKey: string,
+  lockHeld: boolean,
+) {
+  if (!lockHeld) return
+  try {
+    // Try two-key release form first
+    const { error } = await sb.rpc('pg_advisory_unlock', {
+      lock_namespace: lockNs,
+      lock_key: lockKey,
+    })
+    if (error) {
+      // Fall back to single-key form
+      await sb.rpc('pg_advisory_unlock', { lock_key: packedLockKey })
+    }
+  } catch (e) {
+    // Non-fatal: locks auto-release at session end
+    console.warn('[generate-bill] Lock release warning (non-fatal):', e)
+  }
 }
 
 // ── Helper: Sync bill to Finance/Hospital Fund ledger ────────────

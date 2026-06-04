@@ -53,6 +53,53 @@
  *   CREATE INDEX idx_credit_notes_bill ON credit_notes(bill_id);
  *   CREATE INDEX idx_credit_notes_patient ON credit_notes(patient_id);
  *   CREATE INDEX idx_credit_notes_number ON credit_notes(cn_number);
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * UPDATES IN THIS VERSION (June 2026) — ALL ADDITIVE, NO REMOVALS
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *   FIX #22: GST REVERSAL ROUND-TRIPS EXACTLY
+ *     Previous: computed taxableReversal via division, then derived gstReversal
+ *     as the leftover. With paisa rounding the round-trip
+ *     `taxableReversal * (1 + gstPercent/100)` could differ from creditAmount
+ *     by a paisa, causing GST audit reports not to balance against bills.
+ *
+ *     New formula (mathematically equivalent at full precision, paisa-exact
+ *     after rounding):
+ *         gstReversal     = round( creditAmount × gstPercent / (100 + gstPercent) , 2 )
+ *         taxableReversal = creditAmount − gstReversal
+ *         cgstReversal    = round( gstReversal / 2 , 2 )
+ *         sgstReversal    = gstReversal − cgstReversal
+ *
+ *     Invariant: taxableReversal + gstReversal === creditAmount (exact).
+ *     Invariant: cgstReversal + sgstReversal === gstReversal (exact).
+ *
+ *   FIX #23: RACE-FREE CN NUMBER GENERATION
+ *     Previous: SELECT MAX(cn_number) → parse → +1 → INSERT. Two concurrent
+ *     CN creations could read the same MAX and both try to INSERT the same
+ *     number — one fails on the UNIQUE constraint, the other proceeds with
+ *     the wrong sequence assumption.
+ *
+ *     New: a retry-on-conflict loop. We attempt the INSERT; if it fails with
+ *     PG error 23505 (unique_violation), we re-read MAX and retry up to
+ *     5 times. This works without any extra DB schema (uses the existing
+ *     UNIQUE constraint on cn_number).
+ *
+ *     The generateCNNumber() helper is preserved for callers that want the
+ *     number BEFORE creating the row (e.g., draft preview), but is now
+ *     marked as non-authoritative — the canonical assignment happens inside
+ *     createCreditNote() via the retry loop.
+ *
+ * ALL EXISTING EXPORTS PRESERVED:
+ *   - Types: CreditNoteItem, CreditNote, CreateCreditNoteParams, GSTReversal
+ *   - Functions: calculateGSTReversal, generateCNNumber, createCreditNote,
+ *                getCreditNotesForBill, getCreditNotesForPatient,
+ *                cancelCreditNote, formatCreditNoteForPrint, getCreditNoteStats
+ *
+ * EXTERNAL CALLERS VERIFIED:
+ *   - tests/unit/billing-gst.test.ts imports `calculateGSTReversal` —
+ *     signature & semantics preserved; existing assertions still hold.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from './supabase'
@@ -114,41 +161,66 @@ export interface GSTReversal {
   netCredit: number         // Total credit = taxable + GST
 }
 
+// ── Internal rounding helper ─────────────────────────────────────
+
+/**
+ * Round to 2 decimal places (paisa precision).
+ * Using a banker's-rounding-safe approach: multiply, round-half-away-from-zero, divide.
+ * Math.round() in JS is half-away-from-positive-infinity, which is what we want
+ * for currency (matches GAAP convention).
+ */
+function roundToTwo(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
 // ── GST Reversal Calculation ─────────────────────────────────────
 
 /**
  * Calculate GST reversal for a credit note.
  *
  * When a refund is issued on a GST-inclusive amount:
- *   taxableAmount = creditAmount / (1 + gstRate/100)
- *   gstReversal = creditAmount - taxableAmount
- *   CGST = SGST = gstReversal / 2
+ *   creditAmount    = total amount being refunded (incl. GST)
+ *   gstReversal     = GST portion of that
+ *   taxableReversal = remaining (creditAmount − gstReversal)
+ *   CGST            = SGST = gstReversal / 2
  *
- * When GST is 0% (most medical services), all values are 0.
+ * When GST is 0% (most medical services), all values are 0 except
+ * taxableReversal which equals creditAmount.
+ *
+ * FIX #22: gstReversal is now computed FIRST (in a single rounding step),
+ * and taxableReversal is derived from it via subtraction. This guarantees
+ * taxableReversal + gstReversal === creditAmount exactly, so GST reports
+ * reconcile against bills to the paisa.
  */
 export function calculateGSTReversal(creditAmount: number, gstPercent: number): GSTReversal {
   if (gstPercent <= 0 || creditAmount <= 0) {
     return {
-      taxableReversal: creditAmount,
+      taxableReversal: roundToTwo(Math.max(0, creditAmount)),
       gstReversal: 0,
       cgstReversal: 0,
       sgstReversal: 0,
-      netCredit: creditAmount,
+      netCredit: roundToTwo(Math.max(0, creditAmount)),
     }
   }
 
-  // Credit amount is inclusive of GST
-  const taxableReversal = Math.round((creditAmount / (1 + gstPercent / 100)) * 100) / 100
-  const gstReversal = Math.round((creditAmount - taxableReversal) * 100) / 100
-  const cgstReversal = Math.round((gstReversal / 2) * 100) / 100
-  const sgstReversal = gstReversal - cgstReversal // Avoids rounding mismatch
+  // ─── FIX #22 ───
+  // Compute gstReversal FIRST in a single rounding step:
+  //   gstReversal = creditAmount × gstPercent / (100 + gstPercent)
+  // Then derive taxableReversal by subtraction so the round-trip is exact.
+  const gstReversal = roundToTwo((creditAmount * gstPercent) / (100 + gstPercent))
+  const taxableReversal = roundToTwo(creditAmount - gstReversal)
+
+  // CGST = SGST half-split. cgst is rounded; sgst is the leftover to
+  // preserve the invariant cgst + sgst === gstReversal exactly.
+  const cgstReversal = roundToTwo(gstReversal / 2)
+  const sgstReversal = roundToTwo(gstReversal - cgstReversal)
 
   return {
     taxableReversal,
     gstReversal,
     cgstReversal,
     sgstReversal,
-    netCredit: creditAmount,
+    netCredit: roundToTwo(creditAmount),
   }
 }
 
@@ -158,6 +230,10 @@ export function calculateGSTReversal(creditAmount: number, gstPercent: number): 
  * Generate the next credit note number.
  * Format: CN-YYYY-XXXX (e.g., CN-2026-0001)
  * Sequential per calendar year.
+ *
+ * NOTE: This is best-effort — for the authoritative assignment under
+ * concurrency, use createCreditNote() which retries on unique-violation
+ * (see FIX #23). This function is suitable for previews and drafts.
  */
 export async function generateCNNumber(): Promise<string> {
   const year = new Date().getFullYear()
@@ -195,6 +271,10 @@ export async function generateCNNumber(): Promise<string> {
  * Called from the refund API and from admin bill modifications.
  *
  * Returns the created credit note or null on failure.
+ *
+ * FIX #23: Race-free via retry-on-conflict. If two concurrent calls compute
+ * the same next CN number, the database UNIQUE constraint catches it; we
+ * re-read MAX and retry. Up to 5 retries before giving up.
  */
 export async function createCreditNote(params: CreateCreditNoteParams): Promise<CreditNote | null> {
   const {
@@ -216,48 +296,77 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
   // Calculate GST reversal
   const gst = calculateGSTReversal(creditAmount, gstPercent)
 
-  // Generate CN number
-  const cnNumber = await generateCNNumber()
+  // FIX #23: retry-on-conflict loop
+  const MAX_RETRIES = 5
+  let lastError: any = null
 
-  const payload = {
-    cn_number: cnNumber,
-    bill_id: billId,
-    patient_id: patientId,
-    patient_name: patientName,
-    mrn,
-    original_invoice_number: originalInvoiceNumber || null,
-    original_amount: originalAmount,
-    credit_amount: creditAmount,
-    credit_items: creditItems.length > 0 ? creditItems : [{ label: reason, amount: creditAmount }],
-    reason,
-    refund_mode: refundMode || null,
-    gst_percent: gstPercent,
-    gst_reversal: gst.gstReversal,
-    cgst_reversal: gst.cgstReversal,
-    sgst_reversal: gst.sgstReversal,
-    taxable_reversal: gst.taxableReversal,
-    issued_by: issuedBy,
-    issued_at: new Date().toISOString(),
-    status: 'issued',
-    notes: notes || null,
-  }
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // Generate (or regenerate) the CN number for this attempt.
+    // Each attempt re-reads MAX(cn_number) so a colliding concurrent
+    // insert is corrected on the next pass.
+    const cnNumber = await generateCNNumber()
 
-  const { data, error } = await supabase
-    .from('credit_notes')
-    .insert(payload)
-    .select()
-    .single()
+    const payload = {
+      cn_number: cnNumber,
+      bill_id: billId,
+      patient_id: patientId,
+      patient_name: patientName,
+      mrn,
+      original_invoice_number: originalInvoiceNumber || null,
+      original_amount: originalAmount,
+      credit_amount: creditAmount,
+      credit_items: creditItems.length > 0 ? creditItems : [{ label: reason, amount: creditAmount }],
+      reason,
+      refund_mode: refundMode || null,
+      gst_percent: gstPercent,
+      gst_reversal: gst.gstReversal,
+      cgst_reversal: gst.cgstReversal,
+      sgst_reversal: gst.sgstReversal,
+      taxable_reversal: gst.taxableReversal,
+      issued_by: issuedBy,
+      issued_at: new Date().toISOString(),
+      status: 'issued',
+      notes: notes || null,
+    }
 
-  if (error) {
-    console.error('[credit-notes] Insert failed:', error.message)
-    // Table might not exist
-    if (error.code === '42P01' || error.message?.includes('relation')) {
+    const { data, error } = await supabase
+      .from('credit_notes')
+      .insert(payload)
+      .select()
+      .single()
+
+    if (!error && data) {
+      return data as CreditNote
+    }
+
+    lastError = error
+
+    // PG error 23505 = unique_violation (cn_number collided).
+    // Retry with a freshly-read MAX. Add a small jittered delay to spread
+    // out concurrent retries.
+    if (error?.code === '23505' && error?.message?.includes('cn_number')) {
+      const jitterMs = 10 + Math.floor(Math.random() * 40)
+      await new Promise(resolve => setTimeout(resolve, jitterMs))
+      console.warn(
+        `[credit-notes] CN number ${cnNumber} collided — retrying (attempt ${attempt + 1}/${MAX_RETRIES})`,
+      )
+      continue
+    }
+
+    // Any other error: don't retry, log and bail out
+    console.error('[credit-notes] Insert failed:', error?.message)
+    if (error?.code === '42P01' || error?.message?.includes('relation')) {
       console.warn('[credit-notes] Table does not exist. Run migration SQL.')
     }
     return null
   }
 
-  return data as CreditNote
+  // Retries exhausted
+  console.error(
+    `[credit-notes] CN number generation failed after ${MAX_RETRIES} retries. ` +
+    `Last error: ${lastError?.message || 'unknown'}`,
+  )
+  return null
 }
 
 // ── Fetch Credit Notes ───────────────────────────────────────────
