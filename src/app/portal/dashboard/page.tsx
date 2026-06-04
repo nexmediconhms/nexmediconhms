@@ -349,13 +349,28 @@ export default function PortalDashboard() {
           <div className="space-y-3">
             {labReports.length === 0 ? (
               <EmptyState icon={TestTube} text="No lab reports yet" sub="Reports will appear here once uploaded by the lab"/>
-            ) : labReports.map(report => (
+            ) : labReports.map(report => {
+              // SCHEMA FIX (2026-06-03):
+              // Lab reports table has TWO sets of column names depending on
+              // when rows were created:
+              //   Old/staff path: report_name, entries (JSONB), attachment_url
+              //   New/AI path:    test_name, result_data, result_text, file_url
+              // We read both and use whichever is populated, so the patient
+              // sees their report regardless of which flow created it.
+              const testName     = report.test_name      || report.report_name || 'Lab Report'
+              const testCategory = report.test_category  || report.lab_name    || ''
+              const resultText   = report.result_text    || report.notes       || ''
+              const resultData   = report.result_data    || report.entries     || null
+              const fileUrl      = report.file_url       || report.attachment_url || ''
+              const normalRange  = report.normal_range   || ''
+
+              return (
               <div key={report.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-semibold text-gray-900 text-sm">{report.test_name}</div>
+                    <div className="font-semibold text-gray-900 text-sm">{testName}</div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {report.test_category} · {formatDate(report.report_date)}
+                      {testCategory && `${testCategory} · `}{formatDate(report.report_date)}
                     </div>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -367,15 +382,32 @@ export default function PortalDashboard() {
                   </span>
                 </div>
 
-                {report.result_text && (
+                {resultText && (
                   <div className="mt-2 text-sm text-gray-700 bg-gray-50 rounded-lg p-2">
-                    {report.result_text}
+                    {resultText}
                   </div>
                 )}
 
-                {report.result_data && Object.keys(report.result_data).length > 0 && (
+                {/* Display test entries — handles both array (entries) and object (result_data) shapes */}
+                {Array.isArray(resultData) && resultData.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    {Object.entries(report.result_data).map(([key, val]: [string, any]) => (
+                    {resultData.map((entry: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-xs">
+                        <span className="text-gray-600">
+                          {entry.testName || entry.name || `Test ${idx + 1}`}
+                        </span>
+                        <span className="font-medium text-gray-900">
+                          {entry.value || ''} {entry.unit || ''}
+                          {entry.status === 'high' && ' ↑'}
+                          {entry.status === 'low' && ' ↓'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!Array.isArray(resultData) && resultData && typeof resultData === 'object' && Object.keys(resultData).length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(resultData).map(([key, val]: [string, any]) => (
                       <div key={key} className="flex justify-between text-xs">
                         <span className="text-gray-600">{key}</span>
                         <span className="font-medium text-gray-900">{String(val)}</span>
@@ -384,20 +416,21 @@ export default function PortalDashboard() {
                   </div>
                 )}
 
-                {report.normal_range && (
+                {normalRange && (
                   <div className="mt-1 text-xs text-gray-400">
-                    Normal range: {report.normal_range}
+                    Normal range: {normalRange}
                   </div>
                 )}
 
-                {report.file_url && (
-                  <a href={report.file_url} target="_blank" rel="noopener noreferrer"
+                {fileUrl && (
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 font-medium">
                     <Download className="w-3 h-3"/> Download Report
                   </a>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 

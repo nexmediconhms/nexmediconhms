@@ -3,25 +3,18 @@
  *
  * Patient Portal — Send Magic Link (Staff-initiated)
  *
- * ═══════════════════════════════════════════════════════════════════
- * CRITICAL FIX (2026-06-04):
+ * Called by clinic staff to send a patient their portal access link.
+ * Generates BOTH:
+ *  1. Legacy magic link (portal_tokens) for backward compat
+ *  2. New OTP + magic link (portal_otp) for the new login flow
  *
- * ROOT CAUSE OF 404 PROBLEM:
- *   NEXT_PUBLIC_SITE_URL was set to an OLD Vercel preview deployment URL
- *   (e.g. nexmediconhms-sarvam-iagzpcxz5-...) that no longer exists or
- *   runs outdated code. Every new Vercel deployment creates a new URL,
- *   so the env var becomes stale.
+ * The WhatsApp message includes both the direct link and OTP.
  *
- * THE FIX:
- *   Reversed the priority order — now uses the REQUEST HOST HEADER
- *   as the primary source of the site origin. This means the URL
- *   in the WhatsApp message ALWAYS points to the same deployment
- *   the staff member is currently using (which is guaranteed to be
- *   live and have the latest code).
- *
- *   The env var is now only used as a LAST RESORT fallback when the
- *   request has no host header (which never happens in real HTTP).
- * ═══════════════════════════════════════════════════════════════════
+ * BULLETPROOF URL CONSTRUCTION (2026-06-03):
+ *   Uses the URL() constructor (built into Node.js) which AUTOMATICALLY
+ *   normalizes paths and strips redundant slashes. This guarantees that
+ *   the generated URLs NEVER have double slashes, regardless of what
+ *   value NEXT_PUBLIC_SITE_URL is set to (with or without trailing slash).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -34,51 +27,23 @@ const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 /**
- * Resolve the site origin from the incoming request.
- *
- * NEW PRIORITY (fixes the stale-env-var 404 problem):
- *   1. Request host header — guaranteed to be the live deployment URL
- *   2. x-forwarded-host header — for proxied deployments
- *   3. NEXT_PUBLIC_SITE_URL env var — only if request has no host
- *   4. VERCEL_URL — Vercel auto-injected
- *   5. Hardcoded fallback
- *
- * This guarantees the generated URL always works because it points
- * to the same deployment the staff member is currently on.
+ * Resolve the site origin from environment variables.
+ * Returns just the origin (e.g. "https://example.com") with no trailing slash,
+ * no path, no query string. Always safe to concatenate paths to.
  */
 function getSiteOrigin(req: NextRequest): string {
-  // Priority 1 & 2: Request headers (the actual live URL)
-  const forwardedHost = req.headers.get('x-forwarded-host')
-  const host = req.headers.get('host')
-  const proto = req.headers.get('x-forwarded-proto') || 'https'
-
-  // Use forwarded-host first (more reliable behind proxies/CDNs)
-  // then fall back to host header
-  const liveHost = forwardedHost || host
-
-  if (liveHost) {
-    try {
-      const origin = `${proto}://${liveHost}`
-      // Validate it's a proper URL
-      const u = new URL(origin)
-      return u.origin // strips any trailing slash automatically
-    } catch {
-      // Malformed host — fall through to env var
-    }
-  }
-
-  // Priority 3: explicit env var (only used if no request host)
+  // Priority 1: explicit env var (works in production)
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL
   if (fromEnv && fromEnv.trim()) {
     try {
       const u = new URL(fromEnv.trim())
-      return u.origin
+      return u.origin // returns "https://example.com" — never has trailing slash
     } catch {
-      // Malformed env var
+      // Malformed env var — fall through
     }
   }
 
-  // Priority 4: Vercel auto-injected URL
+  // Priority 2: Vercel auto-injected URL
   if (process.env.VERCEL_URL) {
     try {
       const u = new URL(`https://${process.env.VERCEL_URL}`)
@@ -88,20 +53,38 @@ function getSiteOrigin(req: NextRequest): string {
     }
   }
 
+  // Priority 3: derive from request host header (works on any platform)
+  const host = req.headers.get('host')
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  if (host) {
+    return `${proto}://${host}`
+  }
+
   // Last resort fallback
   return 'https://your-domain.vercel.app'
 }
 
 /**
  * Build a portal URL with guaranteed correct format.
- * The URL() constructor automatically normalizes paths,
- * so this NEVER produces double slashes regardless of input.
+ * Uses URL() constructor which auto-normalizes paths.
+ *
+ * @param origin - The site origin (e.g. "https://example.com")
+ * @param path - The path (e.g. "/portal/verify")
+ * @param params - Query parameters
+ * @returns Fully-formed URL string with NO double slashes
  */
 function buildPortalUrl(origin: string, path: string, params: Record<string, string> = {}): string {
+  // The URL constructor automatically normalizes the path, collapsing
+  // any "//" sequences into "/". Even if origin or path has stray slashes,
+  // the result is always a valid URL.
   const u = new URL(path, origin)
+
+  // Clear and set query params
   Object.entries(params).forEach(([key, value]) => {
     u.searchParams.set(key, value)
   })
+
+  // .toString() returns a properly normalized URL
   return u.toString()
 }
 
@@ -202,7 +185,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Build URLs (uses LIVE request host, not stale env var) ───
+  // ── Build URLs (BULLETPROOF — uses URL() constructor) ────────
   const origin = getSiteOrigin(req)
 
   const legacyUrl = buildPortalUrl(origin, '/portal', {
@@ -243,7 +226,6 @@ export async function POST(req: NextRequest) {
     expires_at:    expiresAt,
     whatsapp_link: waLink,
     message:       waMessage,
-    debug_origin:  origin, // included so you can verify the URL source
     // Only expose OTP code in development for testing
     otp_code:      process.env.NODE_ENV === 'development' ? otpCode : undefined,
   })

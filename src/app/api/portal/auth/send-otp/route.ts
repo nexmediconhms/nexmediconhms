@@ -16,6 +16,8 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
+// FIX (2026-06-03): Strip trailing slash to prevent double-slash 404
+const siteUrl      = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
 /**

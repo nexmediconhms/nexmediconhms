@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -94,6 +95,10 @@ export async function POST(req: NextRequest) {
 
 // ── GET: Fetch audit log entries (for admin page) ─────────────
 export async function GET(req: NextRequest) {
+  // SECURITY FIX: Admin-only access to audit logs (sensitive data)
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
   try {
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50', 10)
     const offset = parseInt(req.nextUrl.searchParams.get('offset') || '0', 10)

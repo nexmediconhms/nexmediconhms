@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole } from '@/lib/api-auth'
 import crypto from 'crypto'
 
 export const runtime = 'nodejs'
@@ -40,7 +41,11 @@ function generateToken(): string {
 }
 
 // ── GET: List portal users ────────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // SECURITY FIX: Admin-only
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
   try {
     const { data, error } = await supabase
       .from('lab_portal_users')
@@ -73,6 +78,10 @@ export async function GET() {
 
 // ── POST: Create new portal user ──────────────────────────────
 export async function POST(req: NextRequest) {
+  // SECURITY FIX: Admin-only
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const { name, email, phone, lab_partner_id, never_expires = true } = body
@@ -122,6 +131,10 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH: Update portal user (toggle active, regenerate token) ──
 export async function PATCH(req: NextRequest) {
+  // SECURITY FIX: Admin-only
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const { id, action } = body
@@ -186,6 +199,10 @@ export async function PATCH(req: NextRequest) {
 
 // ── DELETE: Remove portal user ────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  // SECURITY FIX: Admin-only
+  const auth = await requireRole(req, 'admin')
+  if (auth instanceof Response) return auth
+
   try {
     const id = req.nextUrl.searchParams.get('id')
     if (!id) {
