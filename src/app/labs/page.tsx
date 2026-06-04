@@ -444,7 +444,7 @@ function LabsContent() {
             ? partners.find(p => p.id === selectedPartnerId)?.name || ''
             : ''
 
-          await fetch('/api/labs/notify', {
+          const res = await fetch('/api/labs/notify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -457,6 +457,19 @@ function LabsContent() {
               reportName: completedEntries.map(e => e.testName).slice(0, 3).join(', ') || 'Lab Report',
             }),
           })
+
+          // ── ENHANCEMENT: auto-open the patient's "report ready" WhatsApp ──
+          // The notify endpoint returns a pre-filled WhatsApp deep-link that
+          // includes a one-tap portal login link. Open it so staff just taps
+          // Send — the patient gets the link automatically with latest data.
+          try {
+            const notifyData = await res.json()
+            if (notifyData?.patientWhatsappUrl) {
+              window.open(notifyData.patientWhatsappUrl, '_blank', 'noopener,noreferrer')
+            }
+          } catch {
+            // Non-fatal — report is already saved
+          }
         } catch (notifyErr) {
           console.warn('[Labs] Notification failed (non-fatal):', notifyErr)
         }

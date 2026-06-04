@@ -65,18 +65,24 @@ export default function PortalDashboard() {
   const [activeTab, setTab]     = useState('overview')
   const [showBooking, setShowBooking] = useState(false)
   const [showPayment, setShowPayment] = useState<any>(null)
+  // ── ENHANCEMENT: live auto-refresh state ──
+  const [refreshing, setRefreshing]   = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   const sessionToken = typeof window !== 'undefined' ? localStorage.getItem('portal_session') : null
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!sessionToken) {
       router.replace('/portal/login')
       return
     }
 
+    if (silent) setRefreshing(true)
+
     try {
       const res = await fetch('/api/portal/session', {
         headers: { 'X-Portal-Session': sessionToken },
+        cache: 'no-store',
       })
 
       if (res.status === 401) {
@@ -88,21 +94,54 @@ export default function PortalDashboard() {
 
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error || 'Failed to load data')
-        setLoading(false)
+        // On a silent background refresh, keep showing existing data
+        // instead of replacing the screen with an error.
+        if (!silent) setError(json.error || 'Failed to load data')
         return
       }
 
       setData(json)
+      setLastUpdated(new Date())
+      setError('')
     } catch {
-      setError('Network error. Please check your connection.')
+      if (!silent) setError('Network error. Please check your connection.')
+    } finally {
+      if (!silent) setLoading(false)
+      if (silent) setRefreshing(false)
     }
-    setLoading(false)
   }, [sessionToken, router])
 
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // ── ENHANCEMENT: real-time auto-update ─────────────────────────
+  // The portal uses a custom session (not Supabase Auth), so instead of
+  // a Realtime socket we use lightweight silent polling + refresh when
+  // the patient returns to the tab. This keeps the data fresh (new lab
+  // reports, bills, prescriptions appear automatically) with zero risk
+  // to routing/auth and no RLS changes.
+  useEffect(() => {
+    if (!sessionToken) return
+
+    // Poll every 30 seconds in the background
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadData(true)
+      }
+    }, 30000)
+
+    // Refresh instantly when the patient switches back to this tab
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadData(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [sessionToken, loadData])
 
   async function logout() {
     if (sessionToken) {
@@ -157,9 +196,20 @@ export default function PortalDashboard() {
               <Heart className="w-5 h-5 text-white"/>
               <span className="text-white font-bold text-sm">My Health Portal</span>
             </div>
-            <button onClick={logout} className="text-blue-200 hover:text-white text-xs flex items-center gap-1">
-              <LogOut className="w-3.5 h-3.5"/> Logout
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => loadData(true)}
+                className="text-blue-100 hover:text-white text-xs flex items-center gap-1"
+                title={lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'Refresh'}>
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}/>
+                <span className="hidden sm:inline">
+                  {refreshing ? 'Updating…' : 'Live'}
+                </span>
+              </button>
+              <button onClick={logout} className="text-blue-200 hover:text-white text-xs flex items-center gap-1">
+                <LogOut className="w-3.5 h-3.5"/> Logout
+              </button>
+            </div>
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white">{patient.full_name}</h1>
