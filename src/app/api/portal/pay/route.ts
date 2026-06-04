@@ -82,7 +82,24 @@ export async function POST(req: NextRequest) {
         notify: { sms: true },
         reminder_enable: true,
         notes: { bill_id: bill.id, mrn: bill.mrn, patient_id: session.patient_id },
-        callback_url: `${process.env.NEXT_PUBLIC_SITE_URL || ''}/portal/dashboard?payment=success&bill_id=${bill.id}`,
+        callback_url: (() => {
+          // Use request host as primary source to avoid stale env var
+          const forwardedHost = req.headers.get('x-forwarded-host')
+          const host = req.headers.get('host')
+          const proto = req.headers.get('x-forwarded-proto') || 'https'
+          const liveHost = forwardedHost || host
+          let origin = ''
+          if (liveHost) {
+            try { origin = new URL(`${proto}://${liveHost}`).origin } catch {}
+          }
+          if (!origin) {
+            origin = (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, '') || 'http://localhost:3000'
+          }
+          const cb = new URL('/portal/dashboard', origin)
+          cb.searchParams.set('payment', 'success')
+          cb.searchParams.set('bill_id', bill.id)
+          return cb.toString()
+        })(),
         callback_method: 'get',
       }
 
