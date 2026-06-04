@@ -33,8 +33,111 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 /**
- * Validate the caller is authenticated.
- * Returns the user or null if unauthenticated.
+ * 2026-06-04 audit fix (§1.2):
+ *   - Decrypt now requires admin or doctor role (was: any authenticated user).
+ *     A previously-authenticated lab_partner / staff account could read
+ *     `aadhaar_encrypted` from `patients` (RLS allows SELECT) and POST it
+ *     here to get plaintext back. Now restricted to roles that need it.
+ *   - Every successful decrypt is now audited via insert_audit_entry RPC,
+ *     creating a tamper-evident trail of who decrypted what and when
+ *     (DPDP-Act-required PHI access logging).
+ *   - 'invalid' status message corrected from "at least 32 characters"
+ *     (the old behaviour) to "exactly 64 hex characters" (current
+ *     behaviour after FIX #20).
+ *   - encrypt_patient action no longer silently swallows mobile
+ *     encryption errors; aligned with phi-crypto.ts FIX #21.
+ */
+
+/**
+ * Look up the caller's clinic_users row to determine role.
+ * Returns null if the user isn't in clinic_users / not active.
+ */
+async function authenticateAndAuthorize(
+  req: NextRequest,
+  requiredRoles?: string[],
+): Promise<{ id: string; email: string; clinicUserId: string; role: string } | { error: string; status: number }> {
+  const authHeader = req.headers.get('authorization') || ''
+  const [scheme, token] = authHeader.split(' ')
+  let userId: string | null = null
+  let userEmail: string = ''
+
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // Try Authorization header first
+  if (scheme === 'Bearer' && token) {
+    const { data: { user } } = await admin.auth.getUser(token)
+    if (user) { userId = user.id; userEmail = user.email || '' }
+  }
+
+  // Cookie fallback
+  if (!userId) {
+    const cookieHeader = req.headers.get('cookie') || ''
+    const match = cookieHeader.match(/sb-[^-]+-auth-token=([^;]+)/)
+    if (match) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(match[1]))
+        const accessToken = parsed?.[0] || parsed?.access_token
+        if (accessToken) {
+          const { data: { user } } = await admin.auth.getUser(accessToken)
+          if (user) { userId = user.id; userEmail = user.email || '' }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  if (!userId) {
+    return { error: 'Authentication required. Please log in.', status: 401 }
+  }
+
+  // Look up role + clinic_user id
+  const { data: cu } = await admin
+    .from('clinic_users')
+    .select('id, email, role, is_active')
+    .eq('auth_id', userId)
+    .single()
+
+  if (!cu || !cu.is_active) {
+    return { error: 'Account not found in clinic_users or inactive.', status: 403 }
+  }
+
+  if (requiredRoles && !requiredRoles.includes(cu.role)) {
+    return {
+      error: `Forbidden. This action requires role(s): ${requiredRoles.join(', ')}. Your role: ${cu.role}.`,
+      status: 403,
+    }
+  }
+
+  return { id: userId, email: userEmail || cu.email, clinicUserId: cu.id, role: cu.role }
+}
+
+/**
+ * Audit a successful PHI decrypt. Non-blocking — never crashes the request.
+ */
+async function auditDecrypt(
+  user: { clinicUserId: string; email: string; role: string },
+  maskType: string | undefined,
+  cipherLen: number,
+) {
+  try {
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+    await admin.rpc('insert_audit_entry', {
+      p_user_id:      user.clinicUserId,
+      p_user_email:   user.email,
+      p_user_role:    user.role,
+      p_action:       'view',                  // PHI access = view
+      p_entity_type:  'patient',
+      p_entity_id:    null,
+      p_entity_label: `PHI decrypt (${maskType || 'generic'})`,
+      p_changes:      JSON.stringify({ ciphertext_len: cipherLen }),
+    })
+  } catch (e: any) {
+    console.warn('[PHI API] decrypt audit failed (non-fatal):', e?.message)
+  }
+}
+
+/**
+ * Legacy helper retained for backwards compatibility with code paths
+ * that don't need a role (status, encrypt). Returns user-or-null.
  */
 async function authenticateRequest(req: NextRequest): Promise<{ id: string; email: string } | null> {
   const authHeader = req.headers.get('authorization') || ''
@@ -109,7 +212,8 @@ export async function POST(req: NextRequest) {
       const messages: Record<string, string> = {
         configured: 'PHI encryption is active and properly configured.',
         not_configured: 'HOSPITAL_ENCRYPTION_KEY is not set. Patient Aadhaar data CANNOT be saved securely.',
-        invalid: 'HOSPITAL_ENCRYPTION_KEY is malformed. Must be a hex string of at least 32 characters.',
+        // FIX (2026-06-04): message corrected to reflect actual phi-crypto.ts FIX #20 contract.
+        invalid: 'HOSPITAL_ENCRYPTION_KEY is malformed. Must be EXACTLY 64 hexadecimal characters (256-bit AES). Generate with: openssl rand -hex 32',
       }
       return NextResponse.json({
         success: true,
@@ -158,7 +262,19 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // FIX (2026-06-04 §1.2): decrypt is admin/doctor-only.
+      // Receptionist/staff/lab_partner cannot turn ciphertext back into plaintext.
+      const authz = await authenticateAndAuthorize(req, ['admin', 'doctor'])
+      if ('error' in authz) {
+        return NextResponse.json({ success: false, error: authz.error }, { status: authz.status })
+      }
+
       const decrypted = decryptPHI(value)
+
+      // FIX (2026-06-04 §1.2): every decrypt is audited (DPDP-Act PHI access logging).
+      // This runs after decryption succeeds and before responding, so a failed
+      // audit doesn't reveal info to the caller (we just log it server-side).
+      await auditDecrypt(authz, maskType, value.length)
 
       // Generate appropriate mask based on type
       let masked = '—'
@@ -179,6 +295,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Encrypt patient record (batch operation) ──────────────────
+    // FIX (2026-06-04 §1.3): no longer silently swallows mobile encryption
+    // errors (was: `try { encryptPHI(...) } catch { result.mobile_encrypted = null }`).
+    // Aligned with src/lib/phi-crypto.ts FIX #21 — configuration errors
+    // bubble up so the caller knows encryption is misconfigured.
     if (action === 'encrypt_patient') {
       const { aadhaar_no, mobile } = body
 
@@ -191,6 +311,8 @@ export async function POST(req: NextRequest) {
       if (aadhaar_no && typeof aadhaar_no === 'string') {
         const cleanAadhaar = aadhaar_no.replace(/\D/g, '')
         if (cleanAadhaar.length > 0) {
+          // encryptPHI throws on missing/invalid key; let the outer catch handle
+          // it (returns 503 with PHIEncryptionError details).
           result.aadhaar_encrypted = encryptPHI(cleanAadhaar)
           result.aadhaar_last4 = cleanAadhaar.slice(-4)
         }
@@ -199,10 +321,18 @@ export async function POST(req: NextRequest) {
       if (mobile && typeof mobile === 'string') {
         const cleanMobile = mobile.replace(/\D/g, '').slice(-10)
         if (cleanMobile.length > 0) {
+          // FIX (2026-06-04 §1.3): re-throw configuration errors. The previous
+          // version did `catch { result.mobile_encrypted = null }` which masked
+          // a misconfigured deployment. We now re-throw PHIEncryptionError so
+          // the caller (the patient registration route) knows to refuse the
+          // save. Truly unexpected runtime errors are still caught and logged
+          // (they may not warrant blocking the save).
           try {
             result.mobile_encrypted = encryptPHI(cleanMobile)
-          } catch {
-            // Mobile encryption failure is non-fatal
+          } catch (err) {
+            if (err instanceof PHIEncryptionError) throw err
+            console.error('[PHI API] Unexpected mobile encryption error (non-config)',
+              { errorName: (err as Error)?.name, lastFour: cleanMobile.slice(-4) })
             result.mobile_encrypted = null
           }
         }

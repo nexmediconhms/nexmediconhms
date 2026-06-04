@@ -1,4 +1,22 @@
 /**
+ * ⚠️ ⚠️ ⚠️  DEPRECATED — DO NOT IMPORT THIS FILE  ⚠️ ⚠️ ⚠️
+ *
+ * 2026-06-04 audit finding: this `booking-guards-v2.ts` queries the
+ * no-underscore columns `aadhaar` and `fullname`. On any DB that ran
+ * migration 017, these queries silently return zero rows and the
+ * duplicate-patient guard STOPS WORKING.
+ *
+ * v1 (`@/lib/booking-guards.ts`) is the canonical, schema-resilient
+ * implementation — it tries snake_case first, falls back on
+ * column-not-found errors. No callers should exist; a grep on
+ * 2026-06-04 confirmed zero imports from this file. See
+ * `docs/MIGRATIONS_INVENTORY.md` for full context.
+ *
+ * Body preserved unchanged below for historical reference.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+/**
  * src/lib/booking-guards-v2.ts
  *
  * ═══════════════════════════════════════════════════════════════════════

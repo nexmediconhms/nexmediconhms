@@ -61,6 +61,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { calculateBillTotal } from "@/lib/billing-tax-unified";
+
+/**
+ * 2026-06-04 audit fixes (Section 5):
+ *   §5.1 — Single source of truth for revenue. The DB trigger
+ *          `trg_sync_bill_to_finance` (defined in
+ *          fresh-install/03_billing_finance.sql) inserts the income row
+ *          into hospital_fund whenever a bill flips to 'paid' / 'partial'.
+ *          The previous code in this route ALSO inserted via
+ *          syncToFinance() — producing TWO income rows per paid bill.
+ *          The unique partial index uniq_hospital_fund_bill_type_income
+ *          (one row per (bill_id, type='income')) catches it as a
+ *          collision, but only after the race already happened.
+ *          syncToFinance() is now a NO-OP that explicitly delegates to
+ *          the trigger (function preserved so any external caller that
+ *          imports it doesn't break).
+ *
+ *   §5.2 — Server-side total recompute. The route now calls
+ *          calculateBillTotal({ items, discountAmount, gstPercent,
+ *          paidAmount }) and rejects the request if the client-supplied
+ *          subtotal/gst_amount/net_amount differ by more than 1 paisa.
+ *          A buggy or tampered client can no longer post inconsistent
+ *          numbers ("subtotal=100, net_amount=10").
+ *
+ *   §5.3 — Counter-based invoice numbering. Switched to the
+ *          next_bill_counter(module, year_month) RPC (see
+ *          fresh-install/03_billing_finance.sql §1) which uses an
+ *          UPSERT-with-RETURNING — race-free without any advisory lock.
+ *          The original advisory-lock + SELECT-MAX path is preserved as
+ *          a fallback for older databases that don't have the RPC yet.
+ */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -234,6 +265,60 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── §5.2 Server-side total recompute ───────────────────────────
+  // The client may send subtotal / gst_amount / net_amount, but we
+  // recompute from the line items + GST percent and reject if the
+  // client's numbers don't match. Tolerance: ₹0.01 (one paisa) to
+  // accommodate floating-point rounding.
+  try {
+    const recomputed = calculateBillTotal({
+      items: items.map((it: any) => ({
+        label: String(it?.label ?? ''),
+        amount: Number(it?.amount ?? 0),
+        quantity: it?.quantity != null ? Number(it.quantity) : undefined,
+      })),
+      discountAmount: Number(discount) || 0,
+      gstPercent: Number(gst_percent) || 0,
+      paidAmount: status === 'paid' ? numericNet : Number(receipt_amount) || 0,
+    });
+
+    const tolerance = 0.01;
+    const clientSubtotal = Number(subtotal) || numericNet;
+    const clientGstAmount = Number(gst_amount) || 0;
+    const clientNet = numericNet;
+
+    const subDelta = Math.abs(clientSubtotal - recomputed.subtotal);
+    const gstDelta = Math.abs(clientGstAmount - recomputed.gst);
+    const netDelta = Math.abs(clientNet - recomputed.total);
+
+    if (subDelta > tolerance || gstDelta > tolerance || netDelta > tolerance) {
+      return NextResponse.json(
+        {
+          error:
+            'Bill totals do not match server recompute. Refusing to save a tampered or buggy bill.',
+          server_recompute: {
+            subtotal: recomputed.subtotal,
+            gst_amount: recomputed.gst,
+            net_amount: recomputed.total,
+          },
+          client_supplied: {
+            subtotal: clientSubtotal,
+            gst_amount: clientGstAmount,
+            net_amount: clientNet,
+          },
+          deltas: { subtotal: subDelta, gst: gstDelta, net: netDelta },
+        },
+        { status: 400 },
+      );
+    }
+  } catch (recomputeErr: any) {
+    console.error('[generate-bill] recompute failed:', recomputeErr?.message);
+    return NextResponse.json(
+      { error: 'Could not validate bill totals: ' + (recomputeErr?.message || 'unknown') },
+      { status: 400 },
+    );
+  }
+
   // ── Idempotency check ──────────────────────────────────────────
   if (idempotency_key) {
     const { data: existing } = await sb
@@ -264,63 +349,93 @@ export async function POST(req: NextRequest) {
   let lockHeld = false;
 
   try {
-    // Try two-key form first (gives us proper namespace isolation)
-    let lockErr: any = null;
-    try {
-      const { error } = await sb.rpc("pg_advisory_lock", {
-        lock_namespace: lockNs,
-        lock_key: lockKey,
-      });
-      lockErr = error;
-      if (!error) lockHeld = true;
-    } catch (e: any) {
-      lockErr = e;
-    }
+    // ── §5.3 Prefer the atomic next_bill_counter RPC ─────────────
+    // It uses an UPSERT-with-RETURNING which is race-free without an
+    // advisory lock. If the RPC isn't installed (legacy DBs), we fall
+    // back to the original SELECT-MAX + advisory-lock path below.
+    let nextCounter: number | null = null;
 
-    // Fallback: single-key form with namespaced bigint
-    if (lockErr) {
-      try {
-        const { error } = await sb.rpc("pg_advisory_lock", {
-          lock_key: packedLockKey,
-        });
-        if (!error) {
-          lockHeld = true;
-        } else {
-          // FIX #28b: log loudly instead of falling through silently
-          console.warn(
-            "[generate-bill] Advisory lock not acquired — falling back to " +
-              "unique-constraint-retry only. This is safe but slower. " +
-              "Consider ensuring pg_advisory_lock RPC is available.",
-            { lockNs, lockKey, errorMessage: error.message },
-          );
-        }
-      } catch (e: any) {
-        console.warn(
-          "[generate-bill] Both advisory lock forms unavailable:",
-          e?.message,
+    try {
+      const { data: counterData, error: counterErr } = await sb.rpc(
+        'next_bill_counter',
+        { p_module: module, p_year_month: yearMonth },
+      );
+      if (!counterErr && counterData != null) {
+        nextCounter = Number(counterData);
+      } else if (counterErr) {
+        // RPC missing or errored — fall through to legacy path
+        console.info(
+          '[generate-bill] next_bill_counter RPC unavailable — falling back to advisory-lock path:',
+          counterErr.message,
         );
       }
+    } catch (e: any) {
+      console.info(
+        '[generate-bill] next_bill_counter RPC threw — falling back:',
+        e?.message,
+      );
     }
 
-    // Get the next sequential counter for this module+month
-    // Strategy: Find the MAX invoice_number counter for this prefix pattern
-    const prefix = `${module}-${yearMonth}-`;
-    const { data: maxBill } = await sb
-      .from("bills")
-      .select("invoice_number")
-      .like("invoice_number", `${prefix}%`)
-      .order("invoice_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // ── Legacy path: advisory lock + SELECT MAX (preserved verbatim) ──
+    if (nextCounter === null) {
+      // Try two-key form first (gives us proper namespace isolation)
+      let lockErr: any = null;
+      try {
+        const { error } = await sb.rpc("pg_advisory_lock", {
+          lock_namespace: lockNs,
+          lock_key: lockKey,
+        });
+        lockErr = error;
+        if (!error) lockHeld = true;
+      } catch (e: any) {
+        lockErr = e;
+      }
 
-    let nextCounter = 1;
-    if (maxBill?.invoice_number) {
-      // Extract the counter portion (last 4 digits after the last dash)
-      const parts = maxBill.invoice_number.split("-");
-      const lastPart = parts[parts.length - 1];
-      const parsed = parseInt(lastPart, 10);
-      if (!isNaN(parsed)) {
-        nextCounter = parsed + 1;
+      // Fallback: single-key form with namespaced bigint
+      if (lockErr) {
+        try {
+          const { error } = await sb.rpc("pg_advisory_lock", {
+            lock_key: packedLockKey,
+          });
+          if (!error) {
+            lockHeld = true;
+          } else {
+            // FIX #28b: log loudly instead of falling through silently
+            console.warn(
+              "[generate-bill] Advisory lock not acquired — falling back to " +
+                "unique-constraint-retry only. This is safe but slower. " +
+                "Consider ensuring pg_advisory_lock RPC is available.",
+              { lockNs, lockKey, errorMessage: error.message },
+            );
+          }
+        } catch (e: any) {
+          console.warn(
+            "[generate-bill] Both advisory lock forms unavailable:",
+            e?.message,
+          );
+        }
+      }
+
+      // Get the next sequential counter for this module+month
+      // Strategy: Find the MAX invoice_number counter for this prefix pattern
+      const prefix = `${module}-${yearMonth}-`;
+      const { data: maxBill } = await sb
+        .from("bills")
+        .select("invoice_number")
+        .like("invoice_number", `${prefix}%`)
+        .order("invoice_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      nextCounter = 1;
+      if (maxBill?.invoice_number) {
+        // Extract the counter portion (last 4 digits after the last dash)
+        const parts = maxBill.invoice_number.split("-");
+        const lastPart = parts[parts.length - 1];
+        const parsed = parseInt(lastPart, 10);
+        if (!isNaN(parsed)) {
+          nextCounter = parsed + 1;
+        }
       }
     }
 
@@ -522,15 +637,21 @@ export async function DELETE(req: NextRequest) {
   }
 
   // Reverse the finance entry
-  await sb.from("hospital_fund").insert({
-    type: "reversal",
-    amount: -(Number(bill.net_amount) || Number(bill.total) || 0),
-    category: "bill_reversal",
-    description: `Reversed bill ${bill.invoice_number || bill.id.slice(-8)} — deleted by ${auth.fullName}`,
-    submitted_by: auth.fullName || auth.email,
-    status: "approved",
-    bill_id: billId,
-  });
+  // 2026-06-04 audit fix (§5.1): the trigger trg_sync_bill_to_finance
+  // fires on UPDATE when is_deleted flips to TRUE and inserts the
+  // reversal row itself. Manually inserting one here would have
+  // produced TWO reversal rows. The trigger is the canonical writer.
+  // (Block intentionally left empty / commented for clarity.)
+  // OLD CODE (do not re-enable — see fresh-install/03_billing_finance.sql §3):
+  //   await sb.from("hospital_fund").insert({
+  //     type: "reversal",
+  //     amount: -(Number(bill.net_amount) || Number(bill.total) || 0),
+  //     category: "bill_reversal",
+  //     description: `Reversed bill ${bill.invoice_number || bill.id.slice(-8)} — deleted by ${auth.fullName}`,
+  //     submitted_by: auth.fullName || auth.email,
+  //     status: "approved",
+  //     bill_id: billId,
+  //   });
 
   // Audit log
   try {
@@ -590,29 +711,25 @@ async function releaseLock(
 }
 
 // ── Helper: Sync bill to Finance/Hospital Fund ledger ────────────
+// 2026-06-04 audit fix (§5.1): NO-OP wrapper retained for backwards
+// compatibility. The single source of truth for revenue is the
+// `trg_sync_bill_to_finance` trigger (see fresh-install/03_billing_finance.sql §3),
+// which fires on every INSERT/UPDATE of bills.status flipping into
+// 'paid' / 'partial'. Duplicating that work here previously inserted
+// TWO income rows per paid bill. The trigger uses ON CONFLICT DO
+// NOTHING with the unique partial index uniq_hospital_fund_bill_type_income
+// so even if a stray caller still tries to insert manually, the second
+// row is dropped — but we now also stop trying.
 async function syncToFinance(
   sb: ReturnType<typeof getSupabaseAdmin>,
   bill: Record<string, any>,
   module: BillModule,
   auth: { fullName: string; email: string; clinicUserId: string },
 ) {
-  try {
-    const amount = Number(bill.net_amount) || Number(bill.total) || 0;
-    if (amount <= 0) return;
-
-    await sb.from("hospital_fund").insert({
-      type: "income",
-      amount,
-      category: module === "IPD" ? "ipd_billing" : "opd_billing",
-      description: `${module} Bill ${bill.invoice_number || bill.id.slice(-8)} — ${bill.patient_name} (${bill.mrn || "N/A"})`,
-      submitted_by: auth.fullName || auth.email,
-      status: "approved",
-      bill_id: bill.id,
-    });
-  } catch (err) {
-    // Finance sync failure is non-fatal but should be logged
-    console.error("[generate-bill] Finance sync error:", err);
-  }
+  // Intentionally empty: the DB trigger handles this.
+  // Logging once at module load would be too chatty; logging on every
+  // call would be noise. We do nothing.
+  void sb; void bill; void module; void auth;
 }
 
 // ── Helper: Generate IPD Receipt ─────────────────────────────────

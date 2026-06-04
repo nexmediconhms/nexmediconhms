@@ -319,57 +319,74 @@ export default function NewPatientPage() {
   }
 
   // ── Duplicate check ────────────────────────────────────────────
+  // 2026-06-04 audit fix (§2.1): Aadhaar duplicate detection now goes
+  // through /api/patients/duplicate-check which queries the deterministic
+  // `aadhaar_hmac` column (computed server-side from the digits using
+  // HOSPITAL_AADHAAR_HMAC_KEY). The previous direct Supabase query on
+  // `aadhaar_no` did not work for encrypted patients (column is null).
+  //
+  // Mobile + name dedup is also routed through the server so the
+  // PostgREST `.or()` filter is sanitised against name-injection (§2.5).
   async function checkDuplicates(): Promise<DuplicateMatch[]> {
     const mobile = normalizePhone(form.mobile)
     const aadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
-    const name = form.full_name.trim().toLowerCase()
+    const name = form.full_name.trim()
 
-    const orFilters: string[] = []
-    if (mobile) orFilters.push(`mobile.eq.${mobile}`)
-    if (aadhaar) orFilters.push(`aadhaar_no.eq.${aadhaar}`)
+    if (!mobile && !aadhaar && name.length < 3) return []
 
-    if (orFilters.length === 0 && !name) return []
-
-    let matches: DuplicateMatch[] = []
-    if (orFilters.length > 0) {
-      const { data } = await supabase
-        .from('patients')
-        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .or(orFilters.join(','))
-        .limit(10)
-      if (data) {
-        matches = data.map(p => {
-          const reasons: string[] = []
-          if (mobile && p.mobile === mobile) reasons.push('Same mobile number')
-          if (aadhaar && p.aadhaar_no === aadhaar) reasons.push('Same Aadhaar number')
-          return { ...p, matchReasons: reasons } as DuplicateMatch
-        })
+    let serverMatches: any[] = []
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const params = new URLSearchParams()
+      if (mobile)  params.set('mobile',  mobile)
+      if (aadhaar) params.set('aadhaar', aadhaar)
+      if (name)    params.set('name',    name)
+      const res = await fetch(`/api/patients/duplicate-check?${params.toString()}`, {
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
+        credentials: 'include',
+      })
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}))
+        serverMatches = Array.isArray(json.patients) ? json.patients : []
       }
+    } catch (e) {
+      console.warn('[Registration] duplicate-check API failed (non-fatal):', e)
     }
 
-    if (name.length >= 3) {
-      const { data: nameMatches } = await supabase
-        .from('patients')
-        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .ilike('full_name', `%${name}%`)
-        .limit(10)
-      if (nameMatches) {
-        for (const p of nameMatches) {
-          const existing = matches.find(m => m.id === p.id)
-          if (existing) {
-            if (!existing.matchReasons.includes('Same name')) existing.matchReasons.push('Same name')
-          } else {
-            const formAge = form.age ? parseInt(form.age) : null
-            const ageMatch = formAge && p.age && Math.abs(formAge - p.age) <= 1
-            const dobMatch = form.date_of_birth && p.age
-            if (ageMatch || dobMatch) {
-              const reasons = ['Same name']
-              if (ageMatch) reasons.push('Similar age')
-              matches.push({ ...p, matchReasons: reasons } as DuplicateMatch)
-            }
-          }
-        }
+    // Map server hits into the existing UI shape, deriving match reasons.
+    let matches: DuplicateMatch[] = []
+    for (const p of serverMatches) {
+      const reasons: string[] = []
+      if (mobile && p.mobile === mobile) reasons.push('Same mobile number')
+      // Server only returns aadhaar_hmac matches when the HMAC matches —
+      // we don't get the plaintext Aadhaar back, so we just label it.
+      // (If neither mobile nor name matched, the row was returned because
+      //  the Aadhaar HMAC matched — show a clear reason.)
+      if (
+        aadhaar
+        && (!mobile || p.mobile !== mobile)
+        && reasons.length === 0
+      ) {
+        reasons.push('Same Aadhaar number')
       }
+      if (name.length >= 3 && p.full_name && p.full_name.toLowerCase().includes(name.toLowerCase())) {
+        reasons.push('Same name')
+      }
+      if (reasons.length === 0) reasons.push('Possible match')
+      matches.push({
+        id: p.id,
+        mrn: p.mrn,
+        full_name: p.full_name,
+        mobile: p.mobile,
+        age: p.age,
+        gender: p.gender,
+        // The server intentionally never returns plaintext Aadhaar
+        // (encrypted column). Leave undefined.
+        aadhaar_no: undefined,
+        matchReasons: reasons,
+      } as DuplicateMatch)
     }
 
     return matches
@@ -400,41 +417,83 @@ export default function NewPatientPage() {
     const normalizedAadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
     const normalizedEmergPhone = normalizePhone(form.emergency_contact_phone)
 
-    const { data, error } = await supabase
-      .from('patients')
-      .insert({
-        full_name: form.full_name.trim(),
-        age: normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
-        date_of_birth: form.date_of_birth || null,
-        gender: form.gender || null,
-        mobile: normalizedMobile,
-        blood_group: form.blood_group || null,
-        address: form.address.trim() || null,
-        abha_id: form.abha_id.trim() || null,
-        aadhaar_no: normalizedAadhaar || null,
-        emergency_contact_name: form.emergency_contact_name.trim() || null,
-        emergency_contact_phone: normalizedEmergPhone || null,
-        mediclaim: form.mediclaim === 'Yes' ? 'Yes' : 'No',
-        cashless: form.cashless === 'Yes' ? 'Yes' : 'No',
-        reference_source: form.reference_source
-          ? (form.reference_detail.trim()
-            ? `${form.reference_source} — ${form.reference_detail.trim()}`
-            : form.reference_source)
-          : null,
-        policy_tpa_name: form.policy_tpa_name.trim() || null,
-        policy_number: form.policy_number.trim() || null,
+    // ─────────────────────────────────────────────────────────────
+    // 2026-06-04 audit fix (§1.1, §2.4): patient inserts now go
+    // through a SERVER route that:
+    //   - Encrypts Aadhaar with AES-256-GCM (was: stored plaintext)
+    //   - Computes the deterministic HMAC for race-free dedup
+    //     (the unique index `uniq_patients_aadhaar_hmac_nonnull`
+    //      catches duplicates the front-end check missed)
+    //   - Allocates the MRN via the `next_mrn` DB RPC (was:
+    //     out-of-repo trigger / NULL)
+    //   - Re-runs every validation server-side (was: validate()
+    //     only ran in the browser)
+    //
+    // The existing client-side `validate()` call above remains
+    // for instant UX feedback. The server is now the source of
+    // truth for both validation and persistence.
+    // ─────────────────────────────────────────────────────────────
+
+    let data: { id: string; mrn: string; full_name: string } | null = null
+    let error: { message: string } | null = null
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/patients/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          full_name: form.full_name.trim(),
+          age: normalizedAge && !isNaN(normalizedAge) ? normalizedAge : null,
+          date_of_birth: form.date_of_birth || null,
+          gender: form.gender || null,
+          mobile: normalizedMobile,
+          blood_group: form.blood_group || null,
+          address: form.address.trim() || null,
+          abha_id: form.abha_id.trim() || null,
+          aadhaar_no: normalizedAadhaar || null,
+          emergency_contact_name: form.emergency_contact_name.trim() || null,
+          emergency_contact_phone: normalizedEmergPhone || null,
+          mediclaim: form.mediclaim === 'Yes' ? 'Yes' : 'No',
+          cashless: form.cashless === 'Yes' ? 'Yes' : 'No',
+          reference_source: form.reference_source || null,
+          reference_detail: form.reference_detail.trim() || null,
+          policy_tpa_name: form.policy_tpa_name.trim() || null,
+          policy_number: form.policy_number.trim() || null,
+        }),
       })
-      .select('id, mrn, full_name')
-      .single()
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        // Surface field-level errors from the server (validation +
+        // 23505 unique_violation mapped to user-friendly messages).
+        if (json.fieldErrors && typeof json.fieldErrors === 'object') {
+          setErrors(json.fieldErrors as Partial<FormData>)
+        } else {
+          setErrors({ full_name: `Save failed: ${json.error || res.statusText}` })
+        }
+        setSaving(false)
+        return
+      }
+
+      data = json.patient
+        ? { id: json.patient.id, mrn: json.patient.mrn, full_name: json.patient.full_name }
+        : null
+    } catch (e: any) {
+      error = { message: e?.message || 'Network error' }
+    }
 
     setSaving(false)
 
-    if (error) {
-      if (error.message.includes('duplicate') || error.message.includes('unique')) {
-        setErrors({ mobile: 'A patient with this mobile number already exists' })
-      } else {
-        setErrors({ full_name: `Save failed: ${error.message}` })
-      }
+    if (error || !data) {
+      setErrors({ full_name: `Save failed: ${error?.message || 'Unknown error'}` })
       return
     }
 
@@ -517,31 +576,41 @@ export default function NewPatientPage() {
 
     if (addToQueue) {
       try {
-        const today = getIndiaToday()
-        // FIX 1: Change .single() to .maybeSingle() to support first patient of the day
-        const { data: lastToken } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', today)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        const nextToken = (lastToken?.token_number || 0) + 1
-
-        await supabase.from('opd_queue').insert({
-          patient_id: successId,
-          queue_date: today,
-          token_number: nextToken,
-          status: 'waiting',
-          priority: 'normal',
-          notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
-          patient_name: success?.name || '',
-          mrn: success?.mrn || '',
+        // ─────────────────────────────────────────────────────────
+        // 2026-06-04 audit fix (§3.1): token allocation is now done
+        // server-side via /api/queue/add → next_queue_token RPC.
+        // The previous SELECT-MAX + INSERT done from the browser
+        // could allocate the same token to two patients when two
+        // reception desks registered simultaneously.
+        //
+        // The server stamps queue_date in IST and audits the entry.
+        // Patient name and MRN are sent for the convenience of the
+        // queue table denormalisation; the server ignores them if
+        // the patient already exists in the queue.
+        // ─────────────────────────────────────────────────────────
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/queue/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            patient_id:   successId,
+            patient_name: success?.name || '',
+            mrn:          success?.mrn || '',
+            priority:     'normal',
+            notes:        `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
+          }),
         })
+        const json = await res.json().catch(() => ({}))
+        const nextToken: number = json?.entry?.token_number ?? 0
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        setQueuedTokenNumber(nextToken)
+        if (nextToken > 0) setQueuedTokenNumber(nextToken)
 
         // FIX 3: Added missing automation engine trigger for upfront payments
         try {
@@ -595,28 +664,31 @@ export default function NewPatientPage() {
 
     if (addToQueue) {
       try {
-        const today = getIndiaToday()
-        const { data: lastToken } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', today)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const nextToken = (lastToken?.token_number || 0) + 1
-        await supabase.from('opd_queue').insert({
-          patient_id: successId,
-          queue_date: today,
-          token_number: nextToken,
-          status: 'waiting',
-          priority: 'normal',
-          notes: 'Registered: payment pending',
-          patient_name: success?.name || '',
-          mrn: success?.mrn || '',
+        // 2026-06-04 audit fix (§3.1): server-side token allocation
+        // (see comment in handlePaymentConfirm above for full rationale).
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/queue/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            patient_id:   successId,
+            patient_name: success?.name || '',
+            mrn:          success?.mrn || '',
+            priority:     'normal',
+            notes:        'Registered: payment pending',
+          }),
         })
+        const json = await res.json().catch(() => ({}))
+        const nextToken: number = json?.entry?.token_number ?? 0
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        setQueuedTokenNumber(nextToken)
+        if (nextToken > 0) setQueuedTokenNumber(nextToken)
 
         try {
           const { fireAutomation } = await import('@/lib/automation-engine')

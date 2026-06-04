@@ -455,3 +455,135 @@ export function decryptPatientPHI<T extends {
 export function generateEncryptionKey(): string {
   return randomBytes(32).toString('hex')
 }
+
+
+
+// ─────────────────────────────────────────────────────────────────
+// FIX (2026-06-04): AADHAAR HMAC for race-free dedup
+// ─────────────────────────────────────────────────────────────────
+// Why this exists:
+//   AES-256-GCM uses a fresh random IV per encryption, so two rows
+//   storing the SAME Aadhaar end up with DIFFERENT ciphertexts.
+//   That's correct from a confidentiality standpoint — but it makes
+//   "have we already registered this Aadhaar?" impossible to answer
+//   with a SQL equality check.
+//
+//   The previous duplicate-check code worked around this by querying
+//   `aadhaar_no` (the plaintext column). With encryption switched on
+//   that column is always NULL, so the dedup STOPPED WORKING.
+//
+// Fix:
+//   We compute a deterministic HMAC over the Aadhaar digits, using a
+//   second server-only secret (HOSPITAL_AADHAAR_HMAC_KEY). The same
+//   Aadhaar always hashes to the same string, so:
+//     - Two registrations of the same Aadhaar collide on the DB
+//       unique index `uniq_patients_aadhaar_hmac_nonnull`.
+//     - The plaintext Aadhaar is NEVER stored, queryable, or sent
+//       to the browser.
+//
+// Properties:
+//   - Deterministic: same input → same output (required for dedup).
+//   - Keyed: an attacker who steals the DB still can't brute-force
+//     the 12-digit Aadhaar space (10^12) without the HMAC key.
+//   - Distinct from the AES key: rotating one doesn't force re-encrypt
+//     of the other.
+//   - Length: 64 hex chars (256 bits).
+//
+// Returns null (not throw) if the HMAC key is unconfigured — the
+// caller is expected to refuse the write in that case, just like
+// encryptPHI throws on missing AES key.
+// ─────────────────────────────────────────────────────────────────
+
+import { createHmac } from 'crypto'
+
+const HMAC_KEY_HEX = process.env.HOSPITAL_AADHAAR_HMAC_KEY || ''
+
+/** Configuration check for the HMAC key (independent of AES key). */
+export function isAadhaarHmacConfigured(): boolean {
+  return HMAC_KEY_HEX.length === 64 && /^[0-9a-fA-F]+$/.test(HMAC_KEY_HEX)
+}
+
+/**
+ * Compute the deterministic dedup hash for an Aadhaar number.
+ *
+ * @param aadhaarDigits  Digits-only Aadhaar (12 digits expected).
+ *                       The function digit-strips defensively.
+ * @returns 64-char hex string, or null if HMAC key unconfigured.
+ *
+ * Throws PHIEncryptionError('HMAC_KEY_INVALID') only if the key is
+ * present but malformed (non-hex / wrong length). A simply-missing
+ * key returns null so the caller can show a friendlier "set up
+ * encryption first" error.
+ */
+export function computeAadhaarHmac(aadhaarDigits: string): string | null {
+  if (!aadhaarDigits) return null
+
+  const digits = String(aadhaarDigits).replace(/\D/g, '')
+  if (digits.length === 0) return null
+
+  if (HMAC_KEY_HEX.length === 0) {
+    return null
+  }
+  if (HMAC_KEY_HEX.length !== 64 || !/^[0-9a-fA-F]+$/.test(HMAC_KEY_HEX)) {
+    throw new PHIEncryptionError(
+      'HOSPITAL_AADHAAR_HMAC_KEY is malformed: must be exactly 64 hex chars. ' +
+      'Generate with: openssl rand -hex 32',
+      'HMAC_KEY_INVALID'
+    )
+  }
+
+  const keyBuf = Buffer.from(HMAC_KEY_HEX, 'hex')
+  return createHmac('sha256', keyBuf).update(digits, 'utf8').digest('hex')
+}
+
+/**
+ * Convenience wrapper: returns the columns to insert/update on the
+ * patients table when registering or editing a patient with an Aadhaar.
+ *
+ * Returns shape:
+ *   {
+ *     aadhaar_encrypted: string,   // base64 AES-256-GCM
+ *     aadhaar_last4:     string,   // displayable 4-digit suffix
+ *     aadhaar_hmac:      string,   // dedup hash (64 hex chars)
+ *     aadhaar_no:        null      // explicit null to clear plaintext
+ *   }
+ *
+ * Or null if no Aadhaar was provided.
+ *
+ * Throws PHIEncryptionError if either AES or HMAC keys are missing.
+ * The caller (a server route) should catch and surface a helpful
+ * "encryption not configured" error to the user.
+ */
+export function buildEncryptedAadhaarFields(rawAadhaar: string | null | undefined): {
+  aadhaar_encrypted: string
+  aadhaar_last4:     string
+  aadhaar_hmac:      string
+  aadhaar_no:        null
+} | null {
+  if (!rawAadhaar) return null
+  const digits = String(rawAadhaar).replace(/\D/g, '')
+  if (digits.length === 0) return null
+
+  // Hard-fail on either missing key — never silently store plaintext.
+  if (!isEncryptionConfigured()) {
+    throw new PHIEncryptionError(
+      'HOSPITAL_ENCRYPTION_KEY is not configured. Cannot save Aadhaar.',
+      'KEY_NOT_CONFIGURED'
+    )
+  }
+  const hmac = computeAadhaarHmac(digits)
+  if (hmac === null) {
+    throw new PHIEncryptionError(
+      'HOSPITAL_AADHAAR_HMAC_KEY is not configured. Aadhaar duplicate detection ' +
+      'requires this second key. Generate with: openssl rand -hex 32',
+      'HMAC_KEY_NOT_CONFIGURED'
+    )
+  }
+
+  return {
+    aadhaar_encrypted: encryptPHI(digits),
+    aadhaar_last4:     digits.slice(-4),
+    aadhaar_hmac:      hmac,
+    aadhaar_no:        null,
+  }
+}

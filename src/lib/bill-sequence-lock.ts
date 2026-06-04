@@ -1,4 +1,23 @@
 /**
+ * ⚠️ ⚠️ ⚠️  DEPRECATED — DO NOT IMPORT THIS FILE  ⚠️ ⚠️ ⚠️
+ *
+ * 2026-06-04 audit finding: `getNextBillNumber()` defined here is
+ * NEVER imported anywhere in the repo (grep confirmed on 2026-06-04).
+ * The bill-generation route still uses its own inline locking logic.
+ *
+ * The canonical, race-free counter is `next_bill_counter()` in
+ * `migrations/fresh-install/03_billing_finance.sql` §1, called from
+ * `src/app/api/billing/generate-bill/route.ts`. That counter uses
+ * an UPSERT-with-RETURNING which is provably race-free, instead of
+ * SELECT-MAX + INSERT.
+ *
+ * Body preserved unchanged below for historical reference. Do not
+ * begin importing from this file — wire callers to the API route or
+ * the `next_bill_counter` RPC instead.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+/**
  * src/lib/bill-sequence-lock.ts
  *
  * BUG #17 FIX: Bill Generation Advisory Lock Silently Fails

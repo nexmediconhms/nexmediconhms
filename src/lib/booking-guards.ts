@@ -293,8 +293,11 @@ export async function checkAppointmentOverlap(
 
   try {
     // Attempt 1: snake_case columns (matches migration 017 production schema)
+    // 2026-06-04 audit fix (§9.2): duration_min is now SELECTed so the
+    // overlap check uses each existing appointment's ACTUAL duration
+    // rather than a hardcoded 15 minutes.
     let q: any = client.from('appointments').select(
-      'id, patient_name, patient_id, doctor_id, doctor_name, date, time, status, type',
+      'id, patient_name, patient_id, doctor_id, doctor_name, date, time, duration_min, status, type',
     ).eq('date', date)
 
     if (typeof q.not === 'function') {
@@ -359,7 +362,18 @@ export async function checkAppointmentOverlap(
       if (!isValidTime(row.time)) continue
 
       const otherStart = timeToMinutes(row.time)
-      const otherEnd = otherStart + 15
+      // 2026-06-04 audit fix (§9.2): use the actual scheduled duration
+      // of the existing appointment instead of assuming 15 minutes.
+      // The previous hardcoded value caused a real 60-minute slot
+      // (e.g. an OB/GYN antenatal review) to be flagged as ending at
+      // start+15, missing 45 minutes of overlap with new bookings.
+      // Falls back to 15 if the column is missing/blank/invalid.
+      const otherDurationRaw = Number(row.duration_min)
+      const otherDurationMin =
+        Number.isFinite(otherDurationRaw) && otherDurationRaw > 0 && otherDurationRaw <= 480
+          ? Math.floor(otherDurationRaw)
+          : 15
+      const otherEnd = otherStart + otherDurationMin
       const overlaps = proposedStart < otherEnd && otherStart < proposedEnd
 
       if (overlaps) {

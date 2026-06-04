@@ -1,3 +1,21 @@
+-- ⚠️ ⚠️ ⚠️  USE migrations/fresh-install/03_billing_finance.sql §4 INSTEAD  ⚠️ ⚠️ ⚠️
+--
+-- 2026-06-04 audit finding: this migration creates `payment_attempts`
+-- with a foreign-key reference to `clinicusers(id)` (no underscore).
+-- The application uses `clinic_users` (with underscore). On any
+-- snake_case database the FK ALTER fails and `payment_attempts` is
+-- left without the `marked_by` FK constraint — orphaning audit data
+-- linkage.
+--
+-- The fresh-install bundle's §4 of `03_billing_finance.sql` re-creates
+-- the same table with the correct snake_case FK reference. Existing
+-- clinics that have already run this old 007 should re-run the
+-- fresh-install version on top — it is idempotent.
+--
+-- This file is preserved unchanged below for historical reference.
+-- See `docs/MIGRATIONS_INVENTORY.md` for full context.
+-- ─────────────────────────────────────────────────────────────────────
+--
 -- Migration: 007_payment_attempts_table
 -- Created: 2026-05-22
 -- Description: Create payment_attempts table for tracking all payment tries

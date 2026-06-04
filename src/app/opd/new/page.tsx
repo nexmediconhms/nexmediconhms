@@ -703,24 +703,44 @@ function NewConsultationContent() {
         }
         await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
       } else {
-        const { data: maxRow } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', todayDate)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const nextToken = ((maxRow?.token_number as number) || 0) + 1
-        await supabase.from('opd_queue').insert({
-          patient_id: patientId,
-          queue_date: todayDate,
-          token_number: nextToken,
-          status: 'in_progress',
-          priority: 'normal',
-          notes: 'Auto-created from consultation',
-          called_at: new Date().toISOString(),
-          encounter_id: enc.id,
-        })
+        // ─────────────────────────────────────────────────────────
+        // 2026-06-04 audit fix (§3.1): server-side token allocation.
+        // The previous SELECT-MAX + INSERT race-condition could
+        // assign the same token number to two patients on the same
+        // day. /api/queue/add uses next_queue_token RPC.
+        // ─────────────────────────────────────────────────────────
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          await fetch('/api/queue/add', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : {}),
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              patient_id:   patientId,
+              patient_name: patient?.full_name || '',
+              mrn:          patient?.mrn || '',
+              encounter_id: enc.id,
+              queue_date:   todayDate,
+              priority:     'normal',
+              notes:        'Auto-created from consultation',
+            }),
+          })
+          // Note: the new entry comes back as 'waiting'; the doctor
+          // page will move it to 'in_progress' immediately afterwards
+          // via updateStatus() — preserving the original semantic
+          // that auto-created entries are flagged as currently being
+          // consulted. We don't try to set 'in_progress' on the
+          // initial insert because the unique index on
+          // (queue_date, token_number) and the state-machine guard
+          // both prefer the canonical 'waiting' starting state.
+        } catch (e) {
+          console.warn('[OPD] /api/queue/add failed (non-fatal):', e)
+        }
       }
     } catch (queueErr) {
       console.warn('[OPD] queue sync failed (non-fatal):', queueErr)

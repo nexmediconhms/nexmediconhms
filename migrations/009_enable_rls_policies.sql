@@ -1,3 +1,30 @@
+-- ⚠️ ⚠️ ⚠️  DO NOT USE THIS FILE ON A SNAKE_CASE DATABASE  ⚠️ ⚠️ ⚠️
+--
+-- 2026-06-04 audit finding: this migration uses the FLAT-NAME schema
+-- (`clinicusers`, `opdqueue`, `auditlog`, `labreports`, `ipdadmissions`,
+-- `hospitalfund`, `dischargesummaries`). The application code, all
+-- migrations from 010 onward, and the `critical-security-fixes.patch`
+-- ALL use snake_case (`clinic_users`, `opd_queue`, `audit_log`, …).
+--
+-- On a production (snake_case) database, the very first
+-- `ALTER TABLE clinicusers ENABLE ROW LEVEL SECURITY` errors. Because
+-- it's wrapped in a single `BEGIN…COMMIT`, the WHOLE TRANSACTION rolls
+-- back, leaving RLS effectively un-enforced. This means any clinic
+-- that ran ONLY this migration ended up with NO row-level security.
+--
+-- ✅ USE INSTEAD:
+--    For fresh installs:  migrations/fresh-install/05_rls_policies.sql
+--    For existing DBs:    migrations/fresh-install/05_rls_policies.sql
+--                          (it's idempotent and safe to apply on top of
+--                           any DB that already has the canonical
+--                           snake_case schema).
+--
+-- This file is preserved unchanged below for historical reference and
+-- for the rare deployment that still uses the legacy flat-name schema
+-- (i.e. `migrations/applied/v00-schema-master.sql`). Do NOT modify it.
+-- See `docs/MIGRATIONS_INVENTORY.md` for full context.
+-- ─────────────────────────────────────────────────────────────────────
+--
 -- Migration: 009_enable_rls_policies
 -- Created: 2026-05-22
 -- Description: Enable RLS on ALL tables with proper role-based policies

@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolvePortalOrigin, generatePortalMagicLink } from '@/lib/portal-magic-link'
+import { requireAuth } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,21 @@ const supabase = createClient(
   { auth: { persistSession: false } }
 )
 
+/**
+ * 2026-06-04 audit fix (§10.2): authentication is now MANDATORY.
+ * The previous version was unauthenticated AND returned a working
+ * /portal/verify magic link in the JSON response — anyone with a
+ * patient UUID could obtain a 7-day login to that patient's portal.
+ * That was a complete patient-portal authentication bypass.
+ *
+ * Identity is also used to populate the audit context for the
+ * notification queue (was: anonymous).
+ */
 export async function POST(req: NextRequest) {
+  // §10.2: require an authenticated clinic user
+  const auth = await requireAuth(req)
+  if (auth instanceof Response) return auth
+
   try {
     const body = await req.json()
     const {

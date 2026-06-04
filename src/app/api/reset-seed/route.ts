@@ -1,30 +1,28 @@
 /**
  * src/app/api/reset-seed/route.ts
  *
- * DANGER ZONE — Wipes ALL data and creates fresh users.
+ * ⚠️ ⚠️ ⚠️  DANGER ZONE — READ THIS BEFORE TOUCHING THIS FILE  ⚠️ ⚠️ ⚠️
  *
- * After running this, you can login with:
- *   - admin@nexmedicon.com  / Welcome@1234  (Admin)
- *   - doctor@nexmedicon.com / Welcome@1234  (Doctor)
- *   - staff@nexmedicon.com  / Welcome@1234  (Staff)
- *   - lab@nexmedicon.com    / Welcome@1234  (Lab Partner)
+ * 2026-06-04 audit fix (§13.4 — CRITICAL):
+ *   This endpoint wipes ALL data and reseeds 4 known accounts (with
+ *   the documented password "Welcome@1234"). Until this fix it was a
+ *   plain GET handler with no auth, gated only by ?confirm=yes-delete-everything.
+ *   That meant a crawler / link-prefetch / CSRF could trigger total
+ *   data destruction and instant admin takeover with the public
+ *   credentials.
  *
- * HOW TO USE:
- *   Option A (from browser): Visit /api/reset-seed?confirm=yes-delete-everything
- *     → This is a GET request that runs the reset. Simple and works even when login is broken.
+ *   The fix below:
+ *     1. NEVER runs in production — refuses any request when
+ *        NODE_ENV === 'production'. Hard 410 Gone.
+ *     2. Requires a server-side env-var token RESET_SEED_TOKEN.
+ *        Without that env var set, even dev requests are refused.
+ *     3. The token must match an `X-Reset-Seed-Token` header AND
+ *        the body confirmation. Headers are not crawler-prefetchable.
  *
- *   Option B (from code/Postman): POST /api/reset-seed
- *     Headers: X-Confirm-Reset: yes-delete-everything
- *
- * WHAT IT DOES:
- *   1. Deletes all rows from data tables (respecting FK order)
- *   2. Deletes all Supabase auth users
- *   3. Creates 4 fresh users with password "Welcome@1234"
- *
- * SECURITY NOTE:
- *   This endpoint uses the SUPABASE_SERVICE_ROLE_KEY server-side.
- *   After your initial setup, you should DELETE this file or disable it.
- *   Never leave it accessible in production.
+ *   For production deployments, the recommended action is to DELETE
+ *   this file before deploying (see docs/FRESH_INSTALL.md §5.1).
+ *   This server-side check exists as a defence-in-depth layer for
+ *   teams that forget to delete the file.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -33,6 +31,47 @@ import { createClient } from '@supabase/supabase-js'
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_PASSWORD = 'Welcome@1234'
+
+/**
+ * Production safety gate. Returns NextResponse if request should be
+ * blocked outright; null if permitted to proceed.
+ *
+ * - In production (NODE_ENV === 'production'): always blocks.
+ * - In any environment: blocks if RESET_SEED_TOKEN env var is unset
+ *   or if the request doesn't supply a matching X-Reset-Seed-Token header.
+ */
+function refuseUnsafeReset(req: NextRequest): NextResponse | null {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      {
+        error:
+          'reset-seed is permanently disabled in production. ' +
+          'Delete src/app/api/reset-seed/route.ts before deploying.',
+      },
+      { status: 410 }, // 410 Gone — explicitly removed
+    )
+  }
+  const expected = process.env.RESET_SEED_TOKEN
+  if (!expected || expected.length < 16) {
+    return NextResponse.json(
+      {
+        error:
+          'reset-seed is disabled. Set RESET_SEED_TOKEN env var (16+ chars) ' +
+          'AND send X-Reset-Seed-Token header to enable in dev.',
+      },
+      { status: 403 },
+    )
+  }
+  const supplied = req.headers.get('x-reset-seed-token') || ''
+  if (supplied !== expected) {
+    return NextResponse.json(
+      { error: 'Invalid X-Reset-Seed-Token header.' },
+      { status: 403 },
+    )
+  }
+  return null
+}
+
 
 const SEED_USERS = [
   {
@@ -280,6 +319,12 @@ async function runReset(supabaseUrl: string, serviceKey: string) {
  * Without the confirm param, shows diagnostics and instructions.
  */
 export async function GET(req: NextRequest) {
+  // 2026-06-04 audit fix (§13.4): production-safety + header-token gate
+  // The previous code allowed a plain GET ?confirm=yes-delete-everything
+  // to wipe all data — a CSRF / link-prefetch / crawler could trigger it.
+  const refusal = refuseUnsafeReset(req)
+  if (refusal) return refusal
+
   const confirm = req.nextUrl.searchParams.get('confirm')
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -361,6 +406,10 @@ export async function GET(req: NextRequest) {
  * POST — Programmatic reset (same logic, requires confirmation header)
  */
 export async function POST(req: NextRequest) {
+  // 2026-06-04 audit fix (§13.4): same production-safety gate as GET.
+  const refusal = refuseUnsafeReset(req)
+  if (refusal) return refusal
+
   const confirmHeader = req.headers.get('x-confirm-reset')
   if (confirmHeader !== 'yes-delete-everything') {
     return NextResponse.json(

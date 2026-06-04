@@ -224,6 +224,54 @@ export function calculateGSTReversal(creditAmount: number, gstPercent: number): 
   }
 }
 
+/**
+ * Get the refundable balance remaining for a bill.
+ *
+ * 2026-06-04 audit fix (§6.1): a helper used by createCreditNote() to
+ * give the front-end a friendly error message BEFORE the DB trigger
+ * enforce_credit_note_cap throws (which it does atomically as the
+ * authoritative gate, but its raw error message isn't user-friendly).
+ *
+ * Returns:
+ *   - billTotal:        original net_amount (or total) of the bill
+ *   - existingCredits:  sum of all non-cancelled credit-note credit_amounts
+ *                       already issued against this bill
+ *   - refundable:       billTotal - existingCredits  (never negative)
+ *
+ * Returns null only if the bill itself can't be found.
+ */
+export async function getRefundableBalance(billId: string): Promise<{
+  billTotal: number
+  existingCredits: number
+  refundable: number
+} | null> {
+  const { data: bill } = await supabase
+    .from('bills')
+    .select('net_amount, total')
+    .eq('id', billId)
+    .maybeSingle()
+
+  if (!bill) return null
+
+  const billTotal = roundToTwo(Number(bill.net_amount) || Number(bill.total) || 0)
+
+  const { data: existing } = await supabase
+    .from('credit_notes')
+    .select('credit_amount, status')
+    .eq('bill_id', billId)
+    .neq('status', 'cancelled')
+
+  const existingCredits = roundToTwo(
+    (existing || []).reduce((sum, cn: any) => sum + Number(cn.credit_amount || 0), 0),
+  )
+
+  return {
+    billTotal,
+    existingCredits,
+    refundable: roundToTwo(Math.max(0, billTotal - existingCredits)),
+  }
+}
+
 // ── CN Number Generation ─────────────────────────────────────────
 
 /**
@@ -296,6 +344,45 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
   // Calculate GST reversal
   const gst = calculateGSTReversal(creditAmount, gstPercent)
 
+  // ─────────────────────────────────────────────────────────────────
+  // 2026-06-04 audit fix (§6.1): refund-cap PRE-FLIGHT.
+  //
+  // Authoritative gate: the DB trigger enforce_credit_note_cap (see
+  // migrations/fresh-install/03_billing_finance.sql §5) refuses any
+  // INSERT or UPDATE that would push (sum of non-cancelled credits) >
+  // bill total. That trigger is the security boundary — even if this
+  // pre-flight is removed or bypassed, the database still refuses.
+  //
+  // The pre-flight here exists to surface a friendly error message
+  // ("You can refund up to ₹X. You requested ₹Y.") instead of the
+  // trigger's raw Postgres exception, AND to short-circuit before we
+  // burn a CN number on a doomed insert.
+  // ─────────────────────────────────────────────────────────────────
+  if (!Number.isFinite(creditAmount) || creditAmount <= 0) {
+    console.warn('[credit-notes] refusing CN with non-positive credit_amount:', creditAmount)
+    return null
+  }
+  try {
+    const balance = await getRefundableBalance(billId)
+    if (balance) {
+      // Tolerance of 1 paisa to absorb floating-point dust
+      if (creditAmount > balance.refundable + 0.01) {
+        console.warn(
+          `[credit-notes] refund cap exceeded: refundable=₹${balance.refundable}, requested=₹${creditAmount}, ` +
+          `bill=₹${balance.billTotal}, existing_credits=₹${balance.existingCredits}`,
+        )
+        return null
+      }
+    } else {
+      console.warn('[credit-notes] bill not found, declining to create CN:', billId)
+      return null
+    }
+  } catch (e: any) {
+    // If the pre-flight query itself fails, we still proceed — the
+    // DB trigger is the authoritative gate.
+    console.warn('[credit-notes] refundable-balance pre-flight failed (non-fatal):', e?.message)
+  }
+
   // FIX #23: retry-on-conflict loop
   const MAX_RETRIES = 5
   let lastError: any = null
@@ -358,6 +445,14 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
     if (error?.code === '42P01' || error?.message?.includes('relation')) {
       console.warn('[credit-notes] Table does not exist. Run migration SQL.')
     }
+    // 2026-06-04 audit fix (§6.1): the enforce_credit_note_cap trigger
+    // raises an exception with "Refund cap exceeded:" prefix when the
+    // pre-flight above is bypassed (e.g. concurrent CNs for the same
+    // bill). Detect and log the friendly message — caller still gets
+    // null but the server logs are clear about why.
+    if (error?.message && /refund cap exceeded/i.test(error.message)) {
+      console.warn('[credit-notes] DB trigger refused: ' + error.message)
+    }
     return null
   }
 
@@ -410,8 +505,34 @@ export async function getCreditNotesForPatient(patientId: string): Promise<Credi
 /**
  * Cancel a credit note (e.g., if refund was reversed).
  * Only changes status — does NOT delete the record (audit trail).
+ *
+ * 2026-06-04 audit fix (§6.2): this used to ONLY flip status to
+ * 'cancelled', leaving the original revenue/refund effect untouched
+ * in hospital_fund. A cancelled credit note (= refund didn't actually
+ * happen / was reversed) now also inserts a small reversal/correction
+ * row in hospital_fund so the GL balances. The reversal row references
+ * the credit_note id via metadata so the audit trail is intact.
  */
 export async function cancelCreditNote(cnId: string, cancelledBy: string): Promise<boolean> {
+  // Fetch the credit note BEFORE we cancel it — we need its amount for
+  // the reversal entry, and we need to know it's still 'issued' so we
+  // don't double-reverse on a re-cancel.
+  const { data: cn, error: fetchErr } = await supabase
+    .from('credit_notes')
+    .select('id, cn_number, credit_amount, bill_id, patient_name, mrn, status')
+    .eq('id', cnId)
+    .maybeSingle()
+
+  if (fetchErr || !cn) {
+    console.error('[credit-notes] Cancel — CN not found:', fetchErr?.message)
+    return false
+  }
+  if (cn.status !== 'issued') {
+    // Already cancelled or already applied — nothing to do.
+    console.warn(`[credit-notes] Cancel skipped: CN ${cn.cn_number} status=${cn.status}`)
+    return false
+  }
+
   const { error } = await supabase
     .from('credit_notes')
     .update({
@@ -425,6 +546,32 @@ export async function cancelCreditNote(cnId: string, cancelledBy: string): Promi
   if (error) {
     console.error('[credit-notes] Cancel failed:', error.message)
     return false
+  }
+
+  // §6.2: insert a finance correction row.
+  //
+  // Semantic: a credit note (status='issued') reduced clinic revenue by
+  // its credit_amount. Cancelling that credit note "un-does" the refund,
+  // i.e. revenue goes back UP by credit_amount. We record this as type
+  // 'income' / category 'cn_cancelled' so it appears in the day's
+  // collections and the GL balances out.
+  //
+  // Non-fatal if the insert fails — the cancel itself succeeded; the
+  // finance side will be reconciled on the next CA report.
+  try {
+    await supabase.from('hospital_fund').insert({
+      type: 'income',
+      amount: roundToTwo(Number(cn.credit_amount) || 0),
+      category: 'cn_cancelled',
+      description:
+        `Credit note ${cn.cn_number} cancelled — revenue reinstated. ` +
+        `Patient: ${cn.patient_name}${cn.mrn ? ` (${cn.mrn})` : ''}`,
+      submitted_by: cancelledBy,
+      status: 'approved',
+      bill_id: cn.bill_id,
+    })
+  } catch (e: any) {
+    console.warn('[credit-notes] Cancel — finance reversal insert failed (non-fatal):', e?.message)
   }
 
   return true

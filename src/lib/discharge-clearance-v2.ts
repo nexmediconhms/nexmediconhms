@@ -1,4 +1,32 @@
 /**
+ * ⚠️ ⚠️ ⚠️  DEPRECATED — DO NOT IMPORT THIS FILE  ⚠️ ⚠️ ⚠️
+ *
+ * 2026-06-04 audit finding: this `discharge-clearance-v2.ts` claims the
+ * v1 file (`discharge-clearance.ts`) is broken and that v2 is the
+ * replacement. THE OPPOSITE IS TRUE. v2 queries the no-underscore
+ * tables `ipdadmissions`, `labreports` and the columns `patientid`,
+ * `reportname`, `createdat` — none of which exist on production
+ * deployments after migration 017.
+ *
+ * v1 (`@/lib/discharge-clearance.ts`) is the canonical, schema-resilient
+ * implementation. It tries snake_case first (production canonical) and
+ * falls back to no-underscore for legacy databases. The `DischargeClearance`
+ * React component imports v1 — DO NOT change it to v2.
+ *
+ * This file is preserved unchanged below for historical reference. If
+ * anything imports `checkDischargeClearanceV2`, REPLACE that import with:
+ *
+ *   import { checkDischargeClearance } from '@/lib/discharge-clearance'
+ *
+ * No callers should exist in the repo. A grep was run on 2026-06-04 and
+ * confirmed zero imports of `checkDischargeClearanceV2`.
+ *
+ * See `docs/MIGRATIONS_INVENTORY.md` and the section §0.2 of the audit
+ * report for the full diagnosis.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+/**
  * src/lib/discharge-clearance-v2.ts
  *
  * ═══════════════════════════════════════════════════════════════════════

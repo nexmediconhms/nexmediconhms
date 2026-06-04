@@ -210,13 +210,41 @@ function QueueContent() {
 
   // ── Status update ─────────────────────────────────────────
   async function updateStatus(entry: QueueEntry, newStatus: QueueStatus) {
+    // ───────────────────────────────────────────────────────────
+    // 2026-06-04 audit fix (§3.2): state-machine guard +
+    // optimistic concurrency.
+    //   - canTransition() rejects nonsense like 'done' → 'waiting'
+    //     (terminal states stay terminal; non-terminal transitions
+    //     follow the table in src/lib/queue-state.ts).
+    //   - The .eq('status', entry.status) on the UPDATE means: if
+    //     another staff member moved this token in the meantime,
+    //     0 rows are affected and we surface a friendly "refresh"
+    //     message instead of a silent last-write-wins overwrite.
+    // ───────────────────────────────────────────────────────────
+    const { canTransition, transitionErrorMessage } = await import('@/lib/queue-state')
+    const tErr = transitionErrorMessage(entry.status as any, newStatus as any)
+    if (tErr) { setError(tErr); return }
+
     const patch: any = { status: newStatus, updated_at: new Date().toISOString() }
     if (newStatus === 'in_progress') patch.called_at = new Date().toISOString()
     if (newStatus === 'done') patch.done_at = new Date().toISOString()
 
-    const { error: e } = await supabase
-      .from('opd_queue').update(patch).eq('id', entry.id)
+    const { data: updated, error: e } = await supabase
+      .from('opd_queue')
+      .update(patch)
+      .eq('id', entry.id)
+      .eq('status', entry.status) // optimistic concurrency guard
+      .select('id')
     if (e) { setError(e.message); return }
+    if (!updated || updated.length === 0) {
+      // Another user updated this token between our read and write.
+      setError(
+        `Token #${entry.token_number} was just updated by someone else. ` +
+        `Refreshing the queue…`,
+      )
+      // Realtime subscription will pull fresh data; no further action needed.
+      return
+    }
 
     await audit('update', 'encounter', entry.id,
       `Queue token #${entry.token_number} — ${entry.patient_name} → ${newStatus}`)
@@ -330,23 +358,40 @@ function QueueContent() {
     setAddingEntry(true); setError('')
 
     try {
-      const token = await nextTokenNumber()
-      const { data, error: e } = await supabase
-        .from('opd_queue')
-        .insert({
-          patient_id: addPatientId,
+      // ─────────────────────────────────────────────────────────
+      // 2026-06-04 audit fix (§3.1): token allocation via server
+      // route /api/queue/add (which uses next_queue_token RPC).
+      // The previous nextTokenNumber() in this file did
+      // SELECT-MAX + INSERT and could allocate the same token
+      // to two different patients under concurrent use.
+      // ─────────────────────────────────────────────────────────
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          patient_id:   addPatientId,
+          patient_name: addName || '',
           encounter_id: addEncounter || null,
-          queue_date: queueDate,
-          token_number: token,
-          status: 'waiting',
-          priority: addPriority,
-          notes: addNotes.trim(),
-        })
-        .select().single()
+          queue_date:   queueDate,            // server validates / falls back to today
+          priority:     addPriority,
+          notes:        addNotes.trim(),
+        }),
+      })
 
-      if (e) throw e
-      await audit('create', 'encounter', data?.id,
-        `Queue token #${token} — ${addName || addPatientId}`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || res.statusText)
+
+      const token: number = json?.entry?.token_number ?? 0
+      // Audit is performed server-side in /api/queue/add. Calling
+      // audit() here too would double-log; we leave it out.
+      void token
 
       setShowAddModal(false)
       resetModal()

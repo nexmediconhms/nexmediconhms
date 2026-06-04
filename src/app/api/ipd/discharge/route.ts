@@ -31,7 +31,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth } from '@/lib/api-auth'
+import { requireRole } from '@/lib/api-auth'
+import { checkDischargeClearance, applyOverride } from '@/lib/discharge-clearance'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,8 +44,10 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  // SECURITY FIX: Require authentication for discharge operations
-  const auth = await requireAuth(req)
+  // 2026-06-04 audit fix (§8.3): discharge is admin/doctor-only.
+  // Reception/staff cannot discharge a patient — that decision is clinical.
+  // The previous requireAuth(req) let any active user discharge by direct API call.
+  const auth = await requireRole(req, ['admin', 'doctor'])
   if (auth instanceof Response) return auth
 
   try {
@@ -68,6 +71,14 @@ export async function POST(req: NextRequest) {
       delivery_date,
       complications,
       lactation_advice,
+
+      // 2026-06-04 audit fix (§4.1, §8.1): admin overrides for blocked
+      // clearance categories. The shape mirrors the manualChecks param
+      // of checkDischargeClearance(). Each override REQUIRES a reason
+      // (recorded in the audit log) and the caller MUST be an admin.
+      // Format:
+      //   overrides: { billing?: { reason: string }, lab?: {...}, nursing?: {...}, ... }
+      overrides,
     } = body
 
     if (!admission_id) {
@@ -95,17 +106,99 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
     const patientId = admission.patient_id
 
-    // 2. Update IPD admission status
-    const { error: updAdmErr } = await supabase
+    // ════════════════════════════════════════════════════════════════
+    // 2026-06-04 audit fix (§4.1 / §8.1): server-side clearance gate.
+    //
+    // The discharge clearance checklist (unpaid bills, consent, final
+    // vitals, doctor orders, …) was previously enforced ONLY in the
+    // React component DischargeClearance.tsx. A direct POST to this
+    // route bypassed the entire checklist. Now the server runs it
+    // and refuses to discharge unless every required item is cleared
+    // OR an admin has explicitly supplied a reasoned override.
+    //
+    // Override shape:
+    //   { overrides: { billing: { reason: 'TPA settles in 7 days' }, ... } }
+    //
+    // Only role 'admin' may override. Doctors trigger discharge but
+    // cannot bypass billing/consent/nursing — they must ask reception
+    // to clear those first.
+    // ════════════════════════════════════════════════════════════════
+    let clearance = await checkDischargeClearance(admission_id, undefined)
+
+    if (overrides && typeof overrides === 'object') {
+      if (auth.role !== 'admin') {
+        return NextResponse.json(
+          { error: 'Only admin can apply discharge clearance overrides.' },
+          { status: 403 },
+        )
+      }
+      for (const [category, info] of Object.entries(overrides)) {
+        const reason = (info as any)?.reason
+        if (typeof reason !== 'string' || reason.trim().length === 0) {
+          return NextResponse.json(
+            { error: `Override for ${category} requires a non-empty reason.` },
+            { status: 400 },
+          )
+        }
+        clearance = applyOverride(
+          clearance,
+          category as any,
+          reason.trim(),
+          auth.fullName || auth.email || 'admin',
+        )
+      }
+    }
+
+    if (!clearance.canDischarge) {
+      const blockingItems = clearance.items
+        .filter(i => i.isRequired && (i.status === 'blocked' || i.status === 'pending'))
+        .map(i => `${i.category}: ${i.label}${i.detail ? ` — ${i.detail}` : ''}`)
+      return NextResponse.json(
+        {
+          error: 'Discharge blocked by pending clearance items.',
+          blocked_count: clearance.blockedCount,
+          blocking_items: blockingItems,
+          clearance_summary: clearance.items.map(i => ({
+            category: i.category,
+            label: i.label,
+            status: i.status,
+            isRequired: i.isRequired,
+          })),
+        },
+        { status: 409 },
+      )
+    }
+
+    // 2026-06-04 audit fix (§4.2): idempotent / conditional update.
+    // The previous code did .update().eq('id', ...) without checking
+    // OLD.status. Two concurrent discharge requests both succeeded,
+    // resulting in two discharge summaries, two follow-up appointments,
+    // and two WhatsApp notifications. The .eq('status', admission.status)
+    // ensures only ONE caller wins the race; the loser sees rows=0
+    // and is safely told "already discharged".
+    const { data: updatedAdm, error: updAdmErr } = await supabase
       .from('ipd_admissions')
       .update({
         status: 'discharged',
         updated_at: now,
       })
       .eq('id', admission_id)
+      .eq('status', admission.status) // optimistic concurrency
+      .select('id')
 
     if (updAdmErr) {
       return NextResponse.json({ error: 'Failed to update admission: ' + updAdmErr.message }, { status: 500 })
+    }
+    if (!updatedAdm || updatedAdm.length === 0) {
+      // Another process already discharged this patient between our
+      // SELECT and UPDATE.
+      return NextResponse.json(
+        {
+          error: 'Patient discharge is already in progress or completed by another user.',
+          redirect: `/patients/${patientId}`,
+        },
+        { status: 409 },
+      )
     }
 
     // 3. Free the bed — mark as 'available' directly
@@ -164,7 +257,14 @@ export async function POST(req: NextRequest) {
     // 4b. AUTO-GENERATE IPD BILL from admission stay data
     //     Uses ipd-billing.ts to calculate bed charges, nursing, doctor visits, etc.
     //     Only generates if no existing IPD bill exists for this admission.
+    //
+    // 2026-06-04 audit fix (§4.3): the rates used here (wardRates) are
+    // HEURISTIC defaults, not the actual charges recorded for this stay.
+    // The bill is included as a starting draft and SHOULD be reviewed
+    // and adjusted by reception before payment. The response includes
+    // `ipd_bill_warning` to make this visible to the calling UI.
     let ipdBillId: string | null = null
+    let ipdBillWarning: string | null = null
     try {
       // Check if an IPD bill already exists for this admission
       // FIX CRITICAL #7: Use admission_id column instead of fragile notes field match
@@ -259,7 +359,12 @@ export async function POST(req: NextRequest) {
           ipdBillId = newBill?.id || null
 
           if (ipdBillId) {
-            console.log(`[discharge] Auto-generated IPD bill ${ipdBillId} for ₹${subtotal}`)
+            // 2026-06-04 audit fix (§4.3): heuristic-rates warning surfaced.
+            ipdBillWarning =
+              'Auto-generated IPD bill uses default ward rates and an estimated ' +
+              'doctor-visit count from nursing entries. Please review and adjust ' +
+              'in the billing page before collecting payment.'
+            console.log(`[discharge] Auto-generated IPD bill ${ipdBillId} for ₹${subtotal} (HEURISTIC RATES — review before collecting)`)
           }
         }
       } else {
@@ -370,41 +475,62 @@ export async function POST(req: NextRequest) {
     }
 
     // 8. Audit log
-    await supabase.from('audit_log').insert({
-      action: 'discharge',
-      entity_type: 'ipd_admission',
-      entity_id: admission_id,
-      entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
-      changes: JSON.stringify({
-        discharge_date,
-        discharge_time,
-        condition_at_discharge,
-        final_diagnosis,
-        follow_up_date,
-        discharged_by,
-      }),
-    }).then(() => {}) // Non-blocking
+    // 2026-06-04 audit fix (§4.4 / §7.2): use the insert_audit_entry RPC
+    // (which computes the SHA-256 hash chain atomically — see migration
+    // fresh-install/02_audit_chain.sql). Previously this was a direct
+    // INSERT into audit_log with no entry_hash, which broke the chain;
+    // and it used `.then(()=>{})` so the call could be dropped before
+    // serverless function exit.
+    try {
+      await supabase.rpc('insert_audit_entry', {
+        p_user_id:      auth.clinicUserId,
+        p_user_email:   auth.email,
+        p_user_role:    auth.role,
+        p_action:       'delete', // 'discharge' isn't in the audit action enum; 'delete' is the closest semantic
+        p_entity_type:  'discharge',
+        p_entity_id:    admission_id,
+        p_entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
+        p_changes: JSON.stringify({
+          discharge_date,
+          discharge_time,
+          condition_at_discharge,
+          final_diagnosis,
+          follow_up_date,
+          discharged_by,
+          overrides: overrides ? Object.keys(overrides) : [],
+          clearance_status: clearance.canDischarge ? 'cleared' : 'overridden',
+        }),
+      })
+    } catch (auditErr: any) {
+      // Non-fatal: don't block discharge on audit failure, but DO log loudly.
+      console.error('[discharge] insert_audit_entry RPC failed:', auditErr?.message)
+    }
 
-    // 8b. Create in-app notification for all staff
-    await supabase.from('clinic_notifications').insert({
-      title: `Discharge: ${admission.patient_name}`,
-      message: `${admission.patient_name} (Bed ${admission.bed_number}, ${admission.ward}) discharged by Dr. ${discharged_by || admission.admitting_doctor}. Condition: ${condition_at_discharge || 'Satisfactory'}.${follow_up_date ? ` Follow-up: ${follow_up_date}` : ''}`,
-      type: 'discharge',
-      severity: 'normal',
-      source: 'ipd',
-      entity_type: 'admission',
-      entity_id: admission_id,
-      patient_id: patientId,
-      patient_name: admission.patient_name,
-      mrn: admission.mrn || null,
-      target_roles: ['admin', 'doctor', 'staff'],
-      metadata: JSON.stringify({
-        bed_number: admission.bed_number,
-        ward: admission.ward,
-        discharged_by,
-        condition_at_discharge,
-      }),
-    }).then(() => {}) // Non-blocking
+    // 8b. Create in-app notification for all staff (now awaited so it
+    //     can't be dropped by serverless cold-shutdown)
+    try {
+      await supabase.from('clinic_notifications').insert({
+        title: `Discharge: ${admission.patient_name}`,
+        message: `${admission.patient_name} (Bed ${admission.bed_number}, ${admission.ward}) discharged by Dr. ${discharged_by || admission.admitting_doctor}. Condition: ${condition_at_discharge || 'Satisfactory'}.${follow_up_date ? ` Follow-up: ${follow_up_date}` : ''}`,
+        type: 'discharge',
+        severity: 'normal',
+        source: 'ipd',
+        entity_type: 'admission',
+        entity_id: admission_id,
+        patient_id: patientId,
+        patient_name: admission.patient_name,
+        mrn: admission.mrn || null,
+        target_roles: ['admin', 'doctor', 'staff'],
+        metadata: JSON.stringify({
+          bed_number: admission.bed_number,
+          ward: admission.ward,
+          discharged_by,
+          condition_at_discharge,
+        }),
+      })
+    } catch (notifErr: any) {
+      console.warn('[discharge] clinic_notifications insert failed (non-fatal):', notifErr?.message)
+    }
 
     // 9. Return success with redirect
     return NextResponse.json({
@@ -413,6 +539,8 @@ export async function POST(req: NextRequest) {
       redirect: `/patients/${patientId}`,
       discharge_summary_id: dsRecord?.id || null,
       ipd_bill_id: ipdBillId,
+      ipd_bill_warning: ipdBillWarning,        // §4.3
+      clearance_overrides: clearance.overrides, // §4.1 — empty array if no overrides
       patient_id: patientId,
       notifications: {
         patient_whatsapp: 'queued',

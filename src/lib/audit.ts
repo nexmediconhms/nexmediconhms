@@ -139,10 +139,29 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
 /**
  * Write an audit log entry with atomic hash chain.
  *
- * Strategy:
- *   1. Try the database RPC function `insert_audit_entry` (atomic, race-free)
- *   2. If RPC doesn't exist (pre-migration), fall back to client-side
- *      insert with a local mutex (prevents same-tab races, but not cross-tab)
+ * 2026-06-04 audit fix (§7.2 / §7.3):
+ *   The /api/audit POST route is now the SINGLE entry point. It
+ *   authenticates the caller, derives identity from the session, and
+ *   delegates to the insert_audit_entry RPC for race-free SHA-256
+ *   hash-chain insertion. We no longer fall through to a direct client
+ *   INSERT with a fake hash (`api-${Date.now()}`) which silently
+ *   corrupted the chain on databases where the RPC wasn't installed.
+ *
+ *   Strategy is now:
+ *     1. POST to /api/audit (preferred — server uses RPC + session-bound identity)
+ *     2. If the API call itself fails (network, 503, etc.), try the
+ *        RPC directly from the browser as a fallback. This still
+ *        produces a properly-hashed row IF the RPC is installed.
+ *     3. If even the direct RPC fails, log loudly and DROP the audit
+ *        row. We do NOT insert a row with a fake hash — that would
+ *        corrupt the verifiable chain. Missing audit data is a clear
+ *        operational signal that the audit subsystem needs attention.
+ *
+ *   Behavioural change to be aware of: in environments missing the
+ *   insert_audit_entry RPC (i.e. databases that haven't run
+ *   migrations/fresh-install/02_audit_chain.sql), audit entries will
+ *   be DROPPED instead of silently inserted with `entry_hash =
+ *   'api-...'` placeholders. Run the migration to restore audit logging.
  *
  * @param action       - What happened (create/update/delete/print/…)
  * @param entityType   - What kind of record was affected
@@ -161,6 +180,9 @@ export async function audit(
     const cu = await getCurrentUser()
 
     const entry = {
+      // user_id / user_email / user_role are sent for back-compat with
+      // older /api/audit handlers but they will be IGNORED and replaced
+      // with session-derived values by the new server route (§7.1).
       user_id:      cu?.id    ?? null,
       user_email:   cu?.email ?? null,
       user_role:    cu?.role  ?? null,
@@ -171,19 +193,24 @@ export async function audit(
       changes:      changes     ?? null,
     }
 
-    // ── Strategy 1: API Route (preferred — bypasses RLS) ─────────
+    // ── Strategy 1: API Route (preferred) ────────────────────────
     const apiResult = await tryApiInsert(entry)
     if (apiResult === 'success') return
 
-    // ── Strategy 2: Atomic RPC (fallback — race-free) ────────────
+    // ── Strategy 2: Atomic RPC directly (last resort that still
+    //               produces a valid hash) ───────────────────────
     const rpcResult = await tryAtomicInsert(entry)
     if (rpcResult === 'success') return
-    // If RPC doesn't exist, fall through to Strategy 3
 
-    // ── Strategy 3: Client-side mutex + hash (last resort) ───────
-    await withAuditLock(async () => {
-      await fallbackInsert(entry)
-    })
+    // ── Strategy 3 (REMOVED §7.3): fake-hash fallback INSERT.
+    //     We deliberately drop the audit entry rather than silently
+    //     write a chain-breaking row. This is loud-fail, not silent-fail.
+    console.error(
+      '[Audit] DROPPED an audit entry because both /api/audit and the ' +
+      'insert_audit_entry RPC are unavailable. Apply ' +
+      'migrations/fresh-install/02_audit_chain.sql to restore audit logging. ' +
+      'Action: ' + action + ', Entity: ' + entityType,
+    )
   } catch (err) {
     // Never crash the app if audit fails — log and continue
     console.warn('[Audit] Unexpected error:', err)
@@ -192,20 +219,35 @@ export async function audit(
 
 /**
  * Try to insert via the /api/audit API route.
- * This bypasses RLS since the API uses the service role key.
+ *
+ * 2026-06-04 audit fix (§7.1): the API now requires authentication, so
+ * we attach the Bearer token from the active Supabase session. The
+ * server IGNORES any user_id/email/role in the body and uses the
+ * session-derived identity instead — that's the security guarantee.
+ *
  * Returns 'success' if it worked, 'unavailable' if the API is unreachable.
  */
 async function tryApiInsert(
   entry: Record<string, unknown>
 ): Promise<'success' | 'unavailable'> {
   try {
+    // Fetch the current Supabase session token. Same-tab caching by the
+    // browser supabase client makes this very cheap (no network).
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`
+    }
+
     const res = await fetch('/api/audit', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify(entry),
     })
     if (res.ok) return 'success'
-    // If API returns error, fall through to other strategies
+    // 401/403/503 => fall through to direct RPC fallback (Strategy 2).
     return 'unavailable'
   } catch {
     // Network error or API not available

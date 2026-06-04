@@ -25,12 +25,35 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import {
+  validateLabPortalToken,
+  assertPatientBelongsToPartner,
+  signedAttachmentUrl,
+  quoteOrValue,
+} from '@/lib/lab-portal-auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { persistSession: false } }
 )
+
+/**
+ * 2026-06-04 audit fixes (§10.3, §10.4, §10.5):
+ *   §10.3 — POST now scopes the patient lookup to the partner
+ *           (assertPatientBelongsToPartner). Previously a partner
+ *           with a valid token could iterate any MRN.
+ *   §10.4 — token_expires_at is now enforced (was dead config).
+ *           Storage uploads land in the PRIVATE bucket and use
+ *           short-lived signed URLs.
+ *   §10.5 — MRN .or() filter values are quoted (PostgREST escape).
+ *
+ * Both endpoints (GET verify, POST upload) delegate token validation
+ * to the shared validateLabPortalToken() helper.
+ */
+
+// Default private bucket — same env var as report-upload route.
+const ATTACHMENT_BUCKET = process.env.LAB_ATTACHMENT_BUCKET || 'attachments-private'
 
 // ── Normalize MRN for flexible matching ──────────────────────
 function normalizeMrn(raw: string): string[] {
@@ -89,29 +112,20 @@ async function createReminder({
 // ── GET: Verify token ─────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token')
-  if (!token) return NextResponse.json({ error: 'No token provided' }, { status: 400 })
 
-  const { data: user, error } = await supabase
-    .from('lab_portal_users')
-    .select('id, name, email, lab_partner_id, is_active, lab_partners(name)')
-    .eq('auth_token', token)
-    .maybeSingle()
-
-  if (error || !user) return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
-  if (!user.is_active) return NextResponse.json({ error: 'This portal account has been deactivated' }, { status: 403 })
-
-  // Update last_used_at
-  await supabase.from('lab_portal_users')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('auth_token', token)
+  // 2026-06-04 audit fix (§10.4): token_expires_at is now checked here.
+  const result = await validateLabPortalToken(supabase, token)
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
 
   return NextResponse.json({
     success: true,
     user: {
-      name:     user.name,
-      email:    user.email,
-      lab_name: (user.lab_partners as any)?.name || 'Partner Lab',
-    }
+      name:     result.user.name,
+      email:    result.user.email,
+      lab_name: result.user.partner_name,
+    },
   })
 }
 
@@ -127,20 +141,17 @@ export async function POST(req: NextRequest) {
     const notes       = formData.get('notes')?.toString() || ''
     const pdfFile     = formData.get('pdf_file') as File | null
 
-    // ── Verify token ──────────────────────────────────────────
-    if (!token) return NextResponse.json({ error: 'No token provided' }, { status: 401 })
-
-    const { data: portalUser, error: authErr } = await supabase
-      .from('lab_portal_users')
-      .select('id, name, lab_partner_id, is_active, lab_partners(name)')
-      .eq('auth_token', token)
-      .maybeSingle()
-
-    if (authErr || !portalUser || !portalUser.is_active) {
-      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
+    // ── Verify token (§10.4 — uses helper that checks token_expires_at) ──
+    const auth = await validateLabPortalToken(supabase, token)
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error, code: auth.code }, { status: auth.status })
     }
-
-    const labName = (portalUser.lab_partners as any)?.name || 'Partner Lab'
+    const portalUser = {
+      id:             auth.user.id,
+      name:           auth.user.name,
+      lab_partner_id: auth.user.lab_partner_id,
+    }
+    const labName = auth.user.partner_name
 
     // ── Step 1: Find patient ──────────────────────────────────
     let patientId    = ''
@@ -148,13 +159,17 @@ export async function POST(req: NextRequest) {
     let doctorId: string | undefined = undefined
 
     // Try MRN variants (robust matching)
+    // 2026-06-04 audit fix (§10.5): each variant is PostgREST-escaped
+    // before being injected into the .or() filter string. The previous
+    // code interpolated raw user input which allowed filter injection.
     if (mrn) {
       const mrnVariants = normalizeMrn(mrn)
       for (const variant of mrnVariants) {
+        const safeVariant = quoteOrValue(variant)
         const { data: patient } = await supabase
           .from('patients')
           .select('id, full_name, doctor_id')
-          .or(`mrn.eq.${variant},mrn.ilike.${variant}`)
+          .or(`mrn.eq.${safeVariant},mrn.ilike.${safeVariant}`)
           .maybeSingle()
 
         if (patient) {
@@ -189,19 +204,37 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
+    // ── Step 1b (NEW §10.3): per-partner scoping ──────────────
+    // Block this partner from uploading reports for patients they
+    // are not associated with. Prevents MRN enumeration.
+    const scope = await assertPatientBelongsToPartner(
+      supabase,
+      patientId,
+      portalUser.lab_partner_id,
+      { allowFirstReport: true },
+    )
+    if (!scope.allowed) {
+      return NextResponse.json(
+        { success: false, error: scope.reason },
+        { status: 403 },
+      )
+    }
+
     // ── Step 2: Upload PDF to storage ─────────────────────────
+    // 2026-06-04 audit fix (§10.4): private bucket + signed URL.
     let attachmentUrl: string | null = null
+    let attachmentPath: string | null = null
     if (pdfFile && pdfFile.size > 0) {
       try {
         const buffer   = await pdfFile.arrayBuffer()
         const fileName = `lab-reports/${Date.now()}_${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
         const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from('consultation-files')
+          .from(ATTACHMENT_BUCKET)
           .upload(fileName, Buffer.from(buffer), { contentType: 'application/pdf', upsert: false })
 
         if (!uploadErr && uploadData) {
-          const { data: urlData } = supabase.storage.from('consultation-files').getPublicUrl(fileName)
-          attachmentUrl = urlData?.publicUrl || null
+          attachmentPath = fileName
+          attachmentUrl = await signedAttachmentUrl(supabase, ATTACHMENT_BUCKET, fileName)
         }
       } catch (e) {
         console.warn('[lab-portal] Storage upload failed, saving without attachment')
@@ -219,6 +252,8 @@ export async function POST(req: NextRequest) {
         status:             'completed',
         notes:              notes || `Uploaded via portal by ${portalUser.name} (${labName})`,
         attachment_url:     attachmentUrl,
+        storage_bucket:     attachmentPath ? ATTACHMENT_BUCKET : null,  // §10.4 — persist for re-signing
+        storage_path:       attachmentPath || null,
         source:             'portal',
         lab_partner_id:     portalUser.lab_partner_id,
         lab_partner_name:   labName,
@@ -260,21 +295,29 @@ export async function POST(req: NextRequest) {
     })
 
     // ── Step 5: Audit log ─────────────────────────────────────
-    await supabase.from('audit_log').insert({
-      action:       'lab_report_portal_upload',
-      entity_type:  'lab_report',
-      entity_id:    reportId,
-      entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
-      changes:      JSON.stringify({
-        lab_partner: labName,
-        uploaded_by: portalUser.name,
-        mrn,
-        attachment:  !!attachmentUrl,
-      }),
-      user_id:    'lab_portal',
-      user_email: portalUser.name,
-      user_role:  'lab_partner',
-    })
+    // 2026-06-04 audit fix (§7.2 / §10.5): use insert_audit_entry RPC
+    // (hash chain) instead of direct audit_log INSERT (which left
+    // entry_hash blank, breaking the chain).
+    try {
+      await supabase.rpc('insert_audit_entry', {
+        p_user_id:      null, // lab portal users don't have clinic_users.id
+        p_user_email:   portalUser.name,
+        p_user_role:    'lab_partner',
+        p_action:       'create',
+        p_entity_type:  'lab_report',
+        p_entity_id:    reportId,
+        p_entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
+        p_changes:      JSON.stringify({
+          lab_partner: labName,
+          uploaded_by: portalUser.name,
+          mrn,
+          attachment:  !!attachmentUrl,
+          via:         'lab_portal',
+        }),
+      })
+    } catch (e: any) {
+      console.warn('[lab-portal] insert_audit_entry RPC failed (non-fatal):', e?.message)
+    }
 
     // ── Step 5b: Create in-app notification for staff/doctor ──
     await supabase.from('clinic_notifications').insert({
