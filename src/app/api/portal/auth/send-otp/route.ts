@@ -20,6 +20,40 @@ const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const siteUrl      = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const hospitalName = process.env.NEXT_PUBLIC_HOSPITAL_NAME || 'NexMedicon Hospital'
 
+/**
+ * Resolve site origin from request host (live deployment URL)
+ * with env var as fallback. This prevents stale env vars from
+ * causing 404s on Vercel preview deployments.
+ */
+function getSiteOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get('x-forwarded-host')
+  const host = req.headers.get('host')
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  const liveHost = forwardedHost || host
+
+  if (liveHost) {
+    try {
+      const u = new URL(`${proto}://${liveHost}`)
+      return u.origin
+    } catch { /* fall through */ }
+  }
+
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL
+  if (fromEnv && fromEnv.trim()) {
+    try {
+      return new URL(fromEnv.trim()).origin
+    } catch { /* fall through */ }
+  }
+
+  if (process.env.VERCEL_URL) {
+    try {
+      return new URL(`https://${process.env.VERCEL_URL}`).origin
+    } catch { /* fall through */ }
+  }
+
+  return 'http://localhost:3000'
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { mobile } = await req.json()
@@ -91,19 +125,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to generate OTP' }, { status: 500 })
     }
 
-    // Build magic link
-    const magicLink = `${siteUrl}/portal/verify?token=${encodeURIComponent(token)}`
+    // Build magic link using LIVE request host (fixes stale env var 404)
+    const siteUrl = getSiteOrigin(req)
+    const magicLink = new URL('/portal/verify', siteUrl)
+    magicLink.searchParams.set('token', token)
+    const magicLinkStr = magicLink.toString()
 
     // Build WhatsApp message
     const firstName = patient.full_name.split(' ')[0]
-    const waMessage = `Namaste ${firstName} ji,\n\nYour OTP for ${hospitalName} Patient Portal is: *${otpCode}*\n\nOr click this link to login directly:\n${magicLink}\n\nValid for 10 minutes. Do not share with anyone.\n\n— ${hospitalName}`
+    const waMessage = `Namaste ${firstName} ji,\n\nYour OTP for ${hospitalName} Patient Portal is: *${otpCode}*\n\nOr click this link to login directly:\n${magicLinkStr}\n\nValid for 10 minutes. Do not share with anyone.\n\n— ${hospitalName}`
     const waLink    = `https://wa.me/91${normalizedMobile}?text=${encodeURIComponent(waMessage)}`
 
     return NextResponse.json({
       success:       true,
       patient_name:  patient.full_name,
       mrn:           patient.mrn,
-      magic_link:    magicLink,
+      magic_link:    magicLinkStr,
       whatsapp_link: waLink,
       expires_at:    expiresAt,
       // In production, remove otp_code from response and send via SMS gateway
