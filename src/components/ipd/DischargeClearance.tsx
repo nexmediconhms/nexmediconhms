@@ -58,6 +58,8 @@ export default function DischargeClearance({
   const [loading, setLoading] = useState(true)
   const [overrideTarget, setOverrideTarget] = useState<ClearanceCategory | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
+  // BUG-DC03: surface override-not-applicable feedback to the operator
+  const [overrideError, setOverrideError] = useState<string | null>(null)
 
   const runCheck = useCallback(async () => {
     setLoading(true)
@@ -78,10 +80,32 @@ export default function DischargeClearance({
   function handleOverride(category: ClearanceCategory) {
     if (!overrideReason.trim()) return
     if (!clearance) return
+    setOverrideError(null)
 
-    const updated = applyOverride(clearance, category, overrideReason.trim(), currentUser)
-    setClearance(updated)
-    onClearanceChange(updated.canDischarge)
+    // BUG-DC03 fix: applyOverride now returns { applied, reason?, clearance }
+    // so we can detect and surface non-overridable categories instead of
+    // silently no-op'ing.
+    const result = applyOverride(clearance, category, overrideReason.trim(), currentUser)
+
+    if (!result.applied) {
+      if (result.reason === 'category_not_overridable') {
+        setOverrideError(
+          `The "${category}" check cannot be overridden. ` +
+          `It must be cleared by completing the corresponding workflow ` +
+          `(e.g., for "doctor" — finalise the discharge summary).`,
+        )
+      } else if (result.reason === 'category_not_found') {
+        setOverrideError(
+          `No "${category}" item exists on this clearance. Please refresh and retry.`,
+        )
+      } else {
+        setOverrideError('Override could not be applied.')
+      }
+      return
+    }
+
+    setClearance(result.clearance)
+    onClearanceChange(result.clearance.canDischarge)
     setOverrideTarget(null)
     setOverrideReason('')
   }
@@ -182,19 +206,27 @@ export default function DischargeClearance({
                           Override
                         </button>
                         <button
-                          onClick={() => { setOverrideTarget(null); setOverrideReason('') }}
+                          onClick={() => { setOverrideTarget(null); setOverrideReason(''); setOverrideError(null) }}
                           className="text-xs text-gray-400 hover:text-gray-600"
                         >
                           Cancel
                         </button>
                       </div>
-                    ) : (
+                    ) : item.canOverride ? (
+                      // BUG-DC03: only show the Override button when the item
+                      // can actually be overridden.  Items with canOverride=false
+                      // (e.g., 'doctor') previously showed the button but the
+                      // click silently did nothing.
                       <button
                         onClick={() => setOverrideTarget(item.category)}
                         className="text-xs text-amber-600 hover:text-amber-800 flex items-center gap-1 font-medium"
                       >
                         <Lock className="w-3 h-3" /> Admin Override
                       </button>
+                    ) : (
+                      <span className="text-xs text-gray-400 flex items-center gap-1 italic">
+                        <Lock className="w-3 h-3" /> Cannot be overridden — complete the workflow
+                      </span>
                     )}
                   </div>
                 )}
@@ -226,6 +258,20 @@ export default function DischargeClearance({
               {ov.category}: {ov.reason} — by {ov.overriddenBy}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Override error message — BUG-DC03 surface failure to operator */}
+      {overrideError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-red-700 flex-1">{overrideError}</div>
+          <button
+            onClick={() => setOverrideError(null)}
+            className="text-red-400 hover:text-red-600 text-xs"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
