@@ -187,50 +187,113 @@ export async function dispenseMedicineSafe(params: DispenseParams): Promise<Disp
 }
 
 /**
- * Fallback dispensing using optimistic locking.
- * The UPDATE includes `current_stock >= quantity` in the WHERE clause,
- * so if concurrent requests race, only one will match and succeed.
+ * Fallback dispensing using optimistic concurrency control (compare-and-set).
+ *
+ * BUG-P04 fix: the previous implementation called a generic `exec_sql`
+ * RPC with the medicineId interpolated directly into a single-quoted
+ * SQL string:
+ *
+ *     WHERE id = '${medicineId}'
+ *       AND current_stock >= ${quantity}
+ *
+ * That is a textbook SQL-injection sink — a malicious medicineId
+ * containing a single quote could break out of the literal and execute
+ * arbitrary SQL with whatever role the RPC runs as.  Even with route-
+ * level validation that's a footgun we shouldn't keep around, and
+ * `exec_sql` itself (a generic-SQL-eval endpoint) shouldn't exist in a
+ * production database.
+ *
+ * The replacement uses Supabase's parameterised query builder via a
+ * compare-and-set loop:
+ *
+ *   1. SELECT current_stock for this medicine.
+ *   2. Verify stock >= quantity.
+ *   3. UPDATE SET current_stock = old - quantity
+ *           WHERE id = :id
+ *             AND current_stock = :old              ← the CAS guard
+ *   4. If 0 rows were updated, another transaction changed the value
+ *      between (1) and (3) — retry with the freshly-read value.
+ *
+ * Because every concurrent request will read a different "old" value
+ * after the first update commits, only one writer per stock value wins.
+ * After MAX_RETRIES the function gives up with an explicit "concurrent
+ * dispense detected" error rather than blocking forever.
+ *
+ * No string interpolation into SQL.  All values are bound parameters.
  */
 async function dispenseFallback(params: DispenseParams): Promise<DispenseResult> {
   const { medicineId, quantity, patientName, prescriptionId, doneBy } = params
 
-  // Alternative: Use a raw SQL query via RPC because standard Supabase client builder
-  // does not natively support relative structural modifications like `current_stock = current_stock - N`
-  try {
-    const { data: rawResult, error: rawErr } = await supabase.rpc('exec_sql', {
-      query: `
-        UPDATE pharmacy_medicines 
-        SET current_stock = current_stock - ${quantity},
-            updated_at = NOW()
-        WHERE id = '${medicineId}' 
-          AND current_stock >= ${quantity}
-        RETURNING current_stock, name
-      `
-    })
+  const MAX_RETRIES = 5
 
-    if (rawErr) {
-      // exec_sql RPC doesn't exist either — use the original approach
-      // but with a re-read check
-      return await dispenseLastResort(params)
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // 1. Read current stock & name (parameterised)
+    const { data: med, error: readErr } = await supabase
+      .from('pharmacy_medicines')
+      .select('current_stock, name')
+      .eq('id', medicineId)
+      .single()
+
+    if (readErr || !med) {
+      return { success: false, error: 'Medicine not found' }
     }
 
-    if (!rawResult || (Array.isArray(rawResult) && rawResult.length === 0)) {
-      // WHERE condition failed — stock was insufficient
-      const { data: med } = await supabase
-        .from('pharmacy_medicines')
-        .select('current_stock, name')
-        .eq('id', medicineId)
-        .single()
+    const oldStock = Number(med.current_stock) || 0
 
-      if (!med) return { success: false, error: 'Medicine not found' }
+    // 2. Stock check
+    if (oldStock < quantity) {
       return {
         success: false,
-        error: `Insufficient stock for ${med.name}. Available: ${med.current_stock}, Requested: ${quantity}`,
+        error: `Insufficient stock for ${med.name}. Available: ${oldStock}, Requested: ${quantity}`,
       }
     }
 
-    // Success — log the transaction
-    await supabase.from('pharmacy_stock_log').insert({
+    const newStock = oldStock - quantity
+
+    // 3. Compare-and-set update — only succeeds if current_stock is
+    //    still oldStock when this UPDATE runs.  No string interpolation.
+    const { data: updated, error: updateErr } = await supabase
+      .from('pharmacy_medicines')
+      .update({
+        current_stock: newStock,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', medicineId)
+      .eq('current_stock', oldStock)        // ← optimistic lock
+      .select('current_stock, name')
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message }
+    }
+
+    // 4. If 0 rows were affected, another writer beat us — retry.
+    if (!updated || updated.length === 0) {
+      // Stale read — retry with a fresh SELECT.
+      continue
+    }
+
+    const row = updated[0]
+
+    // Defensive post-update sanity check: stock should never be negative.
+    // If it somehow is (e.g., out-of-band update with no CAS), revert.
+    if (Number(row.current_stock) < 0) {
+      console.error(
+        '[pharmacy-safe] post-CAS negative stock detected, reverting',
+      )
+      await supabase
+        .from('pharmacy_medicines')
+        .update({ current_stock: oldStock, updated_at: new Date().toISOString() })
+        .eq('id', medicineId)
+      return {
+        success: false,
+        error: `Concurrent dispense detected for ${row.name}. Please try again.`,
+      }
+    }
+
+    // 5. Log the transaction (audit trail).  This is best-effort: even
+    //    if the log insert fails we don't reverse the dispense, but we
+    //    DO surface the warning so ops can reconcile.
+    const { error: logErr } = await supabase.from('pharmacy_stock_log').insert({
       medicine_id: medicineId,
       type: 'dispense',
       quantity: -quantity,
@@ -238,15 +301,25 @@ async function dispenseFallback(params: DispenseParams): Promise<DispenseResult>
       notes: patientName ? `Dispensed to ${patientName}` : 'Dispensed',
       done_by: doneBy || null,
     })
+    if (logErr) {
+      console.warn(
+        '[pharmacy-safe] dispense audit-log insert failed (non-fatal):',
+        logErr.message,
+      )
+    }
 
-    const row = Array.isArray(rawResult) ? rawResult[0] : rawResult
     return {
       success: true,
-      remainingStock: row?.current_stock,
-      medicineName: row?.name,
+      remainingStock: Number(row.current_stock),
+      medicineName: String(row.name),
     }
-  } catch {
-    return await dispenseLastResort(params)
+  }
+
+  // Exhausted retries — declare contention rather than silently failing.
+  return {
+    success: false,
+    error:
+      'Could not dispense due to concurrent stock updates after multiple retries. Please try again.',
   }
 }
 
@@ -254,6 +327,13 @@ async function dispenseFallback(params: DispenseParams): Promise<DispenseResult>
  * Last resort: Read-then-update with immediate re-verification.
  * This matches the original pharmacy.ts logic but adds a secondary
  * verification read after the update to detect races.
+ *
+ * @deprecated  As of the BUG-P04 fix, dispenseFallback() no longer
+ * calls this function — it uses a parameterised compare-and-set loop
+ * instead, which closes the TOCTOU window completely.  This routine
+ * is retained for backward compatibility only and should not be added
+ * to any new call sites.  Slated for removal once all callers (none
+ * known at the time of this commit) are confirmed migrated.
  */
 async function dispenseLastResort(params: DispenseParams): Promise<DispenseResult> {
   const { medicineId, quantity, patientName, prescriptionId, doneBy } = params
