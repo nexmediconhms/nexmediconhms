@@ -392,10 +392,37 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       .eq('status', 'available').order('ward').order('bed_number')
       .then(({ data }) => setBeds(data || []))
 
-    supabase.from('clinic_users').select('id, full_name, role')
+    // ── Doctor list for "Admitting / Primary Doctor" + "Consulting Doctors"
+    //
+    // FIX (2026-06-05) — exclude non-clinician admin users from this list.
+    //
+    // The previous query was:
+    //     .eq('is_active', true).in('role', ['admin', 'doctor'])
+    // which returned EVERY active admin too.  In a typical setup the
+    // hospital admin row has full_name set to the hospital's email/name
+    // ("sarvamhospitalbharuch" in the reported case), so the dropdown
+    // showed the hospital name as if it were a doctor.
+    //
+    // We still need to support the small-clinic case where the hospital
+    // owner IS also a practising doctor.  Those users are recognisable
+    // by having a medical registration number (med_reg_no) on their
+    // clinic_users row.  So the rule is:
+    //     "Show role='doctor', OR role='admin' WITH a med_reg_no set."
+    // Admin rows without a clinical credential are filtered out here on
+    // the client.  This keeps a single .in() query (avoids a fragile
+    // PostgREST .or(...is.null) expression) and the filter intent is
+    // visible and reviewable in TypeScript.
+    supabase.from('clinic_users')
+      .select('id, full_name, role, med_reg_no, specialty')
       .eq('is_active', true).in('role', ['admin', 'doctor'])
       .order('full_name')
-      .then(({ data }) => setDoctors(data || []))
+      .then(({ data }) => {
+        const clinicians = (data || []).filter((d: any) =>
+          d.role === 'doctor' ||
+          (d.role === 'admin' && String(d.med_reg_no || '').trim() !== '')
+        )
+        setDoctors(clinicians)
+      })
   }, [])
 
   // Pre-fill patient when arriving from Patients page with patientId in URL

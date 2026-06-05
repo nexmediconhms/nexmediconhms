@@ -59,6 +59,14 @@ export default function DoctorsPage() {
 
   async function loadDoctors() {
     setLoading(true)
+    // FIX (2026-06-05) — exclude non-clinician admins from the doctor
+    // roster.  See src/app/ipd/page.tsx for the full rationale.  Brief
+    // version: the hospital's primary admin user (full_name often set
+    // to the hospital's name/email) was appearing in the "Doctors"
+    // management list because role='admin' was unconditionally pulled
+    // in.  We now keep admins ONLY when they have a med_reg_no — i.e.
+    // the small-clinic case where the hospital owner is also the only
+    // practising doctor.  Pure system admins are filtered out here.
     const { data } = await supabase
       .from('clinic_users')
       .select('*')
@@ -66,7 +74,11 @@ export default function DoctorsPage() {
       .eq('is_active', true)
       .order('is_primary', { ascending: false })
       .order('full_name')
-    setDoctors((data || []) as Doctor[])
+    const clinicians = (data || []).filter((d: any) =>
+      d.role === 'doctor' ||
+      (d.role === 'admin' && String(d.med_reg_no || '').trim() !== '')
+    ) as Doctor[]
+    setDoctors(clinicians)
     setLoading(false)
   }
 
