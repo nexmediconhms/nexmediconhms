@@ -20,7 +20,16 @@
 
 // ─── Types ────────────────────────────────────────────────────
 
-export type DoseAlertLevel = 'overdose' | 'high' | 'low' | 'pediatric'
+/**
+ * Alert levels.
+ *
+ * BUG-D03 fix: added 'pregnancy' as a dedicated level for pregnancy-
+ * category-related warnings.  Previously Category X drugs were flagged
+ * with level 'overdose', which caused the UI to show "OVERDOSE RISK" for
+ * a normal-dose Misoprostol prescribed to any adult woman — confusing,
+ * and not factually accurate (the issue is contraindication, not dose).
+ */
+export type DoseAlertLevel = 'overdose' | 'high' | 'low' | 'pediatric' | 'pregnancy'
 
 export interface DoseAlert {
   level: DoseAlertLevel
@@ -38,6 +47,14 @@ export interface DoseCheckResult {
   hasHardStop: boolean
   alerts: DoseAlert[]
 }
+
+/**
+ * BUG-D03 helper: pregnancy status of the patient.  When undefined or
+ * 'unknown', Category X warnings are still shown (safe default).  When
+ * 'not_pregnant' (e.g., male patient, post-menopausal, post-hysterectomy)
+ * the warning is suppressed.
+ */
+export type PregnancyStatus = 'pregnant' | 'not_pregnant' | 'unknown'
 
 // ─── Drug Dose Database ───────────────────────────────────────
 
@@ -57,6 +74,16 @@ interface DrugDoseInfo {
     minAge?: number               // minimum age in years
     notes?: string
   }
+  /**
+   * BUG-D05 fix: optional cumulative-course-dose cap for drugs where
+   * total course exposure matters (cytotoxics, certain antibiotics with
+   * cumulative toxicity).  If set AND the caller provides courseDays,
+   * we check (dailyDose * courseDays) against this limit and warn on
+   * exceedance.  Leave undefined for drugs where per-day limits suffice.
+   *
+   * Units match `unit` field on the same drug.
+   */
+  maxCourseDose?: number
   renalAdjust?: boolean           // needs dose adjustment in renal impairment
   hepaticAdjust?: boolean         // needs dose adjustment in hepatic impairment
   pregnancyCategory?: string      // FDA category: A, B, C, D, X
@@ -309,36 +336,147 @@ function parseDose(doseStr: string): { value: number; unit: string } | null {
   return { value, unit }
 }
 
+/** Escape regex metacharacters in a literal string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Tokenize a drug name for matching.
+ *
+ * BUG-D02 fix: replace non-alpha with space (not empty string) and
+ * collapse whitespace.  This preserves word boundaries so that, e.g.,
+ * "Amoxicillin-Clavulanate" tokenizes as ["amoxicillin", "clavulanate"]
+ * rather than the single token "amoxicillinclavulanate" which defeats
+ * exact-word matching.
+ */
+function tokenizeDrugName(name: string): { norm: string; tokens: string[] } {
+  const norm = name
+    .toLowerCase()
+    .replace(/\d+\s*(mg|mcg|g|ml|iu|units?)\b/gi, ' ')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const tokens = norm.split(/\s+/).filter(Boolean)
+  return { norm, tokens }
+}
+
 /**
  * Find a drug in the dose database by name.
+ *
+ * BUG-D02 fix: previously used naive `norm.includes(alias)` for every
+ * alias — a 3-character alias like 'mox' (Indian brand for amoxicillin)
+ * matched 'moxifloxacin', triggering wrong dose ranges and false alerts.
+ *
+ * Match priority:
+ *   1. Whole-token match against the drug's name or any alias
+ *      (handles "Cipro 500" → ciprofloxacin, "Mox 500" → amoxicillin).
+ *   2. Substring match on the full canonical name (handles hyphenated
+ *      compound names like "amoxicillin-clavulanate").
+ *   3. Substring match on aliases ONLY when the alias is ≥ 5 chars.
+ *      This intentionally excludes very short aliases ('mox', 'azee')
+ *      from substring fallback to prevent false positives.
  */
 function findDrug(drugName: string): DrugDoseInfo | null {
-  const norm = drugName.toLowerCase().replace(/\d+\s*(mg|mcg|g|ml|iu|units?)\b/gi, '').trim()
+  const { norm, tokens } = tokenizeDrugName(drugName)
+  if (!norm) return null
+  const tokenSet = new Set(tokens)
 
-  return DOSE_DB.find(d =>
-    norm.includes(d.name) ||
-    d.aliases.some(a => norm.includes(a)) ||
-    d.name.includes(norm) ||
-    d.aliases.some(a => a.includes(norm))
-  ) || null
+  // 1. Whole-token match
+  for (const d of DOSE_DB) {
+    if (tokenSet.has(d.name)) return d
+    for (const a of d.aliases) {
+      if (tokenSet.has(a)) return d
+    }
+  }
+
+  // 2/3. Substring fallback (canonical name always; aliases only if ≥ 5 chars)
+  for (const d of DOSE_DB) {
+    if (d.name.length >= 4 && norm.includes(d.name)) return d
+    for (const a of d.aliases) {
+      if (a.length >= 5 && norm.includes(a)) return d
+    }
+  }
+
+  return null
 }
 
 /**
  * Parse frequency string to get doses per day.
+ *
+ * BUG-D04 fix: previous implementation used substring `includes` which
+ * caused several misclassifications:
+ *   - 'qod' (every other day) matched `f.includes('od')` → returned 1
+ *     (should be 0.5).
+ *   - 'q.i.d.' (with periods) failed to match 'qid'.
+ *   - 'q4h' / 'q12h' generic patterns weren't handled — only specific
+ *     'every 6'/'every 8'/'every 12' literals were checked.
+ *   - 'stat' (single immediate dose) wasn't recognised at all.
+ *
+ * New implementation:
+ *   - Strips dots so 'q.i.d.' → 'qid' before matching.
+ *   - Uses word-boundary regex so 'qod' doesn't match 'od', 'tide'
+ *     doesn't match 'tid', etc.
+ *   - Handles arbitrary q<N>h / every <N> hours patterns generically.
+ *   - Returns 0.5 for every-other-day frequencies.
+ *   - Falls back to 1 (once daily) when nothing matches — preserves
+ *     prior default behaviour.
+ *
+ * Returns a positive number representing "doses per day".  For every-
+ * other-day prescriptions the value is 0.5.
  */
 function getFrequencyMultiplier(frequency: string): number {
-  const f = frequency.toLowerCase()
-  if (f.includes('once daily') || f.includes('od') || f.includes('once a day')) return 1
-  if (f.includes('twice') || f.includes('bd') || f.includes('bid')) return 2
-  if (f.includes('thrice') || f.includes('tds') || f.includes('tid') || f.includes('three')) return 3
-  if (f.includes('four') || f.includes('qid') || f.includes('qds')) return 4
-  if (f.includes('every 6') || f.includes('q6h')) return 4
-  if (f.includes('every 8') || f.includes('q8h')) return 3
-  if (f.includes('every 12') || f.includes('q12h')) return 2
-  if (f.includes('sos') || f.includes('prn') || f.includes('as needed')) return 1
-  if (f.includes('weekly') || f.includes('once weekly')) return 1 / 7
-  if (f.includes('bedtime') || f.includes('hs')) return 1
-  return 1 // default to once daily
+  const f = (frequency || '')
+    .toLowerCase()
+    .replace(/\./g, '')           // 'q.i.d.' → 'qid'
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!f) return 1
+
+  // Strict word-boundary check using whitespace or string edge as boundary.
+  // We can't rely on \b alone because regex \b treats digits as word chars,
+  // so 'q4h' would have a word break between 'q' and '4'.
+  const word = (w: string) => new RegExp(`(^|\\s|/)${escapeRegex(w)}(\\s|/|$)`).test(f)
+
+  // Single dose / stat — total daily dose check uses a multiplier of 1
+  if (word('stat') || /\bsingle dose\b/.test(f) || /\bonce only\b/.test(f)) return 1
+
+  // Every other day / alternate day → 0.5 doses/day
+  if (
+    word('qod') || word('eod') ||
+    /\bevery other day\b/.test(f) ||
+    /\balternate days?\b/.test(f) ||
+    /\bevery 2 days?\b/.test(f)
+  ) return 0.5
+
+  // Generic hourly: q4h, q6h, q8h, q12h, "every 4 hours", etc.
+  const qhMatch = f.match(/\bq\s*(\d+)\s*h\b/) || f.match(/\bevery\s+(\d+)\s*(?:h|hours?)\b/)
+  if (qhMatch) {
+    const hours = parseInt(qhMatch[1], 10)
+    if (Number.isFinite(hours) && hours > 0 && hours <= 24) {
+      return Math.round((24 / hours) * 100) / 100
+    }
+  }
+
+  // Standard abbreviations — order matters: more specific first
+  if (word('qid') || word('qds') || /\bfour times?\b/.test(f) || /\b4 times?\b/.test(f)) return 4
+  if (word('tid') || word('tds') || /\bthrice\b/.test(f) || /\bthree times?\b/.test(f) || /\b3 times?\b/.test(f)) return 3
+  if (word('bid') || word('bd') || word('bds') || /\btwice\b/.test(f) || /\b2 times?\b/.test(f)) return 2
+  if (
+    word('od') || word('qd') ||
+    word('hs') || word('nocte') ||
+    /\bbedtime\b/.test(f) ||
+    /\bonce daily\b/.test(f) || /\bonce a day\b/.test(f) || /\bdaily\b/.test(f)
+  ) return 1
+
+  if (/\bweekly\b/.test(f) || /\bonce a week\b/.test(f)) return 1 / 7
+
+  // PRN / SOS — frequency is unknown.  Return 1 for daily-dose math,
+  // matching the previous default; callers that need a worst-case
+  // estimate should treat PRN doses as needing manual review.
+  if (word('prn') || word('sos') || /\bas needed\b/.test(f) || /\bas required\b/.test(f)) return 1
+
+  return 1
 }
 
 /**
@@ -349,13 +487,22 @@ function getFrequencyMultiplier(frequency: string): number {
  * @param frequency - Frequency string (e.g., "Twice daily")
  * @param patientAge - Patient age in years
  * @param patientWeight - Patient weight in kg (optional)
+ * @param opts - Optional contextual flags:
+ *               - pregnancyStatus: BUG-D03 fix; suppresses Category X
+ *                 warnings when 'not_pregnant'.
+ *               - courseDays: BUG-D05 fix; if provided AND drug has
+ *                 maxCourseDose, total course exposure is checked.
  */
 export function validateDose(
   drugName: string,
   dose: string,
   frequency: string = 'Once daily',
   patientAge?: number,
-  patientWeight?: number
+  patientWeight?: number,
+  opts?: {
+    pregnancyStatus?: PregnancyStatus
+    courseDays?: number
+  },
 ): DoseAlert[] {
   const alerts: DoseAlert[] = []
   const drugInfo = findDrug(drugName)
@@ -366,7 +513,16 @@ export function validateDose(
 
   const freqMultiplier = getFrequencyMultiplier(frequency)
   const dailyDose = parsed.value * freqMultiplier
-  const isPediatric = patientAge !== undefined && patientAge < 12
+
+  // ── BUG-D01 fix: pediatric cutoff is 18 years (WHO standard), not 12 ──
+  // Adolescents (13-17) were previously checked against adult ranges,
+  // which can dangerously over-dose a teenager.  Now we use pediatric
+  // ranges whenever the drug has them AND the patient is < 18.
+  // For drugs without pediatric data, fall back to adult ranges so we
+  // don't lose any check coverage (existing behaviour preserved).
+  const ageKnown = patientAge !== undefined && patientAge !== null
+  const isPediatric =
+    ageKnown && (patientAge as number) < 18 && drugInfo.pediatric !== undefined
 
   // ── Adult dose checks ───────────────────────────────────────
   if (!isPediatric) {
@@ -431,7 +587,7 @@ export function validateDose(
     const ped = drugInfo.pediatric
 
     // Age check
-    if (ped.minAge !== undefined && patientAge < ped.minAge) {
+    if (ped.minAge !== undefined && (patientAge as number) < ped.minAge) {
       alerts.push({
         level: 'pediatric',
         drug: drugName,
@@ -489,19 +645,61 @@ export function validateDose(
     }
   }
 
-  // ── Pregnancy category check ────────────────────────────────
-  // This is informational — shown as a note, not a hard stop
+  // ── BUG-D03 fix: Pregnancy category check ────────────────────
+  // Previously: every Category X drug produced an 'overdose'-level alert
+  // for every adult, regardless of the patient's actual pregnancy status.
+  // Now: the alert uses the dedicated 'pregnancy' level, and is suppressed
+  // when the caller has confirmed the patient is not pregnant (e.g., male
+  // patient, post-menopausal, post-hysterectomy, partner not the patient).
+  // Default behaviour (status undefined or 'unknown') is to show the
+  // warning — fail-safe.
   if (drugInfo.pregnancyCategory === 'X') {
-    alerts.push({
-      level: 'overdose', // using overdose level for visibility
-      drug: drugName,
-      prescribedDose: dose,
-      message: `${drugName} is FDA Category X — CONTRAINDICATED in pregnancy. Known to cause fetal harm.`,
-      safeRange: 'Not safe in pregnancy',
-      maxDose: 'N/A',
-      isHardStop: true,
-      recommendation: 'Do NOT prescribe to pregnant patients. Use alternative.',
-    })
+    const status = opts?.pregnancyStatus ?? 'unknown'
+    if (status !== 'not_pregnant') {
+      alerts.push({
+        level: 'pregnancy',
+        drug: drugName,
+        prescribedDose: dose,
+        message:
+          status === 'pregnant'
+            ? `${drugName} is FDA Category X — CONTRAINDICATED in pregnancy. Known to cause fetal harm.`
+            : `${drugName} is FDA Category X — CONTRAINDICATED in pregnancy. Confirm patient is not pregnant before prescribing.`,
+        safeRange: 'Not safe in pregnancy',
+        maxDose: 'N/A',
+        isHardStop: status === 'pregnant',  // Hard stop only when pregnancy confirmed
+        recommendation:
+          status === 'pregnant'
+            ? 'Do NOT prescribe to this pregnant patient. Use alternative.'
+            : 'Verify pregnancy status. If pregnant, use alternative agent.',
+      })
+    }
+  }
+
+  // ── BUG-D05 fix: cumulative course dose check ────────────────
+  // For drugs where total course exposure matters (e.g., methotrexate,
+  // cumulative cytotoxics), check (dailyDose × courseDays) against the
+  // drug's maxCourseDose.  This only fires when both data points are
+  // present; legacy callers that don't pass courseDays see no change.
+  const courseDays = opts?.courseDays
+  if (
+    drugInfo.maxCourseDose &&
+    typeof courseDays === 'number' &&
+    Number.isFinite(courseDays) &&
+    courseDays > 0
+  ) {
+    const cumulative = dailyDose * courseDays
+    if (cumulative > drugInfo.maxCourseDose) {
+      alerts.push({
+        level: cumulative > drugInfo.maxCourseDose * 1.5 ? 'overdose' : 'high',
+        drug: drugName,
+        prescribedDose: `${dose} ${frequency} × ${courseDays} days`,
+        message: `${drugName} cumulative course dose ~${Math.round(cumulative)}${drugInfo.unit} exceeds max course dose ${drugInfo.maxCourseDose}${drugInfo.unit}`,
+        safeRange: drugInfo.adult.typicalDose,
+        maxDose: `${drugInfo.maxCourseDose}${drugInfo.unit} per course`,
+        isHardStop: cumulative > drugInfo.maxCourseDose * 1.5,
+        recommendation: `Shorten course or reduce dose so total ≤ ${drugInfo.maxCourseDose}${drugInfo.unit}.`,
+      })
+    }
   }
 
   return alerts
@@ -509,17 +707,33 @@ export function validateDose(
 
 /**
  * Validate all medications in a prescription.
+ *
+ * BUG-D03 / BUG-D05: accepts optional pregnancy status and per-drug
+ * courseDays so all relevant context can be fed into validateDose.
  */
 export function validatePrescription(
-  medications: { drug: string; dose: string; frequency: string }[],
+  medications: { drug: string; dose: string; frequency: string; courseDays?: number }[],
   patientAge?: number,
-  patientWeight?: number
+  patientWeight?: number,
+  opts?: {
+    pregnancyStatus?: PregnancyStatus
+  },
 ): DoseCheckResult {
   const allAlerts: DoseAlert[] = []
 
   for (const med of medications) {
     if (!med.drug?.trim()) continue
-    const alerts = validateDose(med.drug, med.dose, med.frequency, patientAge, patientWeight)
+    const alerts = validateDose(
+      med.drug,
+      med.dose,
+      med.frequency,
+      patientAge,
+      patientWeight,
+      {
+        pregnancyStatus: opts?.pregnancyStatus,
+        courseDays: med.courseDays,
+      },
+    )
     allAlerts.push(...alerts)
   }
 
@@ -532,6 +746,9 @@ export function validatePrescription(
 
 /**
  * Get dose alert level styling.
+ *
+ * BUG-D03: 'pregnancy' level gets a dedicated pink/rose style so the UI
+ * can distinguish it from 'overdose' (red) at a glance.
  */
 export function doseAlertStyle(level: DoseAlertLevel): {
   bg: string; text: string; border: string; icon: string; label: string
@@ -545,5 +762,7 @@ export function doseAlertStyle(level: DoseAlertLevel): {
       return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', icon: 'ℹ️', label: 'LOW DOSE' }
     case 'pediatric':
       return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: '👶', label: 'PEDIATRIC' }
+    case 'pregnancy':
+      return { bg: 'bg-pink-50', text: 'text-pink-800', border: 'border-pink-200', icon: '🤰', label: 'CONTRAINDICATED IN PREGNANCY' }
   }
 }

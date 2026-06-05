@@ -339,22 +339,58 @@ const INTERACTION_DB: InteractionEntry[] = [
 /**
  * Normalize a drug name for matching.
  * Strips dose, form, and converts to lowercase.
+ *
+ * BUG-D02 fix: non-alpha characters are now replaced with whitespace (not
+ * empty string).  Previously "Amoxicillin-Clavulanate" normalized to
+ * "amoxicillinclavulanate" — a single token that defeats word-boundary
+ * matching.  With this fix it normalizes to "amoxicillin clavulanate"
+ * so each component is independently matchable.
  */
 function normalizeDrug(name: string): string {
   return name
     .toLowerCase()
-    .replace(/\d+\s*(mg|mcg|g|ml|iu|units?)\b/gi, '')
-    .replace(/\b(tablet|capsule|syrup|injection|cream|ointment|drops|sr|er|cr|xl|od)\b/gi, '')
-    .replace(/[^a-z\s]/g, '')
+    .replace(/\d+\s*(mg|mcg|g|ml|iu|units?)\b/gi, ' ')
+    .replace(/\b(tablet|capsule|syrup|injection|cream|ointment|drops|sr|er|cr|xl|od)\b/gi, ' ')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
+}
+
+/** Escape regex metacharacters in a literal string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
  * Check if a drug name matches any keyword in a keyword list.
+ *
+ * BUG-D02 fix: previously used `normalized.includes(kw)` which is a raw
+ * substring match.  That meant short keywords could produce dangerous
+ * false positives:
+ *   - 'cipro'   matched 'ciprofibrate' (a fibrate, NOT a quinolone)
+ *   - 'mox'     matched 'moxifloxacin' (a quinolone, NOT amoxicillin)
+ *   - 'iron'    matched 'environment' and any drug name containing 'iron'
+ *   - 'asa'     would have matched 'asparaginase'
+ *
+ * False alerts cause "alert fatigue" — clinicians dismiss real warnings
+ * because too many spurious ones appear.
+ *
+ * Fix: match keywords on word boundaries.  A keyword matches the drug
+ * name only when it appears as a whole word.  This relies on
+ * normalizeDrug() above which now preserves spaces between tokens.
  */
 function matchesDrug(drugName: string, keywords: string[]): boolean {
   const normalized = normalizeDrug(drugName)
-  return keywords.some(kw => normalized.includes(kw.toLowerCase()))
+  if (!normalized) return false
+  for (const raw of keywords) {
+    const kw = raw.toLowerCase().trim()
+    if (!kw) continue
+    // Word-boundary regex: requires kw to appear as a complete token
+    // (preceded and followed by either a space or string edge).
+    const re = new RegExp(`(^|\\s)${escapeRegex(kw)}(\\s|$)`)
+    if (re.test(normalized)) return true
+  }
+  return false
 }
 
 /**
