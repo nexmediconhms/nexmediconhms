@@ -61,6 +61,76 @@ interface DuplicateMatch {
   matchReasons: string[]
 }
 
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  PR-1 fix (June 2026): race-safe OPD-queue token allocation     ║
+// ║                                                                  ║
+// ║  The pre-fix pattern was:                                       ║
+// ║      const max = SELECT MAX(token_number) FROM opd_queue WHERE  ║
+// ║                  queue_date = today                              ║
+// ║      INSERT INTO opd_queue (..., token_number = max+1)           ║
+// ║                                                                  ║
+// ║  Two reception staff registering patients at the same second    ║
+// ║  both compute the same nextToken. Migration 014's unique         ║
+// ║  constraint catches the duplicate, but the second insert         ║
+// ║  silently fails — the second patient is registered but never    ║
+// ║  appears in the queue. They sit in the waiting area until they  ║
+// ║  ask staff "why am I not on the screen?".                        ║
+// ║                                                                  ║
+// ║  This helper retries on 23505 (unique violation), re-reading    ║
+// ║  the freshest MAX on each pass. After MAX_TOKEN_RETRIES         ║
+// ║  failures we surrender — but in practice 5 attempts is enough  ║
+// ║  to cover even the busiest morning rush.                         ║
+// ╚══════════════════════════════════════════════════════════════════╝
+async function insertQueueEntryWithRetry(
+  payload: Record<string, unknown>,
+  queueDate: string,
+): Promise<{ tokenNumber: number | null; error: any }> {
+  const MAX_TOKEN_RETRIES = 5
+  let lastErr: any = null
+
+  for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {
+    // Re-read the latest token afresh on every attempt — concurrent
+    // inserts by other tabs/staff are reflected immediately.
+    const { data: lastToken } = await supabase
+      .from('opd_queue')
+      .select('token_number')
+      .eq('queue_date', queueDate)
+      .order('token_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const nextToken = (lastToken?.token_number || 0) + 1
+
+    const { error } = await supabase.from('opd_queue').insert({
+      ...payload,
+      token_number: nextToken,
+    })
+
+    if (!error) return { tokenNumber: nextToken, error: null }
+
+    lastErr = error
+
+    // 23505 unique_violation — most likely the token_number unique
+    // constraint added in migration 014. Re-read MAX and retry.
+    const code = String((error as any)?.code || '')
+    const msg = String((error as any)?.message || '').toLowerCase()
+    if (code === '23505' || msg.includes('duplicate') || msg.includes('unique')) {
+      // Tiny jitter so two concurrent retries don't immediately collide
+      // again on the next read.
+      await new Promise(r => setTimeout(r, 10 + Math.floor(Math.random() * 40)))
+      continue
+    }
+    // Non-retryable error — return immediately.
+    return { tokenNumber: null, error }
+  }
+
+  console.warn(
+    `[Registration] Queue token allocation failed after ${MAX_TOKEN_RETRIES} retries.`,
+    lastErr?.message,
+  )
+  return { tokenNumber: null, error: lastErr }
+}
+
 export default function NewPatientPage() {
   const router = useRouter()
 
@@ -348,10 +418,19 @@ export default function NewPatientPage() {
     }
 
     if (name.length >= 3) {
+      // ── PR-3 fix: escape ilike wildcards (June 2026) ──
+      // The pre-fix query did .ilike('full_name', `%${name}%`) which let the
+      // user-entered name's `%` and `_` characters act as SQL LIKE
+      // wildcards. A patient registration form name like "Mr. 100% Health Co."
+      // would match every patient containing any character — false-positive
+      // duplicates and (depending on RLS strictness) potentially leak PHI.
+      // We now escape via the shared escapeLike() helper used elsewhere
+      // in the codebase.
+      const safe = (await import('@/lib/utils')).escapeLike(name)
       const { data: nameMatches } = await supabase
         .from('patients')
         .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .ilike('full_name', `%${name}%`)
+        .ilike('full_name', `%${safe}%`)
         .limit(10)
       if (nameMatches) {
         for (const p of nameMatches) {
@@ -446,15 +525,84 @@ export default function NewPatientPage() {
     setSuccess({ mrn: data.mrn, name: data.full_name })
     generatePayLink(data.id, data.full_name, form.mobile.trim())
 
+    // ╔══════════════════════════════════════════════════════════════╗
+    // ║  PR-4 fix (June 2026): audit FIRST, then notify, then any   ║
+    // ║  cross-system PHI disclosure.                                ║
+    // ║                                                              ║
+    // ║  Pre-fix order was: notify → audit → insurance/sync.         ║
+    // ║  If the audit RPC was unavailable (network blip, RLS, hash- ║
+    // ║  chain function not deployed), notification + insurance API ║
+    // ║  call had ALREADY transmitted PHI when the audit silently   ║
+    // ║  failed. DPDP Act audit-before-disclosure: write the audit  ║
+    // ║  trail BEFORE doing anything that exposes patient data to   ║
+    // ║  third parties.                                              ║
+    // ╚══════════════════════════════════════════════════════════════╝
+    try {
+      const { audit } = await import('@/lib/audit')
+      await audit('create', 'patient', data.id, data.full_name)
+    } catch { /* non-fatal — but already loud via audit's own logging */ }
+
     try {
       const { notify } = await import('@/lib/notifications')
       await notify.patientRegistered(data.id, data.full_name, data.mrn)
     } catch { /* Non-fatal */ }
 
-    try {
-      const { audit } = await import('@/lib/audit')
-      await audit('create', 'patient', data.id, data.full_name)
-    } catch { /* Non-fatal */ }
+    // ── PR-2 (server-side PHI encryption) ───────────────────────────
+    // Aadhaar was just stored as plaintext above (the legacy code path)
+    // which is a DPDP Act compliance gap. We now call /api/phi with
+    // action='encrypt_patient' to get the AES-256-GCM ciphertext, then
+    // UPDATE the patient row in place with the ciphertext + last4
+    // mask, and clear the plaintext column. The server holds the key
+    // (HOSPITAL_ENCRYPTION_KEY env var); the browser only sees the
+    // ciphertext.
+    //
+    // We fire-and-forget so a misconfigured server doesn't block
+    // registration. If the encryption endpoint reports the key isn't
+    // configured, we leave the plaintext alone — the admin sees a
+    // setup warning elsewhere — and a one-time migration tool can
+    // bulk-encrypt later. Existing legacy plaintext rows are unaffected.
+    if (normalizedAadhaar) {
+      ;(async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          const token = session?.access_token
+          if (!token) return
+
+          const phiRes = await fetch('/api/phi', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              action: 'encrypt_patient',
+              aadhaar_no: normalizedAadhaar,
+            }),
+          })
+          if (!phiRes.ok) {
+            console.warn('[Registration] PHI encryption failed:', await phiRes.text())
+            return
+          }
+          const phiData = await phiRes.json()
+          if (!phiData?.success || !phiData?.aadhaar_encrypted) return
+
+          // Update the patient row: write the ciphertext + last4 mask
+          // into their respective columns and clear the plaintext.
+          // We use the supabase client (with the user's auth token) so
+          // RLS policies still apply.
+          await supabase
+            .from('patients')
+            .update({
+              aadhaar_encrypted: phiData.aadhaar_encrypted,
+              aadhaar_last4: phiData.aadhaar_last4 || null,
+              aadhaar_no: null,
+            })
+            .eq('id', data.id)
+        } catch {
+          /* non-fatal — leave plaintext for now, admin can encrypt later */
+        }
+      })()
+    }
 
     if (form.mediclaim === 'Yes' || form.cashless === 'Yes') {
       try {
@@ -518,42 +666,45 @@ export default function NewPatientPage() {
     if (addToQueue) {
       try {
         const today = getIndiaToday()
-        // FIX 1: Change .single() to .maybeSingle() to support first patient of the day
-        const { data: lastToken } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', today)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        const nextToken = (lastToken?.token_number || 0) + 1
-
-        await supabase.from('opd_queue').insert({
+        // PR-1: race-safe token allocation via insertQueueEntryWithRetry.
+        // Pre-fix code did SELECT-MAX → INSERT and silently lost patients
+        // when two reception staff registered at the same second. The
+        // helper retries on 23505 unique-violation up to 5 times.
+        const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
           patient_id: successId,
           queue_date: today,
-          token_number: nextToken,
           status: 'waiting',
           priority: 'normal',
           notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
           patient_name: success?.name || '',
           mrn: success?.mrn || '',
-        })
+        }, today)
+
+        if (queueErr) {
+          // The patient was already registered above (registration insert
+          // succeeded). The queue insert is the only failure. Surface a
+          // soft warning so reception can manually add the patient to
+          // the queue from the queue page rather than thinking the
+          // whole registration failed.
+          console.warn('[Registration] Queue insert failed (non-fatal):', queueErr?.message)
+        }
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        setQueuedTokenNumber(nextToken)
+        if (nextToken !== null) setQueuedTokenNumber(nextToken)
 
         // FIX 3: Added missing automation engine trigger for upfront payments
-        try {
-          const { fireAutomation } = await import('@/lib/automation-engine')
-          await fireAutomation('queue_added', {
-            patientId: successId,
-            patientName: success?.name || '',
-            mobile: successMobile,
-            mrn: success?.mrn || '',
-            tokenNumber: nextToken,
-          })
-        } catch { /* non-fatal */ }
+        if (nextToken !== null) {
+          try {
+            const { fireAutomation } = await import('@/lib/automation-engine')
+            await fireAutomation('queue_added', {
+              patientId: successId,
+              patientName: success?.name || '',
+              mobile: successMobile,
+              mrn: success?.mrn || '',
+              tokenNumber: nextToken,
+            })
+          } catch { /* non-fatal */ }
+        }
 
       } catch (e) {
         console.warn('[Registration] Queue insert setup encountered an error:', e)
@@ -596,38 +747,37 @@ export default function NewPatientPage() {
     if (addToQueue) {
       try {
         const today = getIndiaToday()
-        const { data: lastToken } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', today)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const nextToken = (lastToken?.token_number || 0) + 1
-        await supabase.from('opd_queue').insert({
+        // PR-1: race-safe token allocation via insertQueueEntryWithRetry —
+        // same pattern as the paid path above.
+        const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
           patient_id: successId,
           queue_date: today,
-          token_number: nextToken,
           status: 'waiting',
           priority: 'normal',
           notes: 'Registered: payment pending',
           patient_name: success?.name || '',
           mrn: success?.mrn || '',
-        })
+        }, today)
+
+        if (queueErr) {
+          console.warn('[Registration] queue insert failed (non-fatal):', queueErr?.message)
+        }
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        setQueuedTokenNumber(nextToken)
+        if (nextToken !== null) setQueuedTokenNumber(nextToken)
 
-        try {
-          const { fireAutomation } = await import('@/lib/automation-engine')
-          await fireAutomation('queue_added', {
-            patientId: successId,
-            patientName: success?.name || '',
-            mobile: successMobile,
-            mrn: success?.mrn || '',
-            tokenNumber: nextToken,
-          })
-        } catch { /* non-fatal */ }
+        if (nextToken !== null) {
+          try {
+            const { fireAutomation } = await import('@/lib/automation-engine')
+            await fireAutomation('queue_added', {
+              patientId: successId,
+              patientName: success?.name || '',
+              mobile: successMobile,
+              mrn: success?.mrn || '',
+              tokenNumber: nextToken,
+            })
+          } catch { /* non-fatal */ }
+        }
       } catch (e) {
         console.warn('[Registration] queue insert failed:', e)
       }

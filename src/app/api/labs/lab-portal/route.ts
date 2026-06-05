@@ -260,21 +260,47 @@ export async function POST(req: NextRequest) {
     })
 
     // ── Step 5: Audit log ─────────────────────────────────────
-    await supabase.from('audit_log').insert({
-      action:       'lab_report_portal_upload',
-      entity_type:  'lab_report',
-      entity_id:    reportId,
-      entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
-      changes:      JSON.stringify({
+    //
+    // AUD-2 fix (June 2026): route through the hash-chained RPC. The
+    // direct INSERT bypassed the chain, which would let an attacker
+    // (or buggy lab-partner integration) edit/delete portal-upload
+    // audit rows post-hoc without the verification chain noticing.
+    try {
+      const auditPayload = JSON.stringify({
         lab_partner: labName,
         uploaded_by: portalUser.name,
         mrn,
         attachment:  !!attachmentUrl,
-      }),
-      user_id:    'lab_portal',
-      user_email: portalUser.name,
-      user_role:  'lab_partner',
-    })
+      })
+      const { error: auditErr } = await supabase.rpc('insert_audit_entry', {
+        p_user_id:      null,
+        p_user_email:   portalUser.name,
+        p_user_role:    'lab_partner',
+        p_action:       'lab_report_portal_upload',
+        p_entity_type:  'lab_report',
+        p_entity_id:    reportId,
+        p_entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
+        p_changes:      auditPayload,
+      })
+      if (auditErr) {
+        console.warn(
+          '[labs/lab-portal] Hash-chained audit RPC failed, falling back to ' +
+          'direct insert (chain will fork): ' + auditErr.message,
+        )
+        await supabase.from('audit_log').insert({
+          action:       'lab_report_portal_upload',
+          entity_type:  'lab_report',
+          entity_id:    reportId,
+          entity_label: `${reportName} for ${resolvedName} (${mrn || patientName})`,
+          changes:      auditPayload,
+          user_id:    null,
+          user_email: portalUser.name,
+          user_role:  'lab_partner',
+        })
+      }
+    } catch (auditEx: any) {
+      console.warn('[labs/lab-portal] audit failed:', auditEx?.message)
+    }
 
     // ── Step 5b: Create in-app notification for staff/doctor ──
     await supabase.from('clinic_notifications').insert({
