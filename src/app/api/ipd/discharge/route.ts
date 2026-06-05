@@ -74,6 +74,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'admission_id is required' }, { status: 400 })
     }
 
+    // ── FIX #15: Input validation ─────────────────────────────────────
+    // Validate discharge_date is not before admission or far in future
+    if (discharge_date) {
+      const dDate = new Date(discharge_date)
+      if (isNaN(dDate.getTime())) {
+        return NextResponse.json({ error: 'Invalid discharge_date format' }, { status: 400 })
+      }
+      const futureLimit = new Date()
+      futureLimit.setDate(futureLimit.getDate() + 1)
+      if (dDate > futureLimit) {
+        return NextResponse.json({ error: 'Discharge date cannot be in the future' }, { status: 400 })
+      }
+    }
+    // Validate condition_at_discharge against allowed values
+    const ALLOWED_CONDITIONS = ['Satisfactory', 'Stable', 'Fair', 'Improving', 'Poor', 'Critical', 'Against Medical Advice (LAMA)']
+    if (condition_at_discharge && !ALLOWED_CONDITIONS.includes(condition_at_discharge)) {
+      return NextResponse.json({ error: 'Invalid condition_at_discharge value' }, { status: 400 })
+    }
+    // ──────────────────────────────────────────────────────────────────
+
     // 1. Get the admission record
     const { data: admission, error: admErr } = await supabase
       .from('ipd_admissions')
@@ -83,6 +103,17 @@ export async function POST(req: NextRequest) {
 
     if (admErr || !admission) {
       return NextResponse.json({ error: 'Admission not found' }, { status: 404 })
+    }
+
+    // ── FIX #15: Validate discharge date is not before admission ────
+    if (discharge_date && admission.admission_date) {
+      const admDate = new Date(admission.admission_date)
+      const disDate = new Date(discharge_date)
+      if (disDate < admDate) {
+        return NextResponse.json({
+          error: `Discharge date (${discharge_date}) cannot be before admission date (${admission.admission_date})`,
+        }, { status: 400 })
+      }
     }
 
     if (admission.status === 'discharged') {
@@ -95,7 +126,30 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
     const patientId = admission.patient_id
 
-    // 2. Update IPD admission status
+    // ── FIX #1: Free bed FIRST, then update admission. ──────────────
+    // If bed update fails, we stop early (admission stays 'active').
+    // This prevents the scenario where admission is 'discharged' but
+    // bed remains stuck as 'occupied' with no patient.
+    // 2. Free the bed — mark as 'available' directly
+    if (admission.bed_id) {
+      const { error: bedErr } = await supabase.from('beds').update({
+        status: 'available',
+        patient_id: null,
+        patient_name: null,
+        admission_date: null,
+        expected_discharge: null,
+        updated_at: now,
+      }).eq('id', admission.bed_id)
+
+      if (bedErr) {
+        console.error('[discharge] Failed to free bed:', bedErr.message)
+        return NextResponse.json({
+          error: 'Failed to free bed: ' + bedErr.message + '. Discharge aborted — admission is still active.',
+        }, { status: 500 })
+      }
+    }
+
+    // 3. Update IPD admission status (bed is already freed above)
     const { error: updAdmErr } = await supabase
       .from('ipd_admissions')
       .update({
@@ -105,23 +159,20 @@ export async function POST(req: NextRequest) {
       .eq('id', admission_id)
 
     if (updAdmErr) {
-      return NextResponse.json({ error: 'Failed to update admission: ' + updAdmErr.message }, { status: 500 })
+      // Bed was freed but admission update failed — attempt rollback on bed
+      console.error('[discharge] Admission update failed, rolling back bed:', updAdmErr.message)
+      if (admission.bed_id) {
+        await supabase.from('beds').update({
+          status: 'occupied',
+          patient_id: patientId,
+          patient_name: admission.patient_name,
+          admission_date: admission.admission_date,
+          updated_at: now,
+        }).eq('id', admission.bed_id)
+      }
+      return NextResponse.json({ error: 'Failed to update admission: ' + updAdmErr.message + '. Bed rollback attempted.' }, { status: 500 })
     }
-
-    // 3. Free the bed — mark as 'available' directly
-    //    NOTE: In serverless environments (Vercel/Next.js), setTimeout() won't survive
-    //    after the response is sent. The 'cleaning' intermediate state is removed.
-    //    If a cleaning workflow is needed, implement it via a DB trigger or cron job.
-    if (admission.bed_id) {
-      await supabase.from('beds').update({
-        status: 'available',
-        patient_id: null,
-        patient_name: null,
-        admission_date: null,
-        expected_discharge: null,
-        updated_at: now,
-      }).eq('id', admission.bed_id)
-    }
+    // ──────────────────────────────────────────────────────────────────
 
     // 4. Create discharge summary
     const dischargeSummary = {
@@ -177,6 +228,57 @@ export async function POST(req: NextRequest) {
         .limit(1)
 
       if (!existingBill || existingBill.length === 0) {
+        // ── FIX #6: Check if detailed charges exist in ipd_charges ──
+        // If staff already entered itemized charges via IPD billing page,
+        // use those instead of auto-generating from hardcoded ward rates.
+        const { data: ipdCharges } = await supabase
+          .from('ipd_charges')
+          .select('id, category, description, quantity, rate, amount')
+          .eq('admission_id', admission_id)
+          .order('charge_date')
+
+        if (ipdCharges && ipdCharges.length > 0) {
+          // Use existing itemized charges from IPD billing page
+          const billItems = ipdCharges.map((c: any) => ({
+            label: `${c.description || c.category} (Qty: ${c.quantity || 1})`,
+            amount: Number(c.amount) || 0,
+          }))
+          const subtotal = billItems.reduce((s: number, i: any) => s + i.amount, 0)
+
+          if (subtotal > 0) {
+            const { data: newBill } = await supabase
+              .from('bills')
+              .insert({
+                patient_id: patientId,
+                patient_name: admission.patient_name,
+                mrn: admission.mrn || '',
+                items: billItems,
+                subtotal,
+                discount: 0,
+                gst_percent: 0,
+                gst_amount: 0,
+                net_amount: subtotal,
+                total: subtotal,
+                paid: 0,
+                due: subtotal,
+                payment_mode: null,
+                status: 'unpaid',
+                admission_id: admission_id,
+                notes: `IPD-${admission_id}`,
+                created_by: discharged_by || admission.admitting_doctor || 'system',
+              })
+              .select('id')
+              .single()
+
+            ipdBillId = newBill?.id || null
+            if (ipdBillId) {
+              console.log(`[discharge] Created IPD bill from ${ipdCharges.length} itemized charges, total ₹${subtotal}`)
+            }
+          }
+        }
+
+        // Only auto-generate from ward rates if NO itemized charges exist
+        if (!ipdBillId) {
         // Calculate stay duration
         const admDate = new Date(admission.admission_date)
         const disDate = discharge_date ? new Date(discharge_date) : new Date()
@@ -262,6 +364,7 @@ export async function POST(req: NextRequest) {
             console.log(`[discharge] Auto-generated IPD bill ${ipdBillId} for ₹${subtotal}`)
           }
         }
+        } // end: if (!ipdBillId) — auto-generate from ward rates
       } else {
         ipdBillId = existingBill[0].id
       }

@@ -12,7 +12,7 @@
  * Replaces the simple "markDischarged" confirmation in IPD Census.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LogOut, X, CheckCircle, Loader2, AlertCircle,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import DischargeClearance from '@/components/ipd/DischargeClearance'
 import type { ClearanceCategory } from '@/lib/discharge-clearance'
+import { useAuth } from '@/lib/auth'
 
 interface Admission {
   id: string
@@ -51,6 +52,8 @@ export default function DischargeModal({
   currentDoctor = '',
 }: DischargeModalProps) {
   const router = useRouter()
+  // FIX #2: Use actual user role to determine admin status
+  const { user, isAdmin } = useAuth()
   const [step, setStep] = useState<'form' | 'processing' | 'success' | 'error'>('form')
   const [result, setResult] = useState<any>(null)
   const [errorMsg, setErrorMsg] = useState('')
@@ -77,14 +80,16 @@ export default function DischargeModal({
     discharged_by: currentDoctor || admission.admitting_doctor || '',
   })
 
-  // Build manual clearance checks (depends on form state above)
-  const manualChecks: Partial<Record<ClearanceCategory, { cleared: boolean; by?: string }>> = {
+  // FIX #10: Memoize manualChecks to prevent infinite re-renders.
+  // Without useMemo, a new object is created every render, which triggers
+  // DischargeClearance's useEffect (depends on manualChecks) in a loop.
+  const doctorCleared = !!(form.final_diagnosis && form.condition_at_discharge)
+  const manualChecks = useMemo<Partial<Record<ClearanceCategory, { cleared: boolean; by?: string }>>>(() => ({
     nursing: { cleared: nursingCleared, by: 'nurse' },
     consent: { cleared: consentCleared, by: 'staff' },
     pharmacy: { cleared: pharmacyCleared, by: 'pharmacy' },
-    // Doctor is auto-cleared when form has final_diagnosis + condition
-    doctor: { cleared: !!(form.final_diagnosis && form.condition_at_discharge), by: currentDoctor || 'doctor' },
-  }
+    doctor: { cleared: doctorCleared, by: currentDoctor || 'doctor' },
+  }), [nursingCleared, consentCleared, pharmacyCleared, doctorCleared, currentDoctor])
 
   function setField(key: string, value: string) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -251,8 +256,8 @@ export default function DischargeModal({
                 admissionId={admission.id}
                 onClearanceChange={handleClearanceChange}
                 manualChecks={manualChecks}
-                isAdmin={true}
-                currentUser={currentDoctor || 'Admin'}
+                isAdmin={isAdmin}
+                currentUser={user?.full_name || currentDoctor || 'Staff'}
               />
 
               {/* Manual checkboxes for clearance items */}

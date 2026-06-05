@@ -133,14 +133,26 @@ export default function VideoConsultPage() {
         .eq('type', 'video')
         .gte('date', today)
         .order('date').order('time'),
+      // FIX (2026-06-05) — exclude non-clinician admins from the
+      // "doctor" dropdown.  See src/app/ipd/page.tsx for the full
+      // rationale: previously this query returned the hospital's admin
+      // user (whose full_name is often the hospital's name/email) and
+      // the dropdown labelled them as a doctor.  We now keep the same
+      // .in() query but ALSO request med_reg_no so we can keep
+      // role='admin' rows only when they represent an admin who is
+      // also a practising doctor (has a medical registration number).
       supabase
         .from('clinic_users')
-        .select('id, full_name')
+        .select('id, full_name, role, med_reg_no')
         .eq('is_active', true)
         .in('role', ['admin', 'doctor']),
     ])
     setAppointments(apptRes.data ?? [])
-    setDoctors(docRes.data ?? [])
+    const clinicians = (docRes.data ?? []).filter((d: any) =>
+      d.role === 'doctor' ||
+      (d.role === 'admin' && String(d.med_reg_no || '').trim() !== '')
+    )
+    setDoctors(clinicians)
     setLoading(false)
     if (user?.full_name && !form.doctor_name) {
       setForm(p => ({ ...p, doctor_name: user.full_name }))

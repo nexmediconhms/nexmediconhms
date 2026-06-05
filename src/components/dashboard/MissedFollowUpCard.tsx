@@ -11,7 +11,8 @@ interface MissedFollowUp {
   patient_id: string
   recommended_date: string
   patients: {
-    fullname: string
+    fullname?: string
+    full_name?: string
     mobile: string | null
     mrn: string | null
   } | null
@@ -31,13 +32,34 @@ export default function MissedFollowUpCard() {
     const today = getIndiaToday()
 
     try {
-      const { data, error } = await supabase
+      // Declare variables first to avoid TypeScript type inference locks
+      let data: any[] | null = null
+      let error: any = null
+
+      // FIX: Try 'full_name' first (snake_case schema)
+      const primaryQuery = await supabase
         .from('follow_ups')
-        .select('id, patient_id, recommended_date, patients(fullname, mobile, mrn)')
+        .select('id, patient_id, recommended_date, patients(full_name, mobile, mrn)')
         .eq('status', 'pending')
         .lt('recommended_date', today)
         .order('recommended_date', { ascending: true })
         .limit(10)
+
+      data = primaryQuery.data
+      error = primaryQuery.error
+
+      // If 'full_name' column doesn't exist, try 'fullname' fallback
+      if (error && (error.message?.includes('does not exist') || error.code === 'PGRST204')) {
+        const fallback = await supabase
+          .from('follow_ups')
+          .select('id, patient_id, recommended_date, patients(fullname, mobile, mrn)')
+          .eq('status', 'pending')
+          .lt('recommended_date', today)
+          .order('recommended_date', { ascending: true })
+          .limit(10)
+        data = fallback.data
+        error = fallback.error
+      }
 
       if (error) {
         console.error('[MissedFollowUpCard] Error:', error.message)
@@ -104,7 +126,8 @@ export default function MissedFollowUpCard() {
       {/* List */}
       <div className="space-y-1.5">
         {missedFollowUps.map(followUp => {
-          const patientName = followUp.patients?.fullname || 'Unknown Patient'
+          // Cleaned up syntax thanks to updated interface
+          const patientName = followUp.patients?.full_name || followUp.patients?.fullname || 'Unknown Patient'
           const mobile = followUp.patients?.mobile || null
           const mrn = followUp.patients?.mrn || ''
           const daysOverdue = getDaysOverdue(followUp.recommended_date)

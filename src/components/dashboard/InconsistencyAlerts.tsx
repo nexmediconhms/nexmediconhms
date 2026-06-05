@@ -44,14 +44,27 @@ export default function InconsistencyAlerts() {
           .from('bills')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'pending')
-          .lt('createdat', threeDaysAgo),
+          // FIX #12: Try 'created_at' first (migration schema). If it fails
+          // with a column-not-found error, the master schema uses 'createdat'.
+          // Using 'created_at' as default since migration-based deploys are standard.
+          .lt('created_at', threeDaysAgo),
       ])
 
       if (!waitingResult.error && waitingResult.data) {
         setStaleWaiting(waitingResult.data as StaleWaitingPatient[])
       }
 
-      if (!billsResult.error && billsResult.count !== null) {
+      if (billsResult.error && (billsResult.error.message?.includes('does not exist') || billsResult.error.code === 'PGRST204')) {
+        // FIX #12 fallback: master schema uses 'createdat' (no underscore)
+        const fallbackResult = await supabase
+          .from('bills')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .lt('createdat', threeDaysAgo)
+        if (!fallbackResult.error && fallbackResult.count !== null) {
+          setPendingBillsCount(fallbackResult.count)
+        }
+      } else if (!billsResult.error && billsResult.count !== null) {
         setPendingBillsCount(billsResult.count)
       }
     } catch (err) {
