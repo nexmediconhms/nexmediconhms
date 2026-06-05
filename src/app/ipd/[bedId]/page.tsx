@@ -43,6 +43,12 @@ import {
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
+//
+// IPD-8 fix: each entry now also carries an OPTIONAL `created_at` (full
+// ISO timestamp). Existing callers that only care about the `time`
+// string keep working; new render code can show the date as well so a
+// nurse looking at three days of vitals can tell which day each row
+// belongs to instead of seeing "14:30" repeating ambiguously.
 interface VitalEntry {
   time: string
   pulse: string
@@ -51,6 +57,7 @@ interface VitalEntry {
   temperature: string
   spo2: string
   note: string
+  created_at?: string
 }
 
 interface IOEntry {
@@ -58,6 +65,7 @@ interface IOEntry {
   type: 'intake' | 'output'
   item: string
   amount: string
+  created_at?: string
 }
 
 interface NursingNote {
@@ -65,6 +73,7 @@ interface NursingNote {
   author: string
   note: string
   type: 'nursing' | 'doctor'
+  created_at?: string
 }
 
 // ── Load from Supabase ─────────────────────────────────────────
@@ -81,14 +90,17 @@ async function loadIPDFromSupabase(bedId: string) {
       time: r.recorded_time || '', pulse: r.pulse || '', bp_systolic: r.bp_systolic || '',
       bp_diastolic: r.bp_diastolic || '', temperature: r.temperature || '',
       spo2: r.spo2 || '', note: r.vital_note || '',
+      created_at: r.created_at || undefined,            // IPD-8: preserve calendar date
     }))
     const io = (data || []).filter((r: any) => r.entry_type === 'io').map((r: any) => ({
       time: r.recorded_time || '', type: r.io_type === 'Output' ? 'output' : 'intake',
       item: r.io_label || '', amount: String(r.io_amount_ml || ''),
+      created_at: r.created_at || undefined,            // IPD-8: preserve calendar date
     }))
     const notes = (data || []).filter((r: any) => r.entry_type === 'note').map((r: any) => ({
       time: r.created_at || '', author: r.nurse_name || 'Nurse',
       note: r.note_text || '', type: (r.note_type || 'nursing') as 'nursing' | 'doctor',
+      created_at: r.created_at || undefined,            // IPD-8: preserve calendar date
     }))
     return { vitals, io, notes }
   } catch {
@@ -154,6 +166,14 @@ export default function IPDNursingPage() {
   const [noteType, setNoteType] = useState<'nursing' | 'doctor'>('nursing')
 
   const [saved, setSaved] = useState(false)
+  // ── IPD-9 fix: track cloud-sync failures separately from "Saved" ──
+  // Pre-fix the persist() helper unconditionally set saved=true the moment
+  // localStorage was written, even if the subsequent Supabase insert
+  // failed. The user saw a green "Saved" badge while the row had been
+  // silently rolled back from the UI a moment later — confusing and
+  // unsafe. We now track save failures separately so the user gets an
+  // honest warning when data is only in offline cache.
+  const [saveError, setSaveError] = useState('')
   const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos'>('vitals')
 
   // Doctor note photo upload + OCR state
@@ -419,13 +439,32 @@ export default function IPDNursingPage() {
   // We only write to localStorage as a backup AFTER showing "Saved".
   // The Supabase insert is the source of truth — if it fails, we warn the user
   // instead of silently pretending everything is saved.
+  //
+  // IPD-9 fix: persist() no longer flips the "Saved" indicator. It simply
+  // writes to localStorage as offline cache. The "Saved" / "Save failed"
+  // UX is driven by the result of the Supabase insert via flashSaved() /
+  // flashSaveFailed() below. This stops the misleading green "Saved" badge
+  // from flashing on rows that the cloud actually rejected.
   function persist(v = vitals, i = io, n = notes) {
     // Write localStorage as offline cache (in case Supabase is temporarily down)
     try {
       localStorage.setItem(`ipd_${bedId}`, JSON.stringify({ vitals: v, io: i, notes: n }))
     } catch { /* quota exceeded or private mode — ignore */ }
+  }
+
+  /** IPD-9: positive confirmation that data is in the cloud. */
+  function flashSaved() {
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  /** IPD-9: explicit notice that the cloud save failed and the row was rolled back. */
+  function flashSaveFailed(scope: string, msg: string) {
+    setSaveError(
+      `${scope} could not be saved to cloud (${msg}). The entry was reverted ` +
+      `to keep records consistent. Please check your connection and try again.`,
+    )
+    setTimeout(() => setSaveError(''), 6000)
   }
 
   // Helper: show a non-blocking warning if Supabase write fails
@@ -440,7 +479,8 @@ export default function IPDNursingPage() {
   async function addVital() {
     if (!newVital.pulse && !newVital.bp_systolic && !newVital.temperature && !newVital.spo2) return
     const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    const entry = { ...newVital, time: t }
+    // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
+    const entry = { ...newVital, time: t, created_at: new Date().toISOString() }
     const updated = [entry, ...vitals]
     setVitals(updated)
     setNewVital(emptyVital())
@@ -455,6 +495,9 @@ export default function IPDNursingPage() {
         // Rollback: remove the optimistically-added entry
         setVitals(prev => prev.filter(v => v !== entry))
         warnSupabaseFail('vital', error.message)
+        flashSaveFailed('Vital', error.message)
+      } else {
+        flashSaved()
       }
     })
 
@@ -464,7 +507,8 @@ export default function IPDNursingPage() {
   async function addIO() {
     if (!newIO.item || !newIO.amount) return
     const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    const entry = { ...newIO, time: t }
+    // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
+    const entry = { ...newIO, time: t, created_at: new Date().toISOString() }
     const updated = [entry, ...io]
     setIO(updated)
     setNewIO(emptyIO())
@@ -478,6 +522,9 @@ export default function IPDNursingPage() {
         // Rollback: remove the optimistically-added entry
         setIO(prev => prev.filter(e => e !== entry))
         warnSupabaseFail('I/O', error.message)
+        flashSaveFailed('I/O entry', error.message)
+      } else {
+        flashSaved()
       }
     })
 
@@ -490,6 +537,8 @@ export default function IPDNursingPage() {
     const entry: NursingNote = {
       time: t, author: noteAuthor || user?.full_name || 'Nurse',
       note: newNote.trim(), type: noteType,
+      // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
+      created_at: new Date().toISOString(),
     }
     const updated = [entry, ...notes]
     setNotes(updated)
@@ -503,6 +552,9 @@ export default function IPDNursingPage() {
         // Rollback: remove the optimistically-added entry
         setNotes(prev => prev.filter(n => n !== entry))
         warnSupabaseFail('note', error.message)
+        flashSaveFailed('Note', error.message)
+      } else {
+        flashSaved()
       }
     })
 
@@ -661,6 +713,16 @@ export default function IPDNursingPage() {
           </div>
         )}
 
+        {/* IPD-9: cloud-save failure banner — replaces the misleading
+            green "Saved" badge for entries the cloud actually rejected. */}
+        {saveError && (
+          <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-amber-800">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {saveError}
+            <button onClick={() => setSaveError('')} className="ml-auto text-xs underline">Dismiss</button>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1">
           {TABS.map(tab => (
@@ -740,7 +802,21 @@ export default function IPDNursingPage() {
                     <tbody>
                       {vitals.map((v, i) => (
                         <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{v.time}</td>
+                          {/* IPD-8: show date + time when available, else just time */}
+                          <td className="px-3 py-2.5 font-mono text-xs text-gray-500">
+                            {v.created_at ? (
+                              <>
+                                <div>{v.time}</div>
+                                <div className="text-[10px] text-gray-400">
+                                  {new Date(v.created_at).toLocaleDateString('en-IN', {
+                                    day: '2-digit', month: 'short',
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              v.time
+                            )}
+                          </td>
                           <td className="px-3 py-2.5">{v.pulse ? <span className={parseInt(v.pulse) > 100 || parseInt(v.pulse) < 60 ? 'text-red-600 font-semibold' : ''}>{v.pulse}</span> : '—'}</td>
                           <td className="px-3 py-2.5">{v.bp_systolic ? `${v.bp_systolic}/${v.bp_diastolic}` : '—'}</td>
                           <td className="px-3 py-2.5">{v.temperature || '—'}</td>

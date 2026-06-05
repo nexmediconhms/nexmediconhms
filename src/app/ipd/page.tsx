@@ -486,31 +486,133 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       return
     }
 
+    // ── IPD-1 + IPD-5 fix: transactional bed flip with future-date awareness ──
+    //
+    // PRE-FIX BEHAVIOUR (two bugs):
+    //   1. INSERT into ipd_admissions, then UPDATE beds.status='occupied'.
+    //      If the bed update failed (network blip, RLS), we ended up with a
+    //      "ghost" active admission and a still-available bed. The next
+    //      reception staff using the bed could admit a second patient and
+    //      the DB unique constraint uniq_ipd_bed_active would catch it
+    //      with an opaque error — by which time the UI is already broken.
+    //
+    //   2. Bed status flipped to 'occupied' immediately even when the
+    //      admission_date was in the FUTURE. A bed pre-booked for an
+    //      elective C-section on June 6 was unusable on June 4 / 5 even
+    //      though the patient hadn't arrived yet — physical bed sat empty
+    //      while the system claimed it was occupied.
+    //
+    // NEW BEHAVIOUR:
+    //   a. We FIRST update the bed using a compare-and-set guard:
+    //        UPDATE beds SET <new state> WHERE id = X AND status = 'available'
+    //      If 0 rows match, another reception just claimed this bed — abort
+    //      with a clean error rather than half-creating an admission.
+    //   b. If the admission_date is TODAY or in the past, the bed flips to
+    //      'occupied' as before.
+    //   c. If the admission_date is in the FUTURE, the bed instead flips to
+    //      'reserved' (an existing status the schema already supports) with
+    //      reservedfor=patient name and reservednote noting the upcoming
+    //      admit date. The bed remains physically available for emergency
+    //      use today; on/after the admit date staff can flip it to
+    //      'occupied' from the IPD chart, or the patient simply arrives.
+    //   d. Only AFTER the bed is successfully claimed do we INSERT the
+    //      admission row. If the admission insert fails we revert the bed
+    //      back to 'available' (best-effort; the unique constraint at the
+    //      DB level remains the ultimate guard).
+    const todayStr = getIndiaToday()
+    const isFutureAdmission = form.admission_date > todayStr
+    const targetBed = beds.find(b => b.id === form.bed_id)
+    const newBedState: Record<string, unknown> = isFutureAdmission
+      ? {
+          status: 'reserved',
+          reservedfor: selectedPatient.full_name,
+          reservednote:
+            `IPD admission scheduled for ${form.admission_date}` +
+            (form.admitting_doctor ? ` — Dr. ${form.admitting_doctor}` : ''),
+          reservedat: new Date().toISOString(),
+          // For future admissions we DON'T set patient_id / admission_date on
+          // the bed yet — those are written when the patient actually arrives
+          // and the bed is flipped to 'occupied'. This keeps the bed
+          // physically available for emergency walk-ins today.
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          status: 'occupied',
+          patient_id: selectedPatient.id,
+          patient_name: selectedPatient.full_name,
+          admission_date: form.admission_date,
+          updated_at: new Date().toISOString(),
+        }
+
+    // Compare-and-set bed update — only succeeds if bed is still 'available'.
+    // Returns the affected rows so we can detect the "lost the race" case.
+    const { data: claimedBeds, error: bedClaimErr } = await supabase
+      .from('beds')
+      .update(newBedState)
+      .eq('id', form.bed_id)
+      .eq('status', 'available')
+      .select('id')
+
+    if (bedClaimErr) {
+      setSaving(false)
+      alert('Error claiming bed: ' + bedClaimErr.message)
+      return
+    }
+    if (!claimedBeds || claimedBeds.length === 0) {
+      // Either the bed status changed between when we loaded the list and
+      // when we tried to claim it, OR our schema doesn't support `status`
+      // filtering on update for some reason. Refuse to proceed.
+      setSaving(false)
+      alert(
+        'This bed is no longer available — it may have been just claimed by ' +
+        'another user or its status changed. Please refresh and choose ' +
+        'another bed.',
+      )
+      return
+    }
+
+    // Bed is now ours. Insert the admission record.
     const { error } = await supabase.from('ipd_admissions').insert(payload)
 
     if (!error) {
-      // Mark bed as occupied
-      await supabase.from('beds').update({
-        status: 'occupied',
-        patient_id: selectedPatient.id,
-        patient_name: selectedPatient.full_name,
-        admission_date: form.admission_date,
-      }).eq('id', form.bed_id)
-
       // Send notification for IPD admission
       try {
         const { default: notify } = await import('@/lib/notifications')
         await notify.ipdAdmission(
           selectedPatient.id,
           selectedPatient.full_name,
-          beds.find(b => b.id === form.bed_id)?.bed_number || '',
-          beds.find(b => b.id === form.bed_id)?.ward || ''
+          targetBed?.bed_number || '',
+          targetBed?.ward || ''
         )
       } catch { /* non-fatal */ }
 
       setSaved(true)
       setTimeout(() => { setSaved(false); onSuccess() }, 1500)
     } else {
+      // ── IPD-5: revert the bed claim so we don't leak a held bed ──
+      // Best-effort revert. We set status back to 'available' and clear the
+      // fields we just wrote. If THIS update fails too (very unlikely) the
+      // bed will appear claimed by a non-existent admission until staff
+      // manually fixes it from /ipd/beds — at least the audit trail is clear.
+      try {
+        await supabase.from('beds').update({
+          status: 'available',
+          patient_id: null,
+          patient_name: null,
+          admission_date: null,
+          reservedfor: null,
+          reservednote: null,
+          reservedat: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', form.bed_id)
+      } catch (revertErr) {
+        console.error(
+          '[IPD admit] Could not revert bed state after admission insert ' +
+          'failure. Bed may be in an inconsistent state — please fix from ' +
+          '/ipd/beds. Original admission error:', error,
+          'Revert error:', revertErr,
+        )
+      }
       alert('Error saving admission: ' + error.message)
     }
     setSaving(false)

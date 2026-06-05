@@ -27,6 +27,7 @@ import {
   BedDouble, Stethoscope, Activity, AlertTriangle,
   CheckCircle, Calculator, RefreshCw,
 } from 'lucide-react'
+import { calculateStayDuration } from '@/lib/ipd-billing'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -175,9 +176,29 @@ export default function IPDBillingPage() {
 
   // ── Computed values ────────────────────────────────────────
   const admissionDate = admission?.admission_date || admission?.created_at?.split('T')[0]
+  const dischargeDate = admission?.discharge_date || null
   const today = getIndiaToday()
+
+  // ── IPD-2 fix: use the canonical stay-duration helper ──
+  //
+  // Pre-fix the page calculated:
+  //     Math.max(1, Math.ceil((today - admissionDate) / DAY) + 1)
+  // The trailing `+ 1` over-counted by one day. So a 1-night stay was
+  // billed as 2 days, a 2-night stay as 3, etc. Across many admissions
+  // this silently inflated every IPD bill.  Worse, the helper in
+  // src/lib/ipd-billing.ts (calculateStayDuration) used the correct
+  // formula, so the same admission could show different totals depending
+  // on which entry point you used.
+  //
+  // Using the library now guarantees ONE definition of "days admitted"
+  // across the codebase. It also lets us pass the discharge_date so a
+  // discharged patient no longer accumulates phantom days.
+  //
+  // For an active (still-admitted) patient, dischargeDate is null and
+  // the helper falls back to "now", which is the same behaviour as
+  // before (just without the +1 inflation).
   const daysAdmitted = admissionDate
-    ? Math.max(1, Math.ceil((new Date(today).getTime() - new Date(admissionDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    ? calculateStayDuration(admissionDate, dischargeDate || today)
     : 1
 
   const grandTotal = charges.reduce((s, c) => s + c.amount, 0)
@@ -269,13 +290,60 @@ export default function IPDBillingPage() {
   // ── Auto-add bed charges for all days ─────────────────────
   async function autoAddBedCharges() {
     if (!admission?.id || !patient?.id) return
-    const bedRate = chargeRates.find(r => r.category === 'bed') || { default_rate: 800, description: 'General Ward Bed' }
-    const nursingRate = chargeRates.find(r => r.category === 'nursing') || { default_rate: 500, description: 'Nursing Charges' }
+
+    // ── IPD-4 fix: refuse to silently bill at a hardcoded fallback rate ──
+    //
+    // Pre-fix this function did:
+    //     const bedRate = chargeRates.find(...) || { default_rate: 800, ... }
+    //     const nursingRate = chargeRates.find(...) || { default_rate: 500, ... }
+    // If the ipd_charge_rates table was empty (fresh deployment, accidentally
+    // emptied, or — as we discovered — never created in this Supabase
+    // project), every bed charge silently posted at ₹800/day regardless of
+    // ward. A clinic billing ICU at ₹5000/day could be silently charging
+    // ₹800/day for stays during the rates-missing window. Ward type
+    // (General/Private/ICU) was completely ignored.
+    //
+    // We now refuse to auto-add when rates aren't configured for the
+    // categories we need, with a clear pointer to where the admin can
+    // configure them. The "Add Charge" modal still lets a user enter
+    // bespoke charges manually — that flow is unaffected.
+    const bedRate = chargeRates.find(r => r.category === 'bed')
+    const nursingRate = chargeRates.find(r => r.category === 'nursing')
+    if (!bedRate || !nursingRate) {
+      const missing: string[] = []
+      if (!bedRate) missing.push('"bed"')
+      if (!nursingRate) missing.push('"nursing"')
+      setError(
+        'Cannot auto-add: charge rate templates are not configured for ' +
+        missing.join(' and ') + '. ' +
+        'Go to Settings → IPD Charge Rates to add them, or use "Add Charge" ' +
+        'to enter charges manually for this admission.',
+      )
+      return
+    }
+
+    // ── IPD-3 fix: clamp the loop to the actual stay window ──
+    //
+    // Pre-fix the loop used the (incorrect) `daysAdmitted` from the page,
+    // which extended through TODAY regardless of whether the patient had
+    // been discharged. Clicking Auto-Add 3 days after a patient went home
+    // would post phantom bed + nursing charges for those post-discharge
+    // days. Now we use calculateStayDuration which is bounded by
+    // dischargeDate when set, and we also build the per-day list by
+    // walking calendar days from admissionDate, stopping at the smaller
+    // of (today, dischargeDate).
+    const stayEndIso =
+      dischargeDate && dischargeDate <= today ? dischargeDate : today
+    const stayEnd = new Date(stayEndIso)
+    const stayStart = new Date(admissionDate)
+    const stayDayCount = calculateStayDuration(admissionDate, stayEndIso)
 
     const newCharges: IPDCharge[] = []
-    for (let d = 0; d < daysAdmitted; d++) {
-      const date = new Date(admissionDate)
+    for (let d = 0; d < stayDayCount; d++) {
+      const date = new Date(stayStart)
       date.setDate(date.getDate() + d)
+      // Defensive: never post a charge dated AFTER the stay actually ended
+      if (date.getTime() > stayEnd.getTime()) break
       const dateStr = date.toISOString().split('T')[0]
 
       // Check if bed charge already exists for this date
@@ -307,7 +375,17 @@ export default function IPDBillingPage() {
       }
     }
 
-    if (newCharges.length === 0) { setError('Bed & nursing charges already added for all days.'); return }
+    if (newCharges.length === 0) {
+      const isDischarged = dischargeDate && dischargeDate <= today
+      setError(
+        isDischarged
+          ? `Bed & nursing charges already added for the full stay ` +
+            `(${admissionDate} → ${dischargeDate}, ${stayDayCount} day` +
+            `${stayDayCount !== 1 ? 's' : ''}).`
+          : 'Bed & nursing charges already added for all days.',
+      )
+      return
+    }
 
     const insertData = newCharges.map(c => ({
       admission_id: admission.id,
@@ -340,7 +418,14 @@ export default function IPDBillingPage() {
       notes: '',
     }))])
 
-    setSuccess(`Added ${newCharges.length} charges (bed + nursing for ${daysAdmitted} days)`)
+    setSuccess(
+      `Added ${newCharges.length} charges (bed + nursing for ${stayDayCount} ` +
+      `day${stayDayCount !== 1 ? 's' : ''}` +
+      (dischargeDate && dischargeDate <= today
+        ? ` of completed stay`
+        : ` so far`) +
+      `)`,
+    )
     setTimeout(() => setSuccess(''), 3000)
   }
 

@@ -306,6 +306,26 @@ function BedCard({
                 Reserved: {new Date(bed.reservedat).toLocaleString('en-IN', {
                   day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                 })}
+                {/* ── IPD-7 fix: show a "stale reservation" badge ──
+                    Pre-fix, a reservation made 6 months ago for "Priya Sharma"
+                    looked identical to one made 10 minutes ago — staff had no
+                    cue that something needed attention. We compute staleness
+                    from `reservedat` (no schema change required) and surface
+                    it inline; the user can then unreserve / convert it as
+                    appropriate.  Threshold: > 24 hours. */}
+                {(() => {
+                  const ageMs = Date.now() - new Date(bed.reservedat).getTime()
+                  const ageHrs = ageMs / (1000 * 60 * 60)
+                  if (ageHrs <= 24) return null
+                  const ageDays = Math.floor(ageHrs / 24)
+                  return (
+                    <span className="ml-2 inline-block bg-amber-200 text-amber-800 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                      ⏳ {ageDays >= 1
+                        ? `${ageDays} day${ageDays !== 1 ? 's' : ''} old`
+                        : `${Math.floor(ageHrs)} hours old`} — review
+                    </span>
+                  )
+                })()}
               </div>
             )}
           </div>
@@ -401,6 +421,17 @@ export default function BedsPage() {
     maintenance: beds.filter(b => b.status === 'maintenance').length,
   }
 
+  // ── IPD-10 fix: surface schema-cache fallbacks visibly ──
+  // The loadBeds() routine below transparently falls back to the legacy
+  // (no-underscore) bed columns when the new snake_case query fails with
+  // a schema-cache error. Pre-fix that fallback was completely silent —
+  // a partial migration on a Supabase project would route every request
+  // through the legacy path forever and only surface as "performance is
+  // weird" tickets. Now we capture whether the fallback fired and show
+  // a discreet one-line banner so the admin notices and can run the
+  // pending migration.
+  const [schemaFallbackHit, setSchemaFallbackHit] = useState(false)
+
   const loadBeds = useCallback(async () => {
     setLoading(true)
 
@@ -413,6 +444,16 @@ export default function BedsPage() {
 
     if (err1 && err1.message.includes('schema cache')) {
       // Old schema — try ordering by bednumber
+      // IPD-10: flag that the legacy (no-underscore) path is in use so
+      // we can warn the admin in the UI. Without this, projects whose
+      // schema migration hasn't been run silently route every read
+      // through the legacy schema and accumulate tech debt.
+      setSchemaFallbackHit(true)
+      console.warn(
+        '[IPD beds] beds.bed_number column not found — falling back to ' +
+        'legacy bednumber column. Please run the latest schema migration ' +
+        '(see migrations/017_comprehensive_schema_alignment.sql).',
+      )
       const { data: oldData } = await supabase
         .from('beds')
         .select('*')
@@ -546,6 +587,22 @@ export default function BedsPage() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+
+        {/* IPD-10: visible warning when bed table read fell back to the
+            legacy schema. Helps an admin notice that a pending migration
+            should be applied. Discreet so it doesn't alarm regular staff. */}
+        {schemaFallbackHit && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <div>
+              <strong>Database schema notice:</strong> the bed table is being
+              read through a legacy compatibility path. Please run the latest
+              schema migration (<code className="bg-amber-100 px-1 rounded">migrations/017_comprehensive_schema_alignment.sql</code>)
+              when convenient. Functionality is unaffected; performance and
+              future feature parity are not.
+            </div>
+          </div>
+        )}
 
         {/* Bed grid */}
         {loading ? (
