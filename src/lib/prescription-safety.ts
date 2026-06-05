@@ -103,6 +103,17 @@ export async function runPrescriptionSafetyChecks(
 
   // 3. Dose Validation
   try {
+    // BUG-D03 follow-up: pass through the patient's pregnancy status so
+    // validateDose's Category-X warning is properly contextualised.  When
+    // input.isPregnant is undefined we treat it as 'unknown' (fail-safe:
+    // the warning still fires, with isHardStop=false).
+    const pregnancyStatus =
+      input.isPregnant === true
+        ? 'pregnant'
+        : input.isPregnant === false
+          ? 'not_pregnant'
+          : 'unknown'
+
     for (const med of validMeds) {
       if (!med.dose.trim()) continue
 
@@ -111,15 +122,37 @@ export async function runPrescriptionSafetyChecks(
         med.dose,
         med.frequency || 'Once daily',
         input.patientAge,
-        input.patientWeight
+        input.patientWeight,
+        { pregnancyStatus },
       )
 
       for (const da of doseAlerts) {
+        // Map dose-validation level → ClinicalAlert level.
+        // BUG-D03 follow-up: 'pregnancy' is a new level introduced when
+        // the Category-X warning was decoupled from 'overdose'.  Without
+        // this branch it would fall through to 'moderate', under-stating
+        // the severity for a confirmed pregnancy + Category-X drug.
+        let clinicalLevel: 'critical' | 'major' | 'moderate' | 'minor'
+        if (da.level === 'overdose') {
+          clinicalLevel = 'critical'
+        } else if (da.level === 'pregnancy') {
+          // Confirmed pregnancy + Cat X → critical hard-stop.
+          // Unknown / unconfirmed → major (still prominent, not blocking).
+          clinicalLevel = da.isHardStop ? 'critical' : 'major'
+        } else if (da.level === 'high') {
+          clinicalLevel = 'major'
+        } else {
+          clinicalLevel = 'moderate'
+        }
+
         alerts.push({
           id: `dose-${med.drug}-${da.level}`,
-          level: da.level === 'overdose' ? 'critical' : da.level === 'high' ? 'major' : 'moderate',
-          category: 'dose',
-          title: `Dose Alert: ${da.drug}`,
+          level: clinicalLevel,
+          category: da.level === 'pregnancy' ? 'pregnancy' : 'dose',
+          title:
+            da.level === 'pregnancy'
+              ? `Pregnancy: ${da.drug}`
+              : `Dose Alert: ${da.drug}`,
           message: da.message,
           details: `Safe range: ${da.safeRange}. Max dose: ${da.maxDose}`,
           action: da.recommendation,

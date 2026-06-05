@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import {
   checkDischargeClearance,
-  applyOverride,
+  applyOverrideWithResult,
   getClearanceStatusDisplay,
   type ClearanceResult,
   type ClearanceItem,
@@ -82,10 +82,12 @@ export default function DischargeClearance({
     if (!clearance) return
     setOverrideError(null)
 
-    // BUG-DC03 fix: applyOverride now returns { applied, reason?, clearance }
+    // BUG-DC03 fix: applyOverrideWithResult returns { applied, reason?, clearance }
     // so we can detect and surface non-overridable categories instead of
-    // silently no-op'ing.
-    const result = applyOverride(clearance, category, overrideReason.trim(), currentUser)
+    // silently no-op'ing.  applyOverride() (legacy ClearanceResult-returning
+    // function) is preserved for backwards compatibility with the rest of
+    // the codebase and the existing unit tests.
+    const result = applyOverrideWithResult(clearance, category, overrideReason.trim(), currentUser)
 
     if (!result.applied) {
       if (result.reason === 'category_not_overridable') {

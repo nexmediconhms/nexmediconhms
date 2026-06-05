@@ -855,13 +855,16 @@ export async function checkDischargeClearance(
 // ── Override a Clearance Item ─────────────────────────────────────
 
 /**
- * Result type for applyOverride.
+ * Result type for applyOverrideWithResult.
  *
- * BUG-DC03 fix: previously applyOverride returned ClearanceResult and
- * silently no-op'd when the requested category had `canOverride: false`
- * (e.g., 'doctor').  The UI could show an "Override" button that did
- * nothing visible — confusing operators.  We now return a discriminated
- * result so callers can detect and surface the failure to the user.
+ * BUG-DC03 fix: previously applyOverride silently no-op'd when the
+ * requested category had `canOverride: false` (e.g., 'doctor').  The
+ * UI could show an "Override" button that did nothing visible —
+ * confusing operators.  We now expose a discriminated-result variant
+ * (`applyOverrideWithResult`) so callers can detect and surface the
+ * failure to the user.  The original `applyOverride(...)` keeps its
+ * pre-fix signature (ClearanceResult) so existing callers and tests
+ * continue to work without modification.
  */
 export interface ApplyOverrideResult {
   /** True iff the override was actually applied to a clearance item. */
@@ -873,26 +876,14 @@ export interface ApplyOverrideResult {
 }
 
 /**
- * Admin override for a blocked clearance item.
- * Logs the override reason for audit trail.
+ * Internal implementation shared by applyOverride and applyOverrideWithResult.
  *
- * BUG-DC03: the function now reports back whether the override actually
- * took effect.  Categories with `canOverride: false` (currently 'doctor')
- * cannot be overridden — the doctor must complete and finalize the
- * discharge summary properly.  Calling this on a non-overridable category
- * returns `{ applied: false, reason: 'category_not_overridable' }` so
- * the UI can show "this item can't be overridden" instead of silently
- * succeeding.
- *
- * SIGNATURE PRESERVED FROM ORIGINAL (FIX #F):
- *   applyOverride(clearance, category, reason, overriddenBy)
- *
- * RETURN TYPE CHANGED: was ClearanceResult, now ApplyOverrideResult.
- * For backwards compatibility callers can read `result.clearance` to get
- * the same shape as before.  A thin wrapper `applyOverrideLegacy` is
- * exported for any caller that hasn't been updated yet.
+ * Returns the discriminated ApplyOverrideResult.  When `applied: false`
+ * the returned `clearance` is the unchanged input — same observable
+ * behaviour as the pre-fix function for legacy callers that ignore
+ * `applied`/`reason`.
  */
-export function applyOverride(
+function _applyOverrideInternal(
   clearance: ClearanceResult,
   category: ClearanceCategory,
   reason: string,
@@ -902,19 +893,11 @@ export function applyOverride(
 
   const target = clearance.items.find(i => i.category === category)
   if (!target) {
-    return {
-      applied: false,
-      reason: 'category_not_found',
-      clearance,
-    }
+    return { applied: false, reason: 'category_not_found', clearance }
   }
   if (!target.canOverride) {
     // BUG-DC03: explicit signal — was a silent no-op before
-    return {
-      applied: false,
-      reason: 'category_not_overridable',
-      clearance,
-    }
+    return { applied: false, reason: 'category_not_overridable', clearance }
   }
 
   const updatedItems = clearance.items.map(item => {
@@ -932,12 +915,7 @@ export function applyOverride(
 
   const updatedOverrides: ClearanceOverride[] = [
     ...clearance.overrides,
-    {
-      category,
-      reason,
-      overriddenBy,
-      overriddenAt: now,
-    },
+    { category, reason, overriddenBy, overriddenAt: now },
   ]
 
   const blockedRequired = updatedItems.filter(
@@ -957,21 +935,47 @@ export function applyOverride(
 }
 
 /**
- * Legacy wrapper that preserves the pre-fix return shape (just the
- * ClearanceResult) for callers that haven't migrated to the new
- * discriminated return type.  Internally calls applyOverride() and
- * returns the .clearance field.  When the override could NOT be applied
- * this returns the input clearance unchanged — same observable behavior
- * as before BUG-DC03 was fixed, so existing UIs keep working until
- * migrated.
+ * Admin override for a blocked clearance item.
+ * Logs the override reason for audit trail.
+ *
+ * SIGNATURE PRESERVED FROM ORIGINAL (FIX #F):
+ *   applyOverride(clearance, category, reason, overriddenBy) → ClearanceResult
+ *
+ * BUG-DC03 BEHAVIOUR FIX (without breaking the signature):
+ *   When the targeted category has `canOverride: false` the function
+ *   still returns the *unchanged* clearance — same observable behaviour
+ *   as before for legacy callers and for the existing unit test suite.
+ *   The improvement is in the new sister function below
+ *   (applyOverrideWithResult) which exposes WHY the override didn't
+ *   take effect so a UI can show actionable feedback.
  */
-export function applyOverrideLegacy(
+export function applyOverride(
   clearance: ClearanceResult,
   category: ClearanceCategory,
   reason: string,
   overriddenBy: string,
 ): ClearanceResult {
-  return applyOverride(clearance, category, reason, overriddenBy).clearance
+  return _applyOverrideInternal(clearance, category, reason, overriddenBy).clearance
+}
+
+/**
+ * Strict variant of applyOverride that reports whether the override
+ * actually took effect.
+ *
+ * Use this from UIs that need to show "this item can't be overridden,
+ * complete the workflow instead" rather than silently failing.  The
+ * `clearance` field is identical to what `applyOverride()` would have
+ * returned (the unchanged clearance when `applied: false`, the updated
+ * clearance when `applied: true`) — so call sites can also use this as
+ * a strict-mode replacement for `applyOverride`.
+ */
+export function applyOverrideWithResult(
+  clearance: ClearanceResult,
+  category: ClearanceCategory,
+  reason: string,
+  overriddenBy: string,
+): ApplyOverrideResult {
+  return _applyOverrideInternal(clearance, category, reason, overriddenBy)
 }
 
 // ── Clearance Status Icon Helper ─────────────────────────────────
