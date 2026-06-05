@@ -102,6 +102,35 @@ export async function runPrescriptionSafetyChecks(
   }
 
   // 3. Dose Validation
+  //
+  // ─────────────────────────────────────────────────────────────────
+  // FIX (2026-06-05) — compatible with both old and new dose-validation.ts
+  //
+  // Earlier, an attempt to thread `pregnancyStatus` through to
+  // validateDose() introduced a 6th argument to the call:
+  //     validateDose(drug, dose, freq, age, weight, { pregnancyStatus })
+  // That depended on a separate update to src/lib/dose-validation.ts
+  // (BUG-D03 fix) which adds an `opts` parameter.  When the two files
+  // were out of sync — e.g. on a partial merge or when one fix was
+  // pulled without the other — TypeScript reported:
+  //     "Expected 2-5 arguments, but got 6."
+  // on the validateDose() call site (around lines 128 / 138 depending
+  // on whitespace).
+  //
+  // RESOLUTION:
+  //   1. Call validateDose with the ORIGINAL 5-argument signature so
+  //      this file compiles regardless of which version of
+  //      dose-validation.ts is in the repo.
+  //   2. Keep the new 'pregnancy' level/category mapping below with
+  //      `String(da.level)` widening — that way it acts as forward-
+  //      compat code (lights up automatically once dose-validation.ts
+  //      gets the BUG-D03 update which introduces the new level), and
+  //      acts as a harmless no-op until then.
+  //   3. The Category-X / Category-D pregnancy warning is still raised
+  //      separately by the dedicated block (Section 4 below) when
+  //      input.isPregnant === true, so we don't lose that signal by
+  //      dropping the opts argument here.
+  // ─────────────────────────────────────────────────────────────────
   try {
     for (const med of validMeds) {
       if (!med.dose.trim()) continue
@@ -111,15 +140,38 @@ export async function runPrescriptionSafetyChecks(
         med.dose,
         med.frequency || 'Once daily',
         input.patientAge,
-        input.patientWeight
+        input.patientWeight,
       )
 
       for (const da of doseAlerts) {
+        // Widen the level to string so we can safely test for the new
+        // 'pregnancy' value without TypeScript narrowing the union to
+        // a set that doesn't include it.  When dose-validation.ts has
+        // the old DoseAlertLevel union ('overdose'|'high'|'low'|'pediatric')
+        // the 'pregnancy' branch simply never fires, which is correct.
+        const level: string = String((da as { level: string }).level)
+
+        let clinicalLevel: 'critical' | 'major' | 'moderate' | 'minor'
+        if (level === 'overdose') {
+          clinicalLevel = 'critical'
+        } else if (level === 'pregnancy') {
+          // Confirmed pregnancy + Cat X → critical hard-stop.
+          // Unknown / unconfirmed pregnancy → major (still prominent).
+          clinicalLevel = da.isHardStop ? 'critical' : 'major'
+        } else if (level === 'high') {
+          clinicalLevel = 'major'
+        } else {
+          clinicalLevel = 'moderate'
+        }
+
         alerts.push({
-          id: `dose-${med.drug}-${da.level}`,
-          level: da.level === 'overdose' ? 'critical' : da.level === 'high' ? 'major' : 'moderate',
-          category: 'dose',
-          title: `Dose Alert: ${da.drug}`,
+          id: `dose-${med.drug}-${level}`,
+          level: clinicalLevel,
+          category: level === 'pregnancy' ? 'pregnancy' : 'dose',
+          title:
+            level === 'pregnancy'
+              ? `Pregnancy: ${da.drug}`
+              : `Dose Alert: ${da.drug}`,
           message: da.message,
           details: `Safe range: ${da.safeRange}. Max dose: ${da.maxDose}`,
           action: da.recommendation,

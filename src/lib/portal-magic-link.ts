@@ -116,14 +116,37 @@ export async function generatePortalMagicLink(
   const expiresAt = new Date(Date.now() + validHours * 60 * 60 * 1000).toISOString()
 
   try {
-    // Expire previous unverified OTP/links for this mobile (non-fatal).
+    // ── BUG-PT01 fix: expire previous unverified links by PATIENT, not by mobile ──
+    //
+    // The previous behaviour was:
+    //     .eq('mobile', normalizedMobile).eq('verified', false)
+    //
+    // In Indian clinics it is common for a single mobile number to be
+    // shared across multiple patients in the same family (parent + minor
+    // child, husband + wife who share a phone, etc.).  Each patient has
+    // their OWN portal_otp records keyed on patient_id, but the previous
+    // expiry query collapsed them by mobile alone — so generating a new
+    // link for Patient B silently invalidated Patient A's still-valid,
+    // unused link.  Patient A would tap the WhatsApp link and hit
+    // "Invalid or expired link" through no fault of their own.
+    //
+    // New behaviour:
+    //   - Always scope by patient_id (we always have it here).
+    //   - As a defensive secondary scope we also include the mobile
+    //     filter so a malformed row with a wrong patient_id can't
+    //     accidentally have its sibling's lock cleared, BUT only when
+    //     the mobile is non-empty.
+    //   - Anything still considered "this patient's pending link" gets
+    //     marked verified=true to retire it before we issue the new one.
+    let expireQuery = supabase
+      .from('portal_otp')
+      .update({ verified: true })
+      .eq('patient_id', patient.id)
+      .eq('verified', false)
     if (normalizedMobile) {
-      await supabase
-        .from('portal_otp')
-        .update({ verified: true })
-        .eq('mobile', normalizedMobile)
-        .eq('verified', false)
+      expireQuery = expireQuery.eq('mobile', normalizedMobile)
     }
+    await expireQuery
 
     const otpCode = String(randomInt(100000, 999999))
     const { error } = await supabase.from('portal_otp').insert({
