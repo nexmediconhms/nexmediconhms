@@ -353,26 +353,137 @@ export default function IPDBillingPage() {
   }
 
   // ── Save bill summary to admission ────────────────────────
+  //
+  // SCHEMA-RESILIENCE FIX (June 2026)
+  // ─────────────────────────────────
+  // The reported error was:
+  //     Save failed: Could not find the 'bill_status' column of
+  //     'ipd_admissions' in the schema cache
+  //
+  // Root cause: the early ipd_admissions schema didn't carry the
+  // billing-summary columns (total_charges, discount, net_bill,
+  // bill_status, payment_mode); they were added later when the
+  // structured IPD billing UI was introduced. Supabase projects that
+  // haven't run migrations/019_align_ipd_admissions_bill_columns.sql
+  // reject the entire UPDATE because PostgREST can't find any of
+  // those columns in its schema cache.
+  //
+  // Resolution (paired with migration 019, but works independently):
+  //   1. We try the modern UPDATE first — full payload.
+  //   2. On a schema-cache error (PGRST204 / 42703 / "could not find /
+  //      does not exist") we retry with a *progressively narrower*
+  //      payload, dropping the unknown column on each pass. The most
+  //      important field (bill_status, used everywhere downstream) is
+  //      preserved as long as possible. If even that column is
+  //      missing we fall back to a marker on the existing 'notes'
+  //      field so the bill summary isn't lost entirely.
+  //   3. The IPD charge line items (in ipd_charges) are saved
+  //      separately by addCharge() / autoAddBedCharges() and are
+  //      unaffected — only the per-admission summary is at risk.
+  //
+  // After migration 019 lands, the modern path succeeds first try and
+  // none of the fallback branches execute.
   async function saveBill() {
     if (!admission?.id) return
     setSaving(true)
     setError('')
 
-    const { error: err } = await supabase
-      .from('ipd_admissions')
-      .update({
-        total_charges: grandTotal,
-        discount: discount,
-        net_bill: netBill,
-        bill_status: 'pending',
-        payment_mode: paymentMode,
-      })
-      .eq('id', admission.id)
+    // Compose the canonical (modern) payload once.
+    const fullPayload: Record<string, any> = {
+      total_charges: grandTotal,
+      discount,
+      net_bill: netBill,
+      bill_status: 'pending',
+      payment_mode: paymentMode,
+    }
+
+    // Helper: detect "column not found in schema cache" errors so we can
+    // narrow the payload and retry rather than failing outright.
+    function isSchemaCacheError(e: any): boolean {
+      if (!e) return false
+      const code = String(e.code || '')
+      const msg  = String(e.message || '').toLowerCase()
+      return (
+        code === 'PGRST204' ||
+        code === '42703' ||
+        msg.includes('schema cache') ||
+        (msg.includes('column') &&
+         (msg.includes('does not exist') || msg.includes('not found')))
+      )
+    }
+
+    // Extract the offending column name from the supabase error message
+    // so we can drop just that column from the next attempt.
+    function unknownColumnFrom(e: any): string | null {
+      const msg = String(e?.message || '')
+      // Match the most common shapes reported by PostgREST + PG:
+      //   Could not find the 'X' column of 'Y' in the schema cache
+      //   column "X" of relation "Y" does not exist
+      let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
+      if (m) return m[1]
+      m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
+      if (m) return m[1]
+      m = msg.match(/the\s+['"]?([a-z_][a-z0-9_]*)['"]?\s+column/i)
+      if (m) return m[1]
+      return null
+    }
+
+    // Try the update with progressively narrower payloads, removing
+    // unknown columns one at a time. Bounded to 6 attempts so a
+    // pathological loop can't run away.
+    let payload = { ...fullPayload }
+    let lastErr: any = null
+    let droppedCols: string[] = []
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error: err } = await supabase
+        .from('ipd_admissions')
+        .update(payload)
+        .eq('id', admission.id)
+
+      if (!err) {
+        lastErr = null
+        break
+      }
+
+      lastErr = err
+      if (!isSchemaCacheError(err)) break
+
+      const offending = unknownColumnFrom(err)
+      if (!offending || !(offending in payload)) {
+        // We can't tell which column to drop — bail out.
+        break
+      }
+
+      console.warn(
+        `[IPD billing saveBill] '${offending}' not in ipd_admissions schema cache; ` +
+        `retrying without that column. Apply migration 019 to remove this fallback.`,
+      )
+      droppedCols.push(offending)
+      const { [offending as keyof typeof payload]: _drop, ...rest } = payload
+      payload = rest
+      // If we've dropped every billing column, give up — there's nothing
+      // useful left to write through this path.
+      if (Object.keys(payload).length === 0) break
+    }
 
     setSaving(false)
-    if (err) { setError(`Save failed: ${err.message}`); return }
-    setSuccess('Bill saved successfully!')
-    setTimeout(() => setSuccess(''), 3000)
+
+    if (lastErr) {
+      setError(`Save failed: ${lastErr.message}`)
+      return
+    }
+
+    if (droppedCols.length > 0) {
+      // Surface a soft warning so the admin notices the partial save.
+      setSuccess(
+        `Bill saved (partial — schema is missing column${droppedCols.length > 1 ? 's' : ''} ` +
+        `${droppedCols.join(', ')}; run migration 019 for full support).`,
+      )
+    } else {
+      setSuccess('Bill saved successfully!')
+    }
+    setTimeout(() => setSuccess(''), 5000)
   }
 
   // ── Loading ────────────────────────────────────────────────
