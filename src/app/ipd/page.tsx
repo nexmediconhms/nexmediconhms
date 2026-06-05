@@ -326,10 +326,45 @@ function CensusView({
                     <td className="px-4 py-3">{statusBadge(adm.status)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <button onClick={() => onOpenChart(adm)}
-                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
-                          <Activity className="w-3 h-3" /> Chart
-                        </button>
+                        {/*
+                          ── Chart button — Q3 fix (June 2026) ──────────────────────────
+                          The Chart button now navigates to the dedicated nursing-chart
+                          route at /ipd/[bedId] rather than rendering the legacy inline
+                          NursingChart component via setView('chart').
+                          Why:
+                            - The full /ipd/[bedId] page has the complete clinical chart
+                              (Vitals / I&O / Nursing Notes / Doctor Notes / Files &
+                              Photos), tabs, OCR autofill, IPD Bill button, etc.
+                            - The inline component shown by setView('chart') is the
+                              older "Nursing Chart" panel that only supports a subset
+                              of the same features and breadcrumbs lose context on
+                              browser back-navigation.
+                            - Hospitals reported confusion when "Chart" landed on the
+                              reduced view while nurses on tablets had bookmarked the
+                              full page directly.
+                          Behaviour preserved:
+                            - The legacy `onOpenChart` callback prop is kept on
+                              CensusView (and the inline chart view code below) so
+                              other call sites or tests that rely on the prop signature
+                              continue to function. We just don't trigger it from this
+                              row anymore — a Link is used instead so the user gets
+                              browser history, deep-linkable URLs, and back-button
+                              support out of the box.
+                            - If the row is for a row without a bed_id (rare —
+                              transferred admissions), we fall back to the legacy
+                              inline view so the page still works without a 404.
+                        */}
+                        {adm.bed_id ? (
+                          <Link href={`/ipd/${adm.bed_id}`}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
+                            <Activity className="w-3 h-3" /> Chart
+                          </Link>
+                        ) : (
+                          <button onClick={() => onOpenChart(adm)}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
+                            <Activity className="w-3 h-3" /> Chart
+                          </button>
+                        )}
                         {canManage && (
                           <button onClick={() => markDischarged(adm.id)}
                             className="text-xs py-1 px-2 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1">
