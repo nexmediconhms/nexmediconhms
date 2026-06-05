@@ -271,7 +271,21 @@ export async function checkDischargeClearance(
   }
 
   // ── 1. BILLING CHECK ─────────────────────────────────────────
-  // FIX #B: Scope to current admission (admission_id match OR date-range fallback)
+  // FIX #B + BUG-DC02: Scope to current admission.  Strategy:
+  //   A. Bills with admission_id = currentAdmissionId (exact match).
+  //   B. Bills for this patient whose created_at is on/after admissionDate
+  //      (covers legacy bills written before admission_id was introduced).
+  //
+  // BUG-DC02: previously, when admissionDate was missing/null, the code
+  // fell back to '1900-01-01' which scanned EVERY unpaid bill in the
+  // patient's history.  A patient with a forgotten OPD bill from years
+  // ago could not be discharged from the current IPD — even when the
+  // current admission was fully paid.  We now fail-CLOSED for safety:
+  // if admissionDate is unavailable, we ONLY use Strategy A and surface
+  // a clear 'pending' item asking staff to verify manually.  The
+  // discharge isn't permanently blocked — admin can override — but it's
+  // never auto-cleared based on stale unrelated bills, and never
+  // mis-blocked by them either.
   try {
     // Strategy A: bills with admission_id matching this admission
     const { data: admissionBills, error: admBillErr } = await supabase
@@ -281,38 +295,45 @@ export async function checkDischargeClearance(
       .in('status', ['pending', 'unpaid', 'partial'])
 
     let pendingBills: any[] | null = null
+    let usedFallback = false
 
     if (!admBillErr && admissionBills && admissionBills.length > 0) {
       pendingBills = admissionBills
-    } else {
+    } else if (admissionDate) {
       // Strategy B: bills for this patient created since admission date
-      // (covers legacy bills without admission_id)
-      const dateFilter = admissionDate || '1900-01-01'
+      // (covers legacy bills without admission_id).  Only attempted when
+      // admissionDate is known — never the 1900-01-01 fallback.
+      usedFallback = true
+      const dateFilter = admissionDate + 'T00:00:00'
 
-      // Try snake_case first
       const snakeBillsQuery = supabase
         .from('bills')
         .select('id, net_amount, total, paid, due, status, created_at')
         .eq('patient_id', patientId)
         .in('status', ['pending', 'unpaid', 'partial'])
-        .gte('created_at', dateFilter + 'T00:00:00')
+        .gte('created_at', dateFilter)
 
       const { data: snakeBills, error: snakeBillErr } = await snakeBillsQuery
 
       if (snakeBillErr && isMissingColumnOrTableError(snakeBillErr)) {
-        // Fallback to flat schema
+        // Fallback to flat schema, still date-scoped
         const { data: flatBills } = await supabase
           .from('bills')
           .select('id, total, paid, due, status, createdat')
           .eq('patientid', patientId)
           .in('status', ['pending', 'unpaid', 'partial'])
-          .gte('createdat', dateFilter + 'T00:00:00')
+          .gte('createdat', dateFilter)
         pendingBills = flatBills
       } else if (snakeBillErr) {
         throw snakeBillErr
       } else {
         pendingBills = snakeBills
       }
+    } else {
+      // BUG-DC02: No admission_id matches AND no admissionDate — fail-closed.
+      // Surface a manual-verification item rather than scanning the entire
+      // patient history.
+      pendingBills = []
     }
 
     const totalDue = (pendingBills || []).reduce((sum, b) => {
@@ -325,11 +346,33 @@ export async function checkDischargeClearance(
       return sum + Math.max(0, total - (Number(b.paid) || 0))
     }, 0)
 
-    if (!pendingBills || pendingBills.length === 0 || totalDue <= 0) {
+    // Special case: no admission_id linkage AND no admission date — we
+    // genuinely don't know which bills belong to this admission.  Don't
+    // auto-clear; require manual verification.
+    if (
+      (!admissionBills || admissionBills.length === 0) &&
+      !admissionDate
+    ) {
+      items.push({
+        category: 'billing',
+        label: 'Billing — Manual Verification Required',
+        description: 'Unable to identify bills for this admission automatically',
+        status: 'pending',
+        detail:
+          'This admission has no admission_id-linked bills and no admission_date is recorded. ' +
+          'Please verify billing status manually before discharge.',
+        isRequired: true,
+        canOverride: true,
+        checkedAt: now,
+        checkedBy: null,
+      })
+    } else if (!pendingBills || pendingBills.length === 0 || totalDue <= 0) {
       items.push({
         category: 'billing',
         label: 'Billing Cleared',
-        description: 'All bills for this admission are paid in full',
+        description: usedFallback
+          ? 'All bills since admission date are paid in full'
+          : 'All bills for this admission are paid in full',
         status: 'cleared',
         detail: null,
         isRequired: true,
@@ -366,76 +409,110 @@ export async function checkDischargeClearance(
 
   // ── 2. LAB RESULTS CHECK ─────────────────────────────────────
   // FIX #A: try snake_case (lab_reports) and fall back to no-underscore (labreports)
+  //
+  // BUG-DC04 fix: previously the catch block here set status = 'not_applicable'.
+  // That is fail-OPEN — a transient DB error or RLS blip silently disabled
+  // the lab clearance check, so a discharge could proceed with critical
+  // lab results outstanding.  Lab is now isRequired = false (matches
+  // original) but on query failure we surface a 'pending' status that
+  // requires manual confirmation.  An admin can still override, but we
+  // never silently say "no labs pending" because we couldn't run the
+  // query.
+  //
+  // Note: when the labs table genuinely doesn't exist in this deployment
+  // (a fresh install without the lab module), we still return a 'pending'
+  // item — admin override is the right escape hatch for that case.
   try {
-    const dateFilter = (admissionDate || '1900-01-01') + 'T00:00:00'
-
-    const { data: snakeLabs, error: snakeLabErr } = await supabase
-      .from('lab_reports')
-      .select('id, test_name, status, created_at')
-      .eq('patient_id', patientId)
-      .in('status', ['pending', 'collected', 'processing'])
-      .gte('created_at', dateFilter)
-
-    let pendingLabs: any[] | null = null
-    let labSchema: 'snake' | 'flat' = 'snake'
-
-    if (snakeLabErr && isMissingColumnOrTableError(snakeLabErr)) {
-      const { data: flatLabs, error: flatLabErr } = await supabase
-        .from('labreports')
-        .select('id, reportname, status, createdat')
-        .eq('patientid', patientId)
-        .in('status', ['pending', 'collected', 'processing'])
-        .gte('createdat', dateFilter)
-
-      if (flatLabErr) throw flatLabErr
-      pendingLabs = flatLabs
-      labSchema = 'flat'
-    } else if (snakeLabErr) {
-      throw snakeLabErr
-    } else {
-      pendingLabs = snakeLabs
-    }
-
-    if (!pendingLabs || pendingLabs.length === 0) {
+    if (!admissionDate) {
+      // BUG-DC02-style scoping: without admission date we'd otherwise scan
+      // the patient's entire lab history.  Surface as pending instead.
       items.push({
         category: 'lab',
-        label: 'Lab Results Complete',
-        description: 'All lab tests during admission are reported',
-        status: 'cleared',
-        detail: null,
-        isRequired: false,
-        canOverride: true,
-        checkedAt: now,
-        checkedBy: 'system',
-      })
-    } else {
-      const testNames = pendingLabs
-        .map(l => (labSchema === 'snake' ? l.test_name : l.reportname) || 'Unknown')
-        .join(', ')
-      items.push({
-        category: 'lab',
-        label: 'Pending Lab Results',
-        description: `${pendingLabs.length} test(s) still pending: ${testNames}`,
+        label: 'Lab Reports — Manual Verification',
+        description: 'Cannot scope lab queries without admission date',
         status: 'pending',
-        detail: `Pending: ${testNames}. Results should ideally be available before discharge.`,
+        detail: 'Verify there are no outstanding lab orders for this admission before discharge.',
         isRequired: false,
         canOverride: true,
         checkedAt: now,
-        checkedBy: 'system',
+        checkedBy: null,
       })
+    } else {
+      const dateFilter = admissionDate + 'T00:00:00'
+
+      const { data: snakeLabs, error: snakeLabErr } = await supabase
+        .from('lab_reports')
+        .select('id, test_name, status, created_at')
+        .eq('patient_id', patientId)
+        .in('status', ['pending', 'collected', 'processing'])
+        .gte('created_at', dateFilter)
+
+      let pendingLabs: any[] | null = null
+      let labSchema: 'snake' | 'flat' = 'snake'
+
+      if (snakeLabErr && isMissingColumnOrTableError(snakeLabErr)) {
+        const { data: flatLabs, error: flatLabErr } = await supabase
+          .from('labreports')
+          .select('id, reportname, status, createdat')
+          .eq('patientid', patientId)
+          .in('status', ['pending', 'collected', 'processing'])
+          .gte('createdat', dateFilter)
+
+        if (flatLabErr) throw flatLabErr
+        pendingLabs = flatLabs
+        labSchema = 'flat'
+      } else if (snakeLabErr) {
+        throw snakeLabErr
+      } else {
+        pendingLabs = snakeLabs
+      }
+
+      if (!pendingLabs || pendingLabs.length === 0) {
+        items.push({
+          category: 'lab',
+          label: 'Lab Results Complete',
+          description: 'All lab tests during admission are reported',
+          status: 'cleared',
+          detail: null,
+          isRequired: false,
+          canOverride: true,
+          checkedAt: now,
+          checkedBy: 'system',
+        })
+      } else {
+        const testNames = pendingLabs
+          .map(l => (labSchema === 'snake' ? l.test_name : l.reportname) || 'Unknown')
+          .join(', ')
+        items.push({
+          category: 'lab',
+          label: 'Pending Lab Results',
+          description: `${pendingLabs.length} test(s) still pending: ${testNames}`,
+          status: 'pending',
+          detail: `Pending: ${testNames}. Results should ideally be available before discharge.`,
+          isRequired: false,
+          canOverride: true,
+          checkedAt: now,
+          checkedBy: 'system',
+        })
+      }
     }
-  } catch {
-    // Lab table missing or query failed — treat as N/A (lab is not required)
+  } catch (e: any) {
+    // BUG-DC04: fail-CLOSED on errors.  Previously this branch returned
+    // status='not_applicable' which silently bypassed the lab check.
+    // We now surface a 'pending' item with the underlying reason so
+    // staff make an explicit decision.
     items.push({
       category: 'lab',
-      label: 'Lab Reports',
-      description: 'No pending lab results found',
-      status: 'not_applicable',
-      detail: null,
+      label: 'Lab Reports — Verification Required',
+      description: 'Lab status query failed; manual verification needed',
+      status: 'pending',
+      detail:
+        (e?.message ? `${e.message}. ` : '') +
+        'Confirm with the lab that no results are outstanding before discharge.',
       isRequired: false,
       canOverride: true,
       checkedAt: now,
-      checkedBy: 'system',
+      checkedBy: null,
     })
   }
 
@@ -580,43 +657,88 @@ export async function checkDischargeClearance(
       checkedBy: doctorManual.by || 'doctor',
     })
   } else {
-    // FIX #C: Check discharge_summaries with schema-resilient access
+    // ── BUG-DC01 fix: scope discharge_summaries lookup to CURRENT admission ──
+    // Previous implementation queried by patient_id alone and ordered by
+    // created_at DESC — meaning ANY discharge summary from a previous
+    // admission would clear the doctor-orders gate for the current
+    // admission.  A patient with a closed-out IPD admission from last
+    // year could be discharged from today's admission with no actual
+    // discharge summary written.  Medical-legal liability.
+    //
+    // New strategy:
+    //   1. Try `admission_id = <current>` exact match (snake_case schema).
+    //   2. If admission_id column doesn't exist (older schema), fall back
+    //      to (patient_id = X AND created_at >= admissionDate).  This is
+    //      strictly more accurate than the previous lookup but preserves
+    //      compatibility with installations that haven't run the migration
+    //      that adds discharge_summaries.admission_id.
+    //   3. Only as a last resort (no admission_id column AND no admission
+    //      date) we fall through to "pending" — never reusing an old
+    //      summary from a different admission.
     try {
-      // Try snake_case first (production)
-      const { data: snakeDs, error: snakeDsErr } = await supabase
+      let ds: any = null
+      let dsHasDiagnosis = false
+      let dsHasCondition = false
+
+      // Strategy 1: snake_case + admission_id exact match
+      const { data: byAdmSnake, error: byAdmSnakeErr } = await supabase
         .from('discharge_summaries')
-        .select('final_diagnosis, condition_at_discharge, discharge_advice')
-        .eq('patient_id', patientId)
+        .select('final_diagnosis, condition_at_discharge, discharge_advice, admission_id')
+        .eq('admission_id', admissionId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
-      let ds: any = snakeDs
-      let dsHasDiagnosis = false
-      let dsHasCondition = false
+      if (!byAdmSnakeErr && byAdmSnake) {
+        ds = byAdmSnake
+        dsHasDiagnosis = !!byAdmSnake.final_diagnosis
+        dsHasCondition = !!byAdmSnake.condition_at_discharge
+      } else if (byAdmSnakeErr && !isMissingColumnOrTableError(byAdmSnakeErr)) {
+        // Real error — propagate to outer catch
+        throw byAdmSnakeErr
+      } else {
+        // admission_id column or table missing — try patient+date scoped lookup
+        if (admissionDate) {
+          const dateFilter = admissionDate + 'T00:00:00'
 
-      if (snakeDsErr && isMissingColumnOrTableError(snakeDsErr)) {
-        // Fall back to dischargesummaries
-        const { data: flatDs } = await supabase
-          .from('dischargesummaries')
-          .select('finaldiagnosis, conditionatdischarge, dischargeadvice')
-          .eq('patientid', patientId)
-          .order('createdat', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        ds = flatDs
-        dsHasDiagnosis = !!ds?.finaldiagnosis
-        dsHasCondition = !!ds?.conditionatdischarge
-      } else if (!snakeDsErr && ds) {
-        dsHasDiagnosis = !!ds.final_diagnosis
-        dsHasCondition = !!ds.condition_at_discharge
+          const { data: byDateSnake, error: byDateSnakeErr } = await supabase
+            .from('discharge_summaries')
+            .select('final_diagnosis, condition_at_discharge, discharge_advice, created_at')
+            .eq('patient_id', patientId)
+            .gte('created_at', dateFilter)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (!byDateSnakeErr && byDateSnake) {
+            ds = byDateSnake
+            dsHasDiagnosis = !!byDateSnake.final_diagnosis
+            dsHasCondition = !!byDateSnake.condition_at_discharge
+          } else if (byDateSnakeErr && isMissingColumnOrTableError(byDateSnakeErr)) {
+            // Fall back to no-underscore (v00) schema, still date-scoped
+            const { data: byDateFlat } = await supabase
+              .from('dischargesummaries')
+              .select('finaldiagnosis, conditionatdischarge, dischargeadvice, createdat')
+              .eq('patientid', patientId)
+              .gte('createdat', dateFilter)
+              .order('createdat', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            ds = byDateFlat
+            dsHasDiagnosis = !!byDateFlat?.finaldiagnosis
+            dsHasCondition = !!byDateFlat?.conditionatdischarge
+          }
+        }
+        // else: no admission date and no admission_id column ⇒ ds stays null,
+        // which correctly produces a 'pending' status below (fail-closed).
       }
 
       if (ds && dsHasDiagnosis && dsHasCondition) {
         items.push({
           category: 'doctor',
           label: 'Doctor Final Orders',
-          description: 'Discharge summary with diagnosis and condition documented',
+          description: 'Discharge summary with diagnosis and condition documented for THIS admission',
           status: 'cleared',
           detail: null,
           isRequired: true,
@@ -628,9 +750,9 @@ export async function checkDischargeClearance(
         items.push({
           category: 'doctor',
           label: 'Doctor Orders Pending',
-          description: 'Doctor must confirm final diagnosis, advice, and medications',
+          description: 'Doctor must confirm final diagnosis, advice, and medications for this admission',
           status: 'pending',
-          detail: 'This is automatically cleared when you fill the discharge form fields.',
+          detail: 'This is automatically cleared when you fill the discharge form fields for the current admission.',
           isRequired: true,
           canOverride: false,
           checkedAt: now,
@@ -733,22 +855,67 @@ export async function checkDischargeClearance(
 // ── Override a Clearance Item ─────────────────────────────────────
 
 /**
+ * Result type for applyOverride.
+ *
+ * BUG-DC03 fix: previously applyOverride returned ClearanceResult and
+ * silently no-op'd when the requested category had `canOverride: false`
+ * (e.g., 'doctor').  The UI could show an "Override" button that did
+ * nothing visible — confusing operators.  We now return a discriminated
+ * result so callers can detect and surface the failure to the user.
+ */
+export interface ApplyOverrideResult {
+  /** True iff the override was actually applied to a clearance item. */
+  applied: boolean
+  /** Reason the override could not be applied, when applied=false. */
+  reason?: 'category_not_found' | 'category_not_overridable'
+  /** Updated clearance result (unchanged when applied=false). */
+  clearance: ClearanceResult
+}
+
+/**
  * Admin override for a blocked clearance item.
  * Logs the override reason for audit trail.
+ *
+ * BUG-DC03: the function now reports back whether the override actually
+ * took effect.  Categories with `canOverride: false` (currently 'doctor')
+ * cannot be overridden — the doctor must complete and finalize the
+ * discharge summary properly.  Calling this on a non-overridable category
+ * returns `{ applied: false, reason: 'category_not_overridable' }` so
+ * the UI can show "this item can't be overridden" instead of silently
+ * succeeding.
  *
  * SIGNATURE PRESERVED FROM ORIGINAL (FIX #F):
  *   applyOverride(clearance, category, reason, overriddenBy)
  *
- * (The v2 file had reversed the last two params; preserving original order
- * to avoid breaking any existing callers.)
+ * RETURN TYPE CHANGED: was ClearanceResult, now ApplyOverrideResult.
+ * For backwards compatibility callers can read `result.clearance` to get
+ * the same shape as before.  A thin wrapper `applyOverrideLegacy` is
+ * exported for any caller that hasn't been updated yet.
  */
 export function applyOverride(
   clearance: ClearanceResult,
   category: ClearanceCategory,
   reason: string,
   overriddenBy: string,
-): ClearanceResult {
+): ApplyOverrideResult {
   const now = new Date().toISOString()
+
+  const target = clearance.items.find(i => i.category === category)
+  if (!target) {
+    return {
+      applied: false,
+      reason: 'category_not_found',
+      clearance,
+    }
+  }
+  if (!target.canOverride) {
+    // BUG-DC03: explicit signal — was a silent no-op before
+    return {
+      applied: false,
+      reason: 'category_not_overridable',
+      clearance,
+    }
+  }
 
   const updatedItems = clearance.items.map(item => {
     if (item.category === category && item.canOverride) {
@@ -778,12 +945,33 @@ export function applyOverride(
   )
 
   return {
-    ...clearance,
-    items: updatedItems,
-    overrides: updatedOverrides,
-    canDischarge: blockedRequired.length === 0,
-    blockedCount: blockedRequired.length,
+    applied: true,
+    clearance: {
+      ...clearance,
+      items: updatedItems,
+      overrides: updatedOverrides,
+      canDischarge: blockedRequired.length === 0,
+      blockedCount: blockedRequired.length,
+    },
   }
+}
+
+/**
+ * Legacy wrapper that preserves the pre-fix return shape (just the
+ * ClearanceResult) for callers that haven't migrated to the new
+ * discriminated return type.  Internally calls applyOverride() and
+ * returns the .clearance field.  When the override could NOT be applied
+ * this returns the input clearance unchanged — same observable behavior
+ * as before BUG-DC03 was fixed, so existing UIs keep working until
+ * migrated.
+ */
+export function applyOverrideLegacy(
+  clearance: ClearanceResult,
+  category: ClearanceCategory,
+  reason: string,
+  overriddenBy: string,
+): ClearanceResult {
+  return applyOverride(clearance, category, reason, overriddenBy).clearance
 }
 
 // ── Clearance Status Icon Helper ─────────────────────────────────
