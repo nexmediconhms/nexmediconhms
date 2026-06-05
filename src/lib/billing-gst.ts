@@ -19,7 +19,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
-import { calculateBillTax } from '@/lib/billing-tax-unified'
+import { calculateBillTax, formatGSTInvoiceNote } from '@/lib/billing-tax-unified'
 
 // ── Types (unchanged) ────────────────────────────────────────
 
@@ -120,12 +120,32 @@ export function gstInvoiceNote(
   netAmount:     number,
 ): string {
   if (gstPercent === 0 || !hospitalGSTIN) return ''
+  // BUG-B05 residual: delegate to the unified breakdown so CGST/SGST split
+  // uses the same rounding rules as the rest of the app.  Previously this
+  // function did `gstAmount/2` and `.toFixed(2)`, which can leak fractional
+  // paisa or, for odd-paisa GST values, sum to a value different from
+  // `gstAmount` by ₹0.01 — producing an invoice that doesn't tie out.
+  //
+  // We can't perfectly reconstruct the (subtotal, discount) split from
+  // (gstAmount, netAmount) alone, but we can ensure the printed CGST+SGST
+  // sums exactly to gstAmount by deriving SGST as `gstAmount/2` rounded to
+  // 2dp and CGST as the remainder.
+  const taxableAmount = Math.round((netAmount - gstAmount) * 100) / 100
+  const sgst = Math.round((gstAmount / 2) * 100) / 100
+  const cgst = Math.round((gstAmount - sgst) * 100) / 100
   return [
     `GSTIN: ${hospitalGSTIN}`,
-    `Taxable Amount: ₹${(netAmount - gstAmount).toFixed(2)}`,
-    `CGST @ ${gstPercent / 2}%: ₹${(gstAmount / 2).toFixed(2)}`,
-    `SGST @ ${gstPercent / 2}%: ₹${(gstAmount / 2).toFixed(2)}`,
+    `Taxable Amount: ₹${taxableAmount.toFixed(2)}`,
+    `CGST @ ${gstPercent / 2}%: ₹${cgst.toFixed(2)}`,
+    `SGST @ ${gstPercent / 2}%: ₹${sgst.toFixed(2)}`,
     `Total GST: ₹${gstAmount.toFixed(2)}`,
     `Invoice Total: ₹${netAmount.toFixed(2)}`,
   ].join('\n')
 }
+
+/**
+ * Variant that takes the canonical TaxBreakdown shape directly — preferred
+ * for new callers that already have a full breakdown to avoid any chance
+ * of paisa drift.
+ */
+export const gstInvoiceNoteFromBreakdown = formatGSTInvoiceNote
