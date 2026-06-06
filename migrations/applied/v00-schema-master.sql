@@ -657,5 +657,39 @@ CREATE INDEX IF NOT EXISTS idx_audit_action         ON auditlog (action);
 CREATE INDEX IF NOT EXISTS idx_portal_token         ON portalsessions (token);
 CREATE INDEX IF NOT EXISTS idx_portal_expiry        ON portalsessions (expiresat);
 
+-- ── consultation_attachments (file uploads for patient consultations) ─────────
+CREATE TABLE IF NOT EXISTS consultation_attachments (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id   UUID REFERENCES patients(id) ON DELETE CASCADE,
+  encounter_id UUID,
+  file_name    TEXT NOT NULL,
+  file_type    TEXT,
+  file_size    INTEGER,
+  bucket       TEXT DEFAULT 'consultation-files',
+  storage_key  TEXT,
+  storage_path TEXT,
+  notes        TEXT,
+  uploaded_by  TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ca_patient ON consultation_attachments (patient_id);
+
+-- ── consultation_files_db (DB-fallback storage when bucket unavailable) ───────
+CREATE TABLE IF NOT EXISTS consultation_files_db (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id   UUID REFERENCES patients(id) ON DELETE CASCADE,
+  encounter_id UUID,
+  file_name    TEXT NOT NULL,
+  file_type    TEXT,
+  file_size    INTEGER,
+  file_data    TEXT,
+  notes        TEXT,
+  uploaded_by  TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cfdb_patient ON consultation_files_db (patient_id);
+
 -- ── DONE ──────────────────────────────────────────────────────────────────────
 SELECT 'v00-schema-master: fresh database bootstrap complete' AS result;

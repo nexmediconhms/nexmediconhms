@@ -25,11 +25,42 @@ CREATE TABLE IF NOT EXISTS consultation_attachments (
   file_type    TEXT,
   file_size    INTEGER,
   bucket       TEXT DEFAULT 'consultation-files',
+  storage_key  TEXT,
   storage_path TEXT,
   notes        TEXT,
   uploaded_by  TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- If table already exists but bucket/storage_key columns are missing, add them.
+-- This handles the case where the table was created by an older migration
+-- (e.g., fix-all-permissions.sql) without these columns.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'consultation_attachments')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consultation_attachments' AND column_name = 'bucket')
+  THEN
+    ALTER TABLE consultation_attachments ADD COLUMN bucket TEXT DEFAULT 'consultation-files';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'consultation_attachments')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consultation_attachments' AND column_name = 'storage_key')
+  THEN
+    ALTER TABLE consultation_attachments ADD COLUMN storage_key TEXT;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'consultation_attachments')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consultation_attachments' AND column_name = 'storage_path')
+  THEN
+    ALTER TABLE consultation_attachments ADD COLUMN storage_path TEXT;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'consultation_attachments')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consultation_attachments' AND column_name = 'file_size')
+  THEN
+    ALTER TABLE consultation_attachments ADD COLUMN file_size INTEGER;
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════
 -- FIX #2: ot_schedules table with anesthesia_type column

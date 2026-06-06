@@ -185,6 +185,7 @@ export default function PatientDetailPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bills', filter: `patient_id=eq.${id}` }, debouncedReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters', filter: `patient_id=eq.${id}` }, debouncedReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue', filter: `patient_id=eq.${id}` }, debouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments', filter: `patient_id=eq.${id}` }, debouncedReload)
       .subscribe()
 
     return () => {

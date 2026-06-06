@@ -105,8 +105,19 @@ export default function ConsultationAttachments({ patientId, encounterId, compac
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const streamRef  = useRef<MediaStream|null>(null)
 
-  useEffect(() => { detectStorageMode().then(() => load()) }, [patientId, encounterId])
+  useEffect(() => { ensureSchema().then(() => detectStorageMode().then(() => load())) }, [patientId, encounterId])
   useEffect(() => () => stopCam(), [])
+
+  // ── Auto-fix schema: ensures consultation_attachments has all required columns ──
+  async function ensureSchema() {
+    try {
+      await fetch('/api/ensure-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: ['consultation_attachments', 'consultation_files_db'] }),
+      })
+    } catch { /* non-critical: if API fails, we'll get the column error and show it */ }
+  }
 
   async function detectStorageMode() {
     try {
