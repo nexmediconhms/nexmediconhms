@@ -185,7 +185,19 @@ export async function POST(req: NextRequest) {
         ...Object.entries(schema).map(([col, def]) =>
           `ALTER TABLE public.${table} ADD COLUMN IF NOT EXISTS ${col} ${def};`
         ),
+        // Drop NOT NULL on all columns (except id) to prevent insert failures
+        // when app code doesn't populate every column
+        ...Object.keys(schema).map(col =>
+          `ALTER TABLE public.${table} ALTER COLUMN ${col} DROP NOT NULL;`
+        ),
       ]
+
+      // Also handle legacy columns that might have NOT NULL (e.g., file_url from old schema)
+      if (table === 'consultation_attachments') {
+        statements.push(
+          `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='consultation_attachments' AND column_name='file_url') THEN ALTER TABLE public.consultation_attachments ALTER COLUMN file_url DROP NOT NULL; END IF; END $$;`
+        )
+      }
 
       // Execute all statements as one block
       const fullSQL = statements.join('\n')
@@ -199,8 +211,8 @@ export async function POST(req: NextRequest) {
         for (const stmt of statements) {
           const r = await executeSql(stmt)
           if (r.success) {
-            // Extract column name from ALTER statement
-            const match = stmt.match(/ADD COLUMN IF NOT EXISTS (\w+)/)
+            // Extract column name from ALTER/ADD statement
+            const match = stmt.match(/ADD COLUMN IF NOT EXISTS (\w+)/) || stmt.match(/ALTER COLUMN (\w+) DROP/)
             if (match) columnsAdded.push(match[1])
           }
         }

@@ -11,6 +11,7 @@ import type { RiskAssessment } from '@/lib/clinical-risk'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import { TEMPLATES, whatsAppUrl } from '@/lib/whatsapp-templates'
 import type { TemplateParams } from '@/lib/whatsapp-templates'
+import { loadPatientBills } from '@/lib/billing-helpers'
 import {
   ArrowLeft, Stethoscope, Pill, Printer, Phone, Calendar,
   Droplets, User, Edit, Plus, FileText, ClipboardList, Scissors,
@@ -201,7 +202,7 @@ export default function PatientDetailPage() {
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('discharge_summaries').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
-      supabase.from('bills').select('id, patient_id, patient_name, mrn, invoice_number, items, subtotal, net_amount, total, paid, due, payment_mode, payment_ref, status, type, encounter_type, notes, created_at, paid_at').eq('patient_id', id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('bills').select('*').eq('patient_id', id).order('created_at', { ascending: false }).limit(50),
       // FIX: Also count OPD queue visits (done status = completed visit)
       supabase.from('opd_queue').select('id, status, queue_date').eq('patient_id', id),
     ])
@@ -209,7 +210,20 @@ export default function PatientDetailPage() {
     setEncounters(enc || [])
     setPrescriptions(rx || [])
     setDischarges(ds || [])
-    setBills(billsData || [])
+    // If no bills found, try legacy column name as fallback
+       if (!billsData || billsData.length === 0) {
+         const { data: legacyBills } = await supabase
+           .from('bills')
+           .select('*')
+           .eq('patientid', id)
+           .order('createdat', { ascending: false })
+           .limit(50)
+         setBills(legacyBills || [])
+       } else {
+         setBills(billsData)
+       }
+ 
+
     // Calculate total visits: encounters + completed queue visits (to avoid double-counting, use max)
     const encCount = (enc || []).length
     const queueDoneCount = (queueData || []).filter((q: any) => q.status === 'done' || q.status === 'in_progress').length
