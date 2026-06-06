@@ -169,23 +169,102 @@ export async function POST(req: NextRequest) {
         console.log('[Registration Payment] bill_payments recorded successfully')
       }
 
-      // Update encounter revenue_status if encounter exists today
+      // ─── FIX #9: Create or update encounter for this registration ────────────
+      // The daily report and monthly report depend on encounters to show revenue.
+      // Without an encounter record, the bill won't appear in reports even though
+      // it exists in the bills table. We create a minimal OPD encounter here.
       try {
-        const { data: encounters } = await supabase
+        // Try both column names (patient_id for modern schema, patientid for legacy)
+        let existingEnc: any = null
+
+        const { data: encModern } = await supabase
           .from('encounters')
           .select('id')
-          .eq('patientid', patient_id)
+          .eq('patient_id', patient_id)
           .eq('encounter_date', todayStr)
           .limit(1)
 
-        if (encounters && encounters.length > 0) {
+        if (encModern && encModern.length > 0) {
+          existingEnc = encModern[0]
+        } else {
+          // Try legacy column name
+          const { data: encLegacy } = await supabase
+            .from('encounters')
+            .select('id')
+            .eq('patientid', patient_id)
+            .eq('encounter_date', todayStr)
+            .limit(1)
+          if (encLegacy && encLegacy.length > 0) {
+            existingEnc = encLegacy[0]
+          }
+        }
+
+        if (existingEnc) {
+          // Encounter exists — link the bill to it and mark as paid
           await supabase
             .from('encounters')
             .update({ revenue_status: 'paid', bill_id: bill.id, updated_at: nowISO })
-            .eq('id', encounters[0].id)
+            .eq('id', existingEnc.id)
+
+          // Also link the bill back to the encounter
+          await supabase
+            .from('bills')
+            .update({ encounter_id: existingEnc.id })
+            .eq('id', bill.id)
+
+          console.log('[Registration Payment] Linked bill to existing encounter:', existingEnc.id)
+        } else {
+          // No encounter exists — CREATE one so daily/monthly reports pick up this bill
+          const encounterPayload = {
+            patient_id,
+            encounter_date: todayStr,
+            encounter_type: 'OPD',
+            chief_complaint: 'Registration / OPD Consultation',
+            diagnosis: null,
+            notes: `Auto-created during registration. Payment: ₹${amountNum} via ${payment_method}`,
+            revenue_status: 'paid',
+            bill_id: bill.id,
+          }
+
+          const { data: newEnc, error: encCreateErr } = await supabase
+            .from('encounters')
+            .insert(encounterPayload)
+            .select('id')
+            .single()
+
+          if (encCreateErr) {
+            console.warn('[Registration Payment] Encounter creation failed (non-fatal):', encCreateErr.message)
+            // Try with legacy column name as fallback
+            const legacyPayload = {
+              patientid: patient_id,
+              encounter_date: todayStr,
+              encounter_type: 'OPD',
+              chief_complaint: 'Registration / OPD Consultation',
+              diagnosis: null,
+              notes: `Auto-created during registration. Payment: ₹${amountNum} via ${payment_method}`,
+              revenue_status: 'paid',
+              bill_id: bill.id,
+            }
+            const { data: newEncLegacy, error: encLegacyErr } = await supabase
+              .from('encounters')
+              .insert(legacyPayload)
+              .select('id')
+              .single()
+
+            if (newEncLegacy) {
+              await supabase.from('bills').update({ encounter_id: newEncLegacy.id }).eq('id', bill.id)
+              console.log('[Registration Payment] Created encounter (legacy schema):', newEncLegacy.id)
+            } else {
+              console.warn('[Registration Payment] Encounter creation (legacy) also failed:', encLegacyErr?.message)
+            }
+          } else if (newEnc) {
+            // Link the bill to the new encounter
+            await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', bill.id)
+            console.log('[Registration Payment] Created new encounter:', newEnc.id)
+          }
         }
       } catch (encErr) {
-        console.warn('[Registration Payment] Encounter update failed (non-fatal):', encErr)
+        console.warn('[Registration Payment] Encounter create/update failed (non-fatal):', encErr)
       }
     }
 

@@ -83,7 +83,16 @@ export default function DailyReportPage() {
       .eq('encounter_date', d)
       .order('created_at', { ascending: true })
 
-    if (!encs || encs.length === 0) {
+    // Load bills for the date — FIX: Use IST offset for accurate date filtering
+    // Always load bills regardless of encounters (registration payments may not have encounters)
+    const { data: bills } = await supabase
+      .from('bills')
+      .select('id, patient_id, patient_name, mrn, net_amount, payment_mode, status, created_at')
+      .gte('created_at', `${d}T00:00:00+05:30`)
+      .lte('created_at', `${d}T23:59:59+05:30`)
+
+    // FIX: If no encounters AND no bills, show empty state
+    if ((!encs || encs.length === 0) && (!bills || bills.length === 0)) {
       setStats({
         date: d, opd_count: 0, ipd_count: 0, total_patients: 0,
         cash_revenue: 0, upi_revenue: 0, card_revenue: 0, pending: 0,
@@ -93,21 +102,17 @@ export default function DailyReportPage() {
       return
     }
 
-    // Load bills for the date — FIX: Use IST offset for accurate date filtering
-    const { data: bills } = await supabase
-      .from('bills')
-      .select('id, patient_id, net_amount, payment_mode, status, created_at')
-      .gte('created_at', `${d}T00:00:00+05:30`)
-      .lte('created_at', `${d}T23:59:59+05:30`)
-
     const billsByPatient: Record<string, typeof bills> = {}
     ;(bills ?? []).forEach((b: any) => {
       if (!billsByPatient[b.patient_id]) billsByPatient[b.patient_id] = []
       billsByPatient[b.patient_id]!.push(b)
     })
 
-    const patients: DailyPatient[] = encs.map((enc: any) => {
+    // Build patient list from encounters
+    const encPatientIds = new Set<string>()
+    const patients: DailyPatient[] = (encs || []).map((enc: any) => {
       const pt  = enc.patients ?? {}
+      encPatientIds.add(enc.patient_id)
       const pb  = billsByPatient[enc.patient_id] ?? []
       const paidBills = pb.filter((b: any) => b.status === 'paid')
       return {
@@ -121,6 +126,26 @@ export default function DailyReportPage() {
         bills:          pb.map((b: any) => ({ id: b.id, net_amount: Number(b.net_amount), payment_mode: b.payment_mode ?? '-', status: b.status })),
         total_paid:     paidBills.reduce((s: number, b: any) => s + Number(b.net_amount), 0),
       }
+    })
+
+    // FIX: Include patients who have bills but NO encounter (e.g., registration payments
+    // created before the encounter-creation fix was deployed)
+    ;(bills ?? []).forEach((b: any) => {
+      if (!b.patient_id || encPatientIds.has(b.patient_id)) return
+      encPatientIds.add(b.patient_id) // prevent duplicates
+      const pb = billsByPatient[b.patient_id] ?? []
+      const paidBills = pb.filter((bill: any) => bill.status === 'paid')
+      patients.push({
+        patient_id:     b.patient_id,
+        patient_name:   b.patient_name || 'Unknown',
+        mrn:            b.mrn || '-',
+        type:           'OPD',
+        encounter_id:   '',
+        encounter_date: d,
+        diagnosis:      'Registration',
+        bills:          pb.map((bill: any) => ({ id: bill.id, net_amount: Number(bill.net_amount), payment_mode: bill.payment_mode ?? '-', status: bill.status })),
+        total_paid:     paidBills.reduce((s: number, bill: any) => s + Number(bill.net_amount), 0),
+      })
     })
 
     const paidBills = (bills ?? []).filter((b: any) => b.status === 'paid')

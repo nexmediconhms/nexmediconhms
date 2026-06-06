@@ -63,10 +63,10 @@ export default function MonthlyReportPage() {
       .gte('encounter_date', startDate)
       .lte('encounter_date', endDate)
 
-    // All paid bills in the month
+    // All bills in the month (include patient_id for encounter-less patient counting)
     const { data: bills } = await supabase
       .from('bills')
-      .select('net_amount, payment_mode, status, created_at')
+      .select('patient_id, net_amount, payment_mode, status, created_at')
       .gte('created_at', startDate + 'T00:00:00')
       .lte('created_at', endDate + 'T23:59:59')
 
@@ -80,12 +80,22 @@ export default function MonthlyReportPage() {
       dayMap[dateStr] = { date: dateStr, opd: 0, ipd: 0, cash: 0, upi: 0, card: 0, total_revenue: 0, pending: 0 }
     }
 
+    // Track which patient_ids have encounters per day (to avoid double-counting)
+    const encPatientsByDay: Record<string, Set<string>> = {}
+
     ;(encs || []).forEach((e: any) => {
       if (dayMap[e.encounter_date]) {
         if (e.encounter_type === 'IPD') dayMap[e.encounter_date].ipd++
         else                            dayMap[e.encounter_date].opd++
       }
+      // Track encounter patient IDs per day
+      if (!encPatientsByDay[e.encounter_date]) encPatientsByDay[e.encounter_date] = new Set()
+      encPatientsByDay[e.encounter_date].add(e.patient_id)
     })
+
+    // FIX: Track bill patient_ids that have NO encounter for that day
+    // These are registration-only payments that should still count as OPD visits
+    const billOnlyPatientsByDay: Record<string, Set<string>> = {}
 
     ;(bills || []).forEach((b: any) => {
       const d = b.created_at.split('T')[0]
@@ -98,6 +108,19 @@ export default function MonthlyReportPage() {
         dayMap[d].total_revenue += amt
       } else {
         dayMap[d].pending += amt
+      }
+
+      // FIX: If this bill's patient has no encounter for this day, count as OPD
+      if (b.patient_id && (!encPatientsByDay[d] || !encPatientsByDay[d].has(b.patient_id))) {
+        if (!billOnlyPatientsByDay[d]) billOnlyPatientsByDay[d] = new Set()
+        billOnlyPatientsByDay[d].add(b.patient_id)
+      }
+    })
+
+    // FIX: Add bill-only patients to OPD count
+    Object.entries(billOnlyPatientsByDay).forEach(([d, patientSet]) => {
+      if (dayMap[d]) {
+        dayMap[d].opd += patientSet.size
       }
     })
 
