@@ -11,6 +11,8 @@
  *   3. Empty state is handled gracefully (shows helpful message, not blank)
  *   4. Null-safe access on all payment fields prevents type errors
  *   5. Payment mode is always displayed (fallback to 'N/A' instead of null)
+ *   6. FALLBACK: If bill_payments is empty, synthesize payments from paid bills
+ *      (handles registration payments where bill_payments insert failed)
  *
  * USAGE:
  *   <PaymentHistoryPanel patientId="uuid" />
@@ -138,9 +140,98 @@ export default function PaymentHistoryPanel({
       }
 
       const data = await res.json()
-      setPayments(data.payments || [])
-      setBills(data.bills || [])
-      setSummary(data.summary || null)
+      let fetchedPayments = data.payments || []
+      let fetchedBills = data.bills || []
+      let fetchedSummary = data.summary || null
+
+      // ══════════════════════════════════════════════════════════════════
+      // FALLBACK: If bill_payments returned empty, check bills table directly
+      // This handles the case where bill was created during registration but
+      // bill_payments insert failed (table didn't exist at that time)
+      // ══════════════════════════════════════════════════════════════════
+      if (fetchedPayments.length === 0 && patientId) {
+        try {
+          const { data: fallbackBills } = await supabase
+            .from('bills')
+            .select('id, patient_id, patient_name, mrn, invoice_number, total, net_amount, paid, due, payment_mode, payment_ref, status, notes, created_at, paid_at')
+            .eq('patient_id', patientId)
+            .in('status', ['paid', 'partial', 'completed'])
+            .order('created_at', { ascending: false })
+
+          if (fallbackBills && fallbackBills.length > 0) {
+            // Convert paid bills to payment-like objects for display
+            const syntheticPayments: Payment[] = fallbackBills.map((b: any) => ({
+              id: `${b.id}-synthetic`,
+              bill_id: b.id,
+              patient_id: b.patient_id,
+              amount: b.paid || b.net_amount || b.total || 0,
+              payment_mode: b.payment_mode || 'N/A',
+              reference: b.payment_ref || null,
+              received_by: 'reception',
+              notes: b.notes || null,
+              created_at: b.paid_at || b.created_at,
+              display_date: formatDisplayDate(b.paid_at || b.created_at),
+            }))
+
+            fetchedPayments = syntheticPayments
+
+            // Also update bills if API didn't return them
+            if (fetchedBills.length === 0) {
+              fetchedBills = fallbackBills.map((b: any) => ({
+                id: b.id,
+                patient_id: b.patient_id,
+                patient_name: b.patient_name,
+                mrn: b.mrn,
+                invoice_number: b.invoice_number,
+                items: [],
+                subtotal: b.net_amount || b.total || 0,
+                discount: 0,
+                gst_amount: 0,
+                net_amount: b.net_amount || b.total || 0,
+                total: b.total || 0,
+                paid: b.paid || 0,
+                due: b.due || 0,
+                payment_mode: b.payment_mode,
+                status: b.status,
+                notes: b.notes,
+                created_at: b.created_at,
+                paid_at: b.paid_at,
+                display_date: formatDisplayDate(b.created_at),
+              }))
+            }
+
+            // Recalculate summary
+            const totalPaid = syntheticPayments.reduce((sum, p) => sum + p.amount, 0)
+            const totalBilled = fetchedBills.reduce((sum: number, b: any) => sum + (b.net_amount || b.total || 0), 0)
+            const totalDue = fetchedBills.reduce((sum: number, b: any) => sum + (b.due || 0), 0)
+
+            // Build mode breakdown
+            const modeBreakdown: Record<string, { count: number; amount: number }> = {}
+            for (const p of syntheticPayments) {
+              const mode = p.payment_mode || 'other'
+              if (!modeBreakdown[mode]) modeBreakdown[mode] = { count: 0, amount: 0 }
+              modeBreakdown[mode].count += 1
+              modeBreakdown[mode].amount += p.amount
+            }
+
+            fetchedSummary = {
+              total_payments: syntheticPayments.length,
+              total_bills: fetchedBills.length,
+              total_paid: totalPaid,
+              total_billed: totalBilled,
+              total_due: totalDue,
+              mode_breakdown: modeBreakdown,
+            }
+          }
+        } catch (fallbackErr) {
+          // Non-fatal fallback error — continue with empty results
+          console.warn('[PaymentHistoryPanel] Fallback query failed:', fallbackErr)
+        }
+      }
+
+      setPayments(fetchedPayments)
+      setBills(fetchedBills)
+      setSummary(fetchedSummary)
       setFiltersActive(!!(startDate || endDate))
     } catch (err: any) {
       setError(err.message || 'Failed to load payment history')
@@ -280,7 +371,7 @@ export default function PaymentHistoryPanel({
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-900">
-                      {inr(bill.net_amount)}
+                      {inr(bill.net_amount || bill.total || bill.paid || 0)}
                     </span>
                     {bill.invoice_number && (
                       <span className="text-xs text-gray-400 font-mono">
@@ -316,7 +407,7 @@ export default function PaymentHistoryPanel({
                 </div>
 
                 {/* Bill items */}
-                {!compact && bill.items.length > 0 && (
+                {!compact && bill.items && bill.items.length > 0 && (
                   <div className="text-xs text-gray-500 mt-1 truncate">
                     {bill.items.map(i => i.label).join(', ')}
                   </div>
@@ -366,4 +457,25 @@ export default function PaymentHistoryPanel({
       )}
     </div>
   )
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Helper function to format display date (IST)
+// ══════════════════════════════════════════════════════════════════════
+function formatDisplayDate(dateStr: string | null): string {
+  if (!dateStr) return 'N/A'
+  try {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    })
+  } catch {
+    return dateStr
+  }
 }

@@ -1,4 +1,3 @@
-
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -201,7 +200,7 @@ export default function PatientDetailPage() {
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('discharge_summaries').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
-      supabase.from('bills').select('*').eq('patient_id', id).order('created_at', { ascending: false }).limit(20),
+      supabase.from('bills').select('id, patient_id, patient_name, mrn, invoice_number, items, subtotal, net_amount, total, paid, due, payment_mode, payment_ref, status, type, encounter_type, notes, created_at, paid_at').eq('patient_id', id).order('created_at', { ascending: false }).limit(50),
       // FIX: Also count OPD queue visits (done status = completed visit)
       supabase.from('opd_queue').select('id, status, queue_date').eq('patient_id', id),
     ])
@@ -260,8 +259,8 @@ export default function PatientDetailPage() {
 
   // ── Derived insurance data ────────────────────────────────────
   const pat = patient as any
-  const paidBills = bills.filter(b => b.status === 'paid')
-  const totalBilled = paidBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0)
+  const paidBills = bills.filter((b: any) => b.status === 'paid' || b.status === 'partial' || b.status === 'completed')
+  const totalBilled = paidBills.reduce((s, b) => s + (Number(b.net_amount) || Number(b.total) || Number(b.paid) || 0), 0)
   const hasFinalDS = discharges.some(d => d.is_final)
   const hasDS = discharges.length > 0
   const hasRx = prescriptions.length > 0
@@ -583,7 +582,7 @@ export default function PatientDetailPage() {
               </div>
               <div className="text-xs text-gray-500">
                 {hasBills
-                  ? `${paidBills.length} bill${paidBills.length > 1 ? 's' : ''} · Last: ${formatDate(paidBills[0]?.created_at)}`
+                  ? `${paidBills.length} bill${paidBills.length > 1 ? 's' : ''} · Last: ${formatDate(paidBills[0]?.paid_at || paidBills[0]?.created_at)}`
                   : 'Collect consultation fee before or after visit'}
               </div>
             </div>
@@ -1031,15 +1030,18 @@ export default function PatientDetailPage() {
                       <div key={bill.id} className="border border-gray-100 rounded-lg p-4 hover:bg-gray-50">
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="font-semibold text-gray-900">₹{Number(bill.net_amount).toLocaleString('en-IN')}</div>
-                            <div className="text-xs text-gray-400">{formatDate(bill.created_at)} · {bill.payment_mode}</div>
+                            <div className="font-semibold text-gray-900">₹{Number(bill.net_amount || bill.total || bill.paid || 0).toLocaleString('en-IN')}</div>
+                            <div className="text-xs text-gray-400">
+                              {formatDate(bill.paid_at || bill.created_at)} · {bill.payment_mode || 'N/A'}
+                              {bill.invoice_number && <span className="ml-1 font-mono">#{bill.invoice_number}</span>}
+                            </div>
                           </div>
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${bill.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${bill.status === 'paid' || bill.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
                             }`}>{bill.status}</span>
                         </div>
                         {Array.isArray(bill.items) && (
                           <div className="text-xs text-gray-500 mt-1 truncate">
-                            {bill.items.map((i: any) => i.label).join(', ')}
+                            {bill.items.map((i: any) => i.label || i.description).join(', ')}
                           </div>
                         )}
                       </div>

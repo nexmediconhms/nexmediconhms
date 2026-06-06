@@ -19,6 +19,7 @@
  *   5. Properly serializes all fields with null-safe coercion
  *   6. Returns both individual payments AND aggregated bill data
  *   7. Handles empty results gracefully (returns empty array, not null/error)
+ *   8. FALLBACK: If bill_payments is empty, synthesizes payments from paid bills
  *
  * ENDPOINTS:
  *   GET /api/billing/payment-history?patientId=xxx
@@ -48,10 +49,8 @@ const IST_OFFSET_MINUTES = 30
  * e.g., "2026-05-01" in IST → "2026-04-30T18:30:00.000Z" in UTC
  */
 function istStartOfDayToUTC(dateStr: string): string {
-  // Parse as IST midnight: YYYY-MM-DDT00:00:00+05:30
   const [year, month, day] = dateStr.split('-').map(Number)
   const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
-  // Subtract IST offset to get UTC
   utcDate.setUTCHours(utcDate.getUTCHours() - IST_OFFSET_HOURS)
   utcDate.setUTCMinutes(utcDate.getUTCMinutes() - IST_OFFSET_MINUTES)
   return utcDate.toISOString()
@@ -62,10 +61,8 @@ function istStartOfDayToUTC(dateStr: string): string {
  * e.g., "2026-05-01" in IST → "2026-05-01T18:29:59.999Z" in UTC
  */
 function istEndOfDayToUTC(dateStr: string): string {
-  // Parse as IST end of day: YYYY-MM-DDT23:59:59.999+05:30
   const [year, month, day] = dateStr.split('-').map(Number)
   const utcDate = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
-  // Subtract IST offset to get UTC
   utcDate.setUTCHours(utcDate.getUTCHours() - IST_OFFSET_HOURS)
   utcDate.setUTCMinutes(utcDate.getUTCMinutes() - IST_OFFSET_MINUTES)
   return utcDate.toISOString()
@@ -172,8 +169,8 @@ export async function GET(req: NextRequest) {
     const { data: payments, error: payErr } = await paymentsQuery
 
     if (payErr) {
-      console.error('[payment-history] Payments query error:', payErr)
-      return NextResponse.json({ error: 'Failed to fetch payment history' }, { status: 500 })
+      // bill_payments table might not exist — this is non-fatal
+      console.warn('[payment-history] Payments query error (may be missing table):', payErr.message)
     }
 
     // ── Strategy 2: Also fetch bills for context ─────────────────
@@ -194,6 +191,7 @@ export async function GET(req: NextRequest) {
         paid,
         due,
         payment_mode,
+        payment_ref,
         status,
         notes,
         created_at,
@@ -231,7 +229,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Serialize safely (prevent null pointer errors) ────────────
-    const serializedPayments = (payments || []).map(p => ({
+    let serializedPayments = (payments || []).map(p => ({
       id: p.id,
       bill_id: p.bill_id,
       patient_id: p.patient_id,
@@ -241,7 +239,6 @@ export async function GET(req: NextRequest) {
       received_by: p.received_by || null,
       notes: p.notes || null,
       created_at: p.created_at,
-      // Formatted date for display (IST)
       display_date: formatIST(p.created_at),
     }))
 
@@ -260,12 +257,40 @@ export async function GET(req: NextRequest) {
       paid: safeNumber(b.paid),
       due: safeNumber(b.due),
       payment_mode: b.payment_mode || null,
+      payment_ref: b.payment_ref || null,
       status: b.status || 'unknown',
       notes: b.notes || null,
       created_at: b.created_at,
       paid_at: b.paid_at || null,
       display_date: formatIST(b.created_at),
     }))
+
+    // ══════════════════════════════════════════════════════════════
+    // FALLBACK: If bill_payments returned empty but we have paid bills,
+    // synthesize payment records from the bills table.
+    // This handles registration payments where bill_payments insert
+    // failed (table didn't exist at that time).
+    // ══════════════════════════════════════════════════════════════
+    if (serializedPayments.length === 0 && serializedBills.length > 0) {
+      const paidBillsAsFallback = serializedBills.filter(
+        b => b.status === 'paid' || b.status === 'partial' || b.status === 'completed'
+      )
+
+      if (paidBillsAsFallback.length > 0) {
+        serializedPayments = paidBillsAsFallback.map(b => ({
+          id: b.id + '-synthetic',
+          bill_id: b.id,
+          patient_id: b.patient_id || patientId || '',
+          amount: safeNumber(b.paid || b.net_amount || b.total),
+          payment_mode: b.payment_mode || 'cash',
+          reference: b.payment_ref || null,
+          received_by: 'reception',
+          notes: b.notes || 'Registration payment',
+          created_at: b.paid_at || b.created_at,
+          display_date: formatIST(b.paid_at || b.created_at),
+        }))
+      }
+    }
 
     // ── Compute summary stats ────────────────────────────────────
     const totalPaid = serializedPayments.reduce((sum, p) => sum + p.amount, 0)
