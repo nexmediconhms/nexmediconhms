@@ -110,6 +110,28 @@ BEGIN
   END IF;
 END $$;
 
+-- Drop ALL NOT NULL constraints on non-essential columns.
+-- The old schema may have file_url NOT NULL, file_name NOT NULL, etc.
+-- The app code only inserts a subset of columns, so all must be nullable.
+ALTER TABLE public.consultation_attachments ALTER COLUMN file_name DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN file_type DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN file_size DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN bucket DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN storage_key DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN storage_path DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN notes DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN uploaded_by DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN patient_id DROP NOT NULL;
+ALTER TABLE public.consultation_attachments ALTER COLUMN encounter_id DROP NOT NULL;
+
+-- Also drop NOT NULL on file_url if it exists (old schema column)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='consultation_attachments' AND column_name='file_url') THEN
+    ALTER TABLE public.consultation_attachments ALTER COLUMN file_url DROP NOT NULL;
+  END IF;
+END $$;
+
 -- ═══════════════════════════════════════════════════════════════
 -- STEP 2: Fix consultation_files_db table (DB-fallback storage)
 -- ═══════════════════════════════════════════════════════════════

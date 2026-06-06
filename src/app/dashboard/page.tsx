@@ -548,59 +548,115 @@ export default function DashboardPage() {
   // ── Data loaders ────────────────────────────────────────────
 
   async function loadRevenue(today: string, weekAgo: string) {
-    const [todayBills, weekBills, targetSetting] = await Promise.all([
-      supabase.from('bills')
-        .select('total, paid, due, status, net_amount')
-        .gte('created_at', today + 'T00:00:00')
-        .lte('created_at', today + 'T23:59:59'),
+    try {
+      // Strategy 1: Use server-side API (bypasses RLS, uses service role)
+      const res = await fetch(`/api/dashboard/revenue?today=${today}&weekAgo=${weekAgo}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.ok) {
+          setData(d => ({
+            ...d,
+            todayRevenue: data.todayRevenue || 0,
+            weekRevenue: data.weekRevenue || 0,
+            todayTarget: data.todayTarget || 0,
+            pendingBillsCount: data.pendingBillsCount || 0,
+            pendingBillsAmt: data.pendingBillsAmt || 0,
+          }))
 
-      supabase.from('bill_payments')
-        .select('amount')
-        .gte('created_at', weekAgo + 'T00:00:00'),
-
-      supabase.from('clinic_settings')
-        .select('value')
-        .eq('key', 'daily_revenue_target')
-        .single(),
-    ])
-
-    const bills = todayBills.data || []
-    // FIX: Handle both schema versions — use `paid` if available, fallback to `net_amount`
-    const todayRevenue = bills.reduce((s, b) => {
-      const amount = Number(b.paid || b.net_amount || 0)
-      return s + (b.status === 'paid' || Number(b.paid) > 0 ? amount : 0)
-    }, 0)
-    const pending = bills.filter(b => b.status !== 'paid' && b.status !== 'cancelled')
-    const weekRevenue = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
-
-    setData(d => ({
-      ...d,
-      todayRevenue,
-      weekRevenue: weekRevenue || todayRevenue, // fallback if bill_payments table is empty
-      todayTarget:       Number(targetSetting.data?.value || 0),
-      pendingBillsCount: pending.length,
-      pendingBillsAmt:   pending.reduce((s, b) => s + Number(b.due || b.net_amount || 0), 0),
-    }))
-
-    // Billing actions
-    const newActions: ActionItem[] = []
-    if (pending.length > 0) {
-      const totalDue = pending.reduce((s, b) => s + Number(b.due || 0), 0)
-      newActions.push({
-        id:    'pending-bills',
-        type:  'billing',
-        emoji: '💰',
-        title: `${pending.length} patients left without paying today`,
-        sub:   'Collect before closing',
-        value: formatCurrency(totalDue),
-        href:  '/billing',
-      })
+          // Billing actions
+          const newActions: ActionItem[] = []
+          if (data.pendingBillsCount > 0) {
+            newActions.push({
+              id: 'pending-bills',
+              type: 'billing',
+              emoji: '💰',
+              title: `${data.pendingBillsCount} patients left without paying today`,
+              sub: 'Collect before closing',
+              value: formatCurrency(data.pendingBillsAmt),
+              href: '/billing',
+            })
+          }
+          setActions(prev => [
+            ...prev.filter(a => a.id !== 'pending-bills'),
+            ...newActions,
+          ])
+          return // Success — exit early
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Dashboard] Revenue API failed, falling back to direct query:', apiErr)
     }
-    setActions(prev => [
-      ...prev.filter(a => a.id !== 'pending-bills'),
-      ...newActions,
-    ])
+
+    // Strategy 2: Fallback — direct Supabase query (original logic with fixes)
+    try {
+      const todayStart = today + 'T00:00:00+05:30'
+      const todayEnd = today + 'T23:59:59.999+05:30'
+      const weekStart = weekAgo + 'T00:00:00+05:30'
+
+      const [todayBills, weekBills, targetSetting] = await Promise.all([
+        supabase.from('bills')
+          .select('total, paid, due, status, net_amount')
+          .gte('created_at', todayStart)
+          .lte('created_at', todayEnd),
+
+        supabase.from('bill_payments')
+          .select('amount')
+          .gte('created_at', weekStart),
+
+        supabase.from('clinic_settings')
+          .select('value')
+          .eq('key', 'daily_revenue_target')
+          .maybeSingle(),
+      ])
+
+      // Log errors for debugging
+      if (todayBills.error) {
+        console.error('[Dashboard] Bills query error:', todayBills.error.message, todayBills.error.code)
+      }
+      if (weekBills.error) {
+        console.warn('[Dashboard] Bill payments query error:', weekBills.error?.message)
+      }
+
+      const bills = todayBills.data || []
+      const todayRevenue = bills.reduce((s, b) => {
+        const amount = Number(b.paid) || Number(b.net_amount) || Number(b.total) || 0
+        return s + (b.status === 'paid' || Number(b.paid) > 0 ? amount : 0)
+      }, 0)
+      const pending = bills.filter(b => b.status !== 'paid' && b.status !== 'cancelled')
+      const weekRevenue = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+
+      setData(d => ({
+        ...d,
+        todayRevenue,
+        weekRevenue: weekRevenue || todayRevenue,
+        todayTarget: Number(targetSetting.data?.value || 0),
+        pendingBillsCount: pending.length,
+        pendingBillsAmt: pending.reduce((s, b) => s + (Number(b.due) || Number(b.net_amount) || Number(b.total) || 0), 0),
+      }))
+
+      // Billing actions
+      const newActions: ActionItem[] = []
+      if (pending.length > 0) {
+        const totalDue = pending.reduce((s, b) => s + (Number(b.due) || 0), 0)
+        newActions.push({
+          id: 'pending-bills',
+          type: 'billing',
+          emoji: '💰',
+          title: `${pending.length} patients left without paying today`,
+          sub: 'Collect before closing',
+          value: formatCurrency(totalDue),
+          href: '/billing',
+        })
+      }
+      setActions(prev => [
+        ...prev.filter(a => a.id !== 'pending-bills'),
+        ...newActions,
+      ])
+    } catch (err) {
+      console.error('[Dashboard] loadRevenue failed completely:', err)
+    }
   }
+
 
   async function loadAppointments(today: string) {
     const [appts, seen] = await Promise.all([

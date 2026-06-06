@@ -156,6 +156,7 @@ export default function NewPatientPage() {
   const [showUPIFlow, setShowUPIFlow] = useState(false)
   const [paymentBillId, setPaymentBillId] = useState<string>('')
   const [paymentInvoiceNumber, setPaymentInvoiceNumber] = useState<string>('')
+  const [paymentWarning, setPaymentWarning] = useState('')
 
   // Duplicate detection
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
@@ -644,6 +645,8 @@ export default function NewPatientPage() {
     const ref = overrideRef || paymentRef
     if (!method || !success) return
 
+    let billCreated = false
+
     try {
       const res = await fetch('/api/billing/registration-payment', {
         method: 'POST',
@@ -659,50 +662,53 @@ export default function NewPatientPage() {
           type: 'registration',
         }),
       })
-      const data = await res.json()
-      if (data?.bill_id) setPaymentBillId(data.bill_id)
-      if (data?.invoice_number) setPaymentInvoiceNumber(data.invoice_number)
-    } catch { /* Non-fatal */ }
 
+      const data = await res.json()
+
+      if (res.ok && data?.ok) {
+        // Success — bill created
+        billCreated = true
+        if (data.bill_id) setPaymentBillId(data.bill_id)
+        if (data.invoice_number) setPaymentInvoiceNumber(data.invoice_number)
+        console.log('[Registration] Payment recorded successfully:', data.invoice_number)
+      } else {
+        // API returned an error
+        console.error('[Registration] Payment API error:', data?.error || res.statusText)
+        setPaymentWarning(`Payment recording issue: ${data?.error || 'Unknown error'}. Bill may not appear in reports. Please create manually from Billing page.`)
+      }
+    } catch (fetchErr: any) {
+      // Network or other error
+      console.error('[Registration] Payment fetch failed:', fetchErr?.message || fetchErr)
+      setPaymentWarning('Network error while recording payment. The bill may not have been created. Please verify in Billing section.')
+    }
+
+    // Queue insertion (same as before)
     if (addToQueue) {
       try {
         const today = getIndiaToday()
-        // PR-1: race-safe token allocation via insertQueueEntryWithRetry.
-        // Pre-fix code did SELECT-MAX → INSERT and silently lost
-        // patients when two reception staff registered at the same
-        // second.  The helper retries on 23505 unique-violation up to
-        // 5 times.
         const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
           patient_id: successId,
           queue_date: today,
           status: 'waiting',
           priority: 'normal',
-          notes: `Registration payment: ₹${paymentAmount} via ${paymentMethod}`,
+          notes: billCreated
+            ? `Registration payment: ₹${paymentAmount} via ${method}`
+            : 'Registered: payment recording pending',
           patient_name: success?.name || '',
           mrn: success?.mrn || '',
         }, today)
 
         if (queueErr) {
-          // The patient was already registered above (registration
-          // insert succeeded).  The queue insert is the only failure.
-          // Surface a soft warning so reception can manually add the
-          // patient to the queue from the queue page rather than
-          // thinking the whole registration failed.
           console.warn('[Registration] Queue insert failed (non-fatal):', queueErr?.message)
         }
 
-        // Track that patient was auto-queued (used to hide redundant button on success screen)
         if (nextToken !== null) {
           setQueuedTokenNumber(nextToken)
           setQueueInsertFailed(false)
         } else {
-          // Queue insert was requested but failed — track this so the
-          // success screen shows a retry option instead of a redundant
-          // "Add to OPD Queue" button that ignores the user's intent.
           setQueueInsertFailed(true)
         }
 
-        // FIX 3: Added missing automation engine trigger for upfront payments
         if (nextToken !== null) {
           try {
             const { fireAutomation } = await import('@/lib/automation-engine')
@@ -722,10 +728,10 @@ export default function NewPatientPage() {
       }
     }
 
-    // FIX 2: Standardized the import variable mapping structure
+    // Notification
     try {
       const { notify } = await import('@/lib/notifications')
-      await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, paymentMethod)
+      await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, method)
     } catch { /* non-fatal */ }
 
     setPaymentConfirmed(true)
