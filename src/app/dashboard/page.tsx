@@ -587,27 +587,45 @@ export default function DashboardPage() {
       console.warn('[Dashboard] Revenue API failed, falling back to direct query:', apiErr)
     }
 
-    // Strategy 2: Fallback — direct Supabase query (original logic with fixes)
+    // Strategy 2: Fallback — direct Supabase query (schema-resilient)
     try {
       const todayStart = today + 'T00:00:00+05:30'
       const todayEnd = today + 'T23:59:59.999+05:30'
       const weekStart = weekAgo + 'T00:00:00+05:30'
 
-      const [todayBills, weekBills, targetSetting] = await Promise.all([
-        supabase.from('bills')
-          .select('total, paid, due, status, net_amount')
-          .gte('created_at', todayStart)
-          .lte('created_at', todayEnd),
+      // Try modern schema first
+      let todayBills = await supabase.from('bills')
+        .select('total, paid, due, status, net_amount')
+        .gte('created_at', todayStart)
+        .lte('created_at', todayEnd)
 
-        supabase.from('bill_payments')
-          .select('amount')
-          .gte('created_at', weekStart),
+      // FIX: If modern query returns empty AND has no error, try legacy column names
+      // (PostgREST returns [] not error for non-existent filter columns)
+      if (!todayBills.error && (!todayBills.data || todayBills.data.length === 0)) {
+        const legacyAttempt = await supabase.from('bills')
+          .select('total, paid, due, status')
+          .gte('createdat', todayStart)
+          .lte('createdat', todayEnd)
+        if (legacyAttempt.data && legacyAttempt.data.length > 0) {
+          todayBills = { ...legacyAttempt, data: legacyAttempt.data.map((b: any) => ({ ...b, net_amount: b.total })) }
+        }
+      }
 
-        supabase.from('clinic_settings')
+      const weekBills = await supabase.from('bill_payments')
+        .select('amount')
+        .gte('created_at', weekStart)
+
+      // Try both table names for settings
+      let targetSetting = await supabase.from('clinic_settings')
+        .select('value')
+        .eq('key', 'daily_revenue_target')
+        .maybeSingle()
+      if (!targetSetting.data) {
+        targetSetting = await supabase.from('clinicsettings')
           .select('value')
           .eq('key', 'daily_revenue_target')
-          .maybeSingle(),
-      ])
+          .maybeSingle()
+      }
 
       // Log errors for debugging
       if (todayBills.error) {
@@ -618,12 +636,12 @@ export default function DashboardPage() {
       }
 
       const bills = todayBills.data || []
-      const todayRevenue = bills.reduce((s, b) => {
+      const todayRevenue = bills.reduce((s: number, b: any) => {
         const amount = Number(b.paid) || Number(b.net_amount) || Number(b.total) || 0
         return s + (b.status === 'paid' || Number(b.paid) > 0 ? amount : 0)
       }, 0)
-      const pending = bills.filter(b => b.status !== 'paid' && b.status !== 'cancelled')
-      const weekRevenue = (weekBills.data || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+      const pending = bills.filter((b: any) => b.status !== 'paid' && b.status !== 'cancelled')
+      const weekRevenue = (weekBills.data || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0)
 
       setData(d => ({
         ...d,
@@ -631,13 +649,13 @@ export default function DashboardPage() {
         weekRevenue: weekRevenue || todayRevenue,
         todayTarget: Number(targetSetting.data?.value || 0),
         pendingBillsCount: pending.length,
-        pendingBillsAmt: pending.reduce((s, b) => s + (Number(b.due) || Number(b.net_amount) || Number(b.total) || 0), 0),
+        pendingBillsAmt: pending.reduce((s: number, b: any) => s + (Number(b.due) || Number(b.net_amount) || Number(b.total) || 0), 0),
       }))
 
       // Billing actions
       const newActions: ActionItem[] = []
       if (pending.length > 0) {
-        const totalDue = pending.reduce((s, b) => s + (Number(b.due) || 0), 0)
+        const totalDue = pending.reduce((s: number, b: any) => s + (Number(b.due) || 0), 0)
         newActions.push({
           id: 'pending-bills',
           type: 'billing',

@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
     const nowISO = now.toISOString()
 
     // ─── Create the bill ─────────────────────────────────────────────────────
+    // FIX #10: Schema-resilient insert — tries modern snake_case columns first,
+    // falls back to legacy camelCase if the insert fails (handles databases
+    // where migration 023/024 hasn't been applied yet).
     const billPayload = {
       patient_id,
       patient_name: patient_name || '',
@@ -114,19 +117,59 @@ export async function POST(req: NextRequest) {
 
     console.log('[Registration Payment] Creating bill:', JSON.stringify({ patient_id, amount: amountNum, isPaid, method: payment_method }))
 
-    const { data: bill, error: billError } = await supabase
+    let bill: { id: string; invoice_number: string } | null = null
+
+    // Attempt 1: Modern schema (snake_case columns — patient_id, invoice_number, etc.)
+    const { data: billData, error: billError } = await supabase
       .from('bills')
       .insert(billPayload)
       .select('id, invoice_number')
       .single()
 
-    if (billError) {
-      console.error('[Registration Payment] Bill creation FAILED:', billError.message, billError.code, billError.details)
-      return NextResponse.json({
-        error: `Bill creation failed: ${billError.message}`,
-        code: billError.code,
-        hint: billError.hint || 'Check that the bills table has the correct schema. Run the migration SQL.',
-      }, { status: 500 })
+    if (!billError && billData) {
+      bill = billData
+    } else {
+      // Attempt 2: Legacy schema (camelCase columns — patientid, invoicenumber, etc.)
+      console.warn('[Registration Payment] Modern schema insert failed:', billError?.message, '— trying legacy schema...')
+
+      const legacyPayload: Record<string, any> = {
+        patientid: patient_id,
+        invoicenumber: invoiceNumber,
+        items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
+        subtotal: amountNum,
+        total: amountNum,
+        discount: 0,
+        tax: 0,
+        paid: isPaid ? amountNum : 0,
+        due: isPaid ? 0 : amountNum,
+        status: isPaid ? 'paid' : 'pending',
+        paymentmode: isPaid ? payment_method : null,
+        notes: isPaid
+          ? `${type} payment — ${payment_method}${payment_ref ? ` (Ref: ${payment_ref})` : ''}`
+          : `${type} — payment pending`,
+      }
+
+      const { data: legacyBill, error: legacyError } = await supabase
+        .from('bills')
+        .insert(legacyPayload)
+        .select('id, invoicenumber')
+        .single()
+
+      if (legacyError) {
+        console.error('[Registration Payment] Bill creation FAILED (both schemas):', legacyError.message, legacyError.code)
+        return NextResponse.json({
+          error: `Bill creation failed: ${billError?.message || legacyError.message}`,
+          code: legacyError.code,
+          hint: 'Check that the bills table exists. Run migration 023 or 024.',
+        }, { status: 500 })
+      }
+
+      bill = { id: legacyBill.id, invoice_number: legacyBill.invoicenumber || invoiceNumber }
+      console.log('[Registration Payment] Bill created with LEGACY schema:', bill.id)
+    }
+
+    if (!bill) {
+      return NextResponse.json({ error: 'Bill creation returned no data' }, { status: 500 })
     }
 
     console.log('[Registration Payment] Bill created successfully:', bill.id, bill.invoice_number)

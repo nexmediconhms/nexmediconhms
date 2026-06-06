@@ -48,15 +48,66 @@ export async function GET(req: NextRequest) {
     const todayEnd = today + 'T23:59:59.999+05:30'
     const weekStart = weekAgo ? weekAgo + 'T00:00:00+05:30' : today + 'T00:00:00+05:30'
 
-    // Fetch today's bills
-    const { data: todayBills, error: billsError } = await supabase
+    // ─── FIX: Schema-resilient query — try modern columns first, fallback to legacy ───
+    let todayBills: any[] | null = null
+    let billsError: any = null
+
+    // Attempt 1: Modern schema (created_at, net_amount, payment_mode, invoice_number, patient_name)
+    const { data: modernBills, error: modernErr } = await supabase
       .from('bills')
       .select('id, total, paid, due, status, net_amount, payment_mode, invoice_number, patient_name, created_at')
       .gte('created_at', todayStart)
       .lte('created_at', todayEnd)
 
+    if (!modernErr && modernBills && modernBills.length > 0) {
+      todayBills = modernBills
+    } else if (modernErr) {
+      console.warn('[Dashboard Revenue API] Modern schema query failed:', modernErr.message, '— trying legacy...')
+      // Attempt 2: Legacy schema (createdat, paymentmode, invoicenumber — no net_amount, no patient_name)
+      const { data: legacyBills, error: legacyErr } = await supabase
+        .from('bills')
+        .select('id, total, paid, due, status, paymentmode, invoicenumber, createdat')
+        .gte('createdat', todayStart)
+        .lte('createdat', todayEnd)
+
+      if (legacyErr) {
+        console.error('[Dashboard Revenue API] Legacy query also failed:', legacyErr.message)
+        billsError = legacyErr
+      } else {
+        // Normalize legacy bills to modern field names
+        todayBills = (legacyBills || []).map((b: any) => ({
+          ...b,
+          net_amount: b.total, // Legacy has no net_amount, use total
+          payment_mode: b.paymentmode,
+          invoice_number: b.invoicenumber,
+          created_at: b.createdat,
+          patient_name: '',
+        }))
+      }
+    } else {
+      // modernErr is null but modernBills is empty — could be genuinely empty OR
+      // the columns don't exist (PostgREST returns [] for non-existent filter columns)
+      // Try legacy as well to be safe
+      const { data: legacyBills } = await supabase
+        .from('bills')
+        .select('id, total, paid, due, status, paymentmode, createdat')
+        .gte('createdat', todayStart)
+        .lte('createdat', todayEnd)
+
+      if (legacyBills && legacyBills.length > 0) {
+        todayBills = legacyBills.map((b: any) => ({
+          ...b,
+          net_amount: b.total,
+          payment_mode: b.paymentmode,
+          created_at: b.createdat,
+          patient_name: '',
+        }))
+      } else {
+        todayBills = modernBills || []
+      }
+    }
+
     if (billsError) {
-      console.error('[Dashboard Revenue API] Bills query failed:', billsError.message, billsError.code)
       return NextResponse.json({
         error: 'Bills query failed: ' + billsError.message,
         code: billsError.code,
@@ -73,16 +124,29 @@ export async function GET(req: NextRequest) {
       console.warn('[Dashboard Revenue API] Week payments query failed (non-fatal):', weekError.message)
     }
 
-    // Fetch daily target
-    const { data: targetData } = await supabase
+    // Fetch daily target — try both table names (clinic_settings vs clinicsettings)
+    let targetData: any = null
+    const { data: td1 } = await supabase
       .from('clinic_settings')
       .select('value')
       .eq('key', 'daily_revenue_target')
-      .maybeSingle()  // Won't error if no row found (unlike .single())
+      .maybeSingle()
+
+    if (td1) {
+      targetData = td1
+    } else {
+      // Try legacy table name
+      const { data: td2 } = await supabase
+        .from('clinicsettings')
+        .select('value')
+        .eq('key', 'daily_revenue_target')
+        .maybeSingle()
+      targetData = td2
+    }
 
     // Calculate revenue using fallback chain
     const bills = todayBills || []
-    const todayRevenue = bills.reduce((sum, b) => {
+    const todayRevenue = bills.reduce((sum: number, b: any) => {
       // Use the best available amount field
       const amount = Number(b.paid) || Number(b.net_amount) || Number(b.total) || 0
       // Only count if bill is paid or has some payment recorded
@@ -92,10 +156,10 @@ export async function GET(req: NextRequest) {
       return sum
     }, 0)
 
-    const pending = bills.filter(b => b.status !== 'paid' && b.status !== 'cancelled')
-    const pendingAmount = pending.reduce((sum, b) => sum + (Number(b.due) || Number(b.net_amount) || Number(b.total) || 0), 0)
+    const pending = bills.filter((b: any) => b.status !== 'paid' && b.status !== 'cancelled')
+    const pendingAmount = pending.reduce((sum: number, b: any) => sum + (Number(b.due) || Number(b.net_amount) || Number(b.total) || 0), 0)
 
-    const weekRevenue = (weekPayments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const weekRevenue = (weekPayments || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
 
     return NextResponse.json({
       ok: true,
@@ -105,7 +169,7 @@ export async function GET(req: NextRequest) {
       pendingBillsCount: pending.length,
       pendingBillsAmt: pendingAmount,
       todayBillsCount: bills.length,
-      todayPaidCount: bills.filter(b => b.status === 'paid').length,
+      todayPaidCount: bills.filter((b: any) => b.status === 'paid').length,
       // Also return the raw bills for debugging
       debug: {
         billsFound: bills.length,
