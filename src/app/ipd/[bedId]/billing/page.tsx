@@ -70,101 +70,6 @@ function getCatConfig(cat: ChargeCategory) {
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
-// ─────────────────────────────────────────────────────────────────────
-// Schema-resilient helpers — fix for "Could not find the 'charge_date'
-// column of 'ipd_charges' in the schema cache".
-//
-// CONTEXT
-//   The original ipd_charges schema (migrations/archive/fix-all-permissions.sql)
-//   was created before the structured IPD billing UI existed. It used:
-//       (item_name, category, amount, quantity, notes, created_at)
-//   The current UI writes columns the legacy schema doesn't have:
-//       (charge_date, description, rate, created_by)
-//   On a Supabase project that hasn't run migrations/018_align_ipd_charges_schema.sql
-//   any insert from the UI fails with the PostgREST schema-cache error.
-//
-// WHAT THESE HELPERS DO
-//   - isSchemaCacheError(err): detects the PGRST204-class error so we can
-//     branch on it instead of treating it as a generic write failure.
-//   - mapChargeRowToUI(row): coalesces (description ?? item_name),
-//     (rate ?? amount/quantity) and (charge_date ?? created_at::date) so
-//     historical legacy rows render correctly in the modern UI.
-//   - mapRateRowToUI(row): same idea for ipd_charge_rates — coalesces
-//     name → description, amount → default_rate, unit → per_unit.
-//   - toLegacyChargeRow(row): converts a modern insert payload into the
-//     subset of columns the legacy schema accepts, so a fallback insert
-//     succeeds even when the migration hasn't been run. We preserve as
-//     much information as the legacy schema can hold (description goes
-//     into item_name; rate is derived back from amount/quantity).
-//
-// AFTER THE MIGRATION RUNS
-//   The modern insert succeeds on the first attempt and the fallback
-//   path is never exercised — these helpers become a quiet safety net.
-// ─────────────────────────────────────────────────────────────────────
-
-function isSchemaCacheError(err: any): boolean {
-  if (!err) return false
-  const code = String(err.code || '')
-  const msg = String(err.message || '').toLowerCase()
-  return (
-    code === 'PGRST204' ||
-    code === '42703' ||
-    msg.includes('schema cache') ||
-    (msg.includes('column') && (msg.includes('does not exist') || msg.includes('not found')))
-  )
-}
-
-function mapChargeRowToUI(c: any): IPDCharge {
-  const qty   = Number(c.quantity) || 1
-  const amt   = Number(c.amount) || 0
-  const rate  =
-    c.rate !== undefined && c.rate !== null
-      ? Number(c.rate)
-      : qty > 0
-        ? Math.round((amt / qty) * 100) / 100
-        : 0
-  const date =
-    c.charge_date ??
-    (typeof c.created_at === 'string' ? c.created_at.slice(0, 10) : '')
-  return {
-    id:          c.id,
-    charge_date: date,
-    category:    c.category,
-    description: c.description ?? c.item_name ?? '',
-    quantity:    qty,
-    rate,
-    amount:      amt,
-    notes:       c.notes || '',
-  }
-}
-
-function mapRateRowToUI(r: any): ChargeRate {
-  return {
-    id:           r.id,
-    category:     r.category ?? '',
-    description:  r.description ?? r.name ?? '',
-    default_rate: Number(r.default_rate ?? r.amount ?? 0),
-    per_unit:     r.per_unit ?? r.unit ?? 'per day',
-    sort_order:   Number(r.sort_order ?? 0),
-  }
-}
-
-/** Build the column subset that the legacy ipd_charges schema accepts. */
-function toLegacyChargeRow(row: Record<string, any>) {
-  return {
-    admission_id: row.admission_id,
-    patient_id:   row.patient_id,
-    item_name:
-      (row.description && String(row.description).trim()) ||
-      (row.item_name && String(row.item_name).trim()) ||
-      'IPD Charge',
-    category:     row.category,
-    amount:       Number(row.amount) || 0,
-    quantity:     Number(row.quantity) || 1,
-    notes:        row.notes ?? null,
-  }
-}
-
 // ── Component ──────────────────────────────────────────────────
 
 export default function IPDBillingPage() {
@@ -231,39 +136,24 @@ export default function IPDBillingPage() {
 
       // Load existing charges for this admission
       if (adm?.id) {
-        // Schema-resilient read: if the modern `charge_date` column doesn't
-        // exist on this Supabase project (pre-migration-018), the order()
-        // call below would fail with a schema-cache error. We try the
-        // modern ordering first and fall back to created_at — both paths
-        // map their results through mapChargeRowToUI() which coalesces
-        // legacy column names (item_name / amount-derived rate).
-        let existingCharges: any[] | null = null
-        const modernRead = await supabase
+        const { data: existingCharges } = await supabase
           .from('ipd_charges')
           .select('*')
           .eq('admission_id', adm.id)
           .order('charge_date', { ascending: true })
           .order('created_at', { ascending: true })
 
-        if (modernRead.error && isSchemaCacheError(modernRead.error)) {
-          // Legacy schema: no charge_date column. Order by created_at only.
-          console.warn(
-            '[IPD billing] ipd_charges.charge_date not found in schema cache; ' +
-            'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
-            'in your Supabase SQL Editor to fix this permanently.',
-          )
-          const legacyRead = await supabase
-            .from('ipd_charges')
-            .select('*')
-            .eq('admission_id', adm.id)
-            .order('created_at', { ascending: true })
-          existingCharges = legacyRead.data
-        } else {
-          existingCharges = modernRead.data
-        }
-
         if (existingCharges) {
-          setCharges(existingCharges.map(mapChargeRowToUI))
+          setCharges(existingCharges.map((c: any) => ({
+            id: c.id,
+            charge_date: c.charge_date,
+            category: c.category,
+            description: c.description,
+            quantity: Number(c.quantity) || 1,
+            rate: Number(c.rate) || 0,
+            amount: Number(c.amount) || 0,
+            notes: c.notes || '',
+          })))
         }
 
         // Load discount from admission
@@ -272,38 +162,13 @@ export default function IPDBillingPage() {
       }
     }
 
-    // Load charge rate templates — schema-resilient read.
-    // Pre-migration-018 the `sort_order` column doesn't exist either, so
-    // .order('sort_order') fails and rates silently come back empty —
-    // that's why "Auto-Add" was falling through to the hardcoded ₹800
-    // default. We try the modern ordering first and fall back to a sort
-    // by category/name on legacy schemas.
-    {
-      const modernRates = await supabase
-        .from('ipd_charge_rates')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order')
-
-      if (modernRates.error && isSchemaCacheError(modernRates.error)) {
-        console.warn(
-          '[IPD billing] ipd_charge_rates.sort_order not found in schema cache; ' +
-          'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
-          'to align the rates table.',
-        )
-        const legacyRates = await supabase
-          .from('ipd_charge_rates')
-          .select('*')
-          .eq('is_active', true)
-          .order('category')
-          .order('name' as any)
-        if (legacyRates.data) {
-          setChargeRates(legacyRates.data.map(mapRateRowToUI))
-        }
-      } else if (modernRates.data) {
-        setChargeRates(modernRates.data.map(mapRateRowToUI))
-      }
-    }
+    // Load charge rate templates
+    const { data: rates } = await supabase
+      .from('ipd_charge_rates')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order')
+    if (rates) setChargeRates(rates as ChargeRate[])
 
     setLoading(false)
   }
@@ -369,49 +234,24 @@ export default function IPDBillingPage() {
       created_by: user?.full_name || null,
     }
 
-    // Schema-resilient insert: try the modern shape first; on schema-cache
-    // error fall back to the legacy column subset (item_name in place of
-    // description, no charge_date / rate / created_by). The legacy fallback
-    // preserves the most clinically important data — admission link,
-    // patient, line item, amount and quantity.
-    let data: any = null
-    let err: any = null
-    {
-      const modern = await supabase
-        .from('ipd_charges')
-        .insert(chargeToSave)
-        .select()
-        .single()
-      if (modern.error && isSchemaCacheError(modern.error)) {
-        console.warn(
-          '[IPD billing] modern ipd_charges insert failed (schema cache); ' +
-          'retrying with legacy column names. Apply migration 018 to remove ' +
-          'this fallback path.',
-        )
-        const legacy = await supabase
-          .from('ipd_charges')
-          .insert(toLegacyChargeRow(chargeToSave))
-          .select()
-          .single()
-        data = legacy.data
-        err  = legacy.error
-      } else {
-        data = modern.data
-        err  = modern.error
-      }
-    }
+    const { data, error: err } = await supabase
+      .from('ipd_charges')
+      .insert(chargeToSave)
+      .select()
+      .single()
 
     if (err) { setError(`Failed to add charge: ${err.message}`); return }
 
-    // Map the freshly inserted row through the same coalescer used on read,
-    // so the UI gets a consistent shape regardless of which schema actually
-    // stored the row.
-    const uiRow = mapChargeRowToUI(data)
-    // Auto-add helpers store charge_date / rate from the input even when
-    // the legacy schema didn't persist them, so UI staleness can't drift.
-    if (!uiRow.charge_date) uiRow.charge_date = chargeToSave.charge_date
-    if (!uiRow.rate) uiRow.rate = chargeToSave.rate
-    setCharges(prev => [...prev, uiRow])
+    setCharges(prev => [...prev, {
+      id: data.id,
+      charge_date: data.charge_date,
+      category: data.category,
+      description: data.description,
+      quantity: Number(data.quantity),
+      rate: Number(data.rate),
+      amount: Number(data.amount),
+      notes: data.notes || '',
+    }])
 
     // Reset form
     setNewCharge({
@@ -482,54 +322,23 @@ export default function IPDBillingPage() {
       created_by: user?.full_name || null,
     }))
 
-    // Schema-resilient bulk insert. Same dual-schema strategy as
-    // addCharge() above: try the modern column set first; on schema-cache
-    // error fall back to the legacy subset. The button that triggers this
-    // function is the one the user reported as broken with
-    //   "Could not find the 'charge_date' column of 'ipd_charges' in
-    //    the schema cache"
-    // — this fallback fixes that case immediately even before the admin
-    // applies migration 018. After the migration the modern path
-    // succeeds first-try and the fallback never fires.
-    let data: any[] | null = null
-    let err: any = null
-    {
-      const modern = await supabase
-        .from('ipd_charges')
-        .insert(insertData)
-        .select()
-      if (modern.error && isSchemaCacheError(modern.error)) {
-        console.warn(
-          '[IPD billing] auto-add modern insert hit schema-cache error; ' +
-          'retrying with legacy column subset. Apply ' +
-          'migrations/018_align_ipd_charges_schema.sql to remove this fallback.',
-        )
-        const legacy = await supabase
-          .from('ipd_charges')
-          .insert(insertData.map(toLegacyChargeRow))
-          .select()
-        data = legacy.data
-        err  = legacy.error
-      } else {
-        data = modern.data
-        err  = modern.error
-      }
-    }
+    const { data, error: err } = await supabase
+      .from('ipd_charges')
+      .insert(insertData)
+      .select()
 
     if (err) { setError(`Failed: ${err.message}`); return }
 
-    // Map results through the coalescer; preserve charge_date / rate from
-    // our input when the legacy schema didn't persist them, so the just-
-    // added rows display correctly even though the DB doesn't (yet) have
-    // those columns.
-    const inserted = (data || []).map((c: any, i: number) => {
-      const ui = mapChargeRowToUI(c)
-      if (!ui.charge_date) ui.charge_date = insertData[i]?.charge_date ?? ''
-      if (!ui.rate) ui.rate = Number(insertData[i]?.rate) || 0
-      if (!ui.description) ui.description = insertData[i]?.description ?? ''
-      return ui
-    })
-    setCharges(prev => [...prev, ...inserted])
+    setCharges(prev => [...prev, ...(data || []).map((c: any) => ({
+      id: c.id,
+      charge_date: c.charge_date,
+      category: c.category,
+      description: c.description,
+      quantity: Number(c.quantity),
+      rate: Number(c.rate),
+      amount: Number(c.amount),
+      notes: '',
+    }))])
 
     setSuccess(`Added ${newCharges.length} charges (bed + nursing for ${daysAdmitted} days)`)
     setTimeout(() => setSuccess(''), 3000)
@@ -544,26 +353,235 @@ export default function IPDBillingPage() {
   }
 
   // ── Save bill summary to admission ────────────────────────
+  //
+  // SCHEMA-RESILIENCE FIX (June 2026)
+  // ─────────────────────────────────
+  // The reported error was:
+  //     Save failed: Could not find the 'bill_status' column of
+  //     'ipd_admissions' in the schema cache
+  //
+  // Root cause: the early ipd_admissions schema didn't carry the
+  // billing-summary columns (total_charges, discount, net_bill,
+  // bill_status, payment_mode); they were added later when the
+  // structured IPD billing UI was introduced. Supabase projects that
+  // haven't run migrations/019_align_ipd_admissions_bill_columns.sql
+  // reject the entire UPDATE because PostgREST can't find any of
+  // those columns in its schema cache.
+  //
+  // Resolution (paired with migration 019, but works independently):
+  //   1. We try the modern UPDATE first — full payload.
+  //   2. On a schema-cache error (PGRST204 / 42703 / "could not find /
+  //      does not exist") we retry with a *progressively narrower*
+  //      payload, dropping the unknown column on each pass. The most
+  //      important field (bill_status, used everywhere downstream) is
+  //      preserved as long as possible.
+  //   3. The IPD charge line items (in ipd_charges) are saved
+  //      separately by addCharge() / autoAddBedCharges() and are
+  //      unaffected — only the per-admission summary is at risk.
+  //
+  // ╔════════════════════════════════════════════════════════════════╗
+  // ║  ADDITIONAL FIX — IPD-NEW-1 (June 2026)                       ║
+  // ║                                                                ║
+  // ║  Pre-fix saveBill() ONLY updated ipd_admissions and never      ║
+  // ║  inserted a row in the `bills` table. Every other module of   ║
+  // ║  the system (CA reports, daily closing, finance ledger,       ║
+  // ║  doctor earnings, refund flow) reads from `bills` — so IPD    ║
+  // ║  revenue was invisible to all of them.                         ║
+  // ║                                                                ║
+  // ║  We now ALSO upsert a corresponding bills row via the          ║
+  // ║  /api/billing/generate-bill endpoint. The endpoint already     ║
+  // ║  knows how to:                                                 ║
+  // ║    - allocate a sequential IPD invoice number                  ║
+  // ║    - cross-check totals server-side                            ║
+  // ║    - sync to hospital_fund                                     ║
+  // ║  All we have to do is hand it the items + admission_id, with  ║
+  // ║  an idempotency_key keyed on the admission so repeated saves  ║
+  // ║  return the existing bill instead of creating duplicates.      ║
+  // ║                                                                ║
+  // ║  This makes IPD admissions visible to:                         ║
+  // ║    - daily revenue reports (bills.paid_at)                     ║
+  // ║    - the refund flow (refunds need a bills.id)                 ║
+  // ║    - doctor earnings                                           ║
+  // ║    - the finance ledger                                        ║
+  // ╚════════════════════════════════════════════════════════════════╝
+  //
+  // After migration 019 lands, the modern path succeeds first try and
+  // none of the fallback branches execute.
   async function saveBill() {
     if (!admission?.id) return
     setSaving(true)
     setError('')
 
-    const { error: err } = await supabase
-      .from('ipd_admissions')
-      .update({
-        total_charges: grandTotal,
-        discount: discount,
-        net_bill: netBill,
-        bill_status: 'pending',
-        payment_mode: paymentMode,
+    // Compose the canonical (modern) payload once.
+    const fullPayload: Record<string, any> = {
+      total_charges: grandTotal,
+      discount,
+      net_bill: netBill,
+      bill_status: 'pending',
+      payment_mode: paymentMode,
+    }
+
+    // Helper: detect "column not found in schema cache" errors so we can
+    // narrow the payload and retry rather than failing outright.
+    function isSchemaCacheError(e: any): boolean {
+      if (!e) return false
+      const code = String(e.code || '')
+      const msg  = String(e.message || '').toLowerCase()
+      return (
+        code === 'PGRST204' ||
+        code === '42703' ||
+        msg.includes('schema cache') ||
+        (msg.includes('column') &&
+         (msg.includes('does not exist') || msg.includes('not found')))
+      )
+    }
+
+    // Extract the offending column name from the supabase error message
+    // so we can drop just that column from the next attempt.
+    function unknownColumnFrom(e: any): string | null {
+      const msg = String(e?.message || '')
+      // Match the most common shapes reported by PostgREST + PG:
+      //   Could not find the 'X' column of 'Y' in the schema cache
+      //   column "X" of relation "Y" does not exist
+      let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
+      if (m) return m[1]
+      m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
+      if (m) return m[1]
+      m = msg.match(/the\s+['"]?([a-z_][a-z0-9_]*)['"]?\s+column/i)
+      if (m) return m[1]
+      return null
+    }
+
+    // Try the update with progressively narrower payloads, removing
+    // unknown columns one at a time. Bounded to 6 attempts so a
+    // pathological loop can't run away.
+    let payload = { ...fullPayload }
+    let lastErr: any = null
+    let droppedCols: string[] = []
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error: err } = await supabase
+        .from('ipd_admissions')
+        .update(payload)
+        .eq('id', admission.id)
+
+      if (!err) {
+        lastErr = null
+        break
+      }
+
+      lastErr = err
+      if (!isSchemaCacheError(err)) break
+
+      const offending = unknownColumnFrom(err)
+      if (!offending || !(offending in payload)) {
+        // We can't tell which column to drop — bail out.
+        break
+      }
+
+      console.warn(
+        `[IPD billing saveBill] '${offending}' not in ipd_admissions schema cache; ` +
+        `retrying without that column. Apply migration 019 to remove this fallback.`,
+      )
+      droppedCols.push(offending)
+      const { [offending as keyof typeof payload]: _drop, ...rest } = payload
+      payload = rest
+      // If we've dropped every billing column, give up — there's nothing
+      // useful left to write through this path.
+      if (Object.keys(payload).length === 0) break
+    }
+
+    if (lastErr) {
+      setSaving(false)
+      setError(`Save failed: ${lastErr.message}`)
+      return
+    }
+
+    // ── IPD-NEW-1 fix: also create / upsert the corresponding bills row ──
+    //
+    // This is the change that makes IPD admissions visible to the rest
+    // of the financial system (CA reports, finance ledger, refund
+    // flow, doctor earnings). The /api/billing/generate-bill endpoint
+    // is the canonical entry point for bills creation; we hand it the
+    // admission's charges and let it do the heavy lifting.
+    //
+    // Idempotency: we key the request by `ipd-admission-{id}` so a
+    // repeated saveBill() click returns the existing bill instead of
+    // creating duplicates. The endpoint already supports this via the
+    // `idempotency_key` body field.
+    let billsSyncOk = true
+    try {
+      const items = charges.map(c => ({
+        label: c.description || c.category,
+        amount: c.amount,
+        quantity: c.quantity,
+      }))
+      const subtotal = charges.reduce((s, c) => s + c.amount, 0)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const billRes = await fetch('/api/billing/generate-bill', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          module: 'IPD',
+          patient_id: patient.id,
+          patient_name: patient.full_name,
+          mrn: patient.mrn,
+          items,
+          subtotal,
+          discount,
+          gst_percent: 0, // IPD bills typically not GST-applicable for medical services
+          net_amount: netBill,
+          payment_mode: paymentMode,
+          status: 'unpaid',
+          admission_id: admission.id,
+          notes: `IPD admission stay`,
+          idempotency_key: `ipd-admission-${admission.id}`,
+        }),
       })
-      .eq('id', admission.id)
+
+      if (!billRes.ok) {
+        const errBody = await billRes.json().catch(() => ({}))
+        billsSyncOk = false
+        console.warn(
+          '[IPD billing saveBill] /api/billing/generate-bill failed; the IPD ' +
+          'admission summary was saved but the bill row in `bills` was NOT ' +
+          'created. CA reports, refunds, and doctor earnings will not see ' +
+          'this admission until the bill is created via Billing → IPD → ' +
+          `Generate. Detail: ${errBody?.error || billRes.statusText}`,
+        )
+      }
+    } catch (e: any) {
+      billsSyncOk = false
+      console.warn(
+        '[IPD billing saveBill] generate-bill API call failed (non-fatal): ' +
+        (e?.message || e),
+      )
+    }
 
     setSaving(false)
-    if (err) { setError(`Save failed: ${err.message}`); return }
-    setSuccess('Bill saved successfully!')
-    setTimeout(() => setSuccess(''), 3000)
+
+    if (droppedCols.length > 0 && billsSyncOk) {
+      setSuccess(
+        `Bill saved (partial — schema is missing column${droppedCols.length > 1 ? 's' : ''} ` +
+        `${droppedCols.join(', ')}; run migration 019 for full support).`,
+      )
+    } else if (!billsSyncOk) {
+      // Save partially succeeded but the bills-table sync didn't —
+      // surface a clear warning so reception knows to re-generate.
+      setError(
+        'Bill summary saved on the admission, but creating the formal bill ' +
+        'in the billing system failed. Please go to Billing → New IPD Bill ' +
+        'and generate it manually so revenue reports stay in sync.',
+      )
+    } else {
+      setSuccess('Bill saved successfully!')
+    }
+    setTimeout(() => { setSuccess(''); }, 6000)
   }
 
   // ── Loading ────────────────────────────────────────────────

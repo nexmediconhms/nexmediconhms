@@ -220,16 +220,40 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 5: Log the import ────────────────────────────────
-    await supabase.from('audit_log').insert({
-      action: 'lab_report_imported',
-      entity_type: 'lab_report',
-      entity_id: report.id,
-      entity_label: `${reportName} for ${patientName || patientId}`,
-      changes: JSON.stringify({ from, subject, labPartnerName }),
-      user_id: 'system',
-      user_email: 'auto-import',
-      user_role: 'system',
-    });
+    //
+    // AUD-2 fix (June 2026): route through the hash-chained RPC. See
+    // src/app/api/ipd/discharge/route.ts for the full rationale.
+    try {
+      const auditPayload = JSON.stringify({ from, subject, labPartnerName })
+      const { error: auditErr } = await supabase.rpc('insert_audit_entry', {
+        p_user_id:      null,
+        p_user_email:   'auto-import',
+        p_user_role:    'system',
+        p_action:       'lab_report_imported',
+        p_entity_type:  'lab_report',
+        p_entity_id:    report.id,
+        p_entity_label: `${reportName} for ${patientName || patientId}`,
+        p_changes:      auditPayload,
+      })
+      if (auditErr) {
+        console.warn(
+          '[labs/import-email] Hash-chained audit RPC failed, falling back ' +
+          'to direct insert (chain will fork): ' + auditErr.message,
+        )
+        await supabase.from('audit_log').insert({
+          action: 'lab_report_imported',
+          entity_type: 'lab_report',
+          entity_id: report.id,
+          entity_label: `${reportName} for ${patientName || patientId}`,
+          changes: auditPayload,
+          user_id: null,
+          user_email: 'auto-import',
+          user_role: 'system',
+        });
+      }
+    } catch (auditEx: any) {
+      console.warn('[labs/import-email] audit failed:', auditEx?.message)
+    }
     
     const result: ImportResult = {
       success: true,
