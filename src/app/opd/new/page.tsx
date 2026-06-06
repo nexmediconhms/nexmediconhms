@@ -589,6 +589,22 @@ function NewConsultationContent() {
       return
     }
 
+    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
+    // Pre-fix the encounter insert below did:
+    //     doctor_name: user?.full_name || getHospitalSettings().doctorName
+    // If a transient auth glitch made `user` undefined, the encounter
+    // saved with the practice owner's name attributed to it.  Patient
+    // charts ended up misattributed with no easy way to detect the
+    // swap.  Refusing to save is better than corrupting the chart.
+    if (!user || !user.full_name) {
+      setError(
+        'Your session could not be verified.  Please refresh the page and ' +
+        'sign in again before saving — we do not want to attribute this ' +
+        'encounter to the wrong doctor.',
+      )
+      return
+    }
+
     // Run safety check on medications if any exist
     const validMeds = rxMeds.filter(m => m.drug.trim())
     if (validMeds.length > 0 && !rxSafetyChecked) {
@@ -636,7 +652,9 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        doctor_name: user?.full_name || getHospitalSettings().doctorName,
+        // OPD-4: gated above on a confirmed user, so always the actual
+        // signed-in clinician.  No fallback to hospital default.
+        doctor_name: user.full_name,
       })
       .select('id')
       .single()
@@ -703,24 +721,48 @@ function NewConsultationContent() {
         }
         await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
       } else {
-        const { data: maxRow } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', todayDate)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const nextToken = ((maxRow?.token_number as number) || 0) + 1
-        await supabase.from('opd_queue').insert({
-          patient_id: patientId,
-          queue_date: todayDate,
-          token_number: nextToken,
-          status: 'in_progress',
-          priority: 'normal',
-          notes: 'Auto-created from consultation',
-          called_at: new Date().toISOString(),
-          encounter_id: enc.id,
-        })
+        // OPD-2 fix (June 2026): race-safe token allocation.  Pre-fix
+        // code did SELECT-MAX → INSERT, which silently dropped patients
+        // on concurrent inserts (the unique constraint kicked in but
+        // the second insert vanished into a console.warn).  Now we
+        // retry up to MAX_TOKEN_RETRIES on 23505 unique-violation.
+        const MAX_TOKEN_RETRIES = 5
+        let success = false
+        for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {
+          const { data: maxRow } = await supabase
+            .from('opd_queue')
+            .select('token_number')
+            .eq('queue_date', todayDate)
+            .order('token_number', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const nextToken = ((maxRow?.token_number as number) || 0) + 1
+          const { error: insErr } = await supabase.from('opd_queue').insert({
+            patient_id: patientId,
+            queue_date: todayDate,
+            token_number: nextToken,
+            status: 'in_progress',
+            priority: 'normal',
+            notes: 'Auto-created from consultation',
+            called_at: new Date().toISOString(),
+            encounter_id: enc.id,
+          })
+          if (!insErr) { success = true; break }
+          const code = String((insErr as any)?.code || '')
+          const msg = String((insErr as any)?.message || '').toLowerCase()
+          if (code === '23505' || msg.includes('duplicate') || msg.includes('unique')) {
+            await new Promise(r => setTimeout(r, 10 + Math.floor(Math.random() * 40)))
+            continue
+          }
+          throw insErr
+        }
+        if (!success) {
+          console.warn(
+            '[OPD] queue token allocation failed after retries — encounter ' +
+            'is saved but queue auto-creation gave up.  Reception can add ' +
+            'the patient to the queue manually.',
+          )
+        }
       }
     } catch (queueErr) {
       console.warn('[OPD] queue sync failed (non-fatal):', queueErr)
@@ -748,12 +790,20 @@ function NewConsultationContent() {
       }
     }
 
-    // FIX CRITICAL #3: Mark queue entry as 'completed' after successful save
+    // ── OPD-3 fix (June 2026) ──────────────────────────────────────
+    // Pre-fix queue status was previously written as 'completed' which
+    // is NOT a valid value in the QueueStatus union (`'waiting' |
+    // 'vitals_done' | 'in_progress' | 'done' | 'cancelled'`).  The
+    // queue page filters by those literals, so tokens flipped to
+    // 'completed' disappeared from the UI entirely — daily "patients
+    // seen today" counters were permanently zero, CA reports
+    // under-counted OPD visits, etc.  We now use the canonical 'done'
+    // value and stamp done_at for the daily-revenue join.
     try {
       const todayForQueue = getIndiaToday()
       await supabase
         .from('opd_queue')
-        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .update({ status: 'done', done_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('patient_id', patientId)
         .eq('queue_date', todayForQueue)
         .in('status', ['in_progress', 'vitals_done', 'waiting'])
@@ -791,6 +841,66 @@ function NewConsultationContent() {
       setError('Please enter at least a chief complaint or diagnosis.')
       return
     }
+
+    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
+    // Pre-fix the encounter insert below did:
+    //     doctor_name: user?.full_name || getHospitalSettings().doctorName
+    // If a transient auth issue made `user` undefined, the encounter
+    // was silently saved with the hospital-wide default doctor name
+    // (often the practice owner).  Patient charts ended up
+    // misattributed with no easy way to detect the swap.
+    if (!user || !user.full_name) {
+      setError(
+        'Your session could not be verified.  Please refresh the page and ' +
+        'sign in again before saving — we do not want to attribute this ' +
+        'encounter to the wrong doctor.',
+      )
+      return
+    }
+
+    // ── OPD-1 fix (June 2026): run prescription-safety here too ──
+    // Pre-fix this code path bypassed drug-interaction, allergy, and
+    // dose validation entirely (handleSaveAll above did run them but
+    // this handler skipped them).  A doctor saving via this button
+    // could write a Warfarin + Aspirin prescription without any of the
+    // hard-stop alerts firing.  The safety modules all exist and work
+    // — they just weren't being invoked here.  Now they are.
+    const validMeds = rxMeds.filter(m => m.drug.trim())
+    if (validMeds.length > 0 && !rxSafetyChecked) {
+      const isPregnant = !!(ob.lmp || ob.edd)
+      try {
+        const result = await runPrescriptionSafetyChecks({
+          medications: validMeds,
+          patientId: patientId,
+          patientAge: patient?.age,
+          patientWeight: vitals.weight ? parseFloat(vitals.weight) : undefined,
+          isPregnant,
+          gestationalAge: ga || undefined,
+        })
+        if (result.hasAlerts) {
+          setRxSafetyAlerts(result.alerts)
+          setRxShowSafetyModal(true)
+          // The modal's acknowledge handler re-triggers handleSaveAll(),
+          // which goes through the same encounter+prescription save +
+          // queue update path.  We do NOT continue here so the alert
+          // forces an explicit clinician decision before persistence.
+          return
+        }
+        setRxSafetyChecked(true)
+      } catch (e) {
+        // If the safety check itself fails, surface the error rather
+        // than silently saving — failure here is rare (DB outage) but
+        // we'd rather block save than save without checks.
+        console.error('[OPD] prescription safety check failed:', e)
+        setError(
+          'Prescription safety check could not run.  Please retry.  If this ' +
+          'persists, save the encounter without medications first and add ' +
+          'them from the prescription page.',
+        )
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
 
@@ -837,7 +947,9 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        doctor_name: user?.full_name || getHospitalSettings().doctorName,
+        // OPD-4: gated above on a confirmed user, so always the actual
+        // signed-in clinician.  No fallback to hospital default.
+        doctor_name: user.full_name,
       })
       .select('id')
       .single()
@@ -885,24 +997,42 @@ function NewConsultationContent() {
         }
         await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
       } else {
-        const { data: maxRow } = await supabase
-          .from('opd_queue')
-          .select('token_number')
-          .eq('queue_date', todayDate)
-          .order('token_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const nextToken = ((maxRow?.token_number as number) || 0) + 1
-        await supabase.from('opd_queue').insert({
-          patient_id: patientId,
-          queue_date: todayDate,
-          token_number: nextToken,
-          status: 'in_progress',
-          priority: 'normal',
-          notes: 'Auto-created from direct consultation',
-          called_at: new Date().toISOString(),
-          encounter_id: enc.id,
-        })
+        // OPD-2 fix (June 2026): race-safe token allocation, mirrors
+        // the first site above. See that site's comment for the full
+        // rationale.
+        const MAX_TOKEN_RETRIES = 5
+        let success = false
+        for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {
+          const { data: maxRow } = await supabase
+            .from('opd_queue')
+            .select('token_number')
+            .eq('queue_date', todayDate)
+            .order('token_number', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const nextToken = ((maxRow?.token_number as number) || 0) + 1
+          const { error: insErr } = await supabase.from('opd_queue').insert({
+            patient_id: patientId,
+            queue_date: todayDate,
+            token_number: nextToken,
+            status: 'in_progress',
+            priority: 'normal',
+            notes: 'Auto-created from direct consultation',
+            called_at: new Date().toISOString(),
+            encounter_id: enc.id,
+          })
+          if (!insErr) { success = true; break }
+          const code = String((insErr as any)?.code || '')
+          const msg = String((insErr as any)?.message || '').toLowerCase()
+          if (code === '23505' || msg.includes('duplicate') || msg.includes('unique')) {
+            await new Promise(r => setTimeout(r, 10 + Math.floor(Math.random() * 40)))
+            continue
+          }
+          throw insErr
+        }
+        if (!success) {
+          console.warn('[OPD] queue token allocation gave up after retries (non-fatal)')
+        }
       }
     } catch (queueErr) {
       // non-fatal: encounter save succeeded; queue sync can be retried by reception

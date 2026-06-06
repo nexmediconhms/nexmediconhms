@@ -48,6 +48,34 @@ interface AuditChanges {
 
 let _cachedUser: { id: string; email: string; role: string } | null = null
 
+/**
+ * AUD-5 fix (June 2026): the `_cachedUser` was a module singleton with
+ * no invalidation on auth state change.  If user A logged out in tab A
+ * (which calls clearAuditCache()), tab B kept the stale cache and
+ * continued attributing audit entries to user A even after user B
+ * logged in there.  The audit trail was therefore wrong about who did
+ * what.
+ *
+ * Fix: subscribe to supabase auth state changes once at module load
+ * and clear the cache on every SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED
+ * event.  The next call to getCurrentUser() will re-fetch from
+ * clinic_users with the now-correct auth_id.
+ *
+ * `typeof window` guard so this runs only in the browser — server-side
+ * code paths don't have a singleton lifecycle to worry about.
+ */
+if (typeof window !== 'undefined') {
+  try {
+    supabase.auth.onAuthStateChange((_event) => {
+      _cachedUser = null
+    })
+  } catch {
+    // Defensive: if auth subscription fails for any reason we just
+    // don't get the auto-clear; clearAuditCache() can still be called
+    // explicitly by callers like auditLogout().
+  }
+}
+
 /** Lazily fetch the current clinic_user from Supabase (cached per session). */
 async function getCurrentUser() {
   if (_cachedUser) return _cachedUser
@@ -108,8 +136,17 @@ function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Compute SHA-256 hash of an audit entry for tamper detection.
  * Used as fallback when the database RPC is unavailable.
+ *
+ * AUD-3 (June 2026): the original code had a djb2-32 fallback for
+ * environments without `crypto.subtle`.  djb2-32 has trivial
+ * collisions — finding two payloads with the same hash takes seconds —
+ * so a tamper-evidence chain built on it can be forged in minutes.
+ * We now return null (instead of a weak hash) when crypto.subtle is
+ * missing.  The caller (fallbackInsert) treats null as "cannot
+ * guarantee tamper-evidence" and refuses to write, surfacing a clear
+ * warning to the operator instead of silently degrading.
  */
-async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string> {
+async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string | null> {
   try {
     const payload = JSON.stringify({
       ...entry,
@@ -124,15 +161,12 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
     }
 
-    let hash = 0
-    for (let i = 0; i < payload.length; i++) {
-      const char = payload.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash
-    }
-    return `fallback-${Math.abs(hash).toString(16).padStart(8, '0')}`
+    // AUD-3: do NOT fall back to djb2-32; it provides no real
+    // tamper-evidence and is trivially forgeable.  Return null so the
+    // caller can decide what to do.
+    return null
   } catch {
-    return `nohash-${Date.now()}`
+    return null
   }
 }
 
@@ -279,6 +313,27 @@ async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
     // Compute new hash
     const entryHash = await computeEntryHash(entry, prevHash)
 
+    // ── AUD-1 / AUD-3 fix (June 2026) ────────────────────────────
+    // If we couldn't compute a real cryptographic hash (crypto.subtle
+    // unavailable on this environment), refuse to write rather than
+    // poisoning the chain with a forgeable entry.  Surface a loud
+    // warning so the operator notices.  Audit failure is loud, but
+    // the calling action isn't blocked — the right tradeoff for a
+    // tamper-evidence layer where a forgeable row is worse than a
+    // missing one.
+    if (!entryHash) {
+      console.error(
+        '[Audit] FALLBACK INSERT REFUSED: SHA-256 not available in this ' +
+        'environment, and we will not write an audit entry that cannot ' +
+        'be cryptographically chained — that would defeat the entire ' +
+        'tamper-evidence model.  Action: deploy the insert_audit_entry ' +
+        'Postgres RPC, or upgrade clients to a browser that exposes ' +
+        'crypto.subtle (any modern browser over HTTPS does).  Skipped ' +
+        `entry: ${entry.action}/${entry.entity_type}/${entry.entity_id}`,
+      )
+      return
+    }
+
     // Insert with hash chain
     const { error } = await supabase.from('audit_log').insert({
       ...entry,
@@ -338,6 +393,27 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
     let broken = 0
     const brokenEntries: string[] = []
 
+    // ── AUD-4 fix (June 2026): properly check the genesis entry ──
+    // Pre-fix the loop started at i=1 (so entry[0] was never checked)
+    // and the final return added `valid + 1` to assume the genesis
+    // entry was always valid.  If somebody had tampered with the
+    // genesis entry's prev_hash (e.g., set it to a non-NULL value to
+    // make the chain look like it forked here), the check missed it
+    // entirely and reported the chain as valid.
+    //
+    // Now we explicitly verify the genesis entry: a valid genesis
+    // must have prev_hash either null OR explicitly omitted (some
+    // schemas use '').  Anything else is a sign of tampering.
+    const genesis = entries[0]
+    const genesisLooksValid =
+      genesis.prev_hash === null || genesis.prev_hash === '' || genesis.prev_hash === undefined
+    if (genesisLooksValid) {
+      valid++
+    } else {
+      broken++
+      brokenEntries.push(genesis.id)
+    }
+
     for (let i = 1; i < entries.length; i++) {
       const current = entries[i]
       const previous = entries[i - 1]
@@ -354,7 +430,7 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
 
     return {
       totalChecked: entries.length,
-      valid: valid + 1,
+      valid,
       broken,
       brokenEntries,
     }

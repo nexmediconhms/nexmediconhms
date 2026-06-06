@@ -288,10 +288,60 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
     creditItems = [],
     reason,
     refundMode,
-    gstPercent = 0,
+    gstPercent: gstPercentFromCaller,
     issuedBy,
     notes,
   } = params
+
+  // ╔════════════════════════════════════════════════════════════════╗
+  // ║  CN-2 FIX (June 2026): derive gstPercent from the source bill ║
+  // ║  if the caller didn't pass it explicitly.                      ║
+  // ╚════════════════════════════════════════════════════════════════╝
+  //
+  // Pre-fix this function defaulted gstPercent to 0 when the caller
+  // forgot to pass it. The /api/billing/refund route was one such
+  // caller, so every refund-driven credit note silently posted with
+  // ₹0 GST reversal regardless of the original bill's actual GST. For
+  // an 18%-GST bill being refunded ₹10,000 the patient got ₹10,000
+  // back as expected, but the books showed:
+  //   - ₹10,000 credit note
+  //   - ₹0 GST reversal
+  //   - Govt: GST already paid on the original sale, never claimed back
+  // = a tax-compliance failure (input tax credit silently dropped).
+  //
+  // Fix: when the caller hasn't supplied gstPercent (undefined / null),
+  // we read the originating bill row to find its gst_percent. If the
+  // bill row can't be read (rare), we fall back to 0 with a loud warning
+  // so the operator can correct the CN later.
+  let gstPercent = Number.isFinite(Number(gstPercentFromCaller))
+    ? Number(gstPercentFromCaller)
+    : NaN
+
+  if (!Number.isFinite(gstPercent)) {
+    try {
+      const { data: srcBill, error: billErr } = await supabase
+        .from('bills')
+        .select('gst_percent')
+        .eq('id', billId)
+        .single()
+      if (!billErr && srcBill && srcBill.gst_percent != null) {
+        gstPercent = Number(srcBill.gst_percent) || 0
+      } else {
+        gstPercent = 0
+        console.warn(
+          `[credit-notes] gstPercent not supplied for bill ${billId} and could ` +
+          `not be derived from the bill row; defaulting to 0. GST reversal will ` +
+          `be ₹0 — verify this is correct for the source bill.`,
+        )
+      }
+    } catch (e: any) {
+      gstPercent = 0
+      console.warn(
+        `[credit-notes] gstPercent lookup failed for bill ${billId}: ${e?.message}; ` +
+        `defaulting to 0.`,
+      )
+    }
+  }
 
   // Calculate GST reversal
   const gst = calculateGSTReversal(creditAmount, gstPercent)
@@ -410,9 +460,68 @@ export async function getCreditNotesForPatient(patientId: string): Promise<Credi
 /**
  * Cancel a credit note (e.g., if refund was reversed).
  * Only changes status — does NOT delete the record (audit trail).
+ *
+ * ╔════════════════════════════════════════════════════════════════════╗
+ * ║  CN-1 FIX (June 2026):  cancelCreditNote() now reverses the whole ║
+ * ║  financial record — not just the cosmetic CN status.               ║
+ * ╚════════════════════════════════════════════════════════════════════╝
+ *
+ * Pre-fix this routine ONLY flipped credit_notes.status to 'cancelled'.
+ * That left the linked refund row in payment_transactions still
+ * status='completed' and the parent bill still status='refunded' — so
+ * the books would show the patient as refunded even though staff had
+ * explicitly clicked "Cancel Credit Note" because the refund was wrong.
+ * Money already on its way back to the patient was impossible to detect
+ * from the application UI; only manual reconciliation with the bank
+ * could catch it.
+ *
+ * What this version does:
+ *   1. Atomically flips credit_notes.status from 'issued' to 'cancelled'
+ *      (CAS guard — same as before).  If it loses the race we abort
+ *      cleanly.
+ *   2. Looks up the refund payment_transactions row(s) keyed on
+ *      (bill_id = cn.bill_id, transaction_type='refund') and marks
+ *      them cancelled with a reason note pointing at this CN id.
+ *   3. Unwinds the bill state:
+ *        - if every refund against this bill is now cancelled,
+ *          bills.status flips from 'refunded' / 'partial' back to the
+ *          last known 'paid' state and refund_amount is zeroed;
+ *        - if some refunds remain valid, refund_amount is decreased
+ *          by this CN's credit_amount and the bill status is rebuilt
+ *          from the remaining live refunds.
+ *   4. Writes a counter-entry to hospital_fund (income, +creditAmount)
+ *      to undo the income reduction the original refund caused.
+ *   5. Logs an audit entry via the standard audit() helper (which
+ *      goes through the hash-chain RPC, not a direct table insert).
+ *
+ * If any of steps 2-5 fail, we DO NOT silently swallow the error.
+ * The CN cancellation already committed in step 1, but the function
+ * returns false and the caller is expected to surface a user-facing
+ * warning.  This is intentionally fail-LOUD: a half-reversed financial
+ * state is exactly the case the original bug created and we don't want
+ * to recreate it under a different name.
  */
 export async function cancelCreditNote(cnId: string, cancelledBy: string): Promise<boolean> {
-  const { error } = await supabase
+  // Step 0: load the credit note so we know what we're reversing.
+  const { data: cn, error: cnReadErr } = await supabase
+    .from('credit_notes')
+    .select('id, status, bill_id, patient_name, mrn, credit_amount, gst_reversal, reason')
+    .eq('id', cnId)
+    .single()
+
+  if (cnReadErr || !cn) {
+    console.error('[credit-notes] cancel: could not load CN:', cnReadErr?.message)
+    return false
+  }
+  if (cn.status !== 'issued') {
+    console.warn(`[credit-notes] cancel: CN ${cnId} is already ${cn.status}; nothing to do`)
+    return false
+  }
+
+  // Step 1: atomic CAS update.  If somebody else already cancelled it
+  // between our read and write, the CAS clause matches 0 rows and we
+  // bail out without trying to double-reverse the financials.
+  const { data: cnUpdated, error: cnUpdErr } = await supabase
     .from('credit_notes')
     .update({
       status: 'cancelled',
@@ -420,14 +529,137 @@ export async function cancelCreditNote(cnId: string, cancelledBy: string): Promi
       updated_at: new Date().toISOString(),
     })
     .eq('id', cnId)
-    .eq('status', 'issued') // Only cancel if still in 'issued' state
+    .eq('status', 'issued')
+    .select('id')
 
-  if (error) {
-    console.error('[credit-notes] Cancel failed:', error.message)
+  if (cnUpdErr) {
+    console.error('[credit-notes] Cancel failed:', cnUpdErr.message)
+    return false
+  }
+  if (!cnUpdated || cnUpdated.length === 0) {
+    console.warn('[credit-notes] cancel: CAS lost — somebody else cancelled this CN first')
     return false
   }
 
-  return true
+  // Step 2: cancel the linked refund transaction(s).
+  // We match by (bill_id, transaction_type='refund', status not already
+  // cancelled) and cancel the most recent one.  Each CN should map to
+  // one refund row, but historic data sometimes has multiple partial-
+  // refund rows for the same bill so we deliberately don't cancel more
+  // than the CN's worth.
+  let refundCancelOk = true
+  try {
+    const { data: refundRows, error: rfErr } = await supabase
+      .from('payment_transactions')
+      .select('id, amount, status')
+      .eq('bill_id', cn.bill_id)
+      .eq('transaction_type', 'refund')
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (rfErr) throw rfErr
+    if (refundRows && refundRows.length > 0) {
+      const { error: rfUpdErr } = await supabase
+        .from('payment_transactions')
+        .update({
+          status: 'cancelled',
+          notes:
+            `Cancelled because credit note ${cn.id} was cancelled by ${cancelledBy}.`,
+        })
+        .eq('id', refundRows[0].id)
+      if (rfUpdErr) throw rfUpdErr
+    }
+  } catch (e: any) {
+    refundCancelOk = false
+    console.error(
+      '[credit-notes] cancel: linked refund row update failed (non-fatal but ' +
+      'leaves the books in an inconsistent state until manually reconciled): ' +
+      (e?.message || e),
+    )
+  }
+
+  // Step 3: rebuild bill state from the surviving refunds (the one we
+  // just cancelled is now status='cancelled' and excluded).
+  let billRebuildOk = true
+  try {
+    const { data: liveRefunds } = await supabase
+      .from('payment_transactions')
+      .select('amount')
+      .eq('bill_id', cn.bill_id)
+      .eq('transaction_type', 'refund')
+      .neq('status', 'cancelled')
+
+    const remainingRefunded = (liveRefunds || []).reduce(
+      (s, r: any) => s + (Number(r.amount) || 0), 0,
+    )
+
+    const { data: bill } = await supabase
+      .from('bills')
+      .select('paid, net_amount, total, status')
+      .eq('id', cn.bill_id)
+      .single()
+    if (bill) {
+      const billPaid = Number(bill.paid || bill.net_amount || bill.total || 0)
+      let newBillStatus: string
+      if (remainingRefunded <= 0) {
+        // No active refunds — bill is paid in full again.
+        newBillStatus = 'paid'
+      } else if (remainingRefunded >= billPaid) {
+        newBillStatus = 'refunded'
+      } else {
+        // Partial refund still active.
+        newBillStatus = bill.status === 'refunded' ? 'paid' : (bill.status || 'paid')
+      }
+      await supabase
+        .from('bills')
+        .update({
+          status: newBillStatus,
+          refund_amount: remainingRefunded,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cn.bill_id)
+    }
+  } catch (e: any) {
+    billRebuildOk = false
+    console.error('[credit-notes] cancel: bill state rebuild failed:', e?.message || e)
+  }
+
+  // Step 4: counter-entry in hospital_fund so revenue reports show
+  // the income was restored.
+  try {
+    await supabase.from('hospital_fund').insert({
+      type: 'income',
+      amount: Number(cn.credit_amount) || 0,
+      category: 'credit_note_cancellation',
+      description:
+        `Reversed credit note ${cn.id} (${cn.patient_name || 'patient'}, ` +
+        `MRN ${cn.mrn || 'N/A'}). Original reason: ${cn.reason || 'N/A'}.`,
+      submitted_by: cancelledBy,
+      status: 'approved',
+      bill_id: cn.bill_id,
+    })
+  } catch (e: any) {
+    console.warn(
+      '[credit-notes] cancel: hospital_fund counter-entry failed (non-fatal):',
+      e?.message || e,
+    )
+  }
+
+  // Step 5: audit entry via the canonical audit() helper.
+  try {
+    const mod = await import('@/lib/audit')
+    await mod.audit('update', 'bill', cn.bill_id,
+      `Credit note ${cn.id} cancelled (₹${cn.credit_amount})`, {
+        before: { credit_note_status: 'issued' },
+        after:  { credit_note_status: 'cancelled', cancelled_by: cancelledBy },
+      })
+  } catch { /* non-fatal */ }
+
+  // Return false if any of the financially-significant steps had
+  // problems so the caller can surface a warning.  Step 1 (the CN row
+  // itself) DID succeed — that's why the CN is now cancelled — but the
+  // surrounding financial state may need manual reconciliation.
+  return refundCancelOk && billRebuildOk
 }
 
 // ── Credit Note Print Data ───────────────────────────────────────

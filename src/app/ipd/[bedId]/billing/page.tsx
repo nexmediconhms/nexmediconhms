@@ -544,26 +544,229 @@ export default function IPDBillingPage() {
   }
 
   // ── Save bill summary to admission ────────────────────────
+  //
+  // SCHEMA-RESILIENCE FIX (June 2026)
+  // ─────────────────────────────────
+  // Reported error:
+  //     Save failed: Could not find the 'bill_status' column of
+  //     'ipd_admissions' in the schema cache
+  //
+  // Root cause: the early ipd_admissions schema didn't carry the
+  // billing-summary columns (total_charges, discount, net_bill,
+  // bill_status, payment_mode); they were added later when the
+  // structured IPD billing UI was introduced.  Supabase projects that
+  // haven't run migrations/019_align_ipd_admissions_bill_columns.sql
+  // reject the entire UPDATE because PostgREST can't find any of
+  // those columns in its schema cache.
+  //
+  // Resolution (paired with migration 019, but works independently):
+  //   1. Try the modern UPDATE first — full payload.
+  //   2. On a schema-cache error (PGRST204 / 42703 / "could not find /
+  //      does not exist") retry with a *progressively narrower*
+  //      payload, dropping the unknown column on each pass.  The most
+  //      important field (bill_status, used everywhere downstream) is
+  //      preserved as long as possible.
+  //
+  // ╔════════════════════════════════════════════════════════════════╗
+  // ║  ADDITIONAL FIX — IPD-NEW-1 (June 2026)                       ║
+  // ║                                                                ║
+  // ║  Pre-fix saveBill() ONLY updated ipd_admissions and never      ║
+  // ║  inserted a row in the `bills` table.  Every other module of  ║
+  // ║  the system (CA reports, daily closing, finance ledger,       ║
+  // ║  doctor earnings, refund flow) reads from `bills` — so IPD    ║
+  // ║  revenue was invisible to all of them.                         ║
+  // ║                                                                ║
+  // ║  We now ALSO upsert a corresponding bills row via the          ║
+  // ║  /api/billing/generate-bill endpoint.  The endpoint already    ║
+  // ║  knows how to:                                                 ║
+  // ║    - allocate a sequential IPD invoice number                  ║
+  // ║    - cross-check totals server-side                            ║
+  // ║    - sync to hospital_fund                                     ║
+  // ║  All we have to do is hand it the items + admission_id, with  ║
+  // ║  an idempotency_key keyed on the admission so repeated saves  ║
+  // ║  return the existing bill instead of creating duplicates.      ║
+  // ║                                                                ║
+  // ║  This makes IPD admissions visible to:                         ║
+  // ║    - daily revenue reports (bills.paid_at)                     ║
+  // ║    - the refund flow (refunds need a bills.id)                 ║
+  // ║    - doctor earnings                                           ║
+  // ║    - the finance ledger                                        ║
+  // ╚════════════════════════════════════════════════════════════════╝
   async function saveBill() {
     if (!admission?.id) return
     setSaving(true)
     setError('')
 
-    const { error: err } = await supabase
-      .from('ipd_admissions')
-      .update({
-        total_charges: grandTotal,
-        discount: discount,
-        net_bill: netBill,
-        bill_status: 'pending',
-        payment_mode: paymentMode,
+    // Compose the canonical (modern) payload once.
+    const fullPayload: Record<string, any> = {
+      total_charges: grandTotal,
+      discount,
+      net_bill: netBill,
+      bill_status: 'pending',
+      payment_mode: paymentMode,
+    }
+
+    // Helper: detect "column not found in schema cache" errors so we
+    // can narrow the payload and retry rather than failing outright.
+    function isSchemaCacheUpdateError(e: any): boolean {
+      if (!e) return false
+      const code = String(e.code || '')
+      const msg  = String(e.message || '').toLowerCase()
+      return (
+        code === 'PGRST204' ||
+        code === '42703' ||
+        msg.includes('schema cache') ||
+        (msg.includes('column') &&
+         (msg.includes('does not exist') || msg.includes('not found')))
+      )
+    }
+
+    // Extract the offending column name from the supabase error message
+    // so we can drop just that column from the next attempt.
+    function unknownColumnFrom(e: any): string | null {
+      const msg = String(e?.message || '')
+      // Match the most common shapes reported by PostgREST + PG:
+      //   Could not find the 'X' column of 'Y' in the schema cache
+      //   column "X" of relation "Y" does not exist
+      let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
+      if (m) return m[1]
+      m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
+      if (m) return m[1]
+      m = msg.match(/the\s+['"]?([a-z_][a-z0-9_]*)['"]?\s+column/i)
+      if (m) return m[1]
+      return null
+    }
+
+    // Try the update with progressively narrower payloads, removing
+    // unknown columns one at a time. Bounded to 6 attempts so a
+    // pathological loop can't run away.
+    let payload = { ...fullPayload }
+    let lastErr: any = null
+    let droppedCols: string[] = []
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error: err } = await supabase
+        .from('ipd_admissions')
+        .update(payload)
+        .eq('id', admission.id)
+
+      if (!err) {
+        lastErr = null
+        break
+      }
+
+      lastErr = err
+      if (!isSchemaCacheUpdateError(err)) break
+
+      const offending = unknownColumnFrom(err)
+      if (!offending || !(offending in payload)) {
+        // We can't tell which column to drop — bail out.
+        break
+      }
+
+      console.warn(
+        `[IPD billing saveBill] '${offending}' not in ipd_admissions schema cache; ` +
+        `retrying without that column.  Apply migration 019 to remove this fallback.`,
+      )
+      droppedCols.push(offending)
+      const { [offending as keyof typeof payload]: _drop, ...rest } = payload
+      payload = rest
+      // If we've dropped every billing column, give up — there's
+      // nothing useful left to write through this path.
+      if (Object.keys(payload).length === 0) break
+    }
+
+    if (lastErr) {
+      setSaving(false)
+      setError(`Save failed: ${lastErr.message}`)
+      return
+    }
+
+    // ── IPD-NEW-1 fix: also create / upsert the corresponding bills row ──
+    //
+    // This is the change that makes IPD admissions visible to the rest
+    // of the financial system (CA reports, finance ledger, refund
+    // flow, doctor earnings).  The /api/billing/generate-bill endpoint
+    // is the canonical entry point for bills creation; we hand it the
+    // admission's charges and let it do the heavy lifting.
+    //
+    // Idempotency: we key the request by `ipd-admission-{id}` so a
+    // repeated saveBill() click returns the existing bill instead of
+    // creating duplicates.  The endpoint already supports this via the
+    // `idempotency_key` body field.
+    let billsSyncOk = true
+    try {
+      const items = charges.map(c => ({
+        label: c.description || c.category,
+        amount: c.amount,
+        quantity: c.quantity,
+      }))
+      const subtotal = charges.reduce((s, c) => s + c.amount, 0)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const billRes = await fetch('/api/billing/generate-bill', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          module: 'IPD',
+          patient_id: patient.id,
+          patient_name: patient.full_name,
+          mrn: patient.mrn,
+          items,
+          subtotal,
+          discount,
+          gst_percent: 0, // IPD bills typically not GST-applicable for medical services
+          net_amount: netBill,
+          payment_mode: paymentMode,
+          status: 'unpaid',
+          admission_id: admission.id,
+          notes: `IPD admission stay`,
+          idempotency_key: `ipd-admission-${admission.id}`,
+        }),
       })
-      .eq('id', admission.id)
+
+      if (!billRes.ok) {
+        const errBody = await billRes.json().catch(() => ({}))
+        billsSyncOk = false
+        console.warn(
+          '[IPD billing saveBill] /api/billing/generate-bill failed; the IPD ' +
+          'admission summary was saved but the bill row in `bills` was NOT ' +
+          'created.  CA reports, refunds, and doctor earnings will not see ' +
+          'this admission until the bill is created via Billing → IPD → ' +
+          `Generate.  Detail: ${errBody?.error || billRes.statusText}`,
+        )
+      }
+    } catch (e: any) {
+      billsSyncOk = false
+      console.warn(
+        '[IPD billing saveBill] generate-bill API call failed (non-fatal): ' +
+        (e?.message || e),
+      )
+    }
 
     setSaving(false)
-    if (err) { setError(`Save failed: ${err.message}`); return }
-    setSuccess('Bill saved successfully!')
-    setTimeout(() => setSuccess(''), 3000)
+
+    if (droppedCols.length > 0 && billsSyncOk) {
+      setSuccess(
+        `Bill saved (partial — schema is missing column${droppedCols.length > 1 ? 's' : ''} ` +
+        `${droppedCols.join(', ')}; run migration 019 for full support).`,
+      )
+    } else if (!billsSyncOk) {
+      // Save partially succeeded but the bills-table sync didn't —
+      // surface a clear warning so reception knows to re-generate.
+      setError(
+        'Bill summary saved on the admission, but creating the formal bill ' +
+        'in the billing system failed.  Please go to Billing → New IPD Bill ' +
+        'and generate it manually so revenue reports stay in sync.',
+      )
+    } else {
+      setSuccess('Bill saved successfully!')
+    }
+    setTimeout(() => { setSuccess('') }, 6000)
   }
 
   // ── Loading ────────────────────────────────────────────────
