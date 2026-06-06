@@ -640,46 +640,106 @@ export default function NewPatientPage() {
   }
 
   // ── Payment confirmation handler ────────────────────────────────
+  // FIX: Insert bill DIRECTLY via client-side Supabase (same auth context as
+  // the billing page which works). The API route was failing because it uses
+  // a server-side Supabase client that may lack proper auth/service-role key.
   async function handlePaymentConfirm(overrideMethod?: string, overrideRef?: string) {
     const method = overrideMethod || paymentMethod
     const ref = overrideRef || paymentRef
     if (!method || !success) return
 
     let billCreated = false
+    const amountNum = parseFloat(paymentAmount) || 500
+    const now = new Date()
+    const todayStr = now.toISOString().slice(0, 10)
+    const todayCompact = todayStr.replace(/-/g, '')
 
     try {
-      const res = await fetch('/api/billing/registration-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_id: successId,
-          patient_name: success.name,
-          mrn: success.mrn,
-          amount: parseFloat(paymentAmount) || 500,
-          payment_method: method,
-          payment_ref: ref || null,
-          description: 'OPD Registration Fee',
-          type: 'registration',
-        }),
-      })
+      // Generate invoice number
+      const { count } = await supabase
+        .from('bills')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', todayStr + 'T00:00:00')
 
-      const data = await res.json()
+      const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
-      if (res.ok && data?.ok) {
-        // Success — bill created
-        billCreated = true
-        if (data.bill_id) setPaymentBillId(data.bill_id)
-        if (data.invoice_number) setPaymentInvoiceNumber(data.invoice_number)
-        console.log('[Registration] Payment recorded successfully:', data.invoice_number)
-      } else {
-        // API returned an error
-        console.error('[Registration] Payment API error:', data?.error || res.statusText)
-        setPaymentWarning(`Payment recording issue: ${data?.error || 'Unknown error'}. Bill may not appear in reports. Please create manually from Billing page.`)
+      // Create the bill directly (same approach as billing page)
+      const billPayload = {
+        patient_id: successId,
+        patient_name: success.name,
+        mrn: success.mrn,
+        invoice_number: invoiceNumber,
+        items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
+        subtotal: amountNum,
+        total: amountNum,
+        net_amount: amountNum,
+        discount: 0,
+        tax: 0,
+        gst_amount: 0,
+        paid: amountNum,
+        due: 0,
+        status: 'paid',
+        payment_mode: method,
+        payment_ref: ref || null,
+        paid_at: now.toISOString(),
+        notes: `Registration payment — ${method}${ref ? ` (Ref: ${ref})` : ''}`,
       }
-    } catch (fetchErr: any) {
-      // Network or other error
-      console.error('[Registration] Payment fetch failed:', fetchErr?.message || fetchErr)
-      setPaymentWarning('Network error while recording payment. The bill may not have been created. Please verify in Billing section.')
+
+      console.log('[Registration] Creating bill directly:', { patient_id: successId, amount: amountNum, method })
+
+      const { data: bill, error: billError } = await supabase
+        .from('bills')
+        .insert(billPayload)
+        .select('id, invoice_number')
+        .single()
+
+      if (billError) {
+        console.error('[Registration] Bill insert failed:', billError.message, billError.code)
+        setPaymentWarning(`Payment recording issue: ${billError.message}. Please create bill manually from Billing page.`)
+      } else if (bill) {
+        billCreated = true
+        setPaymentBillId(bill.id)
+        setPaymentInvoiceNumber(bill.invoice_number || invoiceNumber)
+        console.log('[Registration] Bill created successfully:', bill.id, bill.invoice_number)
+
+        // Also create bill_payment record (non-fatal if fails)
+        try {
+          await supabase.from('bill_payments').insert({
+            bill_id: bill.id,
+            patient_id: successId,
+            amount: amountNum,
+            payment_mode: method,
+            reference: ref || null,
+            received_by: 'reception',
+            notes: `Registration payment for ${success.name}`,
+            transaction_type: 'payment',
+          })
+        } catch { /* non-fatal */ }
+
+        // Create encounter record so daily/monthly reports pick this up
+        try {
+          const { data: newEnc } = await supabase
+            .from('encounters')
+            .insert({
+              patient_id: successId,
+              encounter_date: todayStr,
+              encounter_type: 'OPD',
+              chief_complaint: 'Registration / OPD Consultation',
+              notes: `Registration payment: ₹${amountNum} via ${method}`,
+              revenue_status: 'paid',
+              bill_id: bill.id,
+            })
+            .select('id')
+            .single()
+
+          if (newEnc) {
+            await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', bill.id)
+          }
+        } catch { /* non-fatal — encounter creation is optional for billing */ }
+      }
+    } catch (err: any) {
+      console.error('[Registration] Payment recording failed:', err?.message || err)
+      setPaymentWarning('Error recording payment. Please create bill manually from Billing page.')
     }
 
     // Queue insertion (same as before)
@@ -742,22 +802,39 @@ export default function NewPatientPage() {
   async function handleSkipPayment() {
     if (!success) return
 
-    // Create a PENDING bill so the dashboard Pending tile reflects this
+    // Create a PENDING bill directly via client-side Supabase
     try {
-      await fetch('/api/billing/registration-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_id: successId,
-          patient_name: success.name,
-          mrn: success.mrn,
-          amount: parseFloat(paymentAmount) || 500,
-          payment_method: 'pending', // Special flag: creates pending bill
-          payment_ref: null,
-          description: 'OPD Registration Fee',
-          type: 'registration',
-          skip_payment: true, // API will create bill with status='pending'
-        }),
+      const amountNum = parseFloat(paymentAmount) || 500
+      const now = new Date()
+      const todayStr = now.toISOString().slice(0, 10)
+      const todayCompact = todayStr.replace(/-/g, '')
+
+      const { count } = await supabase
+        .from('bills')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', todayStr + 'T00:00:00')
+
+      const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
+
+      await supabase.from('bills').insert({
+        patient_id: successId,
+        patient_name: success.name,
+        mrn: success.mrn,
+        invoice_number: invoiceNumber,
+        items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
+        subtotal: amountNum,
+        total: amountNum,
+        net_amount: amountNum,
+        discount: 0,
+        tax: 0,
+        gst_amount: 0,
+        paid: 0,
+        due: amountNum,
+        status: 'pending',
+        payment_mode: null,
+        payment_ref: null,
+        paid_at: null,
+        notes: 'Registration — payment pending',
       })
     } catch { /* Non-fatal — bill will be created later at billing page */ }
 
