@@ -261,10 +261,11 @@ export async function POST(req: NextRequest) {
 
     // ── Step 5: Audit log ─────────────────────────────────────
     //
-    // AUD-2 fix (June 2026): route through the hash-chained RPC. The
-    // direct INSERT bypassed the chain, which would let an attacker
-    // (or buggy lab-partner integration) edit/delete portal-upload
-    // audit rows post-hoc without the verification chain noticing.
+    // AUD-2 fix (June 2026): route through the hash-chained
+    // insert_audit_entry RPC.  The previous direct INSERT bypassed
+    // the chain, which would let an attacker (or buggy lab-partner
+    // integration) edit/delete portal-upload audit rows post-hoc
+    // without the verification chain noticing.
     try {
       const auditPayload = JSON.stringify({
         lab_partner: labName,

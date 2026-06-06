@@ -589,16 +589,16 @@ function NewConsultationContent() {
       return
     }
 
-    // ── OPD-4 fix: refuse to save without a confirmed user ──
-    // Pre-fix code (in BOTH handleSave and handleSaveAll) did:
+    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
+    // Pre-fix the encounter insert below did:
     //     doctor_name: user?.full_name || getHospitalSettings().doctorName
     // If a transient auth glitch made `user` undefined, the encounter
-    // was silently saved with the hospital-wide default doctor name
-    // (often the practice owner). Patient charts ended up misattributed
-    // with no easy way to detect the swap. Refuse to save instead.
+    // saved with the practice owner's name attributed to it.  Patient
+    // charts ended up misattributed with no easy way to detect the
+    // swap.  Refusing to save is better than corrupting the chart.
     if (!user || !user.full_name) {
       setError(
-        'Your session could not be verified. Please refresh the page and ' +
+        'Your session could not be verified.  Please refresh the page and ' +
         'sign in again before saving — we do not want to attribute this ' +
         'encounter to the wrong doctor.',
       )
@@ -653,7 +653,7 @@ function NewConsultationContent() {
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
         // OPD-4: gated above on a confirmed user, so always the actual
-        // signed-in clinician.
+        // signed-in clinician.  No fallback to hospital default.
         doctor_name: user.full_name,
       })
       .select('id')
@@ -721,11 +721,11 @@ function NewConsultationContent() {
         }
         await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
       } else {
-        // OPD-2 fix: race-safe token allocation. Pre-fix code did
-        // SELECT-MAX → INSERT, which silently dropped patients on
-        // concurrent inserts (the unique constraint kicked in but the
-        // second insert vanished into a console.warn). Now we retry
-        // up to MAX_TOKEN_RETRIES on 23505.
+        // OPD-2 fix (June 2026): race-safe token allocation.  Pre-fix
+        // code did SELECT-MAX → INSERT, which silently dropped patients
+        // on concurrent inserts (the unique constraint kicked in but
+        // the second insert vanished into a console.warn).  Now we
+        // retry up to MAX_TOKEN_RETRIES on 23505 unique-violation.
         const MAX_TOKEN_RETRIES = 5
         let success = false
         for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {
@@ -759,8 +759,8 @@ function NewConsultationContent() {
         if (!success) {
           console.warn(
             '[OPD] queue token allocation failed after retries — encounter ' +
-            'is saved but queue auto-creation gave up. Reception can add the ' +
-            'patient to the queue manually.',
+            'is saved but queue auto-creation gave up.  Reception can add ' +
+            'the patient to the queue manually.',
           )
         }
       }
@@ -790,13 +790,15 @@ function NewConsultationContent() {
       }
     }
 
-    // OPD-3 fix: queue status was previously written as 'completed' which
+    // ── OPD-3 fix (June 2026) ──────────────────────────────────────
+    // Pre-fix queue status was previously written as 'completed' which
     // is NOT a valid value in the QueueStatus union (`'waiting' |
-    // 'vitals_done' | 'in_progress' | 'done' | 'cancelled'`). The queue
-    // page filters by those literals, so tokens flipped to 'completed'
-    // disappeared from the UI entirely — daily "patients seen today"
-    // counters were permanently zero, CA reports under-counted OPD
-    // visits, etc. We now use the canonical 'done' value.
+    // 'vitals_done' | 'in_progress' | 'done' | 'cancelled'`).  The
+    // queue page filters by those literals, so tokens flipped to
+    // 'completed' disappeared from the UI entirely — daily "patients
+    // seen today" counters were permanently zero, CA reports
+    // under-counted OPD visits, etc.  We now use the canonical 'done'
+    // value and stamp done_at for the daily-revenue join.
     try {
       const todayForQueue = getIndiaToday()
       await supabase
@@ -840,30 +842,29 @@ function NewConsultationContent() {
       return
     }
 
-    // ── OPD-4 fix: refuse to save without a confirmed user ──
-    // Pre-fix code did:
+    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
+    // Pre-fix the encounter insert below did:
     //     doctor_name: user?.full_name || getHospitalSettings().doctorName
-    // If a transient auth glitch made `user` undefined, the encounter
+    // If a transient auth issue made `user` undefined, the encounter
     // was silently saved with the hospital-wide default doctor name
-    // (often the practice owner). Patient charts ended up misattributed
-    // with no easy way to detect the swap.
+    // (often the practice owner).  Patient charts ended up
+    // misattributed with no easy way to detect the swap.
     if (!user || !user.full_name) {
       setError(
-        'Your session could not be verified. Please refresh the page and ' +
+        'Your session could not be verified.  Please refresh the page and ' +
         'sign in again before saving — we do not want to attribute this ' +
         'encounter to the wrong doctor.',
       )
       return
     }
 
-    // ── OPD-1 fix: run the same prescription-safety checks that
-    // handleSaveAll runs. Pre-fix this code path bypassed drug-
-    // interaction, allergy, and dose validation entirely, so a doctor
-    // saving via this button could write a Warfarin + Aspirin
-    // prescription without any of the hard-stop alerts firing. The
-    // safety modules (prescription-safety, drug-interactions, allergy-
-    // alerts) all exist and work — they just weren't being invoked
-    // here. Now they are.
+    // ── OPD-1 fix (June 2026): run prescription-safety here too ──
+    // Pre-fix this code path bypassed drug-interaction, allergy, and
+    // dose validation entirely (handleSaveAll above did run them but
+    // this handler skipped them).  A doctor saving via this button
+    // could write a Warfarin + Aspirin prescription without any of the
+    // hard-stop alerts firing.  The safety modules all exist and work
+    // — they just weren't being invoked here.  Now they are.
     const validMeds = rxMeds.filter(m => m.drug.trim())
     if (validMeds.length > 0 && !rxSafetyChecked) {
       const isPregnant = !!(ob.lmp || ob.edd)
@@ -881,7 +882,7 @@ function NewConsultationContent() {
           setRxShowSafetyModal(true)
           // The modal's acknowledge handler re-triggers handleSaveAll(),
           // which goes through the same encounter+prescription save +
-          // queue update path. We do NOT continue here so the alert
+          // queue update path.  We do NOT continue here so the alert
           // forces an explicit clinician decision before persistence.
           return
         }
@@ -892,7 +893,7 @@ function NewConsultationContent() {
         // we'd rather block save than save without checks.
         console.error('[OPD] prescription safety check failed:', e)
         setError(
-          'Prescription safety check could not run. Please retry. If this ' +
+          'Prescription safety check could not run.  Please retry.  If this ' +
           'persists, save the encounter without medications first and add ' +
           'them from the prescription page.',
         )
@@ -946,8 +947,8 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        // OPD-4: now that we've gated above on a confirmed user, this is
-        // always populated with the actual signed-in clinician.
+        // OPD-4: gated above on a confirmed user, so always the actual
+        // signed-in clinician.  No fallback to hospital default.
         doctor_name: user.full_name,
       })
       .select('id')
@@ -996,8 +997,9 @@ function NewConsultationContent() {
         }
         await supabase.from('opd_queue').update(patch).eq('id', existingRow.id)
       } else {
-        // OPD-2 fix: race-safe token allocation, mirrors handleSaveAll
-        // above. See the comment there for the full rationale.
+        // OPD-2 fix (June 2026): race-safe token allocation, mirrors
+        // the first site above. See that site's comment for the full
+        // rationale.
         const MAX_TOKEN_RETRIES = 5
         let success = false
         for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {

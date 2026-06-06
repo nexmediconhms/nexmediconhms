@@ -221,8 +221,9 @@ export async function POST(req: NextRequest) {
 
     // ── Step 5: Log the import ────────────────────────────────
     //
-    // AUD-2 fix (June 2026): route through the hash-chained RPC. See
-    // src/app/api/ipd/discharge/route.ts for the full rationale.
+    // AUD-2 fix (June 2026): route through the hash-chained
+    // insert_audit_entry RPC.  See src/app/api/labs/lab-portal/route.ts
+    // for the full rationale.  Direct INSERT bypassed the chain.
     try {
       const auditPayload = JSON.stringify({ from, subject, labPartnerName })
       const { error: auditErr } = await supabase.rpc('insert_audit_entry', {

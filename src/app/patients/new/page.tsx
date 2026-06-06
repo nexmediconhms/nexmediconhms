@@ -70,14 +70,14 @@ interface DuplicateMatch {
 // ║      INSERT INTO opd_queue (..., token_number = max+1)           ║
 // ║                                                                  ║
 // ║  Two reception staff registering patients at the same second    ║
-// ║  both compute the same nextToken. Migration 014's unique         ║
+// ║  both compute the same nextToken.  Migration 014's unique       ║
 // ║  constraint catches the duplicate, but the second insert         ║
 // ║  silently fails — the second patient is registered but never    ║
-// ║  appears in the queue. They sit in the waiting area until they  ║
+// ║  appears in the queue.  They sit in the waiting area until they ║
 // ║  ask staff "why am I not on the screen?".                        ║
 // ║                                                                  ║
 // ║  This helper retries on 23505 (unique violation), re-reading    ║
-// ║  the freshest MAX on each pass. After MAX_TOKEN_RETRIES         ║
+// ║  the freshest MAX on each pass.  After MAX_TOKEN_RETRIES         ║
 // ║  failures we surrender — but in practice 5 attempts is enough  ║
 // ║  to cover even the busiest morning rush.                         ║
 // ╚══════════════════════════════════════════════════════════════════╝
@@ -111,7 +111,7 @@ async function insertQueueEntryWithRetry(
     lastErr = error
 
     // 23505 unique_violation — most likely the token_number unique
-    // constraint added in migration 014. Re-read MAX and retry.
+    // constraint added in migration 014.  Re-read MAX and retry.
     const code = String((error as any)?.code || '')
     const msg = String((error as any)?.message || '').toLowerCase()
     if (code === '23505' || msg.includes('duplicate') || msg.includes('unique')) {
@@ -418,19 +418,19 @@ export default function NewPatientPage() {
     }
 
     if (name.length >= 3) {
-      // ── PR-3 fix: escape ilike wildcards (June 2026) ──
-      // The pre-fix query did .ilike('full_name', `%${name}%`) which let the
-      // user-entered name's `%` and `_` characters act as SQL LIKE
-      // wildcards. A patient registration form name like "Mr. 100% Health Co."
-      // would match every patient containing any character — false-positive
-      // duplicates and (depending on RLS strictness) potentially leak PHI.
-      // We now escape via the shared escapeLike() helper used elsewhere
-      // in the codebase.
-      const safe = (await import('@/lib/utils')).escapeLike(name)
+      // ── PR-3 fix (June 2026): escape ilike wildcards ──
+      // Pre-fix the query did .ilike('full_name', `%${name}%`) which
+      // let the user-entered name's `%` and `_` characters act as SQL
+      // LIKE wildcards.  A patient registration form name like
+      // "Mr. 100% Health Co." would match every patient containing any
+      // character — false-positive duplicates and (depending on RLS
+      // strictness) potentially leak PHI.  We now escape via the
+      // shared escapeLike() helper used elsewhere in the codebase.
+      const safeName = (await import('@/lib/utils')).escapeLike(name)
       const { data: nameMatches } = await supabase
         .from('patients')
         .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .ilike('full_name', `%${safe}%`)
+        .ilike('full_name', `%${safeName}%`)
         .limit(10)
       if (nameMatches) {
         for (const p of nameMatches) {
@@ -533,7 +533,7 @@ export default function NewPatientPage() {
     // ║  If the audit RPC was unavailable (network blip, RLS, hash- ║
     // ║  chain function not deployed), notification + insurance API ║
     // ║  call had ALREADY transmitted PHI when the audit silently   ║
-    // ║  failed. DPDP Act audit-before-disclosure: write the audit  ║
+    // ║  failed.  DPDP Act audit-before-disclosure: write the audit ║
     // ║  trail BEFORE doing anything that exposes patient data to   ║
     // ║  third parties.                                              ║
     // ╚══════════════════════════════════════════════════════════════╝
@@ -547,21 +547,20 @@ export default function NewPatientPage() {
       await notify.patientRegistered(data.id, data.full_name, data.mrn)
     } catch { /* Non-fatal */ }
 
-    // ── PR-2 (server-side PHI encryption) ───────────────────────────
-    // Aadhaar was just stored as plaintext above (the legacy code path)
-    // which is a DPDP Act compliance gap. We now call /api/phi with
-    // action='encrypt_patient' to get the AES-256-GCM ciphertext, then
-    // UPDATE the patient row in place with the ciphertext + last4
-    // mask, and clear the plaintext column. The server holds the key
-    // (HOSPITAL_ENCRYPTION_KEY env var); the browser only sees the
-    // ciphertext.
-    //
-    // We fire-and-forget so a misconfigured server doesn't block
-    // registration. If the encryption endpoint reports the key isn't
-    // configured, we leave the plaintext alone — the admin sees a
-    // setup warning elsewhere — and a one-time migration tool can
-    // bulk-encrypt later. Existing legacy plaintext rows are unaffected.
-    if (normalizedAadhaar) {
+    // ── PR-2 fix (June 2026): server-side PHI encryption ───────────
+    // Aadhaar was just stored as plaintext above (the legacy code
+    // path) which is a DPDP Act compliance gap.  We now call
+    // /api/phi with action='encrypt_patient' to get the AES-256-GCM
+    // ciphertext, then UPDATE the patient row in place with the
+    // ciphertext + last4 mask, and clear the plaintext column.  The
+    // server holds HOSPITAL_ENCRYPTION_KEY; the browser only sees
+    // ciphertext.  Fire-and-forget so a misconfigured server
+    // doesn't block registration; the call returns immediately if
+    // the key isn't configured (admin sees a setup warning
+    // elsewhere).  Existing legacy plaintext rows are not affected
+    // — they can be bulk-encrypted by a one-time admin tool.
+    const aadhaarPlain = String(form.aadhaar_no || '').replace(/\D/g, '')
+    if (aadhaarPlain.length === 12) {
       ;(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession()
@@ -576,7 +575,7 @@ export default function NewPatientPage() {
             },
             body: JSON.stringify({
               action: 'encrypt_patient',
-              aadhaar_no: normalizedAadhaar,
+              aadhaar_no: aadhaarPlain,
             }),
           })
           if (!phiRes.ok) {
@@ -667,9 +666,10 @@ export default function NewPatientPage() {
       try {
         const today = getIndiaToday()
         // PR-1: race-safe token allocation via insertQueueEntryWithRetry.
-        // Pre-fix code did SELECT-MAX → INSERT and silently lost patients
-        // when two reception staff registered at the same second. The
-        // helper retries on 23505 unique-violation up to 5 times.
+        // Pre-fix code did SELECT-MAX → INSERT and silently lost
+        // patients when two reception staff registered at the same
+        // second.  The helper retries on 23505 unique-violation up to
+        // 5 times.
         const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
           patient_id: successId,
           queue_date: today,
@@ -681,11 +681,11 @@ export default function NewPatientPage() {
         }, today)
 
         if (queueErr) {
-          // The patient was already registered above (registration insert
-          // succeeded). The queue insert is the only failure. Surface a
-          // soft warning so reception can manually add the patient to
-          // the queue from the queue page rather than thinking the
-          // whole registration failed.
+          // The patient was already registered above (registration
+          // insert succeeded).  The queue insert is the only failure.
+          // Surface a soft warning so reception can manually add the
+          // patient to the queue from the queue page rather than
+          // thinking the whole registration failed.
           console.warn('[Registration] Queue insert failed (non-fatal):', queueErr?.message)
         }
 

@@ -326,10 +326,55 @@ function CensusView({
                     <td className="px-4 py-3">{statusBadge(adm.status)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <button onClick={() => onOpenChart(adm)}
-                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1">
-                          <Activity className="w-3 h-3" /> Chart
-                        </button>
+                        {/*
+                          ── Chart button — UNIFICATION FIX (June 2026) ─────────────────
+                          BACKGROUND
+                            The application historically had TWO different "chart"
+                            views for an IPD admission:
+                              A. The inline NursingChart panel rendered inside this
+                                 file (the legacy view, opened via onOpenChart()).
+                              B. The full /ipd/[bedId] route — the modern page used
+                                 by Bed Management's "Nursing Chart" link, which has
+                                 Vitals / I/O / Nursing Notes / Doctor Notes /
+                                 Files & Photos tabs PLUS the IPD Bill button.
+                            Page B is a strict superset of A and is what every other
+                            entry point in the app links to.  Having two pages for
+                            the same workflow caused user confusion and made deep
+                            links / browser-back behave inconsistently.
+
+                          DECISION (lead-developer view)
+                            Make /ipd/[bedId] the single source of truth.  Route
+                            "Chart" through a <Link> so we get:
+                              - shared destination with Bed Management
+                              - browser history + cmd/ctrl-click for new tab
+                              - deep-linkable URL for notifications + audit trail
+
+                          SAFETY FALLBACK
+                            Some legacy admission rows can have bed_id = null
+                            (e.g. transferred admissions in older schemas).  For
+                            those rows /ipd/null would 404, so we fall back to
+                            the inline panel via the original onOpenChart() prop.
+                            Prop signature, the legacy NursingChart component, and
+                            the openChart() handler are ALL preserved untouched —
+                            no caller / test that relies on them is broken.
+                        */}
+                        {adm.bed_id ? (
+                          <Link
+                            href={`/ipd/${adm.bed_id}`}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                            title="Open the full IPD chart (Vitals, I/O, Notes, Doctor Notes, Files, Bill)"
+                          >
+                            <Activity className="w-3 h-3" /> Chart
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={() => onOpenChart(adm)}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                            title="This admission has no bed_id — opening the legacy chart panel"
+                          >
+                            <Activity className="w-3 h-3" /> Chart
+                          </button>
+                        )}
                         {canManage && (
                           <button onClick={() => markDischarged(adm.id)}
                             className="text-xs py-1 px-2 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1">
@@ -833,7 +878,17 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
 }
 
 // ── Nursing Chart ──────────────────────────────────────────────
-
+//
+// @deprecated  As of June 2026 the IPD Census "Chart" button routes
+// directly to /ipd/[bedId] (the full clinical chart with Doctor Notes,
+// Files & Photos, OCR autofill, and the IPD Bill button).  This inline
+// component is retained ONLY as a fallback for the rare admission row
+// that has bed_id = null (e.g. transferred admissions in legacy
+// schemas) — those would otherwise 404 at /ipd/null.  Do NOT add new
+// features here; extend src/app/ipd/[bedId]/page.tsx instead.  This
+// component is scheduled for removal once the legacy schema cases are
+// fully migrated and we have one quarter of usage telemetry showing
+// nobody hits this path.
 function NursingChart({ admission, onBack, currentUserName }: {
   admission: IPDAdmission
   onBack: () => void
@@ -955,6 +1010,18 @@ function NursingChart({ admission, onBack, currentUserName }: {
             {admission.bed_number} · {admission.ward} · Admitted {formatDate(admission.admission_date)}
             {' '} · Dr. {admission.admitting_doctor}
             {admission.consulting_doctors?.length > 0 && ` + ${admission.consulting_doctors.join(', ')}`}
+          </p>
+          {/*
+            ── Legacy-view banner (June 2026 unification fix) ──────────
+            We're showing the inline panel because this admission has
+            no bed_id, which means the modern /ipd/[bedId] route can't
+            be opened.  Tell the user so they know why this looks
+            different from the chart they see for other patients.
+          */}
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1 inline-block">
+            ⚠ Legacy chart view (this admission has no linked bed). For
+            full clinical features (Doctor Notes, Files, IPD Bill), please
+            re-link a bed from /ipd/beds.
           </p>
         </div>
       </div>

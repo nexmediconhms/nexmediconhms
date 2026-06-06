@@ -50,15 +50,15 @@ let _cachedUser: { id: string; email: string; role: string } | null = null
 
 /**
  * AUD-5 fix (June 2026): the `_cachedUser` was a module singleton with
- * no invalidation on auth state change. If user A logged out in tab A
+ * no invalidation on auth state change.  If user A logged out in tab A
  * (which calls clearAuditCache()), tab B kept the stale cache and
  * continued attributing audit entries to user A even after user B
- * logged in there. The audit trail was therefore wrong about who did
+ * logged in there.  The audit trail was therefore wrong about who did
  * what.
  *
  * Fix: subscribe to supabase auth state changes once at module load
  * and clear the cache on every SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED
- * event. The next call to getCurrentUser() will re-fetch from
+ * event.  The next call to getCurrentUser() will re-fetch from
  * clinic_users with the now-correct auth_id.
  *
  * `typeof window` guard so this runs only in the browser — server-side
@@ -138,13 +138,13 @@ function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
  * Used as fallback when the database RPC is unavailable.
  *
  * AUD-3 (June 2026): the original code had a djb2-32 fallback for
- * environments without `crypto.subtle`. djb2-32 has trivial collisions
- * — finding two payloads with the same hash takes seconds — so a
- * tamper-evidence chain built on it can be forged in minutes. We now
- * return null (instead of a weak hash) when crypto.subtle is missing.
- * The caller (fallbackInsert) treats null as "cannot guarantee
- * tamper-evidence" and refuses to write, surfacing a clear warning to
- * the operator instead of silently degrading.
+ * environments without `crypto.subtle`.  djb2-32 has trivial
+ * collisions — finding two payloads with the same hash takes seconds —
+ * so a tamper-evidence chain built on it can be forged in minutes.
+ * We now return null (instead of a weak hash) when crypto.subtle is
+ * missing.  The caller (fallbackInsert) treats null as "cannot
+ * guarantee tamper-evidence" and refuses to write, surfacing a clear
+ * warning to the operator instead of silently degrading.
  */
 async function computeEntryHash(entry: Record<string, unknown>, prevHash: string | null): Promise<string | null> {
   try {
@@ -162,7 +162,7 @@ async function computeEntryHash(entry: Record<string, unknown>, prevHash: string
     }
 
     // AUD-3: do NOT fall back to djb2-32; it provides no real
-    // tamper-evidence and is trivially forgeable. Return null so the
+    // tamper-evidence and is trivially forgeable.  Return null so the
     // caller can decide what to do.
     return null
   } catch {
@@ -294,29 +294,9 @@ async function tryAtomicInsert(
 
 /**
  * Fallback: Client-side hash computation with local mutex.
- *
- * ╔══════════════════════════════════════════════════════════════════╗
- * ║  AUD-1 fix (June 2026): fail-closed when crypto is unavailable. ║
- * ║                                                                  ║
- * ║  Pre-fix this routine wrote audit_log rows even when             ║
- * ║  computeEntryHash() returned a weak djb2 stub or a "nohash-…"   ║
- * ║  marker — meaning the chain wasn't actually tamper-evident on   ║
- * ║  some browsers (old Android WebView, HTTP-only deployments).    ║
- * ║                                                                  ║
- * ║  Post-fix:                                                       ║
- * ║    - We try the API route ONCE first (handled by the caller    ║
- * ║      already; this is the last-resort path).                    ║
- * ║    - If crypto.subtle is unavailable we REFUSE to write a       ║
- * ║      fork in the chain. Audit failure is loud (console.error)  ║
- * ║      so an admin can fix the deployment, but it doesn't crash  ║
- * ║      the calling action.                                         ║
- * ║    - Cross-tab races (where two tabs race on the same           ║
- * ║      prev_hash) are still possible but the local mutex below    ║
- * ║      narrows the window dramatically. The proper fix is the     ║
- * ║      DB-side insert_audit_entry RPC; this fallback exists       ║
- * ║      only for emergency operations (e.g., RPC migration in     ║
- * ║      progress).                                                  ║
- * ╚══════════════════════════════════════════════════════════════════╝
+ * This prevents same-tab races. Cross-tab races are still possible
+ * but are much less likely and non-critical (the chain will still be
+ * ordered by created_at, just with potential duplicate prev_hash).
  */
 async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
   try {
@@ -333,17 +313,22 @@ async function fallbackInsert(entry: Record<string, unknown>): Promise<void> {
     // Compute new hash
     const entryHash = await computeEntryHash(entry, prevHash)
 
-    // AUD-1 / AUD-3: if we couldn't compute a real cryptographic hash,
-    // refuse to write rather than poisoning the chain with a forgeable
-    // entry. Surface a loud warning so the operator notices.
+    // ── AUD-1 / AUD-3 fix (June 2026) ────────────────────────────
+    // If we couldn't compute a real cryptographic hash (crypto.subtle
+    // unavailable on this environment), refuse to write rather than
+    // poisoning the chain with a forgeable entry.  Surface a loud
+    // warning so the operator notices.  Audit failure is loud, but
+    // the calling action isn't blocked — the right tradeoff for a
+    // tamper-evidence layer where a forgeable row is worse than a
+    // missing one.
     if (!entryHash) {
       console.error(
         '[Audit] FALLBACK INSERT REFUSED: SHA-256 not available in this ' +
         'environment, and we will not write an audit entry that cannot ' +
         'be cryptographically chained — that would defeat the entire ' +
-        'tamper-evidence model. Action: deploy the insert_audit_entry ' +
+        'tamper-evidence model.  Action: deploy the insert_audit_entry ' +
         'Postgres RPC, or upgrade clients to a browser that exposes ' +
-        'crypto.subtle (any modern browser over HTTPS does). Skipped ' +
+        'crypto.subtle (any modern browser over HTTPS does).  Skipped ' +
         `entry: ${entry.action}/${entry.entity_type}/${entry.entity_id}`,
       )
       return
@@ -411,14 +396,14 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
     // ── AUD-4 fix (June 2026): properly check the genesis entry ──
     // Pre-fix the loop started at i=1 (so entry[0] was never checked)
     // and the final return added `valid + 1` to assume the genesis
-    // entry was always valid. If somebody had tampered with the
+    // entry was always valid.  If somebody had tampered with the
     // genesis entry's prev_hash (e.g., set it to a non-NULL value to
     // make the chain look like it forked here), the check missed it
     // entirely and reported the chain as valid.
     //
     // Now we explicitly verify the genesis entry: a valid genesis
     // must have prev_hash either null OR explicitly omitted (some
-    // schemas use ''). Anything else is a sign of tampering.
+    // schemas use '').  Anything else is a sign of tampering.
     const genesis = entries[0]
     const genesisLooksValid =
       genesis.prev_hash === null || genesis.prev_hash === '' || genesis.prev_hash === undefined
@@ -436,9 +421,6 @@ export async function verifyAuditChain(limit: number = 100): Promise<{
       if (current.prev_hash === previous.entry_hash) {
         valid++
       } else if (current.prev_hash === null && previous.entry_hash === null) {
-        // Two consecutive entries with no hash — not really valid but
-        // not actively tampered either; preserves prior behaviour for
-        // pre-fallback-fix data.
         valid++
       } else {
         broken++

@@ -294,11 +294,11 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
   } = params
 
   // ╔════════════════════════════════════════════════════════════════╗
-  // ║  BUG-CN-2 FIX (June 2026):  derive gstPercent from the source ║
-  // ║  bill if the caller didn't provide it.                         ║
+  // ║  CN-2 FIX (June 2026): derive gstPercent from the source bill ║
+  // ║  if the caller didn't pass it explicitly.                      ║
   // ╚════════════════════════════════════════════════════════════════╝
   //
-  // Previously this function defaulted gstPercent to 0 when the caller
+  // Pre-fix this function defaulted gstPercent to 0 when the caller
   // forgot to pass it. The /api/billing/refund route was one such
   // caller, so every refund-driven credit note silently posted with
   // ₹0 GST reversal regardless of the original bill's actual GST. For
@@ -310,12 +310,9 @@ export async function createCreditNote(params: CreateCreditNoteParams): Promise<
   // = a tax-compliance failure (input tax credit silently dropped).
   //
   // Fix: when the caller hasn't supplied gstPercent (undefined / null),
-  // we read the originating bill row to find its gst_percent. We do
-  // this BEFORE the retry loop so a single read covers all retries.
-  // If the bill row can't be read (rare; bill might be soft-deleted by
-  // the time the CN is being issued — although the refund route
-  // wouldn't get this far in that case), we fall back to 0 as before
-  // and emit a warning so the operator can correct the CN later.
+  // we read the originating bill row to find its gst_percent. If the
+  // bill row can't be read (rare), we fall back to 0 with a loud warning
+  // so the operator can correct the CN later.
   let gstPercent = Number.isFinite(Number(gstPercentFromCaller))
     ? Number(gstPercentFromCaller)
     : NaN
@@ -465,18 +462,18 @@ export async function getCreditNotesForPatient(patientId: string): Promise<Credi
  * Only changes status — does NOT delete the record (audit trail).
  *
  * ╔════════════════════════════════════════════════════════════════════╗
- * ║  BUG-CN-1 FIX (June 2026):  cancelCreditNote() now reverses the   ║
- * ║  whole financial record — not just the cosmetic CN status.         ║
+ * ║  CN-1 FIX (June 2026):  cancelCreditNote() now reverses the whole ║
+ * ║  financial record — not just the cosmetic CN status.               ║
  * ╚════════════════════════════════════════════════════════════════════╝
  *
- * Previously this routine ONLY flipped credit_notes.status to
- * 'cancelled'.  That left the linked refund row in payment_transactions
- * still status='completed' and the parent bill still status='refunded'
- * — so the books would show the patient as refunded even though the
- * staff had explicitly clicked "Cancel Credit Note" because the refund
- * was wrong.  Money already on its way back to the patient was
- * impossible to detect from the application UI; only manual reconciliation
- * with the bank could catch it.
+ * Pre-fix this routine ONLY flipped credit_notes.status to 'cancelled'.
+ * That left the linked refund row in payment_transactions still
+ * status='completed' and the parent bill still status='refunded' — so
+ * the books would show the patient as refunded even though staff had
+ * explicitly clicked "Cancel Credit Note" because the refund was wrong.
+ * Money already on its way back to the patient was impossible to detect
+ * from the application UI; only manual reconciliation with the bank
+ * could catch it.
  *
  * What this version does:
  *   1. Atomically flips credit_notes.status from 'issued' to 'cancelled'
@@ -521,7 +518,7 @@ export async function cancelCreditNote(cnId: string, cancelledBy: string): Promi
     return false
   }
 
-  // Step 1: atomic CAS update. If somebody else already cancelled it
+  // Step 1: atomic CAS update.  If somebody else already cancelled it
   // between our read and write, the CAS clause matches 0 rows and we
   // bail out without trying to double-reverse the financials.
   const { data: cnUpdated, error: cnUpdErr } = await supabase
@@ -545,11 +542,11 @@ export async function cancelCreditNote(cnId: string, cancelledBy: string): Promi
   }
 
   // Step 2: cancel the linked refund transaction(s).
-  // We match by (bill_id, transaction_type='refund', amount=credit_amount,
-  // status not already cancelled) to be conservative — each CN should
-  // map to one refund row, but historic data sometimes has multiple
-  // partial-refund rows for the same bill so we deliberately don't
-  // cancel more than the CN's worth.
+  // We match by (bill_id, transaction_type='refund', status not already
+  // cancelled) and cancel the most recent one.  Each CN should map to
+  // one refund row, but historic data sometimes has multiple partial-
+  // refund rows for the same bill so we deliberately don't cancel more
+  // than the CN's worth.
   let refundCancelOk = true
   try {
     const { data: refundRows, error: rfErr } = await supabase
@@ -658,10 +655,10 @@ export async function cancelCreditNote(cnId: string, cancelledBy: string): Promi
       })
   } catch { /* non-fatal */ }
 
-  // Return false if any of the financially-significant steps had problems
-  // so the caller can surface a warning. Step 1 (the CN row itself) DID
-  // succeed — that's why the CN is now cancelled — but the surrounding
-  // financial state may need manual reconciliation.
+  // Return false if any of the financially-significant steps had
+  // problems so the caller can surface a warning.  Step 1 (the CN row
+  // itself) DID succeed — that's why the CN is now cancelled — but the
+  // surrounding financial state may need manual reconciliation.
   return refundCancelOk && billRebuildOk
 }
 

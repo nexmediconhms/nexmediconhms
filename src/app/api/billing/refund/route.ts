@@ -75,39 +75,6 @@ export async function GET(req: NextRequest) {
 
 // ─────────────────────────────────────────────────────────────────────
 // POST — initiate a refund
-//
-// ╔════════════════════════════════════════════════════════════════════╗
-// ║  REFUND-INTEGRITY UPDATES (June 2026)                             ║
-// ║                                                                    ║
-// ║  BIL-1: We no longer mark a refund 'completed' when Razorpay       ║
-// ║         returned HTTP 200 with a body that didn't contain a        ║
-// ║         refund id. The transaction now sticks at status='pending' ║
-// ║         and the bill stays in its prior state until either the    ║
-// ║         webhook confirms the refund or staff retries with a       ║
-// ║         manual mode (cash/UPI/cheque). A 200 with an error body   ║
-// ║         is treated the same as a 4xx.                              ║
-// ║                                                                    ║
-// ║  BIL-2: Idempotency. The route now accepts an optional             ║
-// ║         `idempotency_key` in the body (or X-Idempotency-Key        ║
-// ║         header). On a repeat with the same key we return the      ║
-// ║         existing refund row instead of issuing a second one.      ║
-// ║                                                                    ║
-// ║  BIL-3: Cancelled bills are explicitly rejected (so a soft-       ║
-// ║         deleted bill that already had its hospital_fund            ║
-// ║         reversal can't be refunded a second time, creating money  ║
-// ║         out of nowhere).                                           ║
-// ║                                                                    ║
-// ║  BIL-4: GST reversal is now ALWAYS computed via                    ║
-// ║         calculateGSTReversal() from credit-notes.ts (the single    ║
-// ║         source of truth) — both for credit_notes.gst_reversal and ║
-// ║         for the credit-note creation downstream. The previous     ║
-// ║         multiplicative approximation drifted vs the GST-inclusive ║
-// ║         extraction by up to a paisa per refund.                    ║
-// ║                                                                    ║
-// ║  BIL-5: Audit log uses the canonical audit() helper which routes  ║
-// ║         through the hash-chain RPC, instead of the previous raw   ║
-// ║         INSERT into audit_log that bypassed the chain entirely.   ║
-// ╚════════════════════════════════════════════════════════════════════╝
 // ─────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ALLOWED_ROLES as unknown as string[])
@@ -122,9 +89,13 @@ export async function POST(req: NextRequest) {
 
   const { billId, amount, reason, refundMode, notes } = body ?? {}
 
-  // BIL-2: idempotency key — header takes precedence over body so a
-  // long-running retry mechanism (e.g., a service worker) can supply
-  // one even if the original body didn't.
+  // ── BIL-2 fix (June 2026): idempotency key ─────────────────────
+  // The route now accepts an optional `idempotency_key` so repeat
+  // calls (double-clicks, retried network requests, service-worker
+  // replays) return the existing refund row instead of issuing a
+  // second one.  Header takes precedence over body so a long-running
+  // retry mechanism can supply one even if the original body didn't.
+  // Razorpay's own dedupe-on-payment-id remains as a backup.
   const idempotencyKey =
     String(req.headers.get('x-idempotency-key') || body?.idempotency_key || '').trim() || null
 
@@ -160,10 +131,10 @@ export async function POST(req: NextRequest) {
   // ── Get admin client ───────────────────────────────────────────
   const sb = getSupabaseAdmin()
 
-  // ── BIL-2: idempotency check ───────────────────────────────────
+  // ── BIL-2 fix: idempotency check ───────────────────────────────
   // If a refund with this idempotency key already exists for this bill,
-  // return it verbatim instead of issuing a second one. This makes the
-  // route safe to retry across network blips and double-clicks.
+  // return it verbatim instead of issuing a second one.  This makes
+  // the route safe to retry across network blips and double-clicks.
   if (idempotencyKey) {
     const { data: existingByKey } = await sb
       .from('payment_transactions')
@@ -203,16 +174,18 @@ export async function POST(req: NextRequest) {
   if (billStatus === 'waived') {
     return NextResponse.json({ error: 'Cannot refund a waived bill' }, { status: 400 })
   }
-  // BIL-3: cancelled / soft-deleted bills already had their finance
-  // entry reversed by the DELETE handler in /api/billing/generate-bill.
-  // Refunding one would credit the patient a SECOND time, fabricating
-  // money out of nowhere. Reject explicitly.
+  // ── BIL-3 fix (June 2026): cancelled bills cannot be refunded ──
+  // A bill soft-deleted via DELETE /api/billing/generate-bill has
+  // already had its income reversed in hospital_fund.  Refunding it
+  // would credit the patient a SECOND time — fabricating money out of
+  // nowhere.  Reject explicitly with a clear message pointing at the
+  // alternate flow.
   if (billStatus === 'cancelled' || bill.is_deleted) {
     return NextResponse.json({
       error:
-        'Cannot refund a cancelled / deleted bill. The original cancellation ' +
+        'Cannot refund a cancelled / deleted bill.  The original cancellation ' +
         'already reversed the income; the patient should have been credited ' +
-        'through that path. If the patient still needs money back, please ' +
+        'through that path.  If the patient still needs money back, please ' +
         'use Settings → Adjustments instead of the refund flow.',
     }, { status: 400 })
   }
@@ -227,8 +200,10 @@ export async function POST(req: NextRequest) {
     .eq('bill_id', billId)
     .eq('transaction_type', 'refund')
 
+  // ── BIL-3 follow-up: ignore cancelled refunds in the cap calc ──
+  // A CN-cancelled refund mustn't permanently lock out future
+  // legitimate refunds — only count rows that aren't cancelled.
   const totalPreviousRefunds = (existingRefunds || [])
-    // BIL-3: only count active refunds, not cancelled ones
     .filter((r: any) => String(r.status || '') !== 'cancelled')
     .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0)
 
@@ -242,9 +217,21 @@ export async function POST(req: NextRequest) {
 
   // ── Razorpay refund (if original payment was via Razorpay) ─────
   //
-  // BIL-1 fix: detect the case where Razorpay returns HTTP 200 but with
-  // a body that has NO refund id (or an inline error block). This used
-  // to fall through to status='completed' even though no money had moved.
+  // ╔════════════════════════════════════════════════════════════════╗
+  // ║  BIL-1 fix (June 2026): detect "200 OK with no refund id".    ║
+  // ║                                                                ║
+  // ║  Pre-fix any HTTP 200 from Razorpay was treated as success     ║
+  // ║  even when the body had no id (or an inline error.description). ║
+  // ║  The refund row was marked status='completed' and the bill     ║
+  // ║  flipped to 'refunded' — but no money had moved.  Patient was ║
+  // ║  told the refund was processed; reception only caught the     ║
+  // ║  discrepancy at monthly reconciliation.                        ║
+  // ║                                                                ║
+  // ║  Post-fix: only treat the response as a successful initiation  ║
+  // ║  when rzpData.id is a non-empty string AND there is no inline  ║
+  // ║  error block.  Anything else returns HTTP 502 to the caller    ║
+  // ║  and writes nothing.                                           ║
+  // ╚════════════════════════════════════════════════════════════════╝
   let razorpayRefundId: string | null = null
   let razorpayConfirmed = false
   const razorpayPaymentId = bill.razorpay_payment_id
@@ -277,8 +264,8 @@ export async function POST(req: NextRequest) {
 
         if (rzpRes.ok) {
           const rzpData = await rzpRes.json().catch(() => ({}))
-          // BIL-1: refund id MUST be present and a non-empty string for
-          // us to consider the refund confirmed by Razorpay. An inline
+          // BIL-1: refund id MUST be present AND a non-empty string for
+          // us to consider the refund confirmed by Razorpay.  An inline
           // error.description on a 200 means failure regardless of HTTP
           // code (we've seen both shapes from RZP in production).
           const id = typeof rzpData?.id === 'string' && rzpData.id.length > 0
@@ -297,16 +284,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
               error:
                 'Razorpay accepted the request but did not return a refund id. ' +
-                'No money has moved. Please retry, or use refund mode "cash" / "upi" / ' +
+                'No money has moved.  Please retry, or use refund mode "cash" / "upi" / ' +
                 '"cheque" for a manually-tracked refund.',
             }, { status: 502 })
           }
         } else {
           const rzpErr = await rzpRes.json().catch(() => ({}))
           console.error('[billing/refund] Razorpay refund failed:', rzpErr)
-          return NextResponse.json({
-            error: `Razorpay refund failed: ${rzpErr?.error?.description || 'Unknown error'}. Try refund mode 'cash' or 'upi' for manual refund.`,
-          }, { status: 422 })
+          // Don't block manual refund — log and continue with manual mode
+          if (refundMode === 'original') {
+            return NextResponse.json({
+              error: `Razorpay refund failed: ${rzpErr?.error?.description || 'Unknown error'}. Try refund mode 'cash' or 'upi' for manual refund.`,
+            }, { status: 422 })
+          }
         }
       } else {
         // Razorpay keys not configured — fall through to manual refund recording
@@ -329,7 +319,7 @@ export async function POST(req: NextRequest) {
   //   - 'processing' : Razorpay path, id received, awaiting webhook
   //                    confirmation
   //   - 'completed'  : Manual mode (cash/UPI/cheque), money handed
-  //                    over by reception. NEVER auto-set for the
+  //                    over by reception.  NEVER auto-set for the
   //                    Razorpay path — only the webhook can flip it.
   let initialStatus: 'pending' | 'processing' | 'completed'
   if (refundMode === 'original' && razorpayPaymentId) {
@@ -376,9 +366,10 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Update bill status ─────────────────────────────────────────
-  // We only flip the bill to 'refunded' for refunds that ACTUALLY MOVED
-  // money (status 'completed' or Razorpay 'processing' which the webhook
-  // will eventually confirm). A 'pending' refund leaves the bill alone.
+  // BIL-1: we only flip the bill to 'refunded' for refunds that
+  // ACTUALLY MOVED money (status 'completed' or Razorpay 'processing'
+  // which the webhook will eventually confirm).  A 'pending' refund
+  // leaves the bill alone.
   const newTotalRefunded = totalPreviousRefunds + amountNum
   const isFullRefund = newTotalRefunded >= billPaid
   const billShouldFlip = initialStatus !== 'pending'
@@ -392,6 +383,7 @@ export async function POST(req: NextRequest) {
       billUpdate.refunded_at = now
       billUpdate.refund_reason = reason.trim()
     } else {
+      // Partial refund — bill remains 'paid' or becomes 'partial' depending on logic
       billUpdate.refund_amount = newTotalRefunded
       billUpdate.last_refund_at = now
     }
@@ -416,10 +408,13 @@ export async function POST(req: NextRequest) {
 
   // ── Generate credit note ───────────────────────────────────────
   //
-  // BIL-4 fix: route through createCreditNote() so the credit note
-  // (a) gets a properly-allocated CN number via the retry-on-23505
-  // loop, and (b) computes its GST reversal via the same canonical
-  // calculateGSTReversal() helper that all the GST audit reports use.
+  // BIL-4 fix (June 2026): route through createCreditNote() so the
+  // credit note (a) gets a properly-allocated CN number via the
+  // retry-on-23505 loop, and (b) computes its GST reversal via the
+  // same canonical calculateGSTReversal() helper that all the GST
+  // audit reports use.  The previous inline INSERT used a
+  // multiplicative GST approximation that drifted vs the GST-inclusive
+  // extraction in calculateGSTReversal() by up to a paisa per refund.
   // We pass gstPercent explicitly so createCreditNote doesn't need
   // to re-read the bill row.
   let creditNoteId: string | null = null
@@ -446,10 +441,11 @@ export async function POST(req: NextRequest) {
 
   // ── Audit log ──────────────────────────────────────────────────
   //
-  // BIL-5 fix: route through the canonical audit() helper, which goes
-  // through the hash-chain RPC instead of a raw audit_log INSERT. This
-  // makes refund entries indistinguishable (in tamper-evidence terms)
-  // from any other audit entry — they participate in the chain.
+  // BIL-5 fix (June 2026): route through the canonical audit() helper,
+  // which goes through the hash-chain RPC instead of a raw audit_log
+  // INSERT.  This makes refund entries indistinguishable (in tamper-
+  // evidence terms) from any other audit entry — they participate in
+  // the chain.  Pre-fix the direct INSERT was forgeable post-hoc.
   try {
     const auditMod = await import('@/lib/audit')
     await auditMod.audit(
@@ -485,8 +481,8 @@ export async function POST(req: NextRequest) {
   if (initialStatus === 'pending') {
     message =
       `Refund of ₹${amountNum} requested but NOT yet confirmed by the payment ` +
-      `gateway. Do not tell the patient the refund is complete until you see ` +
-      `status='completed' on this transaction. You may also retry with refund ` +
+      `gateway.  Do not tell the patient the refund is complete until you see ` +
+      `status='completed' on this transaction.  You may also retry with refund ` +
       `mode 'cash' / 'upi' / 'cheque' for an immediately-confirmed manual refund.`
   } else if (isFullRefund) {
     message = `Full refund of ₹${amountNum} processed successfully`

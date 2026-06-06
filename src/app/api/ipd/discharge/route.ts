@@ -473,20 +473,50 @@ export async function POST(req: NextRequest) {
     }
 
     // 8. Audit log
-    await supabase.from('audit_log').insert({
-      action: 'discharge',
-      entity_type: 'ipd_admission',
-      entity_id: admission_id,
-      entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
-      changes: JSON.stringify({
+    //
+    // AUD-2 / BIL-5 fix (June 2026): route through the canonical
+    // insert_audit_entry RPC so the entry is hash-chained.  The
+    // previous direct INSERT bypassed the chain entirely, which made
+    // discharge events forgeable post-hoc (anyone with DB access
+    // could insert/edit/delete audit_log rows for discharges without
+    // the verification chain noticing).
+    try {
+      const auditChanges = {
         discharge_date,
         discharge_time,
         condition_at_discharge,
         final_diagnosis,
         follow_up_date,
         discharged_by,
-      }),
-    }).then(() => {}) // Non-blocking
+      }
+      const { error: auditErr } = await supabase.rpc('insert_audit_entry', {
+        p_user_id:      null,
+        p_user_email:   discharged_by || 'system',
+        p_user_role:    'doctor',
+        p_action:       'discharge',
+        p_entity_type:  'ipd_admission',
+        p_entity_id:    admission_id,
+        p_entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
+        p_changes:      JSON.stringify(auditChanges),
+      })
+      if (auditErr) {
+        // RPC unavailable — log loudly but don't block the discharge
+        // (the discharge already committed in steps 2/3).
+        console.warn(
+          '[ipd/discharge] Hash-chained audit RPC failed, falling back to ' +
+          'direct insert (chain will fork): ' + auditErr.message,
+        )
+        await supabase.from('audit_log').insert({
+          action: 'discharge',
+          entity_type: 'ipd_admission',
+          entity_id: admission_id,
+          entity_label: `${admission.patient_name} discharged from ${admission.bed_number}`,
+          changes: JSON.stringify(auditChanges),
+        })
+      }
+    } catch (auditEx: any) {
+      console.warn('[ipd/discharge] Audit failed:', auditEx?.message)
+    }
 
     // 8b. Create in-app notification for all staff
     await supabase.from('clinic_notifications').insert({
