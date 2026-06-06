@@ -151,6 +151,8 @@ export default function NewPatientPage() {
   const [paymentRef, setPaymentRef] = useState('')
   const [addToQueue, setAddToQueue] = useState(true)
   const [queuedTokenNumber, setQueuedTokenNumber] = useState<number | null>(null)  // Tracks if patient was auto-added to queue
+  const [queueInsertFailed, setQueueInsertFailed] = useState(false)     // true when auto-add was attempted but failed
+  const [queueRetrying, setQueueRetrying] = useState(false)             // true while retry is in progress
   const [showUPIFlow, setShowUPIFlow] = useState(false)
   const [paymentBillId, setPaymentBillId] = useState<string>('')
   const [paymentInvoiceNumber, setPaymentInvoiceNumber] = useState<string>('')
@@ -690,7 +692,15 @@ export default function NewPatientPage() {
         }
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        if (nextToken !== null) setQueuedTokenNumber(nextToken)
+        if (nextToken !== null) {
+          setQueuedTokenNumber(nextToken)
+          setQueueInsertFailed(false)
+        } else {
+          // Queue insert was requested but failed — track this so the
+          // success screen shows a retry option instead of a redundant
+          // "Add to OPD Queue" button that ignores the user's intent.
+          setQueueInsertFailed(true)
+        }
 
         // FIX 3: Added missing automation engine trigger for upfront payments
         if (nextToken !== null) {
@@ -708,6 +718,7 @@ export default function NewPatientPage() {
 
       } catch (e) {
         console.warn('[Registration] Queue insert setup encountered an error:', e)
+        setQueueInsertFailed(true)
       }
     }
 
@@ -764,7 +775,12 @@ export default function NewPatientPage() {
         }
 
         // Track that patient was auto-queued (used to hide redundant button on success screen)
-        if (nextToken !== null) setQueuedTokenNumber(nextToken)
+        if (nextToken !== null) {
+          setQueuedTokenNumber(nextToken)
+          setQueueInsertFailed(false)
+        } else {
+          setQueueInsertFailed(true)
+        }
 
         if (nextToken !== null) {
           try {
@@ -780,10 +796,54 @@ export default function NewPatientPage() {
         }
       } catch (e) {
         console.warn('[Registration] queue insert failed:', e)
+        setQueueInsertFailed(true)
       }
     }
 
     setPaymentConfirmed(true)
+  }
+
+  // ── Retry queue insertion from success screen ───────────────
+  async function retryQueueInsert() {
+    if (!success || !successId) return
+    setQueueRetrying(true)
+    try {
+      const today = getIndiaToday()
+      const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
+        patient_id: successId,
+        queue_date: today,
+        status: 'waiting',
+        priority: 'normal',
+        notes: paymentConfirmed
+          ? `Registration payment: ₹${paymentAmount} via ${paymentMethod}`
+          : 'Registered: payment pending',
+        patient_name: success?.name || '',
+        mrn: success?.mrn || '',
+      }, today)
+
+      if (nextToken !== null) {
+        setQueuedTokenNumber(nextToken)
+        setQueueInsertFailed(false)
+        // Fire automation for the retry path too
+        try {
+          const { fireAutomation } = await import('@/lib/automation-engine')
+          await fireAutomation('queue_added', {
+            patientId: successId,
+            patientName: success?.name || '',
+            mobile: successMobile,
+            mrn: success?.mrn || '',
+            tokenNumber: nextToken,
+          })
+        } catch { /* non-fatal */ }
+      } else {
+        console.warn('[Registration] Queue retry also failed:', queueErr?.message)
+        // queueInsertFailed stays true — button remains visible
+      }
+    } catch (e) {
+      console.warn('[Registration] Queue retry error:', e)
+    } finally {
+      setQueueRetrying(false)
+    }
   }
 
   // FIX 4: Hardcoded classes map for Tailwind compiler lookup safety
@@ -1069,11 +1129,33 @@ export default function NewPatientPage() {
                 </div>
                 <div className="text-left">
                   <div className="font-semibold">✓ Added to OPD Queue — Token #{queuedTokenNumber}</div>
-                  <div className="text-xs text-green-600 font-normal">Patient is in today's queue and waiting</div>
+                  <div className="text-xs text-green-600 font-normal">Patient is in today&apos;s queue and waiting</div>
                 </div>
                 <Link href="/queue" className="ml-auto text-xs font-medium text-green-700 underline hover:text-green-900">
                   View Queue
                 </Link>
+              </div>
+              ) : queueInsertFailed ? (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold">
+                <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="text-left flex-1">
+                  <div className="font-semibold">Queue auto-add failed</div>
+                  <div className="text-xs text-amber-600 font-normal">Could not assign token automatically. Tap retry or add manually.</div>
+                </div>
+                <div className="flex flex-col gap-1.5 ml-auto flex-shrink-0">
+                  <button
+                    onClick={retryQueueInsert}
+                    disabled={queueRetrying}
+                    className="text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors">
+                    {queueRetrying ? 'Retrying…' : '↻ Retry'}
+                  </button>
+                  <Link href={`/queue?patient=${successId}&patientName=${encodeURIComponent(success.name)}&mrn=${success.mrn}`}
+                    className="text-xs font-medium text-amber-700 underline hover:text-amber-900 text-center">
+                    Add manually
+                  </Link>
+                </div>
               </div>
               ) : (
               <Link
