@@ -9,28 +9,28 @@
  * FIX: OPD Queue — Token Race Condition
  *
  * PROBLEM:
- *   The client-side insertQueueEntryWithRetry() retries on 23505
- *   (unique violation), but:
- *     1. There's still a window where two concurrent requests can
- *        read the same MAX(token_number) before either inserts.
- *     2. If MAX_TOKEN_RETRIES is exhausted, the patient disappears
- *        from the queue silently.
- *     3. The retry loop runs on the browser — network interruptions
- *        can leave partial state.
+ * The client-side insertQueueEntryWithRetry() retries on 23505
+ * (unique violation), but:
+ * 1. There's still a window where two concurrent requests can
+ * read the same MAX(token_number) before either inserts.
+ * 2. If MAX_TOKEN_RETRIES is exhausted, the patient disappears
+ * from the queue silently.
+ * 3. The retry loop runs on the browser — network interruptions
+ * can leave partial state.
  *
  * SOLUTION:
- *   This server-side endpoint uses the Postgres function
- *   allocate_queue_token() which:
- *     1. Acquires an advisory lock on the queue date
- *     2. Reads MAX(token_number) inside the lock
- *     3. Inserts with the next token number
- *     4. Returns the queue entry ID and token number
- *     5. Also checks for duplicate patient entries (same patient,
- *        same date, non-cancelled) and returns existing if found.
+ * This server-side endpoint uses the Postgres function
+ * allocate_queue_token() which:
+ * 1. Acquires an advisory lock on the queue date
+ * 2. Reads MAX(token_number) inside the lock
+ * 3. Inserts with the next token number
+ * 4. Returns the queue entry ID and token number
+ * 5. Also checks for duplicate patient entries (same patient,
+ * same date, non-cancelled) and returns existing if found.
  *
  * FALLBACK:
- *   If the RPC doesn't exist, falls back to client-side retry
- *   with proper error reporting.
+ * If the RPC doesn't exist, falls back to client-side retry
+ * with proper error reporting.
  *
  * Auth: Any authenticated active clinic user.
  * ═══════════════════════════════════════════════════════════════════════
@@ -220,13 +220,15 @@ export async function POST(req: NextRequest) {
           .select('id, ' + tokenCol)
           .single()
 
+        // FIX: Cast 'inserted' to any to avoid the GenericStringError typings mismatch
         if (!insErr && inserted) {
+          const row = inserted as any
           return NextResponse.json({
             ok: true,
-            queue_id: inserted.id,
-            token_number: (inserted as any)[tokenCol],
+            queue_id: row.id, 
+            token_number: row[tokenCol],
             already_exists: false,
-            message: `Token #${(inserted as any)[tokenCol]} assigned successfully.`,
+            message: `Token #${row[tokenCol]} assigned successfully.`,
           }, { status: 201 })
         }
 
