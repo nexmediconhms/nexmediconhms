@@ -10,7 +10,7 @@
 --   §2  Core tables (patients, clinicusers, clinicsettings)
 --   §3  Clinical tables (encounters, prescriptions, labreports, patientallergies)
 --   §4  Scheduling (appointments, opdqueue, reminders)
---   §5  IPD (beds, ipdadmissions, ipdchargerates)
+--   §5  IPD (beds, ipdadmissions, ipdchargerates, ipd_nursing)
 --   §6  Billing (bills, hospitalfund, labpartners)
 --   §7  ANC (ancregistrations, ancvisits)
 --   §8  Discharge (dischargesummaries)
@@ -285,6 +285,37 @@ CREATE TABLE IF NOT EXISTS ipdchargerates (
   createdat   TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ipd_nursing (
+  id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  ipd_admission_id    UUID,
+  bed_id              TEXT,
+  patient_id          UUID,
+  entry_type          TEXT DEFAULT 'note',
+  recorded_time       TEXT,
+  pulse               TEXT,
+  bp_systolic         TEXT,
+  bp_diastolic        TEXT,
+  temperature         TEXT,
+  spo2                TEXT,
+  respiratory_rate    TEXT,
+  rr                  TEXT,
+  weight              TEXT,
+  vital_note          TEXT,
+  io_type             TEXT,
+  io_label            TEXT,
+  io_amount           TEXT,
+  io_amount_ml        NUMERIC,
+  io_description      TEXT,
+  nurse_name          TEXT,
+  note_text           TEXT,
+  note_type           TEXT,
+  medication_name     TEXT,
+  medication_dose     TEXT,
+  medication_route    TEXT,
+  medication_given_by TEXT,
+  created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── §6  BILLING ────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS bills (
@@ -485,6 +516,7 @@ ALTER TABLE reminderlog       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE beds              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ipdadmissions     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ipdchargerates    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ipd_nursing       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bills             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hospitalfund      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE labpartners       ENABLE ROW LEVEL SECURITY;
@@ -567,6 +599,9 @@ CREATE POLICY ipdcr_select ON ipdchargerates FOR SELECT TO authenticated USING (
 CREATE POLICY ipdcr_insert ON ipdchargerates FOR INSERT TO authenticated WITH CHECK (is_admin());
 CREATE POLICY ipdcr_update ON ipdchargerates FOR UPDATE TO authenticated USING (is_admin());
 CREATE POLICY ipdcr_delete ON ipdchargerates FOR DELETE TO authenticated USING (is_admin());
+
+-- ipd_nursing: all authenticated users full access (nursing staff)
+CREATE POLICY ipd_nursing_all ON ipd_nursing FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- bills: all active read; staff/admin insert; admin update/delete
 CREATE POLICY bill_select ON bills FOR SELECT TO authenticated USING (is_active_user());

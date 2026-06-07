@@ -935,29 +935,56 @@ function NursingChart({ admission, onBack, currentUserName }: {
     medication_given_by: currentUserName,
   })
 
-  useEffect(() => { loadEntries() }, [admission.id])
+  // Self-healing: ensure ipd_nursing schema exists
+  async function ensureNursingSchema() {
+    try {
+      await fetch('/api/ensure-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: ['ipd_nursing'] }),
+      })
+    } catch { /* non-fatal */ }
+  }
+
+  useEffect(() => {
+    // Proactively ensure schema before first load
+    ensureNursingSchema().then(() => loadEntries())
+  }, [admission.id])
 
   async function loadEntries() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('ipd_nursing')
       .select('*')
       .eq('ipd_admission_id', admission.id)
       .order('created_at', { ascending: false })
-    setEntries((data || []) as NursingEntry[])
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column') || error.code === '42P01')) {
+      // Self-heal and retry
+      await ensureNursingSchema()
+      const retry = await supabase.from('ipd_nursing').select('*').eq('ipd_admission_id', admission.id).order('created_at', { ascending: false })
+      setEntries((retry.data || []) as NursingEntry[])
+    } else {
+      setEntries((data || []) as NursingEntry[])
+    }
     setLoading(false)
   }
 
   async function saveVital() {
     setSaving(true)
-    const { error } = await supabase.from('ipd_nursing').insert({
+    const vitalPayload = {
       ipd_admission_id: admission.id,
       patient_id: admission.patient_id,
       entry_type: 'vital',
       nurse_name: currentUserName,
       ...vitalForm,
       recorded_time: vitalForm.recorded_time,
-    })
+    }
+    let { error } = await supabase.from('ipd_nursing').insert(vitalPayload)
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(vitalPayload)
+      error = retry.error
+    }
     if (!error) {
       setVitalForm({ recorded_time: new Date().toTimeString().slice(0, 5), pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', rr: '', weight: '', vital_note: '' })
       await loadEntries()
@@ -967,7 +994,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
 
   async function saveIO() {
     setSaving(true)
-    await supabase.from('ipd_nursing').insert({
+    const ioPayload = {
       ipd_admission_id: admission.id,
       patient_id: admission.patient_id,
       entry_type: 'io',
@@ -976,9 +1003,17 @@ function NursingChart({ admission, onBack, currentUserName }: {
       io_type: ioForm.io_type,
       io_label: ioForm.io_label,
       io_amount_ml: parseFloat(ioForm.io_amount_ml) || 0,
-    })
-    setIoForm({ recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
-    await loadEntries()
+    }
+    let { error } = await supabase.from('ipd_nursing').insert(ioPayload)
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(ioPayload)
+      error = retry.error
+    }
+    if (!error) {
+      setIoForm({ recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
+      await loadEntries()
+    }
     setSaving(false)
   }
 
@@ -998,9 +1033,16 @@ function NursingChart({ admission, onBack, currentUserName }: {
       payload.medication_route = noteForm.medication_route
       payload.medication_given_by = noteForm.medication_given_by
     }
-    await supabase.from('ipd_nursing').insert(payload)
-    setNoteForm({ recorded_time: new Date().toTimeString().slice(0, 5), entry_type: 'note', note_text: '', medication_name: '', medication_dose: '', medication_route: 'IV', medication_given_by: currentUserName })
-    await loadEntries()
+    let { error } = await supabase.from('ipd_nursing').insert(payload)
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(payload)
+      error = retry.error
+    }
+    if (!error) {
+      setNoteForm({ recorded_time: new Date().toTimeString().slice(0, 5), entry_type: 'note', note_text: '', medication_name: '', medication_dose: '', medication_route: 'IV', medication_given_by: currentUserName })
+      await loadEntries()
+    }
     setSaving(false)
   }
 

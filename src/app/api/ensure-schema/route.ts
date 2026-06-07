@@ -98,6 +98,39 @@ const REQUIRED_SCHEMAS: Record<string, Record<string, string>> = {
     ocr_extracted:    'BOOLEAN DEFAULT false',
     created_at:       'TIMESTAMPTZ DEFAULT NOW()',
   },
+  ipd_nursing: {
+    ipd_admission_id:   'UUID',
+    bed_id:             'TEXT',
+    patient_id:         'UUID',
+    entry_type:         "TEXT DEFAULT 'note'",
+    recorded_time:      'TEXT',
+    // Vitals
+    pulse:              'TEXT',
+    bp_systolic:        'TEXT',
+    bp_diastolic:       'TEXT',
+    temperature:        'TEXT',
+    spo2:               'TEXT',
+    respiratory_rate:   'TEXT',
+    rr:                 'TEXT',
+    weight:             'TEXT',
+    vital_note:         'TEXT',
+    // I/O
+    io_type:            'TEXT',
+    io_label:           'TEXT',
+    io_amount:          'TEXT',
+    io_amount_ml:       'NUMERIC',
+    io_description:     'TEXT',
+    // Notes
+    nurse_name:         'TEXT',
+    note_text:          'TEXT',
+    note_type:          'TEXT',
+    // Medications
+    medication_name:    'TEXT',
+    medication_dose:    'TEXT',
+    medication_route:   'TEXT',
+    medication_given_by:'TEXT',
+    created_at:         'TIMESTAMPTZ DEFAULT NOW()',
+  },
 }
 
 /**
@@ -196,6 +229,16 @@ export async function POST(req: NextRequest) {
       if (table === 'consultation_attachments') {
         statements.push(
           `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='consultation_attachments' AND column_name='file_url') THEN ALTER TABLE public.consultation_attachments ALTER COLUMN file_url DROP NOT NULL; END IF; END $$;`
+        )
+      }
+
+      // Enable RLS + GRANT for ipd_nursing (critical for authenticated inserts)
+      if (table === 'ipd_nursing') {
+        statements.push(
+          `ALTER TABLE public.ipd_nursing ENABLE ROW LEVEL SECURITY;`,
+          `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ipd_nursing' AND policyname = 'ipd_nursing_authenticated_all') THEN CREATE POLICY ipd_nursing_authenticated_all ON public.ipd_nursing FOR ALL TO authenticated USING (true) WITH CHECK (true); END IF; END $$;`,
+          `GRANT ALL ON public.ipd_nursing TO authenticated;`,
+          `GRANT ALL ON public.ipd_nursing TO service_role;`,
         )
       }
 

@@ -76,6 +76,23 @@ interface NursingNote {
   created_at?: string
 }
 
+// ── Ensure ipd_nursing schema exists (self-healing) ────────────
+let _schemaEnsured = false
+async function ensureIPDNursingSchema() {
+  if (_schemaEnsured) return
+  try {
+    await fetch('/api/ensure-schema', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tables: ['ipd_nursing'] }),
+    })
+    _schemaEnsured = true
+  } catch {
+    // Non-fatal: if ensure-schema fails, we still try the query
+    console.warn('[IPD] ensure-schema call failed, proceeding anyway')
+  }
+}
+
 // ── Load from Supabase ─────────────────────────────────────────
 async function loadIPDFromSupabase(bedId: string) {
   try {
@@ -85,7 +102,38 @@ async function loadIPDFromSupabase(bedId: string) {
       .eq('bed_id', bedId)
       .order('created_at', { ascending: false })
       .limit(200)
-    if (error) throw error
+    if (error) {
+      // If schema cache error, try to self-heal and retry once
+      if (error.message?.includes('schema cache') || error.message?.includes('column') || error.code === '42P01') {
+        await ensureIPDNursingSchema()
+        const retry = await supabase
+          .from('ipd_nursing')
+          .select('*')
+          .eq('bed_id', bedId)
+          .order('created_at', { ascending: false })
+          .limit(200)
+        if (retry.error) throw retry.error
+        const retryData = retry.data
+        const vitals = (retryData || []).filter((r: any) => r.entry_type === 'vital').map((r: any) => ({
+          time: r.recorded_time || '', pulse: r.pulse || '', bp_systolic: r.bp_systolic || '',
+          bp_diastolic: r.bp_diastolic || '', temperature: r.temperature || '',
+          spo2: r.spo2 || '', note: r.vital_note || '',
+          created_at: r.created_at || undefined,
+        }))
+        const io = (retryData || []).filter((r: any) => r.entry_type === 'io').map((r: any) => ({
+          time: r.recorded_time || '', type: r.io_type === 'Output' ? 'output' : 'intake',
+          item: r.io_label || '', amount: String(r.io_amount_ml || ''),
+          created_at: r.created_at || undefined,
+        }))
+        const notes = (retryData || []).filter((r: any) => r.entry_type === 'note').map((r: any) => ({
+          time: r.created_at || '', author: r.nurse_name || 'Nurse',
+          note: r.note_text || '', type: (r.note_type || 'nursing') as 'nursing' | 'doctor',
+          created_at: r.created_at || undefined,
+        }))
+        return { vitals, io, notes }
+      }
+      throw error
+    }
     const vitals = (data || []).filter((r: any) => r.entry_type === 'vital').map((r: any) => ({
       time: r.recorded_time || '', pulse: r.pulse || '', bp_systolic: r.bp_systolic || '',
       bp_diastolic: r.bp_diastolic || '', temperature: r.temperature || '',
@@ -243,11 +291,14 @@ export default function IPDNursingPage() {
 
     loadBed()
 
-    loadIPDFromSupabase(bedId).then(stored => {
-      if (cancelled) return   // ← bedId changed before this resolved — discard
-      setVitals(stored.vitals || [])
-      setIO(stored.io || [])
-      setNotes(stored.notes || [])
+    // Proactively ensure ipd_nursing schema exists before first query
+    ensureIPDNursingSchema().then(() => {
+      loadIPDFromSupabase(bedId).then(stored => {
+        if (cancelled) return   // ← bedId changed before this resolved — discard
+        setVitals(stored.vitals || [])
+        setIO(stored.io || [])
+        setNotes(stored.notes || [])
+      })
     })
 
     return () => {
@@ -485,21 +536,26 @@ export default function IPDNursingPage() {
     setVitals(updated)
     setNewVital(emptyVital())
     persist(updated, io, notes)
-    await supabase.from('ipd_nursing').insert({
+    const vitalPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'vital',
       recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
-    }).then(({ error }) => {
-      if (error) {
-        // Rollback: remove the optimistically-added entry
-        setVitals(prev => prev.filter(v => v !== entry))
-        warnSupabaseFail('vital', error.message)
-        flashSaveFailed('Vital', error.message)
-      } else {
-        flashSaved()
-      }
-    })
+    }
+    let { error } = await supabase.from('ipd_nursing').insert(vitalPayload)
+    // Self-heal: if schema cache error, ensure schema and retry once
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureIPDNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(vitalPayload)
+      error = retry.error
+    }
+    if (error) {
+      setVitals(prev => prev.filter(v => v !== entry))
+      warnSupabaseFail('vital', error.message)
+      flashSaveFailed('Vital', error.message)
+    } else {
+      flashSaved()
+    }
 
   }
 
@@ -513,20 +569,25 @@ export default function IPDNursingPage() {
     setIO(updated)
     setNewIO(emptyIO())
     persist(vitals, updated, notes)
-    await supabase.from('ipd_nursing').insert({
+    const ioPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
       recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
-    }).then(({ error }) => {
-      if (error) {
-        // Rollback: remove the optimistically-added entry
-        setIO(prev => prev.filter(e => e !== entry))
-        warnSupabaseFail('I/O', error.message)
-        flashSaveFailed('I/O entry', error.message)
-      } else {
-        flashSaved()
-      }
-    })
+    }
+    let { error } = await supabase.from('ipd_nursing').insert(ioPayload)
+    // Self-heal: if schema cache error, ensure schema and retry once
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureIPDNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(ioPayload)
+      error = retry.error
+    }
+    if (error) {
+      setIO(prev => prev.filter(e => e !== entry))
+      warnSupabaseFail('I/O', error.message)
+      flashSaveFailed('I/O entry', error.message)
+    } else {
+      flashSaved()
+    }
 
   }
 
@@ -544,19 +605,24 @@ export default function IPDNursingPage() {
     setNotes(updated)
     setNewNote('')
     persist(vitals, io, updated)
-    await supabase.from('ipd_nursing').insert({
+    const notePayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
       nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
-    }).then(({ error }) => {
-      if (error) {
-        // Rollback: remove the optimistically-added entry
-        setNotes(prev => prev.filter(n => n !== entry))
-        warnSupabaseFail('note', error.message)
-        flashSaveFailed('Note', error.message)
-      } else {
-        flashSaved()
-      }
-    })
+    }
+    let { error } = await supabase.from('ipd_nursing').insert(notePayload)
+    // Self-heal: if schema cache error, ensure schema and retry once
+    if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      await ensureIPDNursingSchema()
+      const retry = await supabase.from('ipd_nursing').insert(notePayload)
+      error = retry.error
+    }
+    if (error) {
+      setNotes(prev => prev.filter(n => n !== entry))
+      warnSupabaseFail('note', error.message)
+      flashSaveFailed('Note', error.message)
+    } else {
+      flashSaved()
+    }
 
   }
 

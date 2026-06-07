@@ -185,10 +185,16 @@ export default function PatientDetailPage() {
 
     const channel = supabase
       .channel(`patient-profile-${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills', filter: `patient_id=eq.${id}` }, debouncedReload)
+      // FIX: Remove column filter from bills subscription — the filter `patient_id=eq.${id}`
+      // silently fails on databases using the legacy `patientid` column, preventing realtime
+      // refresh after registration payment. Without the filter, any bill change triggers a
+      // debounced reload, which is acceptable since loadAll() already re-fetches only this
+      // patient's data. The 1-second debounce prevents excessive reloads.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, debouncedReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'encounters', filter: `patient_id=eq.${id}` }, debouncedReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'opd_queue', filter: `patient_id=eq.${id}` }, debouncedReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments', filter: `patient_id=eq.${id}` }, debouncedReload)
+      // FIX: Same issue for bill_payments — remove column filter for safety
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, debouncedReload)
       .subscribe()
 
     return () => {
@@ -199,12 +205,14 @@ export default function PatientDetailPage() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, { data: billsData }, { data: queueData }] = await Promise.all([
+    const [{ data: p }, { data: enc }, { data: rx }, { data: ds }, billsResult, { data: queueData }] = await Promise.all([
       supabase.from('patients').select('*').eq('id', id).single(),
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('discharge_summaries').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
-      supabase.from('bills').select('*').eq('patient_id', id).order('created_at', { ascending: false }).limit(50),
+      // FIX: Use schema-aware loadPatientBills instead of hardcoded column names.
+      // This detects whether the DB uses 'patient_id' or 'patientid' and queries accordingly.
+      loadPatientBills(id as string),
       // FIX: Also count OPD queue visits (done status = completed visit)
       supabase.from('opd_queue').select('id, status, queue_date').eq('patient_id', id),
     ])
@@ -212,18 +220,8 @@ export default function PatientDetailPage() {
     setEncounters(enc || [])
     setPrescriptions(rx || [])
     setDischarges(ds || [])
-    // If no bills found, try legacy column name as fallback
-       if (!billsData || billsData.length === 0) {
-         const { data: legacyBills } = await supabase
-           .from('bills')
-           .select('*')
-           .eq('patientid', id)
-           .order('createdat', { ascending: false })
-           .limit(50)
-         setBills(legacyBills || [])
-       } else {
-         setBills(billsData)
-       }
+    // FIX: loadPatientBills returns { bills, error } with normalized snake_case keys
+    setBills(billsResult.bills || [])
  
 
     // Calculate total visits: encounters + completed queue visits (to avoid double-counting, use max)
