@@ -643,10 +643,6 @@ export default function NewPatientPage() {
   // FIX: Insert bill DIRECTLY via client-side Supabase (same auth context as
   // the billing page which works). The API route was failing because it uses
   // a server-side Supabase client that may lack proper auth/service-role key.
-  // ── Payment confirmation handler ────────────────────────────────
-  // FIX: Insert bill DIRECTLY via client-side Supabase (same auth context as
-  // the billing page which works). The API route was failing because it uses
-  // a server-side Supabase client that may lack proper auth/service-role key.
   async function handlePaymentConfirm(overrideMethod?: string, overrideRef?: string) {
     const method = overrideMethod || paymentMethod
     const ref = overrideRef || paymentRef
@@ -715,23 +711,15 @@ export default function NewPatientPage() {
 
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
-        // Fallback: Direct insert. Use the same modern → minimal → legacy ladder
-        // as the API route so a missing column variant on either side doesn't
-        // silently drop the bill.
-        const itemsArr = [{
-          type: 'registration',
-          description: 'OPD Registration Fee',
-          qty: 1,
-          rate: amountNum,
-          amount: amountNum,
-        }]
-        const notesText = `Registration fee — ${invoiceNumber}`
-        const modernPayload: Record<string, any> = {
-          patient_id: successId,
+        const billPayload = {
+          // Set BOTH legacy and modern column names for schema compatibility
+          patientid: successId,        // Legacy NOT NULL column
+          patient_id: successId,       // Modern column
           patient_name: success.name,
           mrn: success.mrn,
-          invoice_number: invoiceNumber,
-          items: itemsArr,
+          invoicenumber: invoiceNumber, // Legacy column
+          invoice_number: invoiceNumber, // Modern column
+          items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
           total: amountNum,
           net_amount: amountNum,
@@ -741,92 +729,32 @@ export default function NewPatientPage() {
           paid: amountNum,
           due: 0,
           status: 'paid',
-          payment_mode: method,
+          paymentmode: method,         // Legacy column
+          payment_mode: method,        // Modern column
           payment_ref: ref || null,
           paid_at: now.toISOString(),
-          notes: notesText,
+          notes: `Registration payment — ${method}${ref ? ` (Ref: ${ref})` : ''}`,
         }
-        let createdBill: { id: string; invoice_number?: string } | null = null
-        
-        // Attempt 1: full modern
-        {
-          const { data, error } = await supabase
-            .from('bills')
-            .insert(modernPayload)
-            .select('id, invoice_number')
-            .single()
-          if (!error && data) {
-            createdBill = data
-          } else {
-            console.warn('[Registration] Direct modern insert failed:', error?.message)
-          }
-        }
-        
-        // Attempt 2: minimal modern
-        if (!createdBill) {
-          const minimal: Record<string, any> = {
-            patient_id: successId,
-            invoice_number: invoiceNumber,
-            items: itemsArr,
-            total: amountNum,
-            discount: 0,
-            tax: 0,
-            paid: amountNum,
-            due: 0,
-            status: 'paid',
-            payment_mode: method,
-            notes: notesText,
-          }
-          const { data, error } = await supabase
-            .from('bills')
-            .insert(minimal)
-            .select('id, invoice_number')
-            .single()
-          if (!error && data) {
-            createdBill = data
-          } else {
-            console.warn('[Registration] Direct minimal-modern insert failed:', error?.message)
-          }
-        }
-        
-        // Attempt 3: legacy-only
-        if (!createdBill) {
-          const legacy: Record<string, any> = {
-            patientid: successId,
-            invoicenumber: invoiceNumber,
-            items: itemsArr,
-            total: amountNum,
-            discount: 0,
-            tax: 0,
-            paid: amountNum,
-            due: 0,
-            status: 'paid',
-            paymentmode: method,
-            notes: notesText,
-          }
-          const { data, error } = await supabase
-            .from('bills')
-            .insert(legacy)
-            .select('id')
-            .single()
-          if (!error && data) {
-            createdBill = { id: data.id, invoice_number: invoiceNumber }
-          } else {
-            console.error('[Registration] Direct legacy insert failed:', error?.message)
-            setPaymentWarning(`Payment recording issue: ${error?.message || 'bill creation failed'}. The fee has been received but you may need to create a bill manually from the Billing page.`)
-          }
-        }
-        
-        if (createdBill) {
+
+        const { data: bill, error: billError } = await supabase
+          .from('bills')
+          .insert(billPayload)
+          .select('id, invoice_number')
+          .single()
+
+        if (billError) {
+          console.error('[Registration] Direct bill insert also failed:', billError.message, billError.code)
+          setPaymentWarning(`Payment recording issue: ${billError.message}. The payment was collected but bill could not be saved. Please create bill manually from Billing page.`)
+        } else if (bill) {
           billCreated = true
-          setPaymentBillId(createdBill.id)
-          setPaymentInvoiceNumber(createdBill.invoice_number || invoiceNumber)
-          console.log('[Registration] Bill created via direct insert:', createdBill.id, createdBill.invoice_number || invoiceNumber)
+          setPaymentBillId(bill.id)
+          setPaymentInvoiceNumber(bill.invoice_number || invoiceNumber)
+          console.log('[Registration] Bill created via direct insert:', bill.id, bill.invoice_number)
 
           // Also create bill_payment record (non-fatal if fails)
           try {
             await supabase.from('bill_payments').insert({
-              bill_id: createdBill.id,
+              bill_id: bill.id,
               patient_id: successId,
               amount: amountNum,
               payment_mode: method,
@@ -848,13 +776,13 @@ export default function NewPatientPage() {
                 chief_complaint: 'Registration / OPD Consultation',
                 notes: `Registration payment: ₹${amountNum} via ${method}`,
                 revenue_status: 'paid',
-                bill_id: createdBill.id,
+                bill_id: bill.id,
               })
               .select('id')
               .single()
 
             if (newEnc) {
-              await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', createdBill.id)
+              await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', bill.id)
             }
           } catch { /* non-fatal — encounter creation is optional for billing */ }
         }
@@ -862,6 +790,73 @@ export default function NewPatientPage() {
     } catch (err: any) {
       console.error('[Registration] Payment recording failed:', err?.message || err)
       setPaymentWarning('Error recording payment. Please create bill manually from Billing page.')
+    }
+
+    // Queue insertion (same as before)
+    if (addToQueue) {
+      try {
+        const today = getIndiaToday()
+        const { tokenNumber: nextToken, error: queueErr } = await insertQueueEntryWithRetry({
+          patient_id: successId,
+          queue_date: today,
+          status: 'waiting',
+          priority: 'normal',
+          notes: billCreated
+            ? `Registration payment: ₹${paymentAmount} via ${method}`
+            : 'Registered: payment recording pending',
+          patient_name: success?.name || '',
+          mrn: success?.mrn || '',
+        }, today)
+
+        if (queueErr) {
+          console.warn('[Registration] Queue insert failed (non-fatal):', queueErr?.message)
+        }
+
+        if (nextToken !== null) {
+          setQueuedTokenNumber(nextToken)
+          setQueueInsertFailed(false)
+        } else {
+          setQueueInsertFailed(true)
+        }
+
+        if (nextToken !== null) {
+          try {
+            const { fireAutomation } = await import('@/lib/automation-engine')
+            await fireAutomation('queue_added', {
+              patientId: successId,
+              patientName: success?.name || '',
+              mobile: successMobile,
+              mrn: success?.mrn || '',
+              tokenNumber: nextToken,
+            })
+          } catch { /* non-fatal */ }
+        }
+
+      } catch (e) {
+        console.warn('[Registration] Queue insert setup encountered an error:', e)
+        setQueueInsertFailed(true)
+      }
+    }
+
+    // Notification
+    try {
+      const { notify } = await import('@/lib/notifications')
+      await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, method)
+    } catch { /* non-fatal */ }
+
+    // Mark fee as collected in sessionStorage so OPD page doesn't re-ask
+    try {
+      const today = getIndiaToday()
+      sessionStorage.setItem(`fee_collected_${successId}_${today}`, 'true')
+    } catch { /* non-fatal */ }
+
+    // Only flip the UI to "Payment Collected ✓" if a bill row actually exists.
+    // If creation failed, surface paymentWarning so the user knows to take
+    // manual action instead of seeing a false success.
+    if (billCreated) {
+      setPaymentConfirmed(true)
+    } else {
+      setPaymentWarning(prev => prev || 'Could not create bill for this payment. Please go to the Billing page and create the bill manually.')
     }
   }
 
