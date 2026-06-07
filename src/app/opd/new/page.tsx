@@ -7,7 +7,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import ConsultationFeeCollector from '@/components/billing/ConsultationFeeCollector'
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth'
+import { useAuth, loadClinicUser } from '@/lib/auth'
 import { calculateBMI, calculateEDD, calculateGA, getHospitalSettings, getIndiaToday, formatDate, minFollowUpDate, isSunday } from '@/lib/utils'
 import type { Patient, OBData, Procedure, ObstetricEntry, AbortionEntry, Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
@@ -80,6 +80,63 @@ function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
   return String(n) + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+// v5 FIX: Resolve a usable doctor name without refusing to save when
+// clinic_users.full_name is just empty in the DB. Returns:
+//   { ok: true, doctorName }  — proceed with the save
+//   { ok: false, reason }     — abort with this user-facing message
+// The original OPD-4 guard refused to save whenever user.full_name was empty,
+// which made the app unusable for any clinic_users row missing that field.
+// This version distinguishes "no session" (real auth problem — refuse) from
+// "session valid but full_name empty" (data-quality issue — degrade gracefully
+// and log a warning so the admin can fix the row).
+async function resolveSavingDoctor(
+  ctxUser: { full_name?: string; email?: string } | null,
+): Promise<{ ok: true; doctorName: string } | { ok: false; reason: string }> {
+  if (ctxUser?.full_name) return { ok: true, doctorName: ctxUser.full_name }
+
+  // No full_name on the in-memory user — verify the session is alive before
+  // any DB write. A truly signed-out user gets the original guard message.
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) {
+    return {
+      ok: false,
+      reason:
+        'Your session has expired. Please sign in again before saving — ' +
+        'we do not want to attribute this encounter to the wrong doctor.',
+    }
+  }
+
+  // Session is valid — try a fresh read of clinic_users in case our cached
+  // copy is stale.
+  let doctorName = ''
+  try {
+    const refreshed = await loadClinicUser()
+    if (refreshed?.full_name) doctorName = refreshed.full_name
+  } catch { /* fall through to next fallback */ }
+
+  // Last-resort fallbacks: auth email, then hospital settings.
+  if (!doctorName) {
+    try {
+      const { data: { user: au } } = await supabase.auth.getUser()
+      doctorName = au?.email || ''
+    } catch { /* ignore */ }
+  }
+  if (!doctorName && typeof window !== 'undefined') {
+    try {
+      const hs = getHospitalSettings()
+      doctorName = (hs as any)?.doctorName || ''
+    } catch { /* ignore */ }
+  }
+  if (!doctorName) doctorName = 'Unknown Doctor'
+
+  console.warn(
+    '[OPD] Saving with fallback doctor name:', doctorName,
+    '— clinic_users.full_name is empty for the signed-in user. Please update the row in Settings → Manage Users.',
+  )
+
+  return { ok: true, doctorName }
 }
 
 function NewConsultationContent() {
@@ -642,21 +699,13 @@ function NewConsultationContent() {
       return
     }
 
-    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
-    // Pre-fix the encounter insert below did:
-    //     doctor_name: user?.full_name || getHospitalSettings().doctorName
-    // If a transient auth glitch made `user` undefined, the encounter
-    // saved with the practice owner's name attributed to it.  Patient
-    // charts ended up misattributed with no easy way to detect the
-    // swap.  Refusing to save is better than corrupting the chart.
-    if (!user || !user.full_name) {
-      setError(
-        'Your session could not be verified.  Please refresh the page and ' +
-        'sign in again before saving — we do not want to attribute this ' +
-        'encounter to the wrong doctor.',
-      )
-      return
-    }
+    // ── OPD-4 fix (v5): verify session and resolve a usable doctor name ──
+    // The original guard refused to save whenever user.full_name was empty,
+    // which deadlocked any signed-in user whose clinic_users row lacks that
+    // field. We now refuse ONLY when there is no Supabase session.
+    const resolved = await resolveSavingDoctor(user)
+    if (!resolved.ok) { setError(resolved.reason); return }
+    const doctorName = resolved.doctorName
 
     // Run safety check on medications if any exist
     const validMeds = rxMeds.filter(m => m.drug.trim())
@@ -705,9 +754,10 @@ function NewConsultationContent() {
         notes: (hpi.trim() ? 'HPI: ' + hpi.trim() + (notes.trim() ? '\n\n' + notes.trim() : '') : notes.trim()) || null,
         ob_data: obPayload,
         procedures: procedures.length > 0 ? procedures : null,
-        // OPD-4: gated above on a confirmed user, so always the actual
-        // signed-in clinician.  No fallback to hospital default.
-        doctor_name: user.full_name,
+        // OPD-4 (v5): use the resolved doctor name — always the signed-in
+        // user when available, with a clearly-logged fallback only when
+        // clinic_users.full_name is empty.
+        doctor_name: doctorName,
       })
       .select('id')
       .single()
@@ -895,21 +945,10 @@ function NewConsultationContent() {
       return
     }
 
-    // ── OPD-4 fix (June 2026): refuse to save without a confirmed user ──
-    // Pre-fix the encounter insert below did:
-    //     doctor_name: user?.full_name || getHospitalSettings().doctorName
-    // If a transient auth issue made `user` undefined, the encounter
-    // was silently saved with the hospital-wide default doctor name
-    // (often the practice owner).  Patient charts ended up
-    // misattributed with no easy way to detect the swap.
-    if (!user || !user.full_name) {
-      setError(
-        'Your session could not be verified.  Please refresh the page and ' +
-        'sign in again before saving — we do not want to attribute this ' +
-        'encounter to the wrong doctor.',
-      )
-      return
-    }
+    // ── OPD-4 fix (v5): same resolution as handleSaveAll above ──
+    const resolved = await resolveSavingDoctor(user)
+    if (!resolved.ok) { setError(resolved.reason); return }
+    const doctorName = resolved.doctorName
 
     // ── OPD-1 fix (June 2026): run prescription-safety here too ──
     // Pre-fix this code path bypassed drug-interaction, allergy, and
@@ -1002,7 +1041,7 @@ function NewConsultationContent() {
         procedures: procedures.length > 0 ? procedures : null,
         // OPD-4: gated above on a confirmed user, so always the actual
         // signed-in clinician.  No fallback to hospital default.
-        doctor_name: user.full_name,
+        doctor_name: doctorName,
       })
       .select('id')
       .single()

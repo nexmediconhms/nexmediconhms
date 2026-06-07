@@ -81,6 +81,45 @@ interface DuplicateMatch {
 // ║  failures we surrender — but in practice 5 attempts is enough  ║
 // ║  to cover even the busiest morning rush.                         ║
 // ╚══════════════════════════════════════════════════════════════════╝
+// ── Module-level cache for opd_queue schema detection ──
+// Avoids re-detecting column names on every insert. Reset on page reload.
+let _opdQueueSchemaCache: {
+  dateCol: 'queue_date' | 'date'
+  tokenCol: 'token_number' | 'queue_number'
+  hasPriority: boolean
+} | null = null
+
+async function detectOpdQueueSchema() {
+  if (_opdQueueSchemaCache) return _opdQueueSchemaCache
+
+  // Probe for the modern columns. PostgREST returns an error on `.select()`
+  // of a non-existent column, so we use that as a feature-detect.
+  const probeModern = await supabase
+    .from('opd_queue')
+    .select('queue_date, token_number, priority')
+    .limit(0)
+
+  if (!probeModern.error) {
+    _opdQueueSchemaCache = { dateCol: 'queue_date', tokenCol: 'token_number', hasPriority: true }
+    return _opdQueueSchemaCache
+  }
+
+  // Modern probe failed — try detecting columns individually so we know
+  // exactly which is missing and can mix-and-match.
+  const [dateProbe, tokenProbe, priorityProbe] = await Promise.all([
+    supabase.from('opd_queue').select('queue_date').limit(0),
+    supabase.from('opd_queue').select('token_number').limit(0),
+    supabase.from('opd_queue').select('priority').limit(0),
+  ])
+
+  _opdQueueSchemaCache = {
+    dateCol: dateProbe.error ? 'date' : 'queue_date',
+    tokenCol: tokenProbe.error ? 'queue_number' : 'token_number',
+    hasPriority: !priorityProbe.error,
+  }
+  return _opdQueueSchemaCache
+}
+
 async function insertQueueEntryWithRetry(
   payload: Record<string, unknown>,
   queueDate: string,
@@ -88,45 +127,115 @@ async function insertQueueEntryWithRetry(
   const MAX_TOKEN_RETRIES = 5
   let lastErr: any = null
 
+  // Detect which column names the DB actually uses. This is done once per
+  // page load and cached, so subsequent calls have no overhead.
+  const schema = await detectOpdQueueSchema()
+
+  // Normalize the caller's payload to whichever column names exist. Callers
+  // pass `queue_date` (modern); if the DB only has the legacy `date` column,
+  // rewrite the key so the insert doesn't reject the entire row.
+  const normalizedPayload: Record<string, unknown> = { ...payload }
+  if (schema.dateCol === 'date' && 'queue_date' in normalizedPayload) {
+    normalizedPayload.date = normalizedPayload.queue_date
+    delete normalizedPayload.queue_date
+  }
+  if (!schema.hasPriority && 'priority' in normalizedPayload) {
+    delete normalizedPayload.priority
+  }
+
+  const patientId = normalizedPayload.patient_id as string | undefined
+
   for (let attempt = 0; attempt < MAX_TOKEN_RETRIES; attempt++) {
     // Re-read the latest token afresh on every attempt — concurrent
     // inserts by other tabs/staff are reflected immediately.
-    const { data: lastToken } = await supabase
+    const { data: lastToken, error: maxErr } = await supabase
       .from('opd_queue')
-      .select('token_number')
-      .eq('queue_date', queueDate)
-      .order('token_number', { ascending: false })
+      .select(schema.tokenCol)
+      .eq(schema.dateCol, queueDate)
+      .order(schema.tokenCol, { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    const nextToken = (lastToken?.token_number || 0) + 1
+    if (maxErr) {
+      // The select itself failed — schema or RLS problem we can't recover from
+      // by retrying. Log and bail.
+      console.error('[Registration] Queue max-token read failed:', maxErr.message, maxErr.code, '(dateCol=', schema.dateCol, 'tokenCol=', schema.tokenCol, ')')
+      return { tokenNumber: null, error: maxErr }
+    }
 
-    const { error } = await supabase.from('opd_queue').insert({
-      ...payload,
-      token_number: nextToken,
-    })
+    const currentMax = (lastToken as any)?.[schema.tokenCol] || 0
+    const nextToken = currentMax + 1
+
+    const insertPayload: Record<string, unknown> = {
+      ...normalizedPayload,
+      [schema.tokenCol]: nextToken,
+    }
+
+    const { error } = await supabase.from('opd_queue').insert(insertPayload)
 
     if (!error) return { tokenNumber: nextToken, error: null }
 
     lastErr = error
 
-    // 23505 unique_violation — most likely the token_number unique
-    // constraint added in migration 014.  Re-read MAX and retry.
     const code = String((error as any)?.code || '')
     const msg = String((error as any)?.message || '').toLowerCase()
-    if (code === '23505' || msg.includes('duplicate') || msg.includes('unique')) {
+    const details = String((error as any)?.details || '').toLowerCase()
+    const isUniqueViolation = code === '23505' || msg.includes('duplicate') || msg.includes('unique')
+
+    // Distinguish between two flavours of 23505:
+    //   (a) token_number unique collision → retry with a fresh max read
+    //   (b) (patient_id, queue_date) partial unique index — patient is
+    //       already in the active queue today.  Retrying won't help.
+    //       Treat this as success: look up the existing entry and return
+    //       its token to the caller so the UI shows the right number.
+    if (isUniqueViolation) {
+      const looksLikePatientDup =
+        msg.includes('patient') || details.includes('patient_id') ||
+        msg.includes('idx_opd_queue_patient_day_active') ||
+        details.includes('idx_opd_queue_patient_day_active')
+
+      if (looksLikePatientDup && patientId) {
+        const { data: existing } = await supabase
+          .from('opd_queue')
+          .select(schema.tokenCol + ', status')
+          .eq('patient_id', patientId)
+          .eq(schema.dateCol, queueDate)
+          .not('status', 'in', '(done,completed,cancelled,skipped)')
+          .order(schema.tokenCol, { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        const existingToken = (existing as any)?.[schema.tokenCol]
+        if (existingToken) {
+          console.warn('[Registration] Patient already in queue today — reusing token #' + existingToken)
+          return { tokenNumber: existingToken, error: null }
+        }
+        // Couldn't find an existing entry despite the duplicate error — fall
+        // through to retry; the next pass picks up whatever just landed.
+      }
+
       // Tiny jitter so two concurrent retries don't immediately collide
       // again on the next read.
       await new Promise(r => setTimeout(r, 10 + Math.floor(Math.random() * 40)))
       continue
     }
-    // Non-retryable error — return immediately.
+
+    // Non-retryable error (NOT NULL, FK, RLS, etc.) — log with full detail
+    // and return immediately so the UI can surface a meaningful message.
+    console.error('[Registration] Queue insert failed (non-retryable):', {
+      code,
+      message: (error as any)?.message,
+      details: (error as any)?.details,
+      hint: (error as any)?.hint,
+      dateCol: schema.dateCol,
+      tokenCol: schema.tokenCol,
+    })
     return { tokenNumber: null, error }
   }
 
   console.warn(
     `[Registration] Queue token allocation failed after ${MAX_TOKEN_RETRIES} retries.`,
-    lastErr?.message,
+    lastErr?.message, lastErr?.code, lastErr?.details,
   )
   return { tokenNumber: null, error: lastErr }
 }
