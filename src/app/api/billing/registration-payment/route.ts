@@ -86,18 +86,14 @@ export async function POST(req: NextRequest) {
     const nowISO = now.toISOString()
 
     // ─── Create the bill ─────────────────────────────────────────────────────
-    // FIX #10: Schema-resilient insert — sets BOTH legacy (patientid) and modern
-    // (patient_id) columns to handle databases at any migration stage.
-    // The original schema has `patientid NOT NULL`, so we MUST always set it.
+    // FIX #10: Schema-resilient insert — tries modern snake_case columns first,
+    // falls back to legacy camelCase if the insert fails (handles databases
+    // where migration 023/024 hasn't been applied yet).
     const billPayload = {
-      // Set BOTH column names to ensure compatibility with any schema version
-      patientid: patient_id,       // Legacy column (NOT NULL in original schema)
-      patient_id,                  // Modern column (added by migration 023/024)
+      patient_id,
       patient_name: patient_name || '',
       mrn: mrn || '',
-      // Set BOTH invoice number columns
-      invoicenumber: invoiceNumber, // Legacy column
-      invoice_number: invoiceNumber, // Modern column
+      invoice_number: invoiceNumber,
       // FIX #4: Store items with BOTH keys for UI compatibility
       items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
       // FIX #1 & #2: Set ALL amount fields
@@ -110,9 +106,7 @@ export async function POST(req: NextRequest) {
       paid: isPaid ? amountNum : 0,
       due: isPaid ? 0 : amountNum,
       status: isPaid ? 'paid' : 'pending',
-      // Set BOTH payment mode columns
-      paymentmode: isPaid ? payment_method : null, // Legacy column
-      payment_mode: isPaid ? payment_method : null, // Modern column
+      payment_mode: isPaid ? payment_method : null,
       payment_ref: isPaid ? (payment_ref || null) : null,
       // FIX #3: Set paid_at for immediate payments
       paid_at: isPaid ? nowISO : null,

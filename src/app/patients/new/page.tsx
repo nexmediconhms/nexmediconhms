@@ -850,14 +850,7 @@ export default function NewPatientPage() {
       sessionStorage.setItem(`fee_collected_${successId}_${today}`, 'true')
     } catch { /* non-fatal */ }
 
-    // Only flip the UI to "Payment Collected ✓" if a bill row actually exists.
-    // If creation failed, surface paymentWarning so the user knows to take
-    // manual action instead of seeing a false success.
-    if (billCreated) {
-      setPaymentConfirmed(true)
-    } else {
-      setPaymentWarning(prev => prev || 'Could not create bill for this payment. Please go to the Billing page and create the bill manually.')
-    }
+    setPaymentConfirmed(true)
   }
 
   // Register & add to queue WITHOUT taking payment now.
