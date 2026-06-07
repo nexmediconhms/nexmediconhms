@@ -437,10 +437,21 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       .eq('status', 'available').order('ward').order('bed_number')
       .then(({ data }) => setBeds(data || []))
 
-    supabase.from('clinic_users').select('id, full_name, role')
+    // FIX: Include med_reg_no and filter out non-clinician admins.
+    // Admin users without a medical registration number (e.g. the
+    // hospital system account) are pure system admins, not doctors.
+    // This matches the filter already applied in settings/doctors
+    // and appointments pages.
+    supabase.from('clinic_users').select('id, full_name, role, med_reg_no')
       .eq('is_active', true).in('role', ['admin', 'doctor'])
       .order('full_name')
-      .then(({ data }) => setDoctors(data || []))
+      .then(({ data }) => {
+        const clinicians = (data || []).filter((d: any) =>
+          d.role === 'doctor' ||
+          (d.role === 'admin' && String(d.med_reg_no || '').trim() !== '')
+        )
+        setDoctors(clinicians)
+      })
   }, [])
 
   // Pre-fill patient when arriving from Patients page with patientId in URL
