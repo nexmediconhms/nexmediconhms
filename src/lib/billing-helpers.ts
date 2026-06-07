@@ -167,112 +167,90 @@ function normalizeBill(bill: any) {
  *   4. Client-side SELECT * with in-memory filter (last resort)
  */
 export async function loadPatientBills(patientId: string) {
-  if (!patientId) return { bills: [], error: null }
+  // CRITICAL FIX: Do NOT rely solely on schema detection + a single column query.
+  // The bills table can have BOTH `patient_id` and `patientid` columns (after
+  // migration 023/024), but a given row may have only ONE of them populated —
+  // depending on which insert path created it (modern vs. legacy retry in the
+  // registration-payment API). Querying only the detected primary column
+  // misses bills inserted via the legacy retry path.
+  //
+  // Strategy: run BOTH queries, merge results, dedupe by id. Each query either
+  // succeeds (returning rows or empty) or returns an error if the column
+  // doesn't exist — in which case we just ignore that side and use the other.
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ATTEMPT 1: Server-side API route (bypasses RLS, most reliable)
-  // ═══════════════════════════════════════════════════════════════════════════
-  try {
-    const res = await fetch(`/api/billing/patient-bills?patient_id=${encodeURIComponent(patientId)}`)
-    if (res.ok) {
-      const data = await res.json()
-      if (data.ok && Array.isArray(data.bills)) {
-        // API already returns normalized bills
-        return { bills: data.bills, error: null }
+  const billMap = new Map<string, any>()
+
+  // Query 1: modern column (patient_id)
+  const modernResult = await supabase
+    .from('bills')
+    .select('*')
+    .eq('patient_id', patientId)
+    .limit(50)
+
+  if (!modernResult.error && Array.isArray(modernResult.data)) {
+    for (const bill of modernResult.data) {
+      billMap.set(bill.id, bill)
+    }
+  } else if (modernResult.error) {
+    // Column likely doesn't exist in this DB — silently fall through to legacy
+    console.debug('[billing-helpers] patient_id query skipped:', modernResult.error.message)
+  }
+
+  // Query 2: legacy column (patientid). ALWAYS run this, even if modern returned
+  // rows — a patient may have bills from both insert paths historically.
+  const legacyResult = await supabase
+    .from('bills')
+    .select('*')
+    .eq('patientid', patientId)
+    .limit(50)
+
+  if (!legacyResult.error && Array.isArray(legacyResult.data)) {
+    for (const bill of legacyResult.data) {
+      // Map.set is fine even if id is already present; we dedupe by Map's key
+      // semantics. But we want to KEEP whichever row we already saw (they're
+      // the same row from two angles), so use has() check.
+      if (!billMap.has(bill.id)) {
+        billMap.set(bill.id, bill)
       }
     }
-  } catch (apiErr) {
-    console.warn('[billing-helpers] API route unavailable, falling back to client-side:', apiErr)
+  } else if (legacyResult.error) {
+    console.debug('[billing-helpers] patientid query skipped:', legacyResult.error.message)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ATTEMPT 2: Client-side with schema detection
-  // ═══════════════════════════════════════════════════════════════════════════
-  try {
-    const schema = await detectBillingSchema()
+  // Sort merged set by created_at descending (handles both column names)
+  const allBills = Array.from(billMap.values()).sort((a, b) => {
+    const aTime = new Date(a.paid_at || a.created_at || a.createdat || 0).getTime()
+    const bTime = new Date(b.paid_at || b.created_at || b.createdat || 0).getTime()
+    return bTime - aTime
+  })
 
-    const { data, error } = await supabase
-      .from('bills')
-      .select('*')
-      .eq(schema.patient_id, patientId)
-      .order(schema.created_at, { ascending: false })
-      .limit(50)
+  // Cap at 50 after merging (in case both queries returned 50 distinct rows)
+  const cappedBills = allBills.slice(0, 50)
 
-    if (!error && data && data.length > 0) {
-      return { bills: data.map(normalizeBill), error: null }
-    }
+  // Normalize the response to always use snake_case keys for the UI
+  const normalizedBills = cappedBills.map(bill => ({
+    id: bill.id,
+    patient_id: bill.patient_id || bill.patientid,
+    patient_name: bill.patient_name || '',
+    mrn: bill.mrn || '',
+    invoice_number: bill.invoice_number || bill.invoicenumber || '',
+    items: Array.isArray(bill.items) ? bill.items : [],
+    subtotal: Number(bill.subtotal || bill.total || 0),
+    net_amount: Number(bill.net_amount || bill.total || 0),
+    total: Number(bill.total || 0),
+    paid: Number(bill.paid || 0),
+    due: Number(bill.due || 0),
+    payment_mode: bill.payment_mode || bill.paymentmode || null,
+    payment_ref: bill.payment_ref || null,
+    status: bill.status || 'unknown',
+    notes: bill.notes || '',
+    created_at: bill.created_at || bill.createdat || null,
+    updated_at: bill.updated_at || bill.updatedat || null,
+    paid_at: bill.paid_at || null,
+  }))
 
-    // If we got an error (e.g., column doesn't exist in ORDER BY), try without order
-    if (error) {
-      console.warn('[billing-helpers] Schema-detected query failed:', error.message)
-      const { data: data2, error: error2 } = await supabase
-        .from('bills')
-        .select('*')
-        .eq(schema.patient_id, patientId)
-        .limit(50)
-
-      if (!error2 && data2 && data2.length > 0) {
-        return { bills: data2.map(normalizeBill), error: null }
-      }
-    }
-  } catch {
-    // Non-fatal, continue to fallback
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ATTEMPT 3: Try alternate column names (opposite of what was detected)
-  // ═══════════════════════════════════════════════════════════════════════════
-  try {
-    // Try patientid (legacy)
-    const { data: legacyData, error: legacyErr } = await supabase
-      .from('bills')
-      .select('*')
-      .eq('patientid', patientId)
-      .limit(50)
-
-    if (!legacyErr && legacyData && legacyData.length > 0) {
-      return { bills: legacyData.map(normalizeBill), error: null }
-    }
-
-    // Try patient_id (modern) — in case detection was wrong
-    const { data: modernData, error: modernErr } = await supabase
-      .from('bills')
-      .select('*')
-      .eq('patient_id', patientId)
-      .limit(50)
-
-    if (!modernErr && modernData && modernData.length > 0) {
-      return { bills: modernData.map(normalizeBill), error: null }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ATTEMPT 4: Last resort — fetch recent bills and filter in memory
-  // ═══════════════════════════════════════════════════════════════════════════
-  try {
-    const { data: allBills } = await supabase
-      .from('bills')
-      .select('*')
-      .limit(200)
-
-    if (allBills && allBills.length > 0) {
-      const matched = allBills.filter((b: any) =>
-        b.patient_id === patientId || b.patientid === patientId
-      )
-      if (matched.length > 0) {
-        return { bills: matched.map(normalizeBill), error: null }
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  // Nothing found
-  return { bills: [], error: null }
+  return { bills: normalizedBills, error: null }
 }
-
 /**
  * Get the display amount for a bill (handles all field variants)
  */

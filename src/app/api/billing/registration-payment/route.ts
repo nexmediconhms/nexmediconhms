@@ -86,21 +86,21 @@ export async function POST(req: NextRequest) {
     const nowISO = now.toISOString()
 
     // ─── Create the bill ─────────────────────────────────────────────────────
-    // FIX #10: Schema-resilient insert — sets BOTH legacy (patientid) and modern
-    // (patient_id) columns to handle databases at any migration stage.
-    // The original schema has `patientid NOT NULL`, so we MUST always set it.
-    const billPayload = {
-      // Set BOTH column names to ensure compatibility with any schema version
-      patientid: patient_id,       // Legacy column (NOT NULL in original schema)
-      patient_id,                  // Modern column (added by migration 023/024)
+    // Build a MODERN-ONLY payload (snake_case columns only). Do NOT mix in
+    // legacy camelCase column names — if the DB lacks those, PostgREST
+    // rejects the whole insert. Same the other way for the legacy fallback.
+    const modernPayload: Record<string, any> = {
+      patient_id,
       patient_name: patient_name || '',
       mrn: mrn || '',
-      // Set BOTH invoice number columns
-      invoicenumber: invoiceNumber, // Legacy column
-      invoice_number: invoiceNumber, // Modern column
-      // FIX #4: Store items with BOTH keys for UI compatibility
-      items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
-      // FIX #1 & #2: Set ALL amount fields
+      invoice_number: invoiceNumber,
+      items: [{
+        type: 'registration',
+        description: description || 'OPD Registration Fee',
+        qty: 1,
+        rate: amountNum,
+        amount: amountNum,
+      }],
       subtotal: amountNum,
       total: amountNum,
       net_amount: amountNum,
@@ -110,39 +110,70 @@ export async function POST(req: NextRequest) {
       paid: isPaid ? amountNum : 0,
       due: isPaid ? 0 : amountNum,
       status: isPaid ? 'paid' : 'pending',
-      // Set BOTH payment mode columns
-      paymentmode: isPaid ? payment_method : null, // Legacy column
-      payment_mode: isPaid ? payment_method : null, // Modern column
+      payment_mode: isPaid ? payment_method : null,
       payment_ref: isPaid ? (payment_ref || null) : null,
-      // FIX #3: Set paid_at for immediate payments
       paid_at: isPaid ? nowISO : null,
-      notes: isPaid
-        ? `${type} payment — ${payment_method}${payment_ref ? ` (Ref: ${payment_ref})` : ''}`
-        : `${type} — payment pending`,
+      notes: `Registration fee — ${invoiceNumber}`,
     }
 
-    console.log('[Registration Payment] Creating bill:', JSON.stringify({ patient_id, amount: amountNum, isPaid, method: payment_method }))
-
     let bill: { id: string; invoice_number: string } | null = null
+    let lastError: any = null
 
-    // Attempt 1: Modern schema (snake_case columns — patient_id, invoice_number, etc.)
-    const { data: billData, error: billError } = await supabase
-      .from('bills')
-      .insert(billPayload)
-      .select('id, invoice_number')
-      .single()
+    // Attempt 1: full modern payload
+    {
+      const { data, error } = await supabase
+        .from('bills')
+        .insert(modernPayload)
+        .select('id, invoice_number')
+        .single()
+      if (!error && data) {
+        bill = { id: data.id, invoice_number: data.invoice_number || invoiceNumber }
+        console.log('[Registration Payment] Bill created with MODERN schema:', bill.id)
+      } else {
+        lastError = error
+        console.warn('[Registration Payment] Modern insert failed:', error?.message, error?.code)
+      }
+    }
 
-    if (!billError && billData) {
-      bill = billData
-    } else {
-      // Attempt 2: Legacy schema (camelCase columns — patientid, invoicenumber, etc.)
-      console.warn('[Registration Payment] Modern schema insert failed:', billError?.message, '— trying legacy schema...')
+    // Attempt 2: stripped-down modern payload — keeps snake_case but drops
+    // every optional column added by later migrations. Survives DBs where some
+    // of patient_name/mrn/net_amount/gst_amount/payment_ref/paid_at/subtotal
+    // were not added.
+    if (!bill) {
+      const minimalModernPayload: Record<string, any> = {
+        patient_id,
+        invoice_number: invoiceNumber,
+        items: modernPayload.items,
+        total: amountNum,
+        discount: 0,
+        tax: 0,
+        paid: isPaid ? amountNum : 0,
+        due: isPaid ? 0 : amountNum,
+        status: isPaid ? 'paid' : 'pending',
+        payment_mode: isPaid ? payment_method : null,
+        notes: modernPayload.notes,
+      }
+      const { data, error } = await supabase
+        .from('bills')
+        .insert(minimalModernPayload)
+        .select('id, invoice_number')
+        .single()
+      if (!error && data) {
+        bill = { id: data.id, invoice_number: data.invoice_number || invoiceNumber }
+        console.log('[Registration Payment] Bill created with MINIMAL MODERN schema:', bill.id)
+      } else {
+        lastError = error
+        console.warn('[Registration Payment] Minimal modern insert failed:', error?.message, error?.code)
+      }
+    }
 
+    // Attempt 3: legacy-only payload (camelCase columns only). For DBs that
+    // still use the original `patientid`/`invoicenumber`/`paymentmode` names.
+    if (!bill) {
       const legacyPayload: Record<string, any> = {
         patientid: patient_id,
         invoicenumber: invoiceNumber,
-        items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
-        subtotal: amountNum,
+        items: modernPayload.items,
         total: amountNum,
         discount: 0,
         tax: 0,
@@ -150,32 +181,28 @@ export async function POST(req: NextRequest) {
         due: isPaid ? 0 : amountNum,
         status: isPaid ? 'paid' : 'pending',
         paymentmode: isPaid ? payment_method : null,
-        notes: isPaid
-          ? `${type} payment — ${payment_method}${payment_ref ? ` (Ref: ${payment_ref})` : ''}`
-          : `${type} — payment pending`,
+        notes: modernPayload.notes,
       }
-
-      const { data: legacyBill, error: legacyError } = await supabase
+      const { data, error } = await supabase
         .from('bills')
         .insert(legacyPayload)
         .select('id, invoicenumber')
         .single()
-
-      if (legacyError) {
-        console.error('[Registration Payment] Bill creation FAILED (both schemas):', legacyError.message, legacyError.code)
-        return NextResponse.json({
-          error: `Bill creation failed: ${billError?.message || legacyError.message}`,
-          code: legacyError.code,
-          hint: 'Check that the bills table exists. Run migration 023 or 024.',
-        }, { status: 500 })
+      if (!error && data) {
+        bill = { id: data.id, invoice_number: data.invoicenumber || invoiceNumber }
+        console.log('[Registration Payment] Bill created with LEGACY schema:', bill.id)
+      } else {
+        lastError = error
+        console.error('[Registration Payment] Legacy insert failed:', error?.message, error?.code)
       }
-
-      bill = { id: legacyBill.id, invoice_number: legacyBill.invoicenumber || invoiceNumber }
-      console.log('[Registration Payment] Bill created with LEGACY schema:', bill.id)
     }
 
     if (!bill) {
-      return NextResponse.json({ error: 'Bill creation returned no data' }, { status: 500 })
+      return NextResponse.json({
+        error: `Bill creation failed: ${lastError?.message || 'unknown error'}`,
+        code: lastError?.code,
+        hint: 'Check the bills table schema. Expected either snake_case (patient_id, invoice_number) or camelCase (patientid, invoicenumber) columns.',
+      }, { status: 500 })
     }
 
     console.log('[Registration Payment] Bill created successfully:', bill.id, bill.invoice_number)
