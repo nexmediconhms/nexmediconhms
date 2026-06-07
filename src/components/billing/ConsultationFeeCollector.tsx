@@ -186,10 +186,13 @@ export default function ConsultationFeeCollector({
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
         const billPayload = {
-          patient_id: patientId,
+          // Set BOTH legacy and modern column names for schema compatibility
+          patientid: patientId,        // Legacy NOT NULL column
+          patient_id: patientId,       // Modern column
           patient_name: patientName,
           mrn: mrn,
-          invoice_number: invoiceNumber,
+          invoicenumber: invoiceNumber, // Legacy column
+          invoice_number: invoiceNumber, // Modern column
           items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
           total: amountNum,
@@ -200,7 +203,8 @@ export default function ConsultationFeeCollector({
           paid: amountNum,
           due: 0,
           status: 'paid',
-          payment_mode: paymentMethod,
+          paymentmode: paymentMethod,   // Legacy column
+          payment_mode: paymentMethod,  // Modern column
           payment_ref: paymentRef || null,
           paid_at: now.toISOString(),
           notes: `${caseType === 'new' ? 'New case registration' : 'Follow-up consultation'} payment — ${paymentMethod}${paymentRef ? ` (Ref: ${paymentRef})` : ''}`,
@@ -348,10 +352,13 @@ export default function ConsultationFeeCollector({
         const { data: bill, error: billError } = await supabase
           .from('bills')
           .insert({
-            patient_id: patientId,
+            // Set BOTH legacy and modern column names for schema compatibility
+            patientid: patientId,        // Legacy NOT NULL column
+            patient_id: patientId,       // Modern column
             patient_name: patientName,
             mrn: mrn,
-            invoice_number: invoiceNumber,
+            invoicenumber: invoiceNumber, // Legacy column
+            invoice_number: invoiceNumber, // Modern column
             items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
             subtotal: amountNum,
             total: amountNum,
@@ -362,7 +369,8 @@ export default function ConsultationFeeCollector({
             paid: 0,
             due: amountNum,
             status: 'pending',
-            payment_mode: null,
+            paymentmode: null,           // Legacy column
+            payment_mode: null,          // Modern column
             payment_ref: null,
             paid_at: null,
             notes: `${caseType === 'new' ? 'New case' : 'Follow-up'} — payment pending`,

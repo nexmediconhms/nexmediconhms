@@ -712,10 +712,13 @@ export default function NewPatientPage() {
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
         const billPayload = {
-          patient_id: successId,
+          // Set BOTH legacy and modern column names for schema compatibility
+          patientid: successId,        // Legacy NOT NULL column
+          patient_id: successId,       // Modern column
           patient_name: success.name,
           mrn: success.mrn,
-          invoice_number: invoiceNumber,
+          invoicenumber: invoiceNumber, // Legacy column
+          invoice_number: invoiceNumber, // Modern column
           items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
           total: amountNum,
@@ -726,7 +729,8 @@ export default function NewPatientPage() {
           paid: amountNum,
           due: 0,
           status: 'paid',
-          payment_mode: method,
+          paymentmode: method,         // Legacy column
+          payment_mode: method,        // Modern column
           payment_ref: ref || null,
           paid_at: now.toISOString(),
           notes: `Registration payment — ${method}${ref ? ` (Ref: ${ref})` : ''}`,
@@ -898,10 +902,13 @@ export default function NewPatientPage() {
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
         await supabase.from('bills').insert({
-          patient_id: successId,
+          // Set BOTH legacy and modern column names for schema compatibility
+          patientid: successId,        // Legacy NOT NULL column
+          patient_id: successId,       // Modern column
           patient_name: success.name,
           mrn: success.mrn,
-          invoice_number: invoiceNumber,
+          invoicenumber: invoiceNumber, // Legacy column
+          invoice_number: invoiceNumber, // Modern column
           items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
           total: amountNum,
@@ -912,7 +919,8 @@ export default function NewPatientPage() {
           paid: 0,
           due: amountNum,
           status: 'pending',
-          payment_mode: null,
+          paymentmode: null,           // Legacy column
+          payment_mode: null,          // Modern column
           payment_ref: null,
           paid_at: null,
           notes: 'Registration — payment pending',
