@@ -123,126 +123,169 @@ export default function ConsultationFeeCollector({
     setError('')
 
     try {
-      const now = new Date()
-      const todayStr = now.toISOString().slice(0, 10)
-      const todayCompact = todayStr.replace(/-/g, '')
-
-      // Generate invoice number
-      const { count } = await supabase
-        .from('bills')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', todayStr + 'T00:00:00')
-
-      const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
-
       const description = caseType === 'new'
         ? 'OPD Registration Fee (New Case)'
         : 'OPD Consultation Fee (Follow-up)'
 
-      // Create the bill
-      const billPayload = {
-        patient_id: patientId,
-        patient_name: patientName,
-        mrn: mrn,
-        invoice_number: invoiceNumber,
-        items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
-        subtotal: amountNum,
-        total: amountNum,
-        net_amount: amountNum,
-        discount: 0,
-        tax: 0,
-        gst_amount: 0,
-        paid: amountNum,
-        due: 0,
-        status: 'paid',
-        payment_mode: paymentMethod,
-        payment_ref: paymentRef || null,
-        paid_at: now.toISOString(),
-        notes: `${caseType === 'new' ? 'New case registration' : 'Follow-up consultation'} payment — ${paymentMethod}${paymentRef ? ` (Ref: ${paymentRef})` : ''}`,
-      }
+      // ═══════════════════════════════════════════════════════════════════
+      // STRATEGY: Try API route first (uses service role key, bypasses RLS),
+      // then fall back to direct client-side insert if API fails.
+      // ═══════════════════════════════════════════════════════════════════
 
-      const { data: bill, error: billError } = await supabase
-        .from('bills')
-        .insert(billPayload)
-        .select('id, invoice_number')
-        .single()
+      console.log('[ConsultationFee] Creating bill via API route:', { patient_id: patientId, amount: amountNum, method: paymentMethod })
 
-      if (billError) {
-        console.error('[ConsultationFee] Bill insert failed:', billError.message)
-        setError(`Failed to create bill: ${billError.message}`)
-        setProcessing(false)
-        return
-      }
-
-      if (!bill) {
-        setError('Bill creation returned no data')
-        setProcessing(false)
-        return
-      }
-
-      // Record payment in bill_payments (non-fatal if fails)
+      // Attempt 1: Use the server-side API route (bypasses RLS)
+      let apiSuccess = false
       try {
-        await supabase.from('bill_payments').insert({
-          bill_id: bill.id,
-          patient_id: patientId,
-          amount: amountNum,
-          payment_mode: paymentMethod,
-          reference: paymentRef || null,
-          received_by: 'reception',
-          notes: `${description} for ${patientName}`,
-          transaction_type: 'payment',
+        const apiRes = await fetch('/api/billing/registration-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: patientId,
+            patient_name: patientName,
+            mrn: mrn,
+            amount: amountNum,
+            payment_method: paymentMethod,
+            payment_ref: paymentRef || '',
+            description: description,
+            type: caseType === 'new' ? 'registration' : 'consultation',
+          }),
         })
-      } catch {
-        // Non-fatal — bill itself was created
-        console.warn('[ConsultationFee] bill_payments insert failed (non-fatal)')
-      }
 
-      // Create encounter record for reports (non-fatal)
-      try {
-        const { data: existingEnc } = await supabase
-          .from('encounters')
-          .select('id')
-          .eq('patient_id', patientId)
-          .eq('encounter_date', todayStr)
-          .limit(1)
-
-        if (existingEnc && existingEnc.length > 0) {
-          // Link bill to existing encounter
-          await supabase
-            .from('encounters')
-            .update({ revenue_status: 'paid', bill_id: bill.id, updated_at: now.toISOString() })
-            .eq('id', existingEnc[0].id)
-          await supabase
-            .from('bills')
-            .update({ encounter_id: existingEnc[0].id })
-            .eq('id', bill.id)
-        } else {
-          // Create new encounter
-          const { data: newEnc } = await supabase
-            .from('encounters')
-            .insert({
-              patient_id: patientId,
-              encounter_date: todayStr,
-              encounter_type: 'OPD',
-              chief_complaint: caseType === 'new' ? 'New Case Registration' : 'Follow-up Consultation',
-              notes: `Payment: ₹${amountNum} via ${paymentMethod}`,
-              revenue_status: 'paid',
-              bill_id: bill.id,
-            })
-            .select('id')
-            .single()
-
-          if (newEnc) {
-            await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', bill.id)
+        if (apiRes.ok) {
+          const apiData = await apiRes.json()
+          if (apiData.ok && apiData.bill_id) {
+            apiSuccess = true
+            setSuccess({ billId: apiData.bill_id, invoiceNumber: apiData.invoice_number || '', amount: amountNum })
+            onPaymentComplete?.(apiData.bill_id, apiData.invoice_number || '', amountNum, paymentMethod)
+            console.log('[ConsultationFee] Bill created via API:', apiData.bill_id, apiData.invoice_number)
+          } else {
+            console.warn('[ConsultationFee] API returned non-ok:', apiData)
           }
+        } else {
+          const errText = await apiRes.text()
+          console.warn('[ConsultationFee] API route failed:', apiRes.status, errText)
         }
-      } catch {
-        // Non-fatal — encounter creation is optional
-        console.warn('[ConsultationFee] Encounter create/link failed (non-fatal)')
+      } catch (apiErr: any) {
+        console.warn('[ConsultationFee] API route call failed:', apiErr?.message)
       }
 
-      setSuccess({ billId: bill.id, invoiceNumber: bill.invoice_number || invoiceNumber, amount: amountNum })
-      onPaymentComplete?.(bill.id, bill.invoice_number || invoiceNumber, amountNum, paymentMethod)
+      // Attempt 2: Direct client-side insert (fallback if API route unavailable)
+      if (!apiSuccess) {
+        console.log('[ConsultationFee] Falling back to direct Supabase insert...')
+
+        const now = new Date()
+        const todayStr = now.toISOString().slice(0, 10)
+        const todayCompact = todayStr.replace(/-/g, '')
+
+        const { count } = await supabase
+          .from('bills')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', todayStr + 'T00:00:00')
+
+        const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
+
+        const billPayload = {
+          patient_id: patientId,
+          patient_name: patientName,
+          mrn: mrn,
+          invoice_number: invoiceNumber,
+          items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
+          subtotal: amountNum,
+          total: amountNum,
+          net_amount: amountNum,
+          discount: 0,
+          tax: 0,
+          gst_amount: 0,
+          paid: amountNum,
+          due: 0,
+          status: 'paid',
+          payment_mode: paymentMethod,
+          payment_ref: paymentRef || null,
+          paid_at: now.toISOString(),
+          notes: `${caseType === 'new' ? 'New case registration' : 'Follow-up consultation'} payment — ${paymentMethod}${paymentRef ? ` (Ref: ${paymentRef})` : ''}`,
+        }
+
+        const { data: bill, error: billError } = await supabase
+          .from('bills')
+          .insert(billPayload)
+          .select('id, invoice_number')
+          .single()
+
+        if (billError) {
+          console.error('[ConsultationFee] Direct bill insert also failed:', billError.message)
+          setError(`Failed to create bill: ${billError.message}. Please try again or create bill manually from Billing page.`)
+          setProcessing(false)
+          return
+        }
+
+        if (!bill) {
+          setError('Bill creation returned no data')
+          setProcessing(false)
+          return
+        }
+
+        // Record payment in bill_payments (non-fatal if fails)
+        try {
+          await supabase.from('bill_payments').insert({
+            bill_id: bill.id,
+            patient_id: patientId,
+            amount: amountNum,
+            payment_mode: paymentMethod,
+            reference: paymentRef || null,
+            received_by: 'reception',
+            notes: `${description} for ${patientName}`,
+            transaction_type: 'payment',
+          })
+        } catch {
+          // Non-fatal — bill itself was created
+          console.warn('[ConsultationFee] bill_payments insert failed (non-fatal)')
+        }
+
+        // Create encounter record for reports (non-fatal)
+        try {
+          const { data: existingEnc } = await supabase
+            .from('encounters')
+            .select('id')
+            .eq('patient_id', patientId)
+            .eq('encounter_date', todayStr)
+            .limit(1)
+
+          if (existingEnc && existingEnc.length > 0) {
+            await supabase
+              .from('encounters')
+              .update({ revenue_status: 'paid', bill_id: bill.id, updated_at: now.toISOString() })
+              .eq('id', existingEnc[0].id)
+            await supabase
+              .from('bills')
+              .update({ encounter_id: existingEnc[0].id })
+              .eq('id', bill.id)
+          } else {
+            const { data: newEnc } = await supabase
+              .from('encounters')
+              .insert({
+                patient_id: patientId,
+                encounter_date: todayStr,
+                encounter_type: 'OPD',
+                chief_complaint: caseType === 'new' ? 'New Case Registration' : 'Follow-up Consultation',
+                notes: `Payment: ₹${amountNum} via ${paymentMethod}`,
+                revenue_status: 'paid',
+                bill_id: bill.id,
+              })
+              .select('id')
+              .single()
+
+            if (newEnc) {
+              await supabase.from('bills').update({ encounter_id: newEnc.id }).eq('id', bill.id)
+            }
+          }
+        } catch {
+          console.warn('[ConsultationFee] Encounter create/link failed (non-fatal)')
+        }
+
+        setSuccess({ billId: bill.id, invoiceNumber: bill.invoice_number || invoiceNumber, amount: amountNum })
+        onPaymentComplete?.(bill.id, bill.invoice_number || invoiceNumber, amountNum, paymentMethod)
+      }
     } catch (err: any) {
       console.error('[ConsultationFee] Unexpected error:', err)
       setError(err?.message || 'An unexpected error occurred')
@@ -258,54 +301,83 @@ export default function ConsultationFeeCollector({
 
     try {
       const amountNum = parseFloat(amount) || (caseType === 'new' ? 500 : 300)
-      const now = new Date()
-      const todayStr = now.toISOString().slice(0, 10)
-      const todayCompact = todayStr.replace(/-/g, '')
-
-      const { count } = await supabase
-        .from('bills')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', todayStr + 'T00:00:00')
-
-      const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
-
       const description = caseType === 'new'
         ? 'OPD Registration Fee (New Case)'
         : 'OPD Consultation Fee (Follow-up)'
 
-      const { data: bill, error: billError } = await supabase
-        .from('bills')
-        .insert({
-          patient_id: patientId,
-          patient_name: patientName,
-          mrn: mrn,
-          invoice_number: invoiceNumber,
-          items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
-          subtotal: amountNum,
-          total: amountNum,
-          net_amount: amountNum,
-          discount: 0,
-          tax: 0,
-          gst_amount: 0,
-          paid: 0,
-          due: amountNum,
-          status: 'pending',
-          payment_mode: null,
-          payment_ref: null,
-          paid_at: null,
-          notes: `${caseType === 'new' ? 'New case' : 'Follow-up'} — payment pending`,
+      // Attempt 1: API route (service role key, bypasses RLS)
+      let apiDone = false
+      try {
+        const apiRes = await fetch('/api/billing/registration-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: patientId,
+            patient_name: patientName,
+            mrn: mrn,
+            amount: amountNum,
+            payment_method: 'pending',
+            description: description,
+            type: caseType === 'new' ? 'registration' : 'consultation',
+            skip_payment: true,
+          }),
         })
-        .select('id, invoice_number')
-        .single()
+        if (apiRes.ok) {
+          const apiData = await apiRes.json()
+          if (apiData.ok) {
+            apiDone = true
+            onSkip?.(apiData.bill_id || '', apiData.invoice_number || '')
+            console.log('[ConsultationFee] Pending bill created via API:', apiData.bill_id)
+          }
+        }
+      } catch { /* API unavailable — try direct */ }
 
-      if (billError) {
-        console.error('[ConsultationFee] Pending bill insert failed:', billError.message)
-        // Still allow skip even if bill creation fails
-        onSkip?.('', '')
-      } else if (bill) {
-        onSkip?.(bill.id, bill.invoice_number || invoiceNumber)
-      } else {
-        onSkip?.('', '')
+      // Attempt 2: Direct client-side insert (fallback)
+      if (!apiDone) {
+        const now = new Date()
+        const todayStr = now.toISOString().slice(0, 10)
+        const todayCompact = todayStr.replace(/-/g, '')
+
+        const { count } = await supabase
+          .from('bills')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', todayStr + 'T00:00:00')
+
+        const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
+
+        const { data: bill, error: billError } = await supabase
+          .from('bills')
+          .insert({
+            patient_id: patientId,
+            patient_name: patientName,
+            mrn: mrn,
+            invoice_number: invoiceNumber,
+            items: [{ label: description, description, qty: 1, rate: amountNum, amount: amountNum }],
+            subtotal: amountNum,
+            total: amountNum,
+            net_amount: amountNum,
+            discount: 0,
+            tax: 0,
+            gst_amount: 0,
+            paid: 0,
+            due: amountNum,
+            status: 'pending',
+            payment_mode: null,
+            payment_ref: null,
+            paid_at: null,
+            notes: `${caseType === 'new' ? 'New case' : 'Follow-up'} — payment pending`,
+          })
+          .select('id, invoice_number')
+          .single()
+
+        if (billError) {
+          console.error('[ConsultationFee] Pending bill insert failed:', billError.message)
+          onSkip?.('', '')
+        } else if (bill) {
+          onSkip?.(bill.id, bill.invoice_number || invoiceNumber)
+        } else {
+          onSkip?.('', '')
+        }
       }
     } catch (err: any) {
       console.warn('[ConsultationFee] Skip payment bill creation failed:', err?.message)
