@@ -711,29 +711,29 @@ export default function NewPatientPage() {
 
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
-        const billPayload = {
-          // Set BOTH legacy and modern column names for schema compatibility
-          patientid: successId,        // Legacy NOT NULL column
-          patient_id: successId,       // Modern column
+        const billPayload: Record<string, any> = {
+          // v4 FIX: Use ONLY columns that exist in this DB's bills table.
+          // Removed (column does not exist): patientid, invoicenumber, paymentmode, tax.
+          // Including any of those keys causes PostgREST to reject the whole insert.
+          patient_id: successId,
           patient_name: success.name,
           mrn: success.mrn,
-          invoicenumber: invoiceNumber, // Legacy column
-          invoice_number: invoiceNumber, // Modern column
-          items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
+          invoice_number: invoiceNumber,
+          items: [{ label: 'OPD Registration Fee', type: 'registration', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
-          total: amountNum,
-          net_amount: amountNum,
           discount: 0,
-          tax: 0,
+          gst_percent: 0,
           gst_amount: 0,
+          net_amount: amountNum,
+          total: amountNum,
           paid: amountNum,
           due: 0,
-          status: 'paid',
-          paymentmode: method,         // Legacy column
-          payment_mode: method,        // Modern column
+          payment_mode: method,
           payment_ref: ref || null,
+          status: 'paid',
           paid_at: now.toISOString(),
           notes: `Registration payment — ${method}${ref ? ` (Ref: ${ref})` : ''}`,
+          encounter_type: 'opd',
         }
 
         const { data: bill, error: billError } = await supabase
@@ -850,7 +850,15 @@ export default function NewPatientPage() {
       sessionStorage.setItem(`fee_collected_${successId}_${today}`, 'true')
     } catch { /* non-fatal */ }
 
-    setPaymentConfirmed(true)
+    // v4 FIX: Only show "Payment Collected ✓" if a bill row actually exists.
+    // Previously this was unconditional, which produced a phantom success message
+    // even when every insert attempt had failed. If creation failed we surface
+    // paymentWarning so the user knows to take manual action.
+    if (billCreated) {
+      setPaymentConfirmed(true)
+    } else {
+      setPaymentWarning(prev => prev || 'Could not save the bill for this payment. Please create it manually from the Billing page.')
+    }
   }
 
   // Register & add to queue WITHOUT taking payment now.
@@ -902,28 +910,27 @@ export default function NewPatientPage() {
         const invoiceNumber = `REG-${todayCompact}-${String((count || 0) + 1).padStart(3, '0')}`
 
         await supabase.from('bills').insert({
-          // Set BOTH legacy and modern column names for schema compatibility
-          patientid: successId,        // Legacy NOT NULL column
-          patient_id: successId,       // Modern column
+          // v4 FIX: Use ONLY columns that exist in this DB's bills table.
+          // Removed (column does not exist): patientid, invoicenumber, paymentmode, tax.
+          patient_id: successId,
           patient_name: success.name,
           mrn: success.mrn,
-          invoicenumber: invoiceNumber, // Legacy column
-          invoice_number: invoiceNumber, // Modern column
-          items: [{ label: 'OPD Registration Fee', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
+          invoice_number: invoiceNumber,
+          items: [{ label: 'OPD Registration Fee', type: 'registration', description: 'OPD Registration Fee', qty: 1, rate: amountNum, amount: amountNum }],
           subtotal: amountNum,
-          total: amountNum,
-          net_amount: amountNum,
           discount: 0,
-          tax: 0,
+          gst_percent: 0,
           gst_amount: 0,
+          net_amount: amountNum,
+          total: amountNum,
           paid: 0,
           due: amountNum,
-          status: 'pending',
-          paymentmode: null,           // Legacy column
-          payment_mode: null,          // Modern column
+          payment_mode: null,
           payment_ref: null,
+          status: 'pending',
           paid_at: null,
           notes: 'Registration — payment pending',
+          encounter_type: 'opd',
         })
       }
     } catch { /* Non-fatal — bill will be created later at billing page */ }
