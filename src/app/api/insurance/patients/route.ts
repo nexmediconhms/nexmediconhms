@@ -43,15 +43,14 @@ export async function GET(req: NextRequest) {
     // FIXED QUERY: The patients table uses TEXT fields for mediclaim/cashless
     // Values can be: 'Yes', 'No', 'true', 'false', 'TRUE', null
     // We need to check ALL insurance-related fields comprehensively
+    // v6 FIX: insurance_name, insurance_id, and email do not exist on this DB's
+    // patients table. Confirmed columns: id, full_name, mrn, mobile, mediclaim
+    // (boolean), cashless (boolean), policy_tpa_name, policy_number, is_active,
+    // created_at. Selecting a non-existent column makes PostgREST reject the
+    // whole row set with a "column does not exist" error.
     const { data: allPatients, error: pErr } = await sb
       .from('patients')
-      .select(`
-        id, full_name, mrn, mobile, email,
-        mediclaim, cashless,
-        insurance_name, insurance_id,
-        policy_tpa_name, policy_number,
-        created_at, is_active
-      `)
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at, is_active')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
@@ -63,14 +62,14 @@ export async function GET(req: NextRequest) {
     // Filter for insured patients using proper TEXT field matching
     // This is the KEY FIX: we check all possible insurance indicators
     const insuredPatients = (allPatients || []).filter(p => {
+      // v6 FIX: dropped hasInsuranceName / hasInsuranceId — those columns do
+      // not exist on this DB's patients table and would always be false anyway.
       const hasMediclaim = isYesOrTrue(p.mediclaim)
       const hasCashless = isYesOrTrue(p.cashless)
       const hasTPA = isNonEmpty(p.policy_tpa_name)
-      const hasInsuranceName = isNonEmpty(p.insurance_name)
-      const hasInsuranceId = isNonEmpty(p.insurance_id)
       const hasPolicyNumber = isNonEmpty(p.policy_number)
 
-      return hasMediclaim || hasCashless || hasTPA || hasInsuranceName || hasInsuranceId || hasPolicyNumber
+      return hasMediclaim || hasCashless || hasTPA || hasPolicyNumber
     })
 
     // Get all existing claims for these patients in one query
@@ -117,11 +116,10 @@ export async function GET(req: NextRequest) {
         patient_name: p.full_name,
         mrn: p.mrn,
         mobile: p.mobile,
-        email: p.email,
+        // v6 FIX: email/insurance_name/insurance_id removed — columns absent on this DB.
+        // If a future migration adds them back, restore the fields and they'll flow through.
         mediclaim: isYesOrTrue(p.mediclaim),
         cashless: isYesOrTrue(p.cashless),
-        insurance_name: p.insurance_name || null,
-        insurance_id: p.insurance_id || null,
         policy_tpa_name: p.policy_tpa_name || null,
         policy_number: p.policy_number || null,
         registered_at: p.created_at,

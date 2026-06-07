@@ -50,23 +50,35 @@ export async function GET(req: NextRequest) {
     // NOT boolean. The old query `.or('mediclaim.eq.true,...')` never matched.
     // Also check insurance_name and insurance_id fields which are set during
     // admission/checkout but were previously ignored.
+    // v6 FIX: insurance_name and insurance_id do not exist on this DB's
+    // patients table. Including them caused PostgREST to reject the whole
+    // query with "column does not exist", so the Insured Patients tab got
+    // an empty response and rendered zero rows.
+    // Confirmed schema (run information_schema.columns): the insurance-related
+    // columns on this DB are mediclaim (boolean), cashless (boolean),
+    // policy_tpa_name (text), policy_number (text). Nothing else.
     const { data: allPatients, error: pErr } = await supabase
       .from('patients')
-      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, insurance_name, insurance_id, created_at')
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
+    if (pErr) {
+      console.error('[insurance/sync] patients query failed:', pErr.message, pErr.code, pErr.details)
+    }
+
     // Client-side filter for insured patients since we need case-insensitive
     // matching on TEXT fields with multiple possible truthy values
+    // v6 FIX: mediclaim/cashless are boolean on this DB. String(true) === 'true'
+    // so the existing string-based check happens to match correctly. Added
+    // direct boolean check for clarity and to be schema-agnostic in case
+    // another install uses text values like 'Yes'/'No'.
     const insuredPatients = (allPatients || []).filter((p: any) => {
-      const mediclaim = String(p.mediclaim || '').trim().toLowerCase()
-      const cashless = String(p.cashless || '').trim().toLowerCase()
-      const hasMediclaim = mediclaim === 'yes' || mediclaim === 'true'
-      const hasCashless = cashless === 'yes' || cashless === 'true'
-      const hasTPA = !!(p.policy_tpa_name && p.policy_tpa_name.trim())
-      const hasInsName = !!(p.insurance_name && p.insurance_name.trim())
-      const hasInsId = !!(p.insurance_id && p.insurance_id.trim())
-      return hasMediclaim || hasCashless || hasTPA || hasInsName || hasInsId
+      const hasMediclaim = p.mediclaim === true || String(p.mediclaim || '').trim().toLowerCase() === 'yes' || String(p.mediclaim || '').trim().toLowerCase() === 'true'
+      const hasCashless = p.cashless === true || String(p.cashless || '').trim().toLowerCase() === 'yes' || String(p.cashless || '').trim().toLowerCase() === 'true'
+      const hasTPA = !!(p.policy_tpa_name && String(p.policy_tpa_name).trim())
+      const hasPolicyNumber = !!(p.policy_number && String(p.policy_number).trim())
+      return hasMediclaim || hasCashless || hasTPA || hasPolicyNumber
     })
 
     if (pErr) {
