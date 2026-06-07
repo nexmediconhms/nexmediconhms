@@ -87,36 +87,42 @@ let _opdQueueSchemaCache: {
   dateCol: 'queue_date' | 'date'
   tokenCol: 'token_number' | 'queue_number'
   hasPriority: boolean
+  hasPatientName: boolean
+  hasMrn: boolean
+  hasMobile: boolean
 } | null = null
 
 async function detectOpdQueueSchema() {
   if (_opdQueueSchemaCache) return _opdQueueSchemaCache
 
-  // Probe for the modern columns. PostgREST returns an error on `.select()`
-  // of a non-existent column, so we use that as a feature-detect.
-  const probeModern = await supabase
-    .from('opd_queue')
-    .select('queue_date, token_number, priority')
-    .limit(0)
-
-  if (!probeModern.error) {
-    _opdQueueSchemaCache = { dateCol: 'queue_date', tokenCol: 'token_number', hasPriority: true }
-    return _opdQueueSchemaCache
-  }
-
-  // Modern probe failed — try detecting columns individually so we know
-  // exactly which is missing and can mix-and-match.
-  const [dateProbe, tokenProbe, priorityProbe] = await Promise.all([
+  // Probe every potentially-optional column individually. Each `.select()`
+  // either succeeds (column exists) or errors with "column does not exist"
+  // (column missing). This is the only way to know what's actually in the
+  // user's DB — migration history is unreliable. Different installs end up
+  // with different subsets of columns depending on which migrations ran.
+  const [dateProbe, tokenProbe, priorityProbe, nameProbe, mrnProbe, mobileProbe] = await Promise.all([
     supabase.from('opd_queue').select('queue_date').limit(0),
     supabase.from('opd_queue').select('token_number').limit(0),
     supabase.from('opd_queue').select('priority').limit(0),
+    supabase.from('opd_queue').select('patient_name').limit(0),
+    supabase.from('opd_queue').select('mrn').limit(0),
+    supabase.from('opd_queue').select('mobile').limit(0),
   ])
 
   _opdQueueSchemaCache = {
+    // Date column: prefer modern `queue_date`, fall back to legacy `date`.
     dateCol: dateProbe.error ? 'date' : 'queue_date',
+    // Token column: prefer modern `token_number`, fall back to legacy `queue_number`.
     tokenCol: tokenProbe.error ? 'queue_number' : 'token_number',
-    hasPriority: !priorityProbe.error,
+    // These three are TRULY optional — depending on schema version they may
+    // not exist at all. Callers pass them in the payload; the helper strips
+    // them if the column is missing so PostgREST doesn't reject the row.
+    hasPriority:    !priorityProbe.error,
+    hasPatientName: !nameProbe.error,
+    hasMrn:         !mrnProbe.error,
+    hasMobile:      !mobileProbe.error,
   }
+  console.debug('[Registration] opd_queue schema detected:', _opdQueueSchemaCache)
   return _opdQueueSchemaCache
 }
 
@@ -132,8 +138,9 @@ async function insertQueueEntryWithRetry(
   const schema = await detectOpdQueueSchema()
 
   // Normalize the caller's payload to whichever column names exist. Callers
-  // pass `queue_date` (modern); if the DB only has the legacy `date` column,
-  // rewrite the key so the insert doesn't reject the entire row.
+  // pass `queue_date` and the optional `patient_name`/`mrn`/`mobile` keys;
+  // we rewrite or strip them so the insert doesn't reject the entire row
+  // on a single missing column.
   const normalizedPayload: Record<string, unknown> = { ...payload }
   if (schema.dateCol === 'date' && 'queue_date' in normalizedPayload) {
     normalizedPayload.date = normalizedPayload.queue_date
@@ -141,6 +148,15 @@ async function insertQueueEntryWithRetry(
   }
   if (!schema.hasPriority && 'priority' in normalizedPayload) {
     delete normalizedPayload.priority
+  }
+  if (!schema.hasPatientName && 'patient_name' in normalizedPayload) {
+    delete normalizedPayload.patient_name
+  }
+  if (!schema.hasMrn && 'mrn' in normalizedPayload) {
+    delete normalizedPayload.mrn
+  }
+  if (!schema.hasMobile && 'mobile' in normalizedPayload) {
+    delete normalizedPayload.mobile
   }
 
   const patientId = normalizedPayload.patient_id as string | undefined
