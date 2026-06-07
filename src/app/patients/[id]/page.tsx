@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
+import ConsultationFeeCollector from '@/components/billing/ConsultationFeeCollector'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatDateTime, ageFromDOB, calculateGA, calculateEDD } from '@/lib/utils'
 import { assessObstetricRisk, assessVitalRisk, riskLevelStyle } from '@/lib/clinical-risk'
@@ -145,6 +146,7 @@ export default function PatientDetailPage() {
   const [summaryState, setSummaryState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [summaryError, setSummaryError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showFeeCollector, setShowFeeCollector] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (id) loadAll() }, [id])
@@ -589,7 +591,7 @@ export default function PatientDetailPage() {
             }`}>
               <IndianRupee className={`w-4 h-4 ${hasBills ? 'text-green-600' : 'text-amber-600'}`} />
             </div>
-            <div>
+            <div className="flex-1">
               <div className={`text-sm font-bold ${hasBills ? 'text-green-800' : 'text-amber-800'}`}>
                 {hasBills
                   ? `₹${totalBilled.toLocaleString('en-IN')} Paid`
@@ -601,6 +603,14 @@ export default function PatientDetailPage() {
                   : 'Collect consultation fee before or after visit'}
               </div>
             </div>
+            {!hasBills && (
+              <button
+                onClick={() => { setActiveTab('billing'); setShowFeeCollector(true) }}
+                className="text-xs font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+              >
+                Collect Fee
+              </button>
+            )}
           </div>
 
           {/* Patient Case Type */}
@@ -1027,19 +1037,62 @@ export default function PatientDetailPage() {
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-semibold text-gray-700">Payment History</h3>
-                  <Link href="/billing" className="btn-primary text-xs flex items-center gap-1">
-                    <Plus className="w-3.5 h-3.5" /> New Bill
-                  </Link>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowFeeCollector(!showFeeCollector)}
+                      className="btn-secondary text-xs flex items-center gap-1"
+                    >
+                      <IndianRupee className="w-3.5 h-3.5" />
+                      {showFeeCollector ? 'Hide' : 'Collect Consultation Fee'}
+                    </button>
+                    <Link href="/billing" className="btn-primary text-xs flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> New Bill
+                    </Link>
+                  </div>
                 </div>
-                {bills.length === 0 ? (
+
+                {/* ── Inline Consultation Fee Collector ── */}
+                {showFeeCollector && patient && (
+                  <div className="mb-5">
+                    <ConsultationFeeCollector
+                      patientId={patient.id}
+                      patientName={patient.full_name}
+                      mrn={patient.mrn || ''}
+                      isNewCase={encounters.length === 0}
+                      contextLabel="Collect registration/consultation fee before OPD visit"
+                      onPaymentComplete={(billId, invoiceNumber, amount, method) => {
+                        setShowFeeCollector(false)
+                        // Refresh bills list to show the new bill
+                        loadAll()
+                      }}
+                      onSkip={(billId, invoiceNumber) => {
+                        setShowFeeCollector(false)
+                        loadAll()
+                      }}
+                      onCancel={() => setShowFeeCollector(false)}
+                      showCancel={true}
+                    />
+                  </div>
+                )}
+
+                {bills.length === 0 && !showFeeCollector ? (
                   <div className="text-center py-10 text-gray-400">
                     <IndianRupee className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="font-medium mb-1">No bills yet</p>
-                    <Link href="/billing" className="btn-primary inline-flex items-center gap-2 text-xs mt-2">
-                      <Plus className="w-3.5 h-3.5" /> Create Bill
-                    </Link>
+                    <p className="text-xs text-gray-400 mb-3">Collect consultation fee to generate a bill</p>
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        onClick={() => setShowFeeCollector(true)}
+                        className="btn-primary inline-flex items-center gap-2 text-xs"
+                      >
+                        <IndianRupee className="w-3.5 h-3.5" /> Collect Fee
+                      </button>
+                      <Link href="/billing" className="btn-secondary inline-flex items-center gap-2 text-xs">
+                        <Plus className="w-3.5 h-3.5" /> Custom Bill
+                      </Link>
+                    </div>
                   </div>
-                ) : (
+                ) : bills.length > 0 ? (
                   <div className="space-y-2">
                     {bills.map((bill: any) => (
                       <div key={bill.id} className="border border-gray-100 rounded-lg p-4 hover:bg-gray-50">
@@ -1062,7 +1115,7 @@ export default function PatientDetailPage() {
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 

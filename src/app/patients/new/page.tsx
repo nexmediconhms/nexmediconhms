@@ -794,6 +794,12 @@ export default function NewPatientPage() {
       await notify.paymentReceived(successId, success.name, parseFloat(paymentAmount) || 500, method)
     } catch { /* non-fatal */ }
 
+    // Mark fee as collected in sessionStorage so OPD page doesn't re-ask
+    try {
+      const today = getIndiaToday()
+      sessionStorage.setItem(`fee_collected_${successId}_${today}`, 'true')
+    } catch { /* non-fatal */ }
+
     setPaymentConfirmed(true)
   }
 
@@ -882,6 +888,12 @@ export default function NewPatientPage() {
         setQueueInsertFailed(true)
       }
     }
+
+    // Mark fee as collected in sessionStorage so OPD page doesn't re-ask
+    try {
+      const today = getIndiaToday()
+      sessionStorage.setItem(`fee_collected_${successId}_${today}`, 'skipped')
+    } catch { /* non-fatal */ }
 
     setPaymentConfirmed(true)
   }

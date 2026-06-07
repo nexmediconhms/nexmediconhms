@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
+import ConsultationFeeCollector from '@/components/billing/ConsultationFeeCollector'
 import SmartMic from '@/components/shared/SmartMic'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
@@ -130,6 +131,12 @@ function NewConsultationContent() {
   const [rxSafetyChecked, setRxSafetyChecked] = useState(false)
   const [showBillingPrompt, setShowBillingPrompt] = useState(false)
   const [savedEncounterId, setSavedEncounterId] = useState<string | null>(null)
+
+  // ── Consultation Fee Gate state ─────────────────────────────────
+  // Shows fee collection screen before allowing consultation form access
+  const [feeGateStatus, setFeeGateStatus] = useState<'checking' | 'required' | 'paid' | 'skipped'>('checking')
+  const [hasTodayBill, setHasTodayBill] = useState(false)
+  const [isNewCaseForFee, setIsNewCaseForFee] = useState(true)
 
   // Draft key — persists form state across navigation for this patient
   const draftKey = patientId ? `opd_draft_${patientId}` : null
@@ -328,6 +335,52 @@ function NewConsultationContent() {
     })()
 
 
+  }, [patientId])
+
+  // ── Fee Gate: Check if patient already has a bill for today ──────────
+  // If they do, skip the fee gate. If not, show fee collection before consultation.
+  useEffect(() => {
+    if (!patientId) return
+
+    async function checkTodayBill() {
+      try {
+        const today = getIndiaToday()
+        // Check if patient has any bill created today
+        const { data: todayBills } = await supabase
+          .from('bills')
+          .select('id, status')
+          .eq('patient_id', patientId)
+          .gte('created_at', today + 'T00:00:00')
+          .limit(1)
+
+        if (todayBills && todayBills.length > 0) {
+          // Patient already has a bill for today — skip fee gate
+          setHasTodayBill(true)
+          setFeeGateStatus('paid')
+        } else {
+          // Check if this is a new or returning patient
+          const { count } = await supabase
+            .from('encounters')
+            .select('id', { count: 'exact', head: true })
+            .eq('patient_id', patientId)
+
+          setIsNewCaseForFee((count || 0) === 0)
+          setFeeGateStatus('required')
+        }
+      } catch {
+        // On error, allow consultation to proceed (non-blocking)
+        setFeeGateStatus('paid')
+      }
+    }
+
+    // Check if fee was already collected in this session (e.g., from registration page)
+    const sessionKey = `fee_collected_${patientId}_${getIndiaToday()}`
+    if (typeof window !== 'undefined' && sessionStorage.getItem(sessionKey)) {
+      setFeeGateStatus('paid')
+      return
+    }
+
+    checkTodayBill()
   }, [patientId])
 
 
@@ -1056,6 +1109,73 @@ function NewConsultationContent() {
       <AppShell>
         <div className="p-6 flex items-center justify-center h-64">
           <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // FEE GATE — Collect consultation/registration fee before consultation
+  // Shows when patient doesn't have a bill for today yet.
+  // ══════════════════════════════════════════════════════════════════
+  if (feeGateStatus === 'required' && patient) {
+    return (
+      <AppShell>
+        <div className="p-6 max-w-lg mx-auto mt-8">
+          {/* Patient info banner */}
+          <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-lg font-bold text-blue-700">{patient.full_name.charAt(0)}</span>
+            </div>
+            <div>
+              <div className="font-semibold text-blue-800 text-sm">{patient.full_name}</div>
+              <div className="text-xs text-blue-600">
+                MRN: <span className="font-mono font-bold">{patient.mrn}</span>
+                {patient.age && <span className="ml-2">{patient.age}y</span>}
+                {patient.gender && <span className="ml-1">· {patient.gender}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Fee Collector */}
+          <ConsultationFeeCollector
+            patientId={patient.id}
+            patientName={patient.full_name}
+            mrn={patient.mrn || ''}
+            isNewCase={isNewCaseForFee}
+            contextLabel="Collect fee before starting OPD consultation"
+            onPaymentComplete={(billId, invoiceNumber, amount, method) => {
+              // Mark fee as collected in session to avoid re-showing
+              const sessionKey = `fee_collected_${patientId}_${getIndiaToday()}`
+              try { sessionStorage.setItem(sessionKey, 'true') } catch {}
+              setFeeGateStatus('paid')
+            }}
+            onSkip={(billId, invoiceNumber) => {
+              // Mark as skipped — allow consultation to proceed
+              const sessionKey = `fee_collected_${patientId}_${getIndiaToday()}`
+              try { sessionStorage.setItem(sessionKey, 'skipped') } catch {}
+              setFeeGateStatus('skipped')
+            }}
+            onCancel={() => {
+              // Go back to patient profile
+              router.push(`/patients/${patientId}`)
+            }}
+            showCancel={true}
+          />
+        </div>
+      </AppShell>
+    )
+  }
+
+  // Show loading while checking fee status
+  if (feeGateStatus === 'checking' && patient) {
+    return (
+      <AppShell>
+        <div className="p-6 flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Checking payment status...</p>
+          </div>
         </div>
       </AppShell>
     )
