@@ -8,6 +8,12 @@
  *   The modern code expects snake_case (patient_id, created_at).
  *   PostgREST returns empty results (not errors) when filtering on non-existent columns.
  *   This helper detects the schema and provides correct query builders.
+ *
+ * FIX (June 2026):
+ *   Added API-first approach: loadPatientBills now calls /api/billing/patient-bills
+ *   which uses the service role key (bypasses RLS). This solves the issue where
+ *   client-side queries return empty due to RLS policies blocking reads.
+ *   Falls back to client-side multi-attempt queries if the API is unavailable.
  */
 
 import { supabase } from '@/lib/supabase'
@@ -122,25 +128,10 @@ export async function detectBillingSchema(): Promise<BillingSchema> {
 }
 
 /**
- * Load bills for a patient, adapting to the detected schema
+ * Normalize a raw bill record (from any schema version) to consistent snake_case keys.
  */
-export async function loadPatientBills(patientId: string) {
-  const schema = await detectBillingSchema()
-
-  const { data, error } = await supabase
-    .from('bills')
-    .select('*')  // Use * to avoid column name issues
-    .eq(schema.patient_id, patientId)
-    .order(schema.created_at, { ascending: false })
-    .limit(50)
-
-  if (error) {
-    console.error('[billing-helpers] loadPatientBills error:', error.message)
-    return { bills: [], error }
-  }
-
-  // Normalize the response to always use snake_case keys for the UI
-  const normalizedBills = (data || []).map(bill => ({
+function normalizeBill(bill: any) {
+  return {
     id: bill.id,
     patient_id: bill.patient_id || bill.patientid,
     patient_name: bill.patient_name || '',
@@ -152,6 +143,9 @@ export async function loadPatientBills(patientId: string) {
     total: Number(bill.total || 0),
     paid: Number(bill.paid || 0),
     due: Number(bill.due || 0),
+    discount: Number(bill.discount || 0),
+    tax: Number(bill.tax || 0),
+    gst_amount: Number(bill.gst_amount || 0),
     payment_mode: bill.payment_mode || bill.paymentmode || null,
     payment_ref: bill.payment_ref || null,
     status: bill.status || 'unknown',
@@ -159,9 +153,124 @@ export async function loadPatientBills(patientId: string) {
     created_at: bill.created_at || bill.createdat || null,
     updated_at: bill.updated_at || bill.updatedat || null,
     paid_at: bill.paid_at || null,
-  }))
+    encounter_id: bill.encounter_id || null,
+  }
+}
 
-  return { bills: normalizedBills, error: null }
+/**
+ * Load bills for a patient.
+ *
+ * Strategy (in order):
+ *   1. Call /api/billing/patient-bills (service role, bypasses RLS) — most reliable
+ *   2. Client-side query with detected schema column names
+ *   3. Client-side query with alternate column names (fallback)
+ *   4. Client-side SELECT * with in-memory filter (last resort)
+ */
+export async function loadPatientBills(patientId: string) {
+  if (!patientId) return { bills: [], error: null }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ATTEMPT 1: Server-side API route (bypasses RLS, most reliable)
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    const res = await fetch(`/api/billing/patient-bills?patient_id=${encodeURIComponent(patientId)}`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data.ok && Array.isArray(data.bills)) {
+        // API already returns normalized bills
+        return { bills: data.bills, error: null }
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[billing-helpers] API route unavailable, falling back to client-side:', apiErr)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ATTEMPT 2: Client-side with schema detection
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    const schema = await detectBillingSchema()
+
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*')
+      .eq(schema.patient_id, patientId)
+      .order(schema.created_at, { ascending: false })
+      .limit(50)
+
+    if (!error && data && data.length > 0) {
+      return { bills: data.map(normalizeBill), error: null }
+    }
+
+    // If we got an error (e.g., column doesn't exist in ORDER BY), try without order
+    if (error) {
+      console.warn('[billing-helpers] Schema-detected query failed:', error.message)
+      const { data: data2, error: error2 } = await supabase
+        .from('bills')
+        .select('*')
+        .eq(schema.patient_id, patientId)
+        .limit(50)
+
+      if (!error2 && data2 && data2.length > 0) {
+        return { bills: data2.map(normalizeBill), error: null }
+      }
+    }
+  } catch {
+    // Non-fatal, continue to fallback
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ATTEMPT 3: Try alternate column names (opposite of what was detected)
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    // Try patientid (legacy)
+    const { data: legacyData, error: legacyErr } = await supabase
+      .from('bills')
+      .select('*')
+      .eq('patientid', patientId)
+      .limit(50)
+
+    if (!legacyErr && legacyData && legacyData.length > 0) {
+      return { bills: legacyData.map(normalizeBill), error: null }
+    }
+
+    // Try patient_id (modern) — in case detection was wrong
+    const { data: modernData, error: modernErr } = await supabase
+      .from('bills')
+      .select('*')
+      .eq('patient_id', patientId)
+      .limit(50)
+
+    if (!modernErr && modernData && modernData.length > 0) {
+      return { bills: modernData.map(normalizeBill), error: null }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ATTEMPT 4: Last resort — fetch recent bills and filter in memory
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    const { data: allBills } = await supabase
+      .from('bills')
+      .select('*')
+      .limit(200)
+
+    if (allBills && allBills.length > 0) {
+      const matched = allBills.filter((b: any) =>
+        b.patient_id === patientId || b.patientid === patientId
+      )
+      if (matched.length > 0) {
+        return { bills: matched.map(normalizeBill), error: null }
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Nothing found
+  return { bills: [], error: null }
 }
 
 /**

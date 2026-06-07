@@ -210,8 +210,8 @@ export default function PatientDetailPage() {
       supabase.from('encounters').select('*').eq('patient_id', id).order('encounter_date', { ascending: false }),
       supabase.from('prescriptions').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
       supabase.from('discharge_summaries').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
-      // FIX: Use schema-aware loadPatientBills instead of hardcoded column names.
-      // This detects whether the DB uses 'patient_id' or 'patientid' and queries accordingly.
+      // FIX: Use schema-aware loadPatientBills which tries API route first (bypasses RLS),
+      // then falls back to client-side queries with multiple column name attempts.
       loadPatientBills(id as string),
       // FIX: Also count OPD queue visits (done status = completed visit)
       supabase.from('opd_queue').select('id, status, queue_date').eq('patient_id', id),
@@ -221,8 +221,22 @@ export default function PatientDetailPage() {
     setPrescriptions(rx || [])
     setDischarges(ds || [])
     // FIX: loadPatientBills returns { bills, error } with normalized snake_case keys
-    setBills(billsResult.bills || [])
- 
+    const loadedBills = billsResult.bills || []
+    setBills(loadedBills)
+
+    // FIX: If bills came back empty, retry once after a short delay.
+    // This handles the race condition where a bill was just created during registration
+    // but hasn't propagated yet (eventual consistency / replication lag).
+    if (loadedBills.length === 0) {
+      setTimeout(async () => {
+        try {
+          const retryResult = await loadPatientBills(id as string)
+          if (retryResult.bills && retryResult.bills.length > 0) {
+            setBills(retryResult.bills)
+          }
+        } catch { /* non-fatal retry */ }
+      }, 1500)
+    }
 
     // Calculate total visits: encounters + completed queue visits (to avoid double-counting, use max)
     const encCount = (enc || []).length
