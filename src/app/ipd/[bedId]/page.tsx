@@ -93,6 +93,79 @@ async function ensureIPDNursingSchema() {
   }
 }
 
+// v8 FIX: Module-level cache of which columns the user's ipd_nursing table
+// actually has. The migration in the codebase says all these columns should
+// exist, but installs in the wild are in various intermediate states. Probing
+// once per page load is essentially free; rejecting the entire insert because
+// one optional column is missing is not. Same pattern as detectOpdQueueSchema.
+let _ipdNursingSchemaCache: {
+  hasBedId: boolean
+  hasIpdAdmissionId: boolean
+  hasPatientId: boolean
+  hasEntryType: boolean
+  hasRecordedTime: boolean
+  hasVitalCols: boolean
+  hasIOCols: boolean
+  hasNoteCols: boolean
+} | null = null
+
+async function detectIpdNursingSchema() {
+  if (_ipdNursingSchemaCache) return _ipdNursingSchemaCache
+
+  // PostgREST returns an error on .select() of a non-existent column.
+  // We use that as the feature-detect.
+  const probes = await Promise.all([
+    supabase.from('ipd_nursing').select('bed_id').limit(0),
+    supabase.from('ipd_nursing').select('ipd_admission_id').limit(0),
+    supabase.from('ipd_nursing').select('patient_id').limit(0),
+    supabase.from('ipd_nursing').select('entry_type').limit(0),
+    supabase.from('ipd_nursing').select('recorded_time').limit(0),
+    supabase.from('ipd_nursing').select('pulse, bp_systolic, bp_diastolic, temperature, spo2, vital_note').limit(0),
+    supabase.from('ipd_nursing').select('io_type, io_label, io_amount_ml').limit(0),
+    supabase.from('ipd_nursing').select('nurse_name, note_text, note_type').limit(0),
+  ])
+
+  _ipdNursingSchemaCache = {
+    hasBedId:          !probes[0].error,
+    hasIpdAdmissionId: !probes[1].error,
+    hasPatientId:      !probes[2].error,
+    hasEntryType:      !probes[3].error,
+    hasRecordedTime:   !probes[4].error,
+    hasVitalCols:      !probes[5].error,
+    hasIOCols:         !probes[6].error,
+    hasNoteCols:       !probes[7].error,
+  }
+  console.debug('[IPD] ipd_nursing schema detected:', _ipdNursingSchemaCache)
+  return _ipdNursingSchemaCache
+}
+
+// v8 FIX: Strip every key from `payload` whose corresponding column is not
+// present on the user's ipd_nursing table. PostgREST rejects the entire
+// insert on the first unknown column, so the strip must happen before the
+// call, not as a retry afterwards.
+function normalizeIpdNursingPayload(
+  raw: Record<string, unknown>,
+  schema: NonNullable<typeof _ipdNursingSchemaCache>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw }
+  if (!schema.hasBedId)          delete out.bed_id
+  if (!schema.hasIpdAdmissionId) delete out.ipd_admission_id
+  if (!schema.hasPatientId)      delete out.patient_id
+  if (!schema.hasEntryType)      delete out.entry_type
+  if (!schema.hasRecordedTime)   delete out.recorded_time
+  if (!schema.hasVitalCols) {
+    delete out.pulse; delete out.bp_systolic; delete out.bp_diastolic
+    delete out.temperature; delete out.spo2; delete out.vital_note
+  }
+  if (!schema.hasIOCols) {
+    delete out.io_type; delete out.io_label; delete out.io_amount_ml
+  }
+  if (!schema.hasNoteCols) {
+    delete out.nurse_name; delete out.note_text; delete out.note_type
+  }
+  return out
+}
+
 // ── Load from Supabase ─────────────────────────────────────────
 async function loadIPDFromSupabase(bedId: string) {
   try {
@@ -529,27 +602,45 @@ export default function IPDNursingPage() {
   // ── Add vital ──────────────────────────────────────────────────
   async function addVital() {
     if (!newVital.pulse && !newVital.bp_systolic && !newVital.temperature && !newVital.spo2) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
-    const entry = { ...newVital, time: t, created_at: new Date().toISOString() }
+
+    // v8 FIX: keep the 12-hour clock string ONLY for on-screen display.
+    // For DB, always send a full ISO timestamp — works whether the DB column
+    // is `text` (stores the string verbatim) or `timestamp with time zone`
+    // (auto-casts the ISO). The pre-fix code sent "05:44 pm" which Postgres
+    // cannot parse as a timestamp, producing
+    //   "invalid input syntax for type timestamp with time zone: '05:44 pm'"
+    const nowIso = new Date().toISOString()
+    const displayTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    const entry = { ...newVital, time: displayTime, created_at: nowIso }
     const updated = [entry, ...vitals]
     setVitals(updated)
     setNewVital(emptyVital())
     persist(updated, io, notes)
-    const vitalPayload = {
+
+    const rawPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'vital',
-      recorded_time: t, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
+      recorded_time: nowIso, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
     }
+    // v8 FIX: schema-aware payload — strip any column the DB doesn't have.
+    const schema = await detectIpdNursingSchema()
+    const vitalPayload = normalizeIpdNursingPayload(rawPayload, schema)
+
     let { error } = await supabase.from('ipd_nursing').insert(vitalPayload)
-    // Self-heal: if schema cache error, ensure schema and retry once
+    // Existing self-heal retry kept as a belt-and-braces — only fires if the
+    // probe somehow missed something and the ensure-schema endpoint is wired.
     if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      console.warn('[IPD] vital insert failed after schema probe, attempting ensure-schema:', error.message)
+      _ipdNursingSchemaCache = null   // force re-probe on next call
       await ensureIPDNursingSchema()
-      const retry = await supabase.from('ipd_nursing').insert(vitalPayload)
+      const retrySchema = await detectIpdNursingSchema()
+      const retryPayload = normalizeIpdNursingPayload(rawPayload, retrySchema)
+      const retry = await supabase.from('ipd_nursing').insert(retryPayload)
       error = retry.error
     }
     if (error) {
+      console.error('[IPD] vital insert failed (non-recoverable):', error.message, (error as any).code, (error as any).details, (error as any).hint)
       setVitals(prev => prev.filter(v => v !== entry))
       warnSupabaseFail('vital', error.message)
       flashSaveFailed('Vital', error.message)
@@ -562,26 +653,36 @@ export default function IPDNursingPage() {
   // ── Add I/O ────────────────────────────────────────────────────
   async function addIO() {
     if (!newIO.item || !newIO.amount) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
-    const entry = { ...newIO, time: t, created_at: new Date().toISOString() }
+
+    // v8 FIX: ISO timestamp for DB, 12-hour clock for display (see addVital).
+    const nowIso = new Date().toISOString()
+    const displayTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    const entry = { ...newIO, time: displayTime, created_at: nowIso }
     const updated = [entry, ...io]
     setIO(updated)
     setNewIO(emptyIO())
     persist(vitals, updated, notes)
-    const ioPayload = {
+
+    const rawPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
-      recorded_time: t, io_type: entry.type === 'output' ? 'Output' : 'Intake',
+      recorded_time: nowIso, io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
     }
+    const schema = await detectIpdNursingSchema()
+    const ioPayload = normalizeIpdNursingPayload(rawPayload, schema)
+
     let { error } = await supabase.from('ipd_nursing').insert(ioPayload)
-    // Self-heal: if schema cache error, ensure schema and retry once
     if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      console.warn('[IPD] I/O insert failed after schema probe, attempting ensure-schema:', error.message)
+      _ipdNursingSchemaCache = null
       await ensureIPDNursingSchema()
-      const retry = await supabase.from('ipd_nursing').insert(ioPayload)
+      const retrySchema = await detectIpdNursingSchema()
+      const retryPayload = normalizeIpdNursingPayload(rawPayload, retrySchema)
+      const retry = await supabase.from('ipd_nursing').insert(retryPayload)
       error = retry.error
     }
     if (error) {
+      console.error('[IPD] I/O insert failed (non-recoverable):', error.message, (error as any).code, (error as any).details, (error as any).hint)
       setIO(prev => prev.filter(e => e !== entry))
       warnSupabaseFail('I/O', error.message)
       flashSaveFailed('I/O entry', error.message)
@@ -594,29 +695,45 @@ export default function IPDNursingPage() {
   // ── Add note ───────────────────────────────────────────────────
   async function addNote() {
     if (!newNote.trim()) return
-    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+
+    // v8 FIX: ISO timestamp for DB, 12-hour clock for display (see addVital).
+    // Note: original addNote didn't write recorded_time at all — it kept the
+    // creation time only as a UI field. We now ALSO write recorded_time so
+    // nursing notes have a chronological timestamp in the DB just like vitals
+    // and I/O. If the column doesn't exist on the user's DB, the normalizer
+    // strips it.
+    const nowIso = new Date().toISOString()
+    const displayTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     const entry: NursingNote = {
-      time: t, author: noteAuthor || user?.full_name || 'Nurse',
+      time: displayTime, author: noteAuthor || user?.full_name || 'Nurse',
       note: newNote.trim(), type: noteType,
-      // IPD-8: tag with full ISO timestamp so the date is preserved across reloads
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
     }
     const updated = [entry, ...notes]
     setNotes(updated)
     setNewNote('')
     persist(vitals, io, updated)
-    const notePayload = {
+
+    const rawPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'note',
+      recorded_time: nowIso,
       nurse_name: entry.author, note_text: entry.note, note_type: entry.type,
     }
+    const schema = await detectIpdNursingSchema()
+    const notePayload = normalizeIpdNursingPayload(rawPayload, schema)
+
     let { error } = await supabase.from('ipd_nursing').insert(notePayload)
-    // Self-heal: if schema cache error, ensure schema and retry once
     if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
+      console.warn('[IPD] note insert failed after schema probe, attempting ensure-schema:', error.message)
+      _ipdNursingSchemaCache = null
       await ensureIPDNursingSchema()
-      const retry = await supabase.from('ipd_nursing').insert(notePayload)
+      const retrySchema = await detectIpdNursingSchema()
+      const retryPayload = normalizeIpdNursingPayload(rawPayload, retrySchema)
+      const retry = await supabase.from('ipd_nursing').insert(retryPayload)
       error = retry.error
     }
     if (error) {
+      console.error('[IPD] note insert failed (non-recoverable):', error.message, (error as any).code, (error as any).details, (error as any).hint)
       setNotes(prev => prev.filter(n => n !== entry))
       warnSupabaseFail('note', error.message)
       flashSaveFailed('Note', error.message)
