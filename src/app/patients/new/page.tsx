@@ -528,53 +528,96 @@ export default function NewPatientPage() {
     const aadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
     const name = form.full_name.trim().toLowerCase()
 
-    const orFilters: string[] = []
-    if (mobile) orFilters.push(`mobile.eq.${mobile}`)
-    if (aadhaar) orFilters.push(`aadhaar_no.eq.${aadhaar}`)
+    console.log('[Duplicate-check] starting check with:', { mobile, aadhaar, name })
 
-    if (orFilters.length === 0 && !name) return []
+    if (!mobile && !aadhaar && !name) {
+      console.log('[Duplicate-check] no identity fields filled — skipping')
+      return []
+    }
 
-    let matches: DuplicateMatch[] = []
-    if (orFilters.length > 0) {
-      const { data } = await supabase
+    // v7 FIX: Use explicit .eq() queries instead of .or(). The previous .or()
+    // form silently swallowed any PostgREST errors (RLS, syntax, etc.) and
+    // returned no rows, which made duplicates undetectable. We now run each
+    // identity check independently, log any error, and merge the results.
+    // We also no longer rely on `is_active = true` since freshly-registered
+    // patients have is_active = NULL (the form doesn't set it).
+
+    const matchMap = new Map<string, DuplicateMatch>()
+
+    // 1. Mobile match — strongest signal in Indian healthcare context.
+    if (mobile) {
+      const { data, error } = await supabase
         .from('patients')
-        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
-        .or(orFilters.join(','))
+        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no, is_active')
+        .eq('mobile', mobile)
         .limit(10)
-      if (data) {
-        matches = data.map(p => {
-          const reasons: string[] = []
-          // v7: mobile and aadhaar are strong identity signals — flag as hard match
-          const isHardMatch =
-            (!!mobile && p.mobile === mobile) ||
-            (!!aadhaar && p.aadhaar_no === aadhaar)
-          if (mobile && p.mobile === mobile) reasons.push('Same mobile number')
-          if (aadhaar && p.aadhaar_no === aadhaar) reasons.push('Same Aadhaar number')
-          return { ...p, matchReasons: reasons, isHardMatch } as DuplicateMatch
-        })
+      if (error) {
+        console.error('[Duplicate-check] mobile query failed:', error.message, error.code, error.details)
+      } else {
+        console.log(`[Duplicate-check] mobile=${mobile} returned ${data?.length || 0} rows`)
+        for (const p of data || []) {
+          if (p.is_active === false) continue   // skip soft-deleted
+          matchMap.set(p.id, {
+            id: p.id, mrn: p.mrn, full_name: p.full_name, mobile: p.mobile,
+            age: p.age, gender: p.gender, aadhaar_no: p.aadhaar_no,
+            matchReasons: ['Same mobile number'],
+            isHardMatch: true,
+          })
+        }
       }
     }
 
-    if (name.length >= 3) {
-      // ── PR-3 fix (June 2026): escape ilike wildcards ──
-      // Pre-fix the query did .ilike('full_name', `%${name}%`) which
-      // let the user-entered name's `%` and `_` characters act as SQL
-      // LIKE wildcards.  A patient registration form name like
-      // "Mr. 100% Health Co." would match every patient containing any
-      // character — false-positive duplicates and (depending on RLS
-      // strictness) potentially leak PHI.  We now escape via the
-      // shared escapeLike() helper used elsewhere in the codebase.
-      const safeName = (await import('@/lib/utils')).escapeLike(name)
-      const { data: nameMatches } = await supabase
+    // 2. Aadhaar match — equally strong.
+    if (aadhaar) {
+      const { data, error } = await supabase
         .from('patients')
-        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no')
+        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no, is_active')
+        .eq('aadhaar_no', aadhaar)
+        .limit(10)
+      if (error) {
+        console.error('[Duplicate-check] aadhaar query failed:', error.message, error.code, error.details)
+      } else {
+        console.log(`[Duplicate-check] aadhaar=${aadhaar} returned ${data?.length || 0} rows`)
+        for (const p of data || []) {
+          if (p.is_active === false) continue
+          const existing = matchMap.get(p.id)
+          if (existing) {
+            if (!existing.matchReasons.includes('Same Aadhaar number')) {
+              existing.matchReasons.push('Same Aadhaar number')
+            }
+            existing.isHardMatch = true
+          } else {
+            matchMap.set(p.id, {
+              id: p.id, mrn: p.mrn, full_name: p.full_name, mobile: p.mobile,
+              age: p.age, gender: p.gender, aadhaar_no: p.aadhaar_no,
+              matchReasons: ['Same Aadhaar number'],
+              isHardMatch: true,
+            })
+          }
+        }
+      }
+    }
+
+    // 3. Name + age fuzzy match — SOFT signal, override allowed.
+    if (name.length >= 3) {
+      // PR-3 fix (kept): escape ilike wildcards so user-entered % and _
+      // characters don't act as SQL LIKE wildcards.
+      const safeName = (await import('@/lib/utils')).escapeLike(name)
+      const { data: nameMatches, error: nameErr } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name, mobile, age, gender, aadhaar_no, is_active')
         .ilike('full_name', `%${safeName}%`)
         .limit(10)
-      if (nameMatches) {
-        for (const p of nameMatches) {
-          const existing = matches.find(m => m.id === p.id)
+      if (nameErr) {
+        console.error('[Duplicate-check] name query failed:', nameErr.message, nameErr.code)
+      } else {
+        console.log(`[Duplicate-check] name ilike=${safeName} returned ${nameMatches?.length || 0} rows`)
+        for (const p of nameMatches || []) {
+          if (p.is_active === false) continue
+          const existing = matchMap.get(p.id)
           if (existing) {
             if (!existing.matchReasons.includes('Same name')) existing.matchReasons.push('Same name')
+            // Already a hard match from mobile/aadhaar — keep it that way.
           } else {
             const formAge = form.age ? parseInt(form.age) : null
             const ageMatch = formAge && p.age && Math.abs(formAge - p.age) <= 1
@@ -582,15 +625,22 @@ export default function NewPatientPage() {
             if (ageMatch || dobMatch) {
               const reasons = ['Same name']
               if (ageMatch) reasons.push('Similar age')
-              // v7: name+age is a SOFT match — legitimate same-name different-person
-              // cases exist (especially common Indian names), so allow override.
-              matches.push({ ...p, matchReasons: reasons, isHardMatch: false } as DuplicateMatch)
+              matchMap.set(p.id, {
+                id: p.id, mrn: p.mrn, full_name: p.full_name, mobile: p.mobile,
+                age: p.age, gender: p.gender, aadhaar_no: p.aadhaar_no,
+                matchReasons: reasons,
+                isHardMatch: false,   // name-only is SOFT — override allowed
+              })
             }
           }
         }
       }
     }
 
+    const matches = Array.from(matchMap.values())
+    console.log(`[Duplicate-check] FINAL: ${matches.length} matches`, matches.map(m => ({
+      mrn: m.mrn, name: m.full_name, reasons: m.matchReasons, hard: m.isHardMatch,
+    })))
     return matches
   }
 
@@ -647,6 +697,50 @@ export default function NewPatientPage() {
     const normalizedAge = form.age ? parseInt(normalizeDigits(form.age)) : null
     const normalizedAadhaar = normalizeDigits(form.aadhaar_no).replace(/\s/g, '').trim()
     const normalizedEmergPhone = normalizePhone(form.emergency_contact_phone)
+
+    // v7 FIX (safety net #2): atomic-ish re-check right before the INSERT.
+    // This catches anything checkDuplicates() might miss — RLS edge cases,
+    // a row inserted by another tab/staff member between the warning check
+    // and now, normalization mismatch, etc. The cost is one extra .select()
+    // per registration, which is negligible. If we find a row here, abort
+    // the save instead of creating a duplicate.
+    if (normalizedMobile) {
+      const { data: lastCheckMobile, error: lcErr } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name, is_active')
+        .eq('mobile', normalizedMobile)
+        .limit(1)
+        .maybeSingle()
+      if (lcErr) {
+        console.error('[Duplicate-check] pre-insert mobile recheck failed:', lcErr.message, lcErr.code)
+        // Don't fail the save on a query error — fall through to the insert.
+      } else if (lastCheckMobile && lastCheckMobile.is_active !== false) {
+        console.warn('[Duplicate-check] BLOCKED pre-insert: mobile already exists →', lastCheckMobile.mrn, lastCheckMobile.full_name)
+        setSaving(false)
+        setErrors({
+          mobile: `This mobile is already registered to ${lastCheckMobile.full_name} (${lastCheckMobile.mrn}). Use a different number or open that patient instead.`,
+        })
+        return
+      }
+    }
+    if (normalizedAadhaar) {
+      const { data: lastCheckAadhaar, error: lcAdErr } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name, is_active')
+        .eq('aadhaar_no', normalizedAadhaar)
+        .limit(1)
+        .maybeSingle()
+      if (lcAdErr) {
+        console.error('[Duplicate-check] pre-insert aadhaar recheck failed:', lcAdErr.message, lcAdErr.code)
+      } else if (lastCheckAadhaar && lastCheckAadhaar.is_active !== false) {
+        console.warn('[Duplicate-check] BLOCKED pre-insert: aadhaar already exists →', lastCheckAadhaar.mrn, lastCheckAadhaar.full_name)
+        setSaving(false)
+        setErrors({
+          aadhaar_no: `This Aadhaar is already registered to ${lastCheckAadhaar.full_name} (${lastCheckAadhaar.mrn}). Open that patient instead.`,
+        })
+        return
+      }
+    }
 
     const { data, error } = await supabase
       .from('patients')
