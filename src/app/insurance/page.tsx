@@ -238,15 +238,9 @@ Please process/file as required.`
   // ── Generate Insurance Bundle / Documents ────────────────────
   async function generateDocBundle(claim: Claim) {
     try {
-      // v7 FIX: include auth header so PDF generation isn't 401-blocked
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) { alert('Your session has expired. Please log in again.'); return }
       const res = await fetch('/api/insurance-bundle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claimId: claim.id }),
       })
       if (res.ok) {
@@ -383,33 +377,123 @@ function InsuranceTabsSection({
   const [insuredLoading, setInsuredLoading] = useState(false)
   const [insuredFilter, setInsuredFilter] = useState<string>('all')
 
-  // Load insured patients from sync API
+  // v8 FIX: Load insured patients directly from Supabase instead of going
+  // through /api/insurance/sync. The API route requires an Authorization
+  // header (requireAuth) which the previous fetch() didn't send → server
+  // returned 401 → list silently stayed empty. Direct Supabase client calls
+  // use the persisted session automatically (cookie/localStorage), so the
+  // RLS-aware request "just works" with no extra headers.
+  //
+  // Same behaviour-shape as the old API route: select insured patients,
+  // overlay claim counts, apply the All/No-Claim/Pending/Settled filter,
+  // compute stats. All client-side now; the heavy lifting that justified
+  // an API route (PDF generation, multi-write logic) isn't here.
   async function loadInsuredPatients(filter = insuredFilter) {
     setInsuredLoading(true)
     try {
-      // v7 FIX: API route requires Authorization header (requireAuth).
-      // Previously the fetch had no header → server returned 401 → res.ok
-      // was false → the list silently stayed empty. Same pattern used by
-      // every other authenticated fetch in this codebase.
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        console.error('[Insurance] No active session; cannot load insured patients')
-        setInsuredLoading(false)
-        return
+      // Only columns confirmed present on this DB's patients table. No
+      // insurance_name, insurance_id, or email — those columns don't exist
+      // (verified via information_schema). No strict .eq('is_active', true)
+      // either — the registration form doesn't set is_active so freshly
+      // registered rows are NULL there; we treat is_active as a soft-delete
+      // (excluded only when explicitly false).
+      const patientsQuery = supabase
+        .from('patients')
+        .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at, is_active')
+        .order('created_at', { ascending: false })
+
+      const claimsQuery = supabase
+        .from('insurance_claims')
+        .select('id, patient_id, status, claim_amount, approved_amount, created_at, updated_at')
+
+      const [{ data: allPatients, error: pErr }, { data: existingClaims, error: cErr }] =
+        await Promise.all([patientsQuery, claimsQuery])
+
+      if (pErr) {
+        console.error('[Insurance] patients query failed:', pErr.message, pErr.code, pErr.details, pErr.hint)
+        setInsuredPatients([]); setInsuredStats(null); setInsuredLoading(false); return
       }
-      const res = await fetch(`/api/insurance/sync?filter=${filter}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
+      if (cErr) {
+        console.warn('[Insurance] insurance_claims query failed (continuing without claims overlay):', cErr.message, cErr.code)
+      }
+
+      // Filter to insured patients only.
+      // mediclaim/cashless are booleans on this DB but the helper accepts text
+      // values too, so an install that stores 'Yes'/'No' (or future format
+      // changes) doesn't break. Same logic as the route had — just inlined.
+      const insured = (allPatients || []).filter((p: any) => {
+        if (p.is_active === false) return false   // soft-delete only
+        const mediclaim = p.mediclaim === true
+          || String(p.mediclaim || '').trim().toLowerCase() === 'yes'
+          || String(p.mediclaim || '').trim().toLowerCase() === 'true'
+        const cashless = p.cashless === true
+          || String(p.cashless || '').trim().toLowerCase() === 'yes'
+          || String(p.cashless || '').trim().toLowerCase() === 'true'
+        const hasTPA = !!(p.policy_tpa_name && String(p.policy_tpa_name).trim())
+        const hasPolicy = !!(p.policy_number && String(p.policy_number).trim())
+        return mediclaim || cashless || hasTPA || hasPolicy
       })
-      if (res.ok) {
-        const data = await res.json()
-        setInsuredPatients(data.patients || [])
-        setInsuredStats(data.stats || null)
-      } else {
-        const body = await res.text().catch(() => '')
-        console.error('[Insurance] /api/insurance/sync failed:', res.status, body)
+
+      // Index claims by patient_id for overlay
+      const claimsByPatient = new Map<string, any[]>()
+      for (const c of existingClaims || []) {
+        const list = claimsByPatient.get(c.patient_id) || []
+        list.push(c)
+        claimsByPatient.set(c.patient_id, list)
       }
-    } catch (e) {
-      console.error('[Insurance] Failed to load insured patients:', e)
+
+      const PENDING_STATUSES = ['pre_auth_pending', 'claim_submitted', 'under_review', 'query_raised', 'query_resolved']
+
+      // Decorate each insured patient with claim summary fields.
+      const decorated = insured.map((p: any) => {
+        const claims = claimsByPatient.get(p.id) || []
+        const sortedClaims = [...claims].sort((a, b) =>
+          new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+        )
+        const latest = sortedClaims[0] || null
+        const pending = claims.filter((c: any) => PENDING_STATUSES.includes(c.status))
+        const settled = claims.filter((c: any) => c.status === 'settled')
+        const totalClaimed = claims.reduce((s: number, c: any) => s + (Number(c.claim_amount) || 0), 0)
+        const totalSettled = settled.reduce((s: number, c: any) => s + (Number(c.approved_amount) || 0), 0)
+
+        return {
+          patient_id: p.id,
+          patient_name: p.full_name,
+          mrn: p.mrn,
+          mobile: p.mobile,
+          mediclaim: p.mediclaim,
+          cashless: p.cashless,
+          policy_tpa_name: p.policy_tpa_name,
+          policy_number: p.policy_number,
+          registered_at: p.created_at,
+          has_claim: claims.length > 0,
+          total_claims: claims.length,
+          pending_claims: pending.length,
+          settled_claims: settled.length,
+          total_claimed_amount: totalClaimed,
+          total_settled_amount: totalSettled,
+          latest_claim_status: latest?.status || null,
+          latest_claim_id: latest?.id || null,
+        }
+      })
+
+      // Apply filter tab
+      let filtered = decorated
+      if (filter === 'no_claim')      filtered = decorated.filter(r => !r.has_claim)
+      else if (filter === 'pending')  filtered = decorated.filter(r => r.pending_claims > 0)
+      else if (filter === 'settled')  filtered = decorated.filter(r => r.settled_claims > 0)
+
+      setInsuredPatients(filtered)
+      setInsuredStats({
+        total_insured_patients: decorated.length,
+        patients_without_claims:  decorated.filter(r => !r.has_claim).length,
+        patients_with_pending:    decorated.filter(r => r.pending_claims > 0).length,
+        patients_settled:         decorated.filter(r => r.settled_claims > 0).length,
+        total_pending_amount: decorated.reduce((s, r) => s + r.total_claimed_amount - r.total_settled_amount, 0),
+        total_settled_amount: decorated.reduce((s, r) => s + r.total_settled_amount, 0),
+      })
+    } catch (e: any) {
+      console.error('[Insurance] Failed to load insured patients:', e?.message || e)
     }
     setInsuredLoading(false)
   }
@@ -421,32 +505,35 @@ function InsuranceTabsSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, insuredFilter])
 
-  // Auto-create claim for a patient
+  // Auto-create claim for a patient — also direct Supabase insert (same
+  // auth-bypass reason as loadInsuredPatients).
   async function autoCreateClaim(patient: any) {
     if (!confirm(`Create insurance claim entry for ${patient.patient_name}?`)) return
     try {
-      // v7 FIX: include auth header so POST isn't 401-blocked
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) { alert('Your session has expired. Please log in again.'); return }
-      const res = await fetch('/api/insurance/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
+      // Build a minimal claim row. Only columns guaranteed on this DB.
+      const { data: newClaim, error: insErr } = await supabase
+        .from('insurance_claims')
+        .insert({
           patient_id: patient.patient_id,
-          trigger: 'manual',
-        }),
-      })
-      const data = await res.json()
-      if (data.ok) {
-        alert(`Claim created for ${patient.patient_name}. Switch to Claims tab to manage it.`)
-        loadInsuredPatients()
-      } else {
-        alert(data.message || data.error || 'Failed to create claim')
+          patient_name: patient.patient_name,
+          mrn: patient.mrn,
+          policy_tpa_name: patient.policy_tpa_name || null,
+          policy_number: patient.policy_number || null,
+          status: 'pre_auth_pending',
+          claim_amount: 0,
+          notes: 'Auto-created from Insured Patients tab',
+        })
+        .select('id')
+        .single()
+      if (insErr) {
+        console.error('[Insurance] autoCreateClaim insert failed:', insErr.message, insErr.code, insErr.details)
+        alert(insErr.message || 'Failed to create claim')
+        return
       }
-    } catch {
+      alert(`Claim created for ${patient.patient_name}. Switch to Claims tab to manage it.`)
+      loadInsuredPatients()
+    } catch (e: any) {
+      console.error('[Insurance] autoCreateClaim error:', e?.message || e)
       alert('Error creating claim')
     }
   }

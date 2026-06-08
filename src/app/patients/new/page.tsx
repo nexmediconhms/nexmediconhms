@@ -59,6 +59,12 @@ interface DuplicateMatch {
   id: string; mrn: string; full_name: string; mobile: string
   age?: number; gender?: string; aadhaar_no?: string
   matchReasons: string[]
+  // v7 FIX: distinguish strong identity matches (mobile, aadhaar) from weak
+  // ones (name + similar age). Strong matches hard-block the registration;
+  // weak ones still let the user override since same-name-different-person
+  // is legitimate. Set in checkDuplicates(); read in handleSubmit() and the
+  // warning UI to decide whether to show "Register Anyway".
+  isHardMatch: boolean
 }
 
 // ╔══════════════════════════════════════════════════════════════════╗
@@ -538,9 +544,13 @@ export default function NewPatientPage() {
       if (data) {
         matches = data.map(p => {
           const reasons: string[] = []
+          // v7: mobile and aadhaar are strong identity signals — flag as hard match
+          const isHardMatch =
+            (!!mobile && p.mobile === mobile) ||
+            (!!aadhaar && p.aadhaar_no === aadhaar)
           if (mobile && p.mobile === mobile) reasons.push('Same mobile number')
           if (aadhaar && p.aadhaar_no === aadhaar) reasons.push('Same Aadhaar number')
-          return { ...p, matchReasons: reasons } as DuplicateMatch
+          return { ...p, matchReasons: reasons, isHardMatch } as DuplicateMatch
         })
       }
     }
@@ -572,7 +582,9 @@ export default function NewPatientPage() {
             if (ageMatch || dobMatch) {
               const reasons = ['Same name']
               if (ageMatch) reasons.push('Similar age')
-              matches.push({ ...p, matchReasons: reasons } as DuplicateMatch)
+              // v7: name+age is a SOFT match — legitimate same-name different-person
+              // cases exist (especially common Indian names), so allow override.
+              matches.push({ ...p, matchReasons: reasons, isHardMatch: false } as DuplicateMatch)
             }
           }
         }
@@ -587,15 +599,44 @@ export default function NewPatientPage() {
     e.preventDefault()
     if (!validate()) return
 
-    if (!showDuplicateWarn) {
-      setCheckingDups(true)
-      const dups = await checkDuplicates()
-      setCheckingDups(false)
-      if (dups.length > 0) {
-        setDuplicates(dups)
-        setShowDuplicateWarn(true)
-        return
+    // v7 FIX: ALWAYS run the duplicate check on every submit (not just the
+    // first time). Previously, after the warning was shown the second click
+    // skipped the check entirely and inserted directly — which is how a
+    // duplicate registration could go through. Now:
+    //   - Strong matches (same mobile OR same Aadhaar) HARD-BLOCK the save.
+    //     No "Register Anyway" path: the same phone number on two patient
+    //     rows is never legitimate, the user must edit the form to proceed.
+    //   - Soft matches (same name + similar age, different phone) still
+    //     show the warning with an override option — legitimate
+    //     same-name-different-person cases exist, especially with common
+    //     Indian names.
+    setCheckingDups(true)
+    const dups = await checkDuplicates()
+    setCheckingDups(false)
+
+    const hardMatches = dups.filter(d => d.isHardMatch)
+    if (hardMatches.length > 0) {
+      setDuplicates(dups)
+      setShowDuplicateWarn(true)
+      // Surface a field-level error so the user can immediately see why the
+      // submit didn't go through. Pin it to whichever field actually clashes.
+      const errs: Record<string, string> = {}
+      if (hardMatches.some(m => m.matchReasons.includes('Same mobile number'))) {
+        errs.mobile = 'A patient with this mobile number already exists. Use a different number or open the existing patient instead.'
       }
+      if (hardMatches.some(m => m.matchReasons.includes('Same Aadhaar number'))) {
+        errs.aadhaar_no = 'A patient with this Aadhaar number already exists. Open the existing patient instead.'
+      }
+      setErrors(errs)
+      return
+    }
+
+    // Soft matches only — show the warning unless the user has already
+    // dismissed it by clicking "Register Anyway".
+    if (!showDuplicateWarn && dups.length > 0) {
+      setDuplicates(dups)
+      setShowDuplicateWarn(true)
+      return
     }
 
     setShowDuplicateWarn(false)
@@ -1953,7 +1994,11 @@ export default function NewPatientPage() {
           </div>
 
           {/* ═══ DUPLICATE WARNING ════════════════════════════════ */}
-          {showDuplicateWarn && duplicates.length > 0 && (
+          {showDuplicateWarn && duplicates.length > 0 && (() => {
+            // v7: hide "Register Anyway" when any match is a hard one (mobile/aadhaar).
+            // Strong identity matches must be resolved by editing the form, not overridden.
+            const hasHardMatch = duplicates.some(d => d.isHardMatch)
+            return (
             <div className="mb-5 bg-amber-50 border-2 border-amber-400 rounded-2xl p-5 animate-in fade-in">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
@@ -1961,11 +2006,12 @@ export default function NewPatientPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-amber-900">
-                    ⚠️ Possible Duplicate Patient{duplicates.length > 1 ? 's' : ''} Found!
+                    {hasHardMatch ? '🚫' : '⚠️'} {hasHardMatch ? 'Duplicate' : 'Possible Duplicate'} Patient{duplicates.length > 1 ? 's' : ''} Found!
                   </h3>
                   <p className="text-sm text-amber-700 mt-1">
-                    The following existing patient{duplicates.length > 1 ? 's match' : ' matches'} the data you entered.
-                    Please verify before creating a new record.
+                    {hasHardMatch
+                      ? <>This mobile/Aadhaar already belongs to an existing patient. Open that patient&apos;s profile below, or change the form data to proceed.</>
+                      : <>The following existing patient{duplicates.length > 1 ? 's match' : ' matches'} the data you entered. Please verify before creating a new record.</>}
                   </p>
                 </div>
               </div>
@@ -2012,15 +2058,20 @@ export default function NewPatientPage() {
                   className="text-sm text-gray-500 hover:text-gray-700 font-medium px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
                   ← Go back and edit
                 </button>
-                <button type="submit" disabled={saving}
-                  className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-60">
-                  {saving
-                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Registering...</>
-                    : <><AlertTriangle className="w-4 h-4" /> Register Anyway (Not a Duplicate)</>}
-                </button>
+                {/* v7 FIX: hide override button on hard matches. Mobile/Aadhaar
+                    duplicates are not legitimate — the user must edit the form. */}
+                {!hasHardMatch && (
+                  <button type="submit" disabled={saving}
+                    className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-60">
+                    {saving
+                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Registering...</>
+                      : <><AlertTriangle className="w-4 h-4" /> Register Anyway (Not a Duplicate)</>}
+                  </button>
+                )}
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {/* ═══ FORM SUMMARY & SUBMIT ═══════════════════════════ */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
