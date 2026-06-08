@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
@@ -297,6 +297,10 @@ export default function NewPatientPage() {
   // This prevents re-showing the same soft warning on the override submit.
   // Reset when identity fields change (handled in set()).
   const [duplicateOverridden, setDuplicateOverridden] = useState(false)
+  // FIX: Use a ref as well for synchronous access in handleSubmit.
+  // React state updates are async, so when "Register Anyway" sets the flag
+  // and immediately re-submits, the state might not be updated yet.
+  const duplicateOverriddenRef = useRef(false)
 
   // ABHA verification
   const [abhaVerifying, setAbhaVerifying] = useState(false)
@@ -374,6 +378,7 @@ export default function NewPatientPage() {
         setShowDuplicateWarn(false)
         setDuplicates([])
         setDuplicateOverridden(false)
+        duplicateOverriddenRef.current = false
       }
     }
   }
@@ -614,7 +619,13 @@ export default function NewPatientPage() {
       }
     }
 
-    // 3. Name + age fuzzy match — SOFT signal, override allowed.
+    // 3. Name match — SOFT signal, override allowed.
+    // FIX: Previously required age match to flag name duplicates, which meant
+    // registering the same name with no age entered was never caught. Now:
+    //   - Same name (case-insensitive) ALWAYS triggers a soft warning
+    //   - If age is also similar, add "Similar age" to reasons
+    //   - User can still override with "Register Anyway" since same-name-
+    //     different-person is legitimate (common Indian names like Rahul, Priya)
     if (name.length >= 3) {
       // PR-3 fix (kept): escape ilike wildcards so user-entered % and _
       // characters don't act as SQL LIKE wildcards.
@@ -635,19 +646,20 @@ export default function NewPatientPage() {
             if (!existing.matchReasons.includes('Same name')) existing.matchReasons.push('Same name')
             // Already a hard match from mobile/aadhaar — keep it that way.
           } else {
+            // FIX: Always flag same-name matches as soft warning.
+            // Previously required age proximity which missed cases where
+            // no age was entered at all.
             const formAge = form.age ? parseInt(form.age) : null
-            const ageMatch = formAge && p.age && Math.abs(formAge - p.age) <= 1
-            const dobMatch = form.date_of_birth && p.age
-            if (ageMatch || dobMatch) {
-              const reasons = ['Same name']
-              if (ageMatch) reasons.push('Similar age')
-              matchMap.set(p.id, {
-                id: p.id, mrn: p.mrn, full_name: p.full_name, mobile: p.mobile,
-                age: p.age, gender: p.gender, aadhaar_no: p.aadhaar_no,
-                matchReasons: reasons,
-                isHardMatch: false,   // name-only is SOFT — override allowed
-              })
-            }
+            const patientAge = p.age ? Number(p.age) : null
+            const ageMatch = formAge !== null && patientAge !== null && Math.abs(formAge - patientAge) <= 2
+            const reasons = ['Same name']
+            if (ageMatch) reasons.push('Similar age')
+            matchMap.set(p.id, {
+              id: p.id, mrn: p.mrn, full_name: p.full_name, mobile: p.mobile,
+              age: p.age, gender: p.gender, aadhaar_no: p.aadhaar_no,
+              matchReasons: reasons,
+              isHardMatch: false,   // name-only is SOFT — override allowed
+            })
           }
         }
       }
@@ -699,11 +711,11 @@ export default function NewPatientPage() {
 
     // Soft matches only — show the warning unless the user has already
     // explicitly overridden it by clicking "Register Anyway".
-    // FIX: Use `duplicateOverridden` flag instead of `showDuplicateWarn` to
-    // determine if the user already acknowledged the soft warning. The old
-    // approach relied on `showDuplicateWarn` being true on the second submit,
-    // but that state could be stale or reset in edge cases.
-    if (dups.length > 0 && !duplicateOverridden) {
+    // FIX: Use ref (synchronous) instead of state to check override flag.
+    // React state updates are async — when "Register Anyway" sets the flag
+    // and immediately re-submits via requestSubmit(), the state may not be
+    // committed yet. The ref is always up-to-date synchronously.
+    if (dups.length > 0 && !duplicateOverriddenRef.current) {
       setDuplicates(dups)
       setShowDuplicateWarn(true)
       return
@@ -1644,7 +1656,7 @@ export default function NewPatientPage() {
               </Link>
             </div>
 
-            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); setDuplicateOverridden(false); clearDraft() }}
+            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); setDuplicateOverridden(false); duplicateOverriddenRef.current = false; clearDraft() }}
               className="text-sm text-gray-400 hover:text-gray-600 underline">
               Register another patient
             </button>
@@ -2168,7 +2180,7 @@ export default function NewPatientPage() {
 
               <div className="flex items-center justify-between border-t border-amber-200 pt-4">
                 <button type="button"
-                  onClick={() => { setShowDuplicateWarn(false); setDuplicates([]); setDuplicateOverridden(false) }}
+                  onClick={() => { setShowDuplicateWarn(false); setDuplicates([]); setDuplicateOverridden(false); duplicateOverriddenRef.current = false }}
                   className="text-sm text-gray-500 hover:text-gray-700 font-medium px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
                   ← Go back and edit
                 </button>
@@ -2176,7 +2188,7 @@ export default function NewPatientPage() {
                     duplicates are not legitimate — the user must edit the form. */}
                 {!hasHardMatch && (
                   <button type="button" disabled={saving}
-                    onClick={() => { setDuplicateOverridden(true); setTimeout(() => { const form = document.querySelector('form'); if (form) form.requestSubmit() }, 0) }}
+                    onClick={() => { duplicateOverriddenRef.current = true; setDuplicateOverridden(true); setTimeout(() => { const form = document.querySelector('form'); if (form) form.requestSubmit() }, 0) }}
                     className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-60">
                     {saving
                       ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Registering...</>

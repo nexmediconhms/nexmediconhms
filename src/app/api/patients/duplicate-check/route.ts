@@ -187,31 +187,32 @@ export async function GET(req: NextRequest) {
           }
           // Keep it as hard match since mobile/aadhaar already flagged it
         } else {
-          // Name-only match: only flag if age is similar (within ±2 years)
+          // FIX: Always flag same-name matches as soft warning.
+          // Previously required age proximity which missed cases where
+          // no age was entered. Now same name alone triggers the warning.
           const patientAge = patient.age
           const ageClose = age !== null && patientAge !== null && patientAge !== undefined
             ? Math.abs(age - patientAge) <= 2
             : false
 
-          if (ageClose) {
-            const reasons = ['Same name', 'Similar age']
-            matchMap.set(patient.id, {
-              id: patient.id,
-              mrn: patient.mrn,
-              full_name: patient.full_name,
-              mobile: patient.mobile,
-              age: patient.age,
-              gender: patient.gender,
-              aadhaar_no: patient.aadhaar_no,
-              date_of_birth: patient.date_of_birth,
-              city: patient.city,
-              created_at: patient.created_at,
-              updated_at: patient.updated_at,
-              match_type: 'soft_name',
-              match_reasons: reasons,
-              is_hard_match: false, // SOFT — override allowed
-            })
-          }
+          const reasons = ['Same name']
+          if (ageClose) reasons.push('Similar age')
+          matchMap.set(patient.id, {
+            id: patient.id,
+            mrn: patient.mrn,
+            full_name: patient.full_name,
+            mobile: patient.mobile,
+            age: patient.age,
+            gender: patient.gender,
+            aadhaar_no: patient.aadhaar_no,
+            date_of_birth: patient.date_of_birth,
+            city: patient.city,
+            created_at: patient.created_at,
+            updated_at: patient.updated_at,
+            match_type: 'soft_name',
+            match_reasons: reasons,
+            is_hard_match: false, // SOFT — override allowed
+          })
         }
       }
     }
