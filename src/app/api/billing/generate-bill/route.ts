@@ -85,6 +85,105 @@ type BillModule = (typeof MODULES)[number];
  */
 const BILL_NUM_LOCK_NAMESPACE = 0x42494c4c; // = 1112493644
 
+// ── v9 FIX: schema-aware bills payload ───────────────────────────────
+// Different installs of this app end up with different `bills` schemas
+// depending on which migrations have run. The bill payload below
+// references columns that the codebase migrations add (admission_id,
+// bill_module, idempotency_key, etc.), but some installs haven't run
+// those migrations. PostgREST rejects the entire INSERT on the first
+// unknown column, so we must strip them BEFORE the call, not as a
+// retry afterwards. Probe once per process and cache.
+
+let _billsSchemaCache: {
+  hasAdmissionId: boolean;
+  hasBillModule: boolean;
+  hasIdempotencyKey: boolean;
+  hasEncounterId: boolean;
+  hasRazorpayId: boolean;
+  hasCreatedBy: boolean;
+  hasPaidAt: boolean;
+  hasIsDeleted: boolean;
+  hasPaymentMode: boolean;
+  hasGstPercent: boolean;
+  hasGstAmount: boolean;
+  hasSubtotal: boolean;
+  hasNetAmount: boolean;
+} | null = null;
+
+async function detectBillsSchema(
+  sb: ReturnType<typeof getSupabaseAdmin>,
+): Promise<NonNullable<typeof _billsSchemaCache>> {
+  if (_billsSchemaCache) return _billsSchemaCache;
+
+  // PostgREST returns { error: "column does not exist" } on .select() of a
+  // missing column. Probe each one individually so we know exactly which
+  // are present and which aren't.
+  const probes = await Promise.all([
+    sb.from("bills").select("admission_id").limit(0),
+    sb.from("bills").select("bill_module").limit(0),
+    sb.from("bills").select("idempotency_key").limit(0),
+    sb.from("bills").select("encounter_id").limit(0),
+    sb.from("bills").select("razorpay_payment_id").limit(0),
+    sb.from("bills").select("created_by").limit(0),
+    sb.from("bills").select("paid_at").limit(0),
+    sb.from("bills").select("is_deleted").limit(0),
+    sb.from("bills").select("payment_mode").limit(0),
+    sb.from("bills").select("gst_percent").limit(0),
+    sb.from("bills").select("gst_amount").limit(0),
+    sb.from("bills").select("subtotal").limit(0),
+    sb.from("bills").select("net_amount").limit(0),
+  ]);
+
+  _billsSchemaCache = {
+    hasAdmissionId:    !probes[0].error,
+    hasBillModule:     !probes[1].error,
+    hasIdempotencyKey: !probes[2].error,
+    hasEncounterId:    !probes[3].error,
+    hasRazorpayId:     !probes[4].error,
+    hasCreatedBy:      !probes[5].error,
+    hasPaidAt:         !probes[6].error,
+    hasIsDeleted:      !probes[7].error,
+    hasPaymentMode:    !probes[8].error,
+    hasGstPercent:     !probes[9].error,
+    hasGstAmount:      !probes[10].error,
+    hasSubtotal:       !probes[11].error,
+    hasNetAmount:      !probes[12].error,
+  };
+  console.log("[generate-bill] bills schema detected:", _billsSchemaCache);
+  return _billsSchemaCache;
+}
+
+// Strip every key from the payload whose corresponding column is not
+// present on this DB's bills table. Returns a NEW object so the caller's
+// payload isn't mutated.
+function stripUnknownBillColumns(
+  payload: Record<string, unknown>,
+  schema: NonNullable<typeof _billsSchemaCache>,
+): { stripped: Record<string, unknown>; dropped: string[] } {
+  const out: Record<string, unknown> = { ...payload };
+  const dropped: string[] = [];
+  const drop = (key: string, present: boolean) => {
+    if (!present && key in out) {
+      delete out[key];
+      dropped.push(key);
+    }
+  };
+  drop("admission_id",        schema.hasAdmissionId);
+  drop("bill_module",         schema.hasBillModule);
+  drop("idempotency_key",     schema.hasIdempotencyKey);
+  drop("encounter_id",        schema.hasEncounterId);
+  drop("razorpay_payment_id", schema.hasRazorpayId);
+  drop("created_by",          schema.hasCreatedBy);
+  drop("paid_at",             schema.hasPaidAt);
+  drop("is_deleted",          schema.hasIsDeleted);
+  drop("payment_mode",        schema.hasPaymentMode);
+  drop("gst_percent",         schema.hasGstPercent);
+  drop("gst_amount",          schema.hasGstAmount);
+  drop("subtotal",            schema.hasSubtotal);
+  drop("net_amount",          schema.hasNetAmount);
+  return { stripped: out, dropped };
+}
+
 // Hash a string to a 32-bit integer (djb2 variant). Used as the SECOND key
 // for the two-key advisory lock; the namespace above provides isolation.
 function hash32(str: string): number {
@@ -366,13 +465,44 @@ export async function POST(req: NextRequest) {
       is_deleted: false,
     };
 
+    // v9 FIX: strip any column that doesn't exist on this DB's bills
+    // table BEFORE the insert. Without this, a single unknown column
+    // (e.g. admission_id on an install that hasn't run the IPD-linkage
+    // migration) makes PostgREST reject the entire row with "column
+    // does not exist" and the retry below — which only handles
+    // invoice_number collisions — can't recover. The probe is cached
+    // for the lifetime of the Node process so subsequent calls have
+    // zero overhead.
+    const billsSchema = await detectBillsSchema(sb);
+    const { stripped: safeBillPayload, dropped: droppedCols } =
+      stripUnknownBillColumns(billPayload, billsSchema);
+    if (droppedCols.length > 0) {
+      console.warn(
+        "[generate-bill] dropped unknown columns from bills insert:",
+        droppedCols,
+        "— run the relevant migration to enable these features.",
+      );
+    }
+
     const { data: newBill, error: billErr } = await sb
       .from("bills")
-      .insert(billPayload)
+      .insert(safeBillPayload)
       .select()
       .single();
 
     if (billErr) {
+      // v9 FIX: log enough context so any remaining failure can be
+      // diagnosed from server logs without having to add temporary
+      // console.logs. .code / .details / .hint name the exact column
+      // or constraint that broke.
+      console.error("[generate-bill] bills insert failed:", {
+        message: billErr.message,
+        code: billErr.code,
+        details: (billErr as any).details,
+        hint: (billErr as any).hint,
+        droppedCols,
+      });
+
       // Handle unique constraint violation (race condition fallback)
       if (
         billErr.code === "23505" &&
@@ -385,11 +515,14 @@ export async function POST(req: NextRequest) {
           yearMonth,
           retryCounter,
         );
-        billPayload.invoice_number = retryInvoice;
+        // v9 FIX: use the stripped payload on retry too. Update the
+        // invoice number on the stripped object — billPayload (the
+        // unstripped original) would re-introduce the missing columns.
+        safeBillPayload.invoice_number = retryInvoice;
 
         const { data: retryBill, error: retryErr } = await sb
           .from("bills")
-          .insert(billPayload)
+          .insert(safeBillPayload)
           .select()
           .single();
 
