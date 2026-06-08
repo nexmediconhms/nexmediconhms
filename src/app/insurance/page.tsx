@@ -238,9 +238,15 @@ Please process/file as required.`
   // ── Generate Insurance Bundle / Documents ────────────────────
   async function generateDocBundle(claim: Claim) {
     try {
+      // v7 FIX: include auth header so PDF generation isn't 401-blocked
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { alert('Your session has expired. Please log in again.'); return }
       const res = await fetch('/api/insurance-bundle', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ claimId: claim.id }),
       })
       if (res.ok) {
@@ -381,11 +387,26 @@ function InsuranceTabsSection({
   async function loadInsuredPatients(filter = insuredFilter) {
     setInsuredLoading(true)
     try {
-      const res = await fetch(`/api/insurance/sync?filter=${filter}`)
+      // v7 FIX: API route requires Authorization header (requireAuth).
+      // Previously the fetch had no header → server returned 401 → res.ok
+      // was false → the list silently stayed empty. Same pattern used by
+      // every other authenticated fetch in this codebase.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.error('[Insurance] No active session; cannot load insured patients')
+        setInsuredLoading(false)
+        return
+      }
+      const res = await fetch(`/api/insurance/sync?filter=${filter}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
       if (res.ok) {
         const data = await res.json()
         setInsuredPatients(data.patients || [])
         setInsuredStats(data.stats || null)
+      } else {
+        const body = await res.text().catch(() => '')
+        console.error('[Insurance] /api/insurance/sync failed:', res.status, body)
       }
     } catch (e) {
       console.error('[Insurance] Failed to load insured patients:', e)
@@ -404,9 +425,15 @@ function InsuranceTabsSection({
   async function autoCreateClaim(patient: any) {
     if (!confirm(`Create insurance claim entry for ${patient.patient_name}?`)) return
     try {
+      // v7 FIX: include auth header so POST isn't 401-blocked
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { alert('Your session has expired. Please log in again.'); return }
       const res = await fetch('/api/insurance/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           patient_id: patient.patient_id,
           trigger: 'manual',

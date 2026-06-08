@@ -437,11 +437,13 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       .eq('status', 'available').order('ward').order('bed_number')
       .then(({ data }) => setBeds(data || []))
 
-    // FIX: Include med_reg_no and filter out non-clinician admins.
-    // Admin users without a medical registration number (e.g. the
-    // hospital system account) are pure system admins, not doctors.
-    // This matches the filter already applied in settings/doctors
-    // and appointments pages.
+    // Load clinic_users + augment with hospital settings default doctor.
+    // (Previously the dropdown only showed clinic_users rows, so on a
+    // fresh install — or any install where the configured Default Doctor
+    // is NOT also a clinic_users login account — the doctor would be
+    // missing from this dropdown and only the admin login would appear.
+    // We now read the Default Doctor Details from hospital settings and
+    // inject it as a synthetic option if it isn't already present.)
     supabase.from('clinic_users').select('id, full_name, role, med_reg_no')
       .eq('is_active', true).in('role', ['admin', 'doctor'])
       .order('full_name')
@@ -450,6 +452,31 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
           d.role === 'doctor' ||
           (d.role === 'admin' && String(d.med_reg_no || '').trim() !== '')
         )
+
+        // v7 FIX: merge in hospital-settings default doctor as a synthetic
+        // entry. The form stores admitting_doctor/consulting_doctors as
+        // plain strings (full_name), so a synthetic id is fine — no FK.
+        try {
+          const hs: any = typeof window !== 'undefined' ? getHospitalSettings() : {}
+          const settingsDoctorName = String(hs?.doctorName || '').trim()
+          if (settingsDoctorName) {
+            const alreadyListed = clinicians.some((c: any) =>
+              String(c.full_name || '').trim().toLowerCase() ===
+              settingsDoctorName.toLowerCase()
+            )
+            if (!alreadyListed) {
+              clinicians.unshift({
+                id: 'hospital-settings-default-doctor',
+                full_name: settingsDoctorName,
+                role: 'doctor',
+                med_reg_no: String(hs?.doctorRegNo || hs?.doctorRegistration || ''),
+              })
+            }
+          }
+        } catch (e) {
+          console.warn('[IPD] Could not read hospital-settings default doctor:', e)
+        }
+
         setDoctors(clinicians)
       })
   }, [])

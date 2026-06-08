@@ -48,10 +48,10 @@ export async function GET(req: NextRequest) {
     // (boolean), cashless (boolean), policy_tpa_name, policy_number, is_active,
     // created_at. Selecting a non-existent column makes PostgREST reject the
     // whole row set with a "column does not exist" error.
+    // v7 FIX: same is_active relaxation as /api/insurance/sync route — see comments there
     const { data: allPatients, error: pErr } = await sb
       .from('patients')
       .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at, is_active')
-      .eq('is_active', true)
       .order('created_at', { ascending: false })
 
     if (pErr) {
@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
     // Filter for insured patients using proper TEXT field matching
     // This is the KEY FIX: we check all possible insurance indicators
     const insuredPatients = (allPatients || []).filter(p => {
+      if (p.is_active === false) return false
       // v6 FIX: dropped hasInsuranceName / hasInsuranceId — those columns do
       // not exist on this DB's patients table and would always be false anyway.
       const hasMediclaim = isYesOrTrue(p.mediclaim)

@@ -57,10 +57,14 @@ export async function GET(req: NextRequest) {
     // Confirmed schema (run information_schema.columns): the insurance-related
     // columns on this DB are mediclaim (boolean), cashless (boolean),
     // policy_tpa_name (text), policy_number (text). Nothing else.
+    // v7 FIX: also drop the strict `.eq('is_active', true)` filter — the
+    // registration form does not set `is_active` when inserting a patient,
+    // so freshly-registered rows have `is_active = NULL` and would be
+    // excluded by the strict filter. Treat is_active as a soft-delete:
+    // include the row unless it is *explicitly* false.
     const { data: allPatients, error: pErr } = await supabase
       .from('patients')
-      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at')
-      .eq('is_active', true)
+      .select('id, full_name, mrn, mobile, mediclaim, cashless, policy_tpa_name, policy_number, created_at, is_active')
       .order('created_at', { ascending: false })
 
     if (pErr) {
@@ -74,6 +78,8 @@ export async function GET(req: NextRequest) {
     // direct boolean check for clarity and to be schema-agnostic in case
     // another install uses text values like 'Yes'/'No'.
     const insuredPatients = (allPatients || []).filter((p: any) => {
+      // v7: skip explicitly soft-deleted rows. NULL counts as active.
+      if (p.is_active === false) return false
       const hasMediclaim = p.mediclaim === true || String(p.mediclaim || '').trim().toLowerCase() === 'yes' || String(p.mediclaim || '').trim().toLowerCase() === 'true'
       const hasCashless = p.cashless === true || String(p.cashless || '').trim().toLowerCase() === 'yes' || String(p.cashless || '').trim().toLowerCase() === 'true'
       const hasTPA = !!(p.policy_tpa_name && String(p.policy_tpa_name).trim())
