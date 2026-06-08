@@ -130,6 +130,42 @@ export default function EditPatientPage() {
     if (!validate()) return
     setSaving(true)
 
+    // FIX: Check for duplicate mobile/aadhaar before saving edits.
+    // Exclude the current patient's own ID from the check so editing
+    // without changing mobile/aadhaar doesn't trigger a false positive.
+    const cleanMobile = form.mobile.trim()
+    const cleanAadhaar = form.aadhaar_no.replace(/\s/g, '').trim()
+
+    if (cleanMobile) {
+      const { data: mobileConflict } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name')
+        .eq('mobile', cleanMobile)
+        .neq('id', id)
+        .limit(1)
+        .maybeSingle()
+      if (mobileConflict) {
+        setSaving(false)
+        setErrors({ mobile: `This mobile is already registered to ${mobileConflict.full_name} (${mobileConflict.mrn}). Use a different number.` })
+        return
+      }
+    }
+
+    if (cleanAadhaar && cleanAadhaar.length === 12) {
+      const { data: aadhaarConflict } = await supabase
+        .from('patients')
+        .select('id, mrn, full_name')
+        .eq('aadhaar_no', cleanAadhaar)
+        .neq('id', id)
+        .limit(1)
+        .maybeSingle()
+      if (aadhaarConflict) {
+        setSaving(false)
+        setErrors({ aadhaar_no: `This Aadhaar is already registered to ${aadhaarConflict.full_name} (${aadhaarConflict.mrn}). Use a different number.` })
+        return
+      }
+    }
+
     const { error } = await supabase.from('patients').update({
       full_name:               form.full_name.trim(),
       age:                     form.age ? parseInt(form.age) : null,

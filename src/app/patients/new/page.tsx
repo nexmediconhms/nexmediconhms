@@ -293,6 +293,10 @@ export default function NewPatientPage() {
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
   const [showDuplicateWarn, setShowDuplicateWarn] = useState(false)
   const [checkingDups, setCheckingDups] = useState(false)
+  // FIX: Track whether user explicitly overrode a soft-match warning.
+  // This prevents re-showing the same soft warning on the override submit.
+  // Reset when identity fields change (handled in set()).
+  const [duplicateOverridden, setDuplicateOverridden] = useState(false)
 
   // ABHA verification
   const [abhaVerifying, setAbhaVerifying] = useState(false)
@@ -360,6 +364,18 @@ export default function NewPatientPage() {
   function set(field: keyof FormData, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }))
+    // FIX: When user edits identity fields (mobile, aadhaar, name), reset the
+    // duplicate warning state so the stale warning panel disappears and
+    // the next submit re-runs the check with fresh data. This handles the
+    // case: "User sees hard-block → edits mobile → next submit re-checks
+    // and finds no matches → save proceeds normally."
+    if (field === 'mobile' || field === 'aadhaar_no' || field === 'full_name') {
+      if (showDuplicateWarn || duplicates.length > 0 || duplicateOverridden) {
+        setShowDuplicateWarn(false)
+        setDuplicates([])
+        setDuplicateOverridden(false)
+      }
+    }
   }
 
   // ── Auto-calc age from DOB ────────────────────────────────────
@@ -682,8 +698,12 @@ export default function NewPatientPage() {
     }
 
     // Soft matches only — show the warning unless the user has already
-    // dismissed it by clicking "Register Anyway".
-    if (!showDuplicateWarn && dups.length > 0) {
+    // explicitly overridden it by clicking "Register Anyway".
+    // FIX: Use `duplicateOverridden` flag instead of `showDuplicateWarn` to
+    // determine if the user already acknowledged the soft warning. The old
+    // approach relied on `showDuplicateWarn` being true on the second submit,
+    // but that state could be stale or reset in edge cases.
+    if (dups.length > 0 && !duplicateOverridden) {
       setDuplicates(dups)
       setShowDuplicateWarn(true)
       return
@@ -1624,7 +1644,7 @@ export default function NewPatientPage() {
               </Link>
             </div>
 
-            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); clearDraft() }}
+            <button onClick={() => { setForm(EMPTY); setErrors({}); setSuccess(null); setSuccessId(''); setDuplicates([]); setShowDuplicateWarn(false); setDuplicateOverridden(false); clearDraft() }}
               className="text-sm text-gray-400 hover:text-gray-600 underline">
               Register another patient
             </button>
@@ -2148,14 +2168,15 @@ export default function NewPatientPage() {
 
               <div className="flex items-center justify-between border-t border-amber-200 pt-4">
                 <button type="button"
-                  onClick={() => { setShowDuplicateWarn(false); setDuplicates([]) }}
+                  onClick={() => { setShowDuplicateWarn(false); setDuplicates([]); setDuplicateOverridden(false) }}
                   className="text-sm text-gray-500 hover:text-gray-700 font-medium px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
                   ← Go back and edit
                 </button>
                 {/* v7 FIX: hide override button on hard matches. Mobile/Aadhaar
                     duplicates are not legitimate — the user must edit the form. */}
                 {!hasHardMatch && (
-                  <button type="submit" disabled={saving}
+                  <button type="button" disabled={saving}
+                    onClick={() => { setDuplicateOverridden(true); setTimeout(() => { const form = document.querySelector('form'); if (form) form.requestSubmit() }, 0) }}
                     className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-60">
                     {saving
                       ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Registering...</>

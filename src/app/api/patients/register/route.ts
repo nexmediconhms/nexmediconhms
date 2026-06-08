@@ -197,11 +197,12 @@ export async function POST(req: NextRequest) {
   // The unique index on mobile (from migration 020) still prevents
   // duplicates, but there's a small race window between check & insert.
 
-  // Check for existing patient first
+  // Check for existing patient first (hard block on same mobile or same aadhaar)
+  // FIX: Use snake_case column names matching live DB schema (full_name, aadhaar_no)
   const { data: existing } = await sb
     .from('patients')
-    .select('id, mrn, fullname')
-    .or(`mobile.eq.${cleanMobile}${cleanAadhaar ? `,aadhaar.eq.${cleanAadhaar}` : ''}`)
+    .select('id, mrn, full_name')
+    .or(`mobile.eq.${cleanMobile}${cleanAadhaar ? `,aadhaar_no.eq.${cleanAadhaar}` : ''}`)
     .limit(1)
     .maybeSingle()
 
@@ -210,7 +211,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       id: existing.id,
       mrn: existing.mrn,
-      full_name: existing.fullname,
+      full_name: existing.full_name,
       is_duplicate: true,
       message: 'Patient with this mobile/Aadhaar already exists.',
     })
@@ -221,23 +222,28 @@ export async function POST(req: NextRequest) {
     ? (reference_detail ? `${reference_source} — ${reference_detail.trim()}` : reference_source)
     : null
 
+  // FIX: Use snake_case column names matching live DB schema
   const { data: newPatient, error: insertErr } = await sb
     .from('patients')
     .insert({
-      fullname: full_name.trim().slice(0, MAX_NAME_LENGTH),
+      full_name: full_name.trim().slice(0, MAX_NAME_LENGTH),
       mobile: cleanMobile,
       age: age ? String(age) : null,
-      dob: date_of_birth || null,
+      date_of_birth: date_of_birth || null,
       gender: gender || 'Female',
-      bloodgroup: blood_group || null,
+      blood_group: blood_group || null,
       address: (address || '').trim().slice(0, MAX_ADDRESS_LENGTH) || null,
-      aadhaar: cleanAadhaar || null,
-      abhaid: (abha_id || '').trim() || null,
+      aadhaar_no: cleanAadhaar || null,
+      abha_id: (abha_id || '').trim() || null,
       mediclaim: mediclaim === 'Yes' ? 'Yes' : 'No',
       cashless: cashless === 'Yes' ? 'Yes' : 'No',
-      referredby: refString,
+      reference_source: refString,
+      emergency_contact_name: (emergency_contact_name || '').trim() || null,
+      emergency_contact_phone: (emergency_contact_phone || '').replace(/\D/g, '').replace(/^91/, '') || null,
+      policy_tpa_name: (policy_tpa_name || '').trim() || null,
+      policy_number: (policy_number || '').trim() || null,
     })
-    .select('id, mrn, fullname')
+    .select('id, mrn, full_name')
     .single()
 
   if (insertErr) {
@@ -254,14 +260,14 @@ export async function POST(req: NextRequest) {
   // Audit
   try {
     const auditMod = await import('@/lib/audit')
-    await auditMod.audit('create', 'patient', newPatient.id, newPatient.fullname)
+    await auditMod.audit('create', 'patient', newPatient.id, newPatient.full_name)
   } catch { /* non-fatal */ }
 
   return NextResponse.json({
     ok: true,
     id: newPatient.id,
     mrn: newPatient.mrn,
-    full_name: newPatient.fullname,
+    full_name: newPatient.full_name,
     is_duplicate: false,
     message: 'Patient registered successfully.',
   }, { status: 201 })
