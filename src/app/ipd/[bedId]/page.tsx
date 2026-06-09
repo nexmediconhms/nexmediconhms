@@ -33,13 +33,14 @@ import { formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
+import DeliveryRecord from '@/components/ipd/DeliveryRecord'
 import { IndianRupee } from 'lucide-react'
 
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
   Camera, FileText, Loader2, Sparkles, AlertCircle,
-  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw
+  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw, Baby
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -274,6 +275,7 @@ export default function IPDNursingPage() {
 
   const [bed, setBed] = useState<any>(null)
   const [patient, setPatient] = useState<any>(null)
+  const [admissionId, setAdmissionId] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
   const [vitals, setVitals] = useState<VitalEntry[]>([])
@@ -295,7 +297,7 @@ export default function IPDNursingPage() {
   // unsafe. We now track save failures separately so the user gets an
   // honest warning when data is only in offline cache.
   const [saveError, setSaveError] = useState('')
-  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos'>('vitals')
+  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos' | 'delivery'>('vitals')
 
   // Doctor note photo upload + OCR state
   const [ocrLoading, setOcrLoading] = useState(false)
@@ -342,6 +344,10 @@ export default function IPDNursingPage() {
     if (b.patient_id) {
       const { data: p } = await supabase.from('patients').select('*').eq('id', b.patient_id).single()
       setPatient(p)
+      // Look up active IPD admission for delivery record
+      const { data: adm } = await supabase.from('ipd_admissions')
+        .select('id').eq('bed_id', bedId).eq('status', 'active').single()
+      if (adm) setAdmissionId(adm.id)
     }
     setLoading(false)
   }, [bedId])
@@ -803,6 +809,7 @@ export default function IPDNursingPage() {
     { id: 'notes', label: '📝 Nursing Notes', icon: ClipboardList },
     { id: 'doctor-notes', label: '🩺 Doctor Notes', icon: Stethoscope },
     { id: 'files-photos', label: '📁 Files & Photos', icon: Camera },
+    { id: 'delivery', label: '🍼 Delivery', icon: Baby },
   ] as const
 
   return (
@@ -1386,6 +1393,24 @@ export default function IPDNursingPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'delivery' && patient && (
+            <div className="space-y-4">
+              {admissionId ? (
+                <DeliveryRecord
+                  admissionId={admissionId}
+                  patientId={patient.id}
+                  bedId={bedId}
+                  currentUser={user?.full_name || user?.email || ''}
+                />
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-700">
+                  <p className="font-medium">No active IPD admission found for this bed.</p>
+                  <p className="mt-1">The delivery record requires an active IPD admission. Please admit the patient from the IPD Census page first.</p>
                 </div>
               )}
             </div>
