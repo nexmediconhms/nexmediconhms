@@ -248,9 +248,8 @@ function CensusView({
   const [dischargeAdmission, setDischargeAdmission] = useState<IPDAdmission | null>(null)
 
   async function markDischarged(id: string) {
-    // Use the enhanced discharge modal instead of simple confirm
-    const adm = admissions.find(a => a.id === id)
-    if (adm) setDischargeAdmission(adm)
+    // Navigate to full discharge workflow page
+    window.location.href = `/ipd/discharge/${id}`
   }
 
   return (

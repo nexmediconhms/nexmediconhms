@@ -641,15 +641,35 @@ export default function BedsPage() {
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">
-                  This will discharge the patient and mark the bed for cleaning. The bed will be available again shortly.
+                  Use the full discharge workflow to settle billing, generate discharge summary, and complete all clearances.
                 </p>
                 <div className="flex gap-3">
                   <button onClick={closeModal} className="btn-secondary flex-1">Cancel</button>
-                  <button onClick={handleDischarge} disabled={actionLoading}
-                    className="btn-danger flex-1 disabled:opacity-50">
-                    {actionLoading ? 'Processing...' : 'Confirm Discharge'}
+                  <button onClick={() => {
+                    closeModal()
+                    // Find the IPD admission for this bed to get the admissionId
+                    supabase.from('ipd_admissions')
+                      .select('id')
+                      .eq('bed_id', modal.bed.id)
+                      .eq('status', 'active')
+                      .single()
+                      .then(({ data }) => {
+                        if (data) {
+                          window.location.href = `/ipd/discharge/${data.id}`
+                        } else {
+                          // Fallback: quick discharge if no IPD admission record exists
+                          handleDischarge()
+                        }
+                      })
+                  }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex-1 text-sm font-medium">
+                    Full Discharge Workflow →
                   </button>
                 </div>
+                <button onClick={handleDischarge} disabled={actionLoading}
+                  className="w-full mt-2 text-xs text-gray-400 hover:text-red-500 underline">
+                  {actionLoading ? 'Processing...' : 'Quick discharge (skip workflow)'}
+                </button>
               </div>
             )}
           </div>
