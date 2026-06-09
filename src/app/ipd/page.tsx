@@ -15,7 +15,7 @@
  */
 
 import { Suspense, useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -246,10 +246,11 @@ function CensusView({
   canManage: boolean
 }) {
   const [dischargeAdmission, setDischargeAdmission] = useState<IPDAdmission | null>(null)
+  const router = useRouter()
 
   async function markDischarged(id: string) {
-    // Navigate to full discharge workflow page
-    window.location.href = `/ipd/discharge/${id}`
+    // Navigate to the full discharge workflow page
+    router.push(`/ipd/discharge/${id}`)
   }
 
   return (

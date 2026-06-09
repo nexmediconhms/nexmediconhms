@@ -9,12 +9,12 @@
  * IPD census, patient profile), it redirects here.
  *
  * TABS:
- * 1. Patient & Admission Summary — read-only overview
- * 2. Clinical History — doctor notes, labs, prescriptions, procedures
- * 3. Discharge Summary — fillable form with AI assist + obstetric fields
- * 4. Billing & Finance — charges, payments, balance, settlement
- * 5. Clearance Checklist — gates the final discharge
- * 6. Confirm & Print — final action + PDF generation
+ *   1. Patient & Admission Summary — read-only overview
+ *   2. Clinical History — doctor notes, labs, prescriptions, procedures
+ *   3. Discharge Summary — fillable form with AI assist + obstetric fields
+ *   4. Billing & Finance — charges, payments, balance, settlement
+ *   5. Clearance Checklist — gates the final discharge
+ *   6. Confirm & Print — final action + PDF generation
  *
  * SAFETY: This file is entirely NEW. It does NOT modify any existing
  * component or page. Existing discharge flows continue to work.
@@ -24,11 +24,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
-import SmartMic from '@/components/shared/SmartMic'
 import DischargeClearance from '@/components/ipd/DischargeClearance'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
-import { formatDate, getIndiaToday, getHospitalSettings } from '@/lib/utils'
+import { formatDate, getIndiaToday } from '@/lib/utils'
 import type { Patient, Encounter, Prescription, DischargeSummary } from '@/types'
 import {
   ArrowLeft, User, BedDouble, Stethoscope, FileText,
@@ -183,7 +182,7 @@ const TAB_CONFIG: Record<TabKey, { label: string; icon: typeof User; color: stri
 export default function DischargeWorkflowPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, can, role } = useAuth() as any
+  const { user, can, isAdmin } = useAuth()
   const admissionId = params.admissionId as string
 
   // ── State ──────────────────────────────────────────────────────────
@@ -585,7 +584,7 @@ export default function DischargeWorkflowPage() {
           medications_at_discharge: dsForm.medications_at_discharge,
           follow_up_date: dsForm.follow_up_date || null,
           follow_up_note: dsForm.follow_up_note || null,
-          discharged_by: dsForm.signed_by || (user as any)?.user_metadata?.name || '',
+          discharged_by: dsForm.signed_by || user?.full_name || '',
         }),
       })
 
@@ -1167,8 +1166,8 @@ export default function DischargeWorkflowPage() {
                 <DischargeClearance
                   admissionId={admission.id}
                   onClearanceChange={(ok) => setCanDischarge(ok)}
-                  isAdmin={role === 'admin'}
-                  currentUser={(user as any)?.user_metadata?.name || user?.email || ''}
+                  isAdmin={isAdmin}
+                  currentUser={user?.full_name || user?.email || ''}
                 />
               </div>
             )}
@@ -1281,7 +1280,6 @@ function StatCard({ label, value, color, icon: Icon }: { label: string; value: s
   )
 }
 
-// Custom input field component with automatic TypeScript form bindings
 function DSField({
   label, value, field, onChange, type = 'text', rows, full, disabled, placeholder
 }: {

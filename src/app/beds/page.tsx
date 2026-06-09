@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getIndiaToday } from '@/lib/utils'
@@ -19,6 +20,7 @@ const STATUS_CONFIG: Record<BedStatus, { label: string; bg: string; border: stri
 
 export default function BedsPage() {
   const { user, can } = useAuth()
+  const router = useRouter()
   const [beds, setBeds] = useState<Bed[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ bed: Bed; action: 'admit' | 'discharge' } | null>(null)
@@ -641,24 +643,23 @@ export default function BedsPage() {
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">
-                  Use the full discharge workflow to settle billing, generate discharge summary, and complete all clearances.
+                  Use the full discharge workflow to settle billing, generate discharge summary, and complete all clearances before discharging.
                 </p>
                 <div className="flex gap-3">
                   <button onClick={closeModal} className="btn-secondary flex-1">Cancel</button>
                   <button onClick={() => {
+                    const bedId = modal.bed.id
                     closeModal()
-                    // Find the IPD admission for this bed to get the admissionId
-                    supabase.from('ipd_admissions')
-                      .select('id')
-                      .eq('bed_id', modal.bed.id)
-                      .eq('status', 'active')
+                    supabase.from("ipd_admissions")
+                      .select("id")
+                      .eq("bed_id", bedId)
+                      .eq("status", "active")
                       .single()
                       .then(({ data }) => {
                         if (data) {
-                          window.location.href = `/ipd/discharge/${data.id}`
+                          router.push(`/ipd/discharge/${data.id}`)
                         } else {
-                          // Fallback: quick discharge if no IPD admission record exists
-                          handleDischarge()
+                          alert("No active IPD admission found for this bed. The patient may have been admitted through Bed Management only.")
                         }
                       })
                   }}
@@ -667,8 +668,8 @@ export default function BedsPage() {
                   </button>
                 </div>
                 <button onClick={handleDischarge} disabled={actionLoading}
-                  className="w-full mt-2 text-xs text-gray-400 hover:text-red-500 underline">
-                  {actionLoading ? 'Processing...' : 'Quick discharge (skip workflow)'}
+                  className="w-full mt-2 text-xs text-gray-400 hover:text-red-500 underline text-center">
+                  {actionLoading ? "Processing..." : "Quick discharge (skip workflow)"}
                 </button>
               </div>
             )}
