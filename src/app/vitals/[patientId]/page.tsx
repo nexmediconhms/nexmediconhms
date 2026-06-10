@@ -21,7 +21,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/lib/supabase';
 import {
   VITALS_FIELD_GROUPS,
   validateVitals,
@@ -53,7 +53,6 @@ export default function VitalsEntryPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClientComponentClient();
 
   const patientId = params.patientId as string;
   const encounterId = searchParams.get('encounter_id');
