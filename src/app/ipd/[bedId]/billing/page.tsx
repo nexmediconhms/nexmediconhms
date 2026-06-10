@@ -27,6 +27,7 @@ import {
   BedDouble, Stethoscope, Activity, AlertTriangle,
   CheckCircle, Calculator, RefreshCw,
 } from 'lucide-react'
+import IPDPackageBilling from '@/components/ipd/IPDPackageBilling'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -848,6 +849,14 @@ export default function IPDBillingPage() {
             <div className="text-xs text-purple-600">Per Day Avg</div>
           </div>
         </div>
+
+        {/* Package Billing */}
+        {admission && (
+          <IPDPackageBilling
+            admissionId={admission.id}
+            onPackageApplied={() => loadAll()}
+          />
+        )}
 
         {/* Quick actions */}
         <div className="flex flex-wrap gap-2 mb-5 no-print">

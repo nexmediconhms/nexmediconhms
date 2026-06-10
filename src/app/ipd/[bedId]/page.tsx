@@ -34,13 +34,15 @@ import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
 import DeliveryRecord from '@/components/ipd/DeliveryRecord'
+import DoctorRoundNotes from '@/components/ipd/DoctorRoundNotes'
+import SurgeryOTNotes from '@/components/ipd/SurgeryOTNotes'
 import { IndianRupee } from 'lucide-react'
 
 import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
   Camera, FileText, Loader2, Sparkles, AlertCircle,
-  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw, Baby
+  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw, Baby, Scissors
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -297,7 +299,7 @@ export default function IPDNursingPage() {
   // unsafe. We now track save failures separately so the user gets an
   // honest warning when data is only in offline cache.
   const [saveError, setSaveError] = useState('')
-  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos' | 'delivery'>('vitals')
+  const [activeTab, setActiveTab] = useState<'vitals' | 'io' | 'notes' | 'doctor-notes' | 'files-photos' | 'delivery' | 'surgery'>('vitals')
 
   // Doctor note photo upload + OCR state
   const [ocrLoading, setOcrLoading] = useState(false)
@@ -810,6 +812,7 @@ export default function IPDNursingPage() {
     { id: 'doctor-notes', label: '🩺 Doctor Notes', icon: Stethoscope },
     { id: 'files-photos', label: '📁 Files & Photos', icon: Camera },
     { id: 'delivery', label: '🍼 Delivery', icon: Baby },
+    { id: 'surgery', label: '🔪 Surgery/OT', icon: Scissors },
   ] as const
 
   return (
@@ -1185,7 +1188,23 @@ export default function IPDNursingPage() {
 
           {/* ── DOCTOR NOTES TAB (NEW) ────────────────────────── */}
           {activeTab === 'doctor-notes' && (
-            <div>
+            <div className="space-y-6">
+              {/* Structured Round Notes (SOAP) */}
+              {patient && (
+                <DoctorRoundNotes
+                  patientId={patient.id}
+                  admissionDate={bed?.admission_date || ''}
+                  doctorName={bed?.admitting_doctor || ''}
+                />
+              )}
+
+              {/* Divider between structured notes and photo upload */}
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-xs text-gray-400 mb-3 uppercase tracking-wide font-semibold">
+                  Handwritten Note Scanner (AI-powered)
+                </p>
+              </div>
+
               {/* Info banner */}
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5">
                 <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2 mb-1">
@@ -1393,6 +1412,22 @@ export default function IPDNursingPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'surgery' && patient && (
+            <div className="space-y-4">
+              {admissionId ? (
+                <SurgeryOTNotes
+                  admissionId={admissionId}
+                  patientId={patient.id}
+                  currentUser={user?.full_name || user?.email || ''}
+                />
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-700">
+                  <p className="font-medium">No active IPD admission found for this bed.</p>
                 </div>
               )}
             </div>
