@@ -36,7 +36,7 @@ export default function PatientEducation({
   const [language, setLanguage] = useState<'en' | 'hi'>('en');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const categories = [...new Set(EDUCATION_HANDOUTS.map(h => h.category))];
+  const categories = Array.from(new Set(EDUCATION_HANDOUTS.map(h => h.category)));
 
   const handlePrint = useCallback(() => {
     if (iframeRef.current?.contentWindow) {

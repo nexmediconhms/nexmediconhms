@@ -67,12 +67,22 @@ function makeUserClient(accessToken: string) {
   )
 }
 
-// Service role client — only used server-side, never exposed to browser
-const adminClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-)
+// Service role client — only used server-side, never exposed to browser.
+// Lazy singleton: created on first use, NOT at module load time.
+// This prevents `next build` from failing with "supabaseKey is required"
+// during the static page-data-collection phase when env vars are absent.
+let _adminClient: ReturnType<typeof createClient> | null = null
+
+function getAdminClient() {
+  if (!_adminClient) {
+    _adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    )
+  }
+  return _adminClient
+}
 
 // ── Return type ──────────────────────────────────────────────
 
@@ -127,11 +137,11 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult | Respon
 
   // 3. Look up user in clinic_users table (checks is_active and gets role)
   //    Uses adminClient so RLS doesn't block the lookup
-  const { data: clinicUser, error: cuError } = await adminClient
+  const { data: clinicUser, error: cuError } = await getAdminClient()
     .from('clinic_users')
     .select('id, email, full_name, role, is_active')
     .eq('auth_id', user.id)
-    .single()
+    .single() as { data: { id: string; email: string; full_name: string; role: string; is_active: boolean } | null; error: unknown }
 
   if (cuError || !clinicUser) {
     console.warn('[api-auth] User in Supabase Auth but not in clinic_users:', user.id, user.email)
