@@ -129,7 +129,7 @@ export default function DoctorsPage() {
     const { data: authData } = await supabase.auth.getSession()
     const token = authData.session?.access_token
 
-    const res = await fetch('/api/admin/invite-user', {
+    const res = await fetch('/api/users/invite', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body:    JSON.stringify({ ...inviteForm, role: 'doctor' }),
