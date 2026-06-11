@@ -47,6 +47,7 @@ export interface PatientDeposit {
   refund_mode: string | null
   collected_by: string | null
   notes: string | null
+  is_deleted: boolean
   created_at: string
   updated_at: string
 }
@@ -291,7 +292,7 @@ export async function computePatientLedger(patientId: string): Promise<LedgerSum
     }
   }
 
-  for (const bill of billMap.values()) {
+  for (const bill of Array.from(billMap.values())) {
     const netAmount = Number(bill.net_amount || bill.total || 0)
     const billDate = bill.created_at || bill.createdat || ''
     const invoiceNum = bill.invoice_number || bill.invoicenumber || ''
@@ -482,7 +483,7 @@ export async function checkDischargeBillingClearance(
   // 1. Load bills for this admission
   const { data: bills } = await supabase
     .from('bills')
-    .select('id, net_amount, total, paid, due, status, admission_id')
+    .select('id, net_amount, total, paid, due, status, admission_id, is_deleted')
     .or(`admission_id.eq.${admissionId},notes.ilike.%IPD-${admissionId}%`)
     .eq('patient_id', patientId)
 
