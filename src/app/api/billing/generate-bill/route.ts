@@ -321,6 +321,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Fee-Paid Guard: Prevent duplicate consultation fee billing ──
+  // If the bill contains ONLY consultation/registration fee items and
+  // the fee was already paid (tracked in encounters or opd_queue),
+  // reject the bill to prevent double-billing.
+  const CONSULTATION_LABELS = [
+    'opd consultation', 'anc consultation', 'follow-up consultation',
+    'emergency consultation', 'registration fee', 'consultation fee',
+    'opd registration fee', 'opd consultation fee',
+  ];
+  const allItemsAreConsultationFee = items.every((item: any) =>
+    CONSULTATION_LABELS.some(code =>
+      (item.label || item.name || '').toLowerCase().includes(code)
+    )
+  );
+
+  if (allItemsAreConsultationFee && module === 'OPD' && encounter_id) {
+    // Check if fee was already paid for this encounter
+    try {
+      const checkSb = getSupabaseAdmin();
+      const { data: enc } = await checkSb
+        .from('encounters')
+        .select('registration_fee_paid')
+        .eq('id', encounter_id)
+        .maybeSingle();
+
+      if (enc?.registration_fee_paid) {
+        return NextResponse.json({
+          success: false,
+          error: 'Consultation fee already paid for this encounter. No additional bill needed.',
+          duplicate_fee: true,
+        }, { status: 409 });
+      }
+    } catch { /* non-fatal — proceed with bill generation */ }
+  }
+
   // ── Get admin client ───────────────────────────────────────────
   let sb: ReturnType<typeof getSupabaseAdmin>;
   try {

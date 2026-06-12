@@ -382,7 +382,7 @@ export async function POST(req: NextRequest) {
         mobile: admission.mobile,
         date: follow_up_date,
         time: '10:00',
-        type: 'Follow-up (Post-Discharge)',
+        type: 'Discharge Follow-up',
         status: 'scheduled',
         notes: follow_up_note || `Post-discharge follow-up. Admitted: ${admission.admission_date}. Diagnosis: ${admission.diagnosis_on_admission || '—'}`,
       })

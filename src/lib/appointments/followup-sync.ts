@@ -35,7 +35,7 @@ export async function handleFollowupAfterVisit(params: {
       .from('appointments')
       .select('id, date, status')
       .eq('patient_id', patient_id)
-      .eq('type', 'follow_up')
+      .in('type', ['follow_up', 'Follow-up'])
       .eq('status', 'scheduled')
       .gt('date', visitDateISO)
 

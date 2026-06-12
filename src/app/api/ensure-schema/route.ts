@@ -98,6 +98,36 @@ const REQUIRED_SCHEMAS: Record<string, Record<string, string>> = {
     ocr_extracted:    'BOOLEAN DEFAULT false',
     created_at:       'TIMESTAMPTZ DEFAULT NOW()',
   },
+  appointments: {
+    patient_id:       'UUID',
+    patient_name:     'TEXT',
+    mrn:              'TEXT',
+    mobile:           'TEXT',
+    date:             'DATE DEFAULT CURRENT_DATE',
+    time:             "TEXT DEFAULT '10:00'",
+    type:             'TEXT',
+    notes:            'TEXT',
+    status:           "TEXT DEFAULT 'scheduled'",
+    reminder_sent:    'BOOLEAN DEFAULT FALSE',
+    reminder_sent_at: 'TIMESTAMPTZ',
+    source:           'TEXT',
+    follow_up_id:     'UUID',
+    doctor_id:        'UUID',
+    doctor_name:      'TEXT',
+    video_link:       'TEXT',
+    visit_status:     "TEXT DEFAULT 'scheduled'",
+    created_at:       'TIMESTAMPTZ DEFAULT NOW()',
+    updated_at:       'TIMESTAMPTZ DEFAULT NOW()',
+  },
+  follow_ups: {
+    patient_id:            'UUID',
+    created_from_visit_id: 'UUID',
+    recommended_date:      'DATE',
+    status:                "TEXT DEFAULT 'pending'",
+    linked_appointment_id: 'UUID',
+    created_at:            'TIMESTAMPTZ DEFAULT NOW()',
+    updated_at:            'TIMESTAMPTZ DEFAULT NOW()',
+  },
   ipd_nursing: {
     ipd_admission_id:   'UUID',
     bed_id:             'TEXT',
@@ -239,6 +269,25 @@ export async function POST(req: NextRequest) {
           `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ipd_nursing' AND policyname = 'ipd_nursing_authenticated_all') THEN CREATE POLICY ipd_nursing_authenticated_all ON public.ipd_nursing FOR ALL TO authenticated USING (true) WITH CHECK (true); END IF; END $$;`,
           `GRANT ALL ON public.ipd_nursing TO authenticated;`,
           `GRANT ALL ON public.ipd_nursing TO service_role;`,
+        )
+      }
+
+      // Enable RLS + GRANT for appointments and follow_ups
+      if (table === 'appointments') {
+        statements.push(
+          `ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;`,
+          `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'appointments' AND policyname = 'appointments_authenticated_all') THEN CREATE POLICY appointments_authenticated_all ON public.appointments FOR ALL TO authenticated USING (true) WITH CHECK (true); END IF; END $$;`,
+          `GRANT ALL ON public.appointments TO authenticated;`,
+          `GRANT ALL ON public.appointments TO service_role;`,
+        )
+      }
+
+      if (table === 'follow_ups') {
+        statements.push(
+          `ALTER TABLE public.follow_ups ENABLE ROW LEVEL SECURITY;`,
+          `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'follow_ups' AND policyname = 'follow_ups_authenticated_all') THEN CREATE POLICY follow_ups_authenticated_all ON public.follow_ups FOR ALL TO authenticated USING (true) WITH CHECK (true); END IF; END $$;`,
+          `GRANT ALL ON public.follow_ups TO authenticated;`,
+          `GRANT ALL ON public.follow_ups TO service_role;`,
         )
       }
 

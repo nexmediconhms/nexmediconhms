@@ -22,7 +22,7 @@ import { escapeLike, formatDateTime, getIndiaToday } from '@/lib/utils'
 import { handleVisitCompletion } from '@/lib/services/appointmentService'
 import {
   Users, Plus, X, Clock, CheckCircle, Play, Stethoscope,
-  AlertTriangle, Loader2, RefreshCw, Zap,
+  AlertTriangle, Loader2, RefreshCw, Zap, IndianRupee,
 } from 'lucide-react'
 
 type QueueStatus = 'waiting' | 'vitals_done' | 'in_progress' | 'done' | 'cancelled'
@@ -44,6 +44,10 @@ interface QueueEntry {
   // joined:
   patient_name: string
   mrn: string
+  // Fee tracking:
+  fee_collected: boolean
+  fee_amount: number | null
+  fee_receipt_number: string | null
 }
 
 const STATUS_LABELS: Record<QueueStatus, string> = {
@@ -148,6 +152,7 @@ function QueueContent() {
           id, queue_date, token_number, status, priority,
           notes, called_at, done_at, created_at, updated_at,
           patient_id, encounter_id,
+          fee_collected, fee_amount, fee_receipt_number,
           patients!inner ( full_name, mrn )
         `)
         .eq('queue_date', queueDate)
@@ -170,6 +175,9 @@ function QueueContent() {
         updated_at: r.updated_at,
         patient_name: r.patients.full_name,
         mrn: r.patients.mrn,
+        fee_collected: r.fee_collected || false,
+        fee_amount: r.fee_amount || null,
+        fee_receipt_number: r.fee_receipt_number || null,
       }))
 
       setQueue(mapped)
@@ -322,6 +330,47 @@ function QueueContent() {
 
     setShowRemoveConfirm(null)
     setRemoveReason('')
+  }
+
+  // ── Mark OPD fee as already paid ──────────────────────────
+  async function handleMarkFeePaid(entry: QueueEntry) {
+    try {
+      // Update the queue entry to mark fee as collected
+      const { error: e } = await supabase
+        .from('opd_queue')
+        .update({
+          fee_collected: true,
+          fee_amount: null, // Will be set by the API if needed
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', entry.id)
+
+      if (e) { setError(e.message); return }
+
+      // Also call the fee-status API to log the action
+      await fetch('/api/billing/fee-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'mark_paid',
+          patient_id: entry.patient_id,
+          queue_id: entry.id,
+          encounter_id: entry.encounter_id,
+          amount: 0, // Amount already collected externally
+          payment_mode: 'cash',
+        }),
+      }).catch(() => { /* non-fatal */ })
+
+      await audit('update', 'encounter', entry.id,
+        `Queue token #${entry.token_number} — ${entry.patient_name}: OPD fee marked as already paid`)
+
+      // Realtime will trigger reload, but update local state immediately
+      setQueue(prev => prev.map(q =>
+        q.id === entry.id ? { ...q, fee_collected: true } : q
+      ))
+    } catch (err: any) {
+      setError(`Failed to mark fee: ${err.message}`)
+    }
   }
 
   // ── Add to queue ──────────────────────────────────────────
@@ -504,6 +553,20 @@ function QueueContent() {
                             {entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1)}
                           </span>
                         )}
+                        {/* Fee payment status badge */}
+                        {entry.fee_collected ? (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
+                            <IndianRupee className="w-3 h-3" /> Fee Paid ✓
+                          </span>
+                        ) : (entry.status === 'waiting' || entry.status === 'vitals_done') ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleMarkFeePaid(entry) }}
+                            className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200 flex items-center gap-1 transition-colors"
+                            title="Mark that patient has already paid the OPD registration/consultation fee"
+                          >
+                            <IndianRupee className="w-3 h-3" /> Mark Fee Paid
+                          </button>
+                        ) : null}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
                         <Clock className="w-3 h-3" />

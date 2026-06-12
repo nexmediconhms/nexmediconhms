@@ -39,7 +39,7 @@ export async function cancelActiveAppointment(patientId: string) {
     })
     .eq('patient_id', patientId)
     .in('status', ['scheduled', 'confirmed'])
-    .eq('type', 'follow_up') // ✅ IMPORTANT FIX
+    .in('type', ['follow_up', 'Follow-up']) // ✅ Match both legacy and new type values
 
   if (error) throw error
 }
@@ -82,7 +82,7 @@ export async function createAppointment(params: CreateAppointmentParams): Promis
     })
     .eq('patient_id', patientId)
     .in('status', ['scheduled', 'confirmed'])
-    .eq('type', 'follow_up')
+    .in('type', ['follow_up', 'Follow-up'])
     .eq('date', date)
 
   if (cancelErr) {
@@ -193,7 +193,7 @@ export async function createFollowUp(
         mobile: meta?.mobile ?? '',
         date: new Date(followUpDate).toISOString().split('T')[0],
         time: meta?.followUpTime ?? '10:00',
-        type: 'follow_up',
+        type: 'Follow-up',
         notes,
         status: 'scheduled',
         reminder_sent: false,
@@ -241,7 +241,7 @@ export async function createFollowUp(
       mobile: meta?.mobile ?? '',
       date: new Date(followUpDate).toISOString().split('T')[0],
       time: meta?.followUpTime ?? '10:00',
-      type: 'follow_up',
+      type: 'Follow-up',
       notes,
       status: 'scheduled',
       reminder_sent: false,

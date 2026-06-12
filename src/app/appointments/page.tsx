@@ -133,6 +133,30 @@ function AppointmentsContent() {
     const { data, error } = await query
     if (error) {
       console.error('[Appointments] fetch error:', error.message)
+      // Self-healing: if schema error, try to fix and retry once
+      if (error.message?.includes('schema') || error.message?.includes('column') || error.code === '42703' || error.code === '42P01') {
+        try {
+          await fetch('/api/ensure-schema', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tables: ['appointments', 'follow_ups'] }),
+          })
+          // Retry the query after schema fix
+          const retry = supabase
+            .from('appointments')
+            .select('*')
+            .order('date', { ascending: true })
+            .limit(200)
+          const { data: retryData } = await retry
+          if (retryData) {
+            setAppts(retryData as Appointment[])
+            setLoading(false)
+            return
+          }
+        } catch (healErr) {
+          console.error('[Appointments] self-heal failed:', healErr)
+        }
+      }
       setAppts([])
     } else {
       setAppts((data ?? []) as Appointment[])

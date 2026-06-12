@@ -15,6 +15,9 @@ import { calculateTotals } from '@/lib/billing-gst'
 import { GSTSelector } from '@/components/billing/BillingExtras'
 import AdminBillModify from '@/components/billing/AdminBillModify'
 import RefundModal from '@/components/billing/RefundModal'
+import ConsultationFeeGuard from '@/components/billing/ConsultationFeeGuard'
+import { CONSULTATION_SERVICE_CODES } from '@/lib/billing-workflow'
+import type { FeeStatus } from '@/lib/billing-workflow'
 import { getIndiaToday } from '@/lib/utils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
@@ -325,6 +328,14 @@ function BillingContent() {
   const [paying, setPaying] = useState(false)
   const [payError, setPayError] = useState('')
 
+  // ─── Fee Guard State ────────────────────────────────────────────────────────
+  // Tracks whether the selected patient has already paid their consultation fee.
+  // When feePaid=true, consultation fee presets are hidden from the service list
+  // and a "Skip Billing" option is shown if no additional services are needed.
+  const [feeStatus, setFeeStatus] = useState<FeeStatus | null>(null)
+  const [feeGuardLoading, setFeeGuardLoading] = useState(false)
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Bug fix: ref to capture latest payMode so Razorpay handler doesn't use stale closure
   const payModeRef = useRef<PayMode>('cash')
 
@@ -435,6 +446,33 @@ function BillingContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
+
+  // ── Fee status check when patient is selected ──────────────────
+  useEffect(() => {
+    if (!selPatient?.id) {
+      setFeeStatus(null)
+      return
+    }
+    let cancelled = false
+    setFeeGuardLoading(true)
+    const encId = searchParams.get('encounterId') || searchParams.get('encounter_id') || undefined
+    const queueId = searchParams.get('queueId') || searchParams.get('queue_id') || undefined
+    const params = new URLSearchParams({ patient_id: selPatient.id })
+    if (encId) params.set('encounter_id', encId)
+    if (queueId) params.set('queue_id', queueId)
+
+    fetch(`/api/billing/fee-status?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled && data.fee_status) {
+          setFeeStatus(data.fee_status)
+        }
+      })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => { if (!cancelled) setFeeGuardLoading(false) })
+
+    return () => { cancelled = true }
+  }, [selPatient?.id, searchParams])
 
   // ── Patient search ───────────────────────────────────────────
   function searchPatients(q: string) {
@@ -641,6 +679,8 @@ function BillingContent() {
     setGstPercent(0); setGstAmount(0)
     // ──────────────────────────────────────────────────────────────────────
     setPayMode('cash'); setNotes(''); setPayError('')
+    // Reset fee guard state
+    setFeeStatus(null); setFeeGuardLoading(false)
   }
 
   // ── CA Report generation ─────────────────────────────────────
@@ -843,13 +883,76 @@ function BillingContent() {
                     </button>
                   </div>
                 )}
+
+                {/* ── Fee Guard: Shows if consultation fee was already paid ── */}
+                {selPatient && feeGuardLoading && (
+                  <div className="mt-3 text-xs text-gray-400 flex items-center gap-2">
+                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                    Checking fee payment status…
+                  </div>
+                )}
+                {selPatient && feeStatus?.feePaid && (
+                  <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-green-600 text-xl">✅</span>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-green-800 text-sm">
+                          OPD Registration / Consultation Fee Already Paid
+                        </h4>
+                        <p className="text-green-700 text-sm mt-0.5">
+                          ₹{feeStatus.feeAmount} collected
+                          {feeStatus.receiptNumber && ` (Receipt: ${feeStatus.receiptNumber})`}
+                          {feeStatus.paymentMode && ` via ${feeStatus.paymentMode.toUpperCase()}`}
+                        </p>
+                        <p className="text-green-600 text-xs mt-1">
+                          Only additional services (labs, procedures, consumables) need to be billed.
+                          Consultation fee presets are hidden below.
+                        </p>
+                      </div>
+                    </div>
+                    {/* Skip billing button — no extra services needed */}
+                    <button
+                      onClick={() => { resetForm(); setView('list') }}
+                      className="mt-3 w-full py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2"
+                    >
+                      <span>🚫</span>
+                      No Additional Services Needed — Go Back to Bills
+                    </button>
+                  </div>
+                )}
+                {selPatient && feeStatus && !feeStatus.feePaid && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-amber-600 text-base">⚠️</span>
+                      <div className="flex-1">
+                        <p className="text-amber-800 text-sm font-medium">
+                          Consultation Fee Not Yet Collected
+                        </p>
+                        <p className="text-amber-700 text-xs mt-0.5">
+                          Include the consultation/registration fee in this bill, or collect it separately at the registration counter.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Step 2: Services */}
               <div className="card p-5">
                 <h2 className="section-title">2. Add Services</h2>
+                {/* Filter out consultation fee presets when fee is already paid */}
                 <div className="grid grid-cols-2 gap-2 mb-4 max-h-64 overflow-y-auto pr-1">
-                  {feePresets.map(p => (
+                  {feePresets
+                    .filter(p => {
+                      // If fee is already paid, hide consultation/registration fee presets
+                      if (feeStatus?.feePaid) {
+                        return !CONSULTATION_SERVICE_CODES.some(
+                          code => p.label.toLowerCase().includes(code.toLowerCase())
+                        )
+                      }
+                      return true
+                    })
+                    .map(p => (
                     <button key={p.label} onClick={() => addPreset(p)}
                       className="text-left px-3 py-2 text-xs rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all">
                       <div className="font-medium text-gray-800">{p.label}</div>

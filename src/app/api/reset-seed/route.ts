@@ -82,6 +82,7 @@ const TABLES_TO_CLEAR = [
   'prescriptions',
   'encounters',
   'opdqueue',
+  'follow_ups',
   'appointments',
   'hospitalfund',
   'ipdchargerates',
