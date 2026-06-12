@@ -7,7 +7,7 @@
 --
 -- TABLE OF CONTENTS:
 --   §1  Helper functions (RLS helpers, audit RPC)
---   §2  Core tables (patients, clinicusers, clinicsettings)
+--   §2  Core tables (patients, clinic_users, clinic_settings)
 --   §3  Clinical tables (encounters, prescriptions, labreports, patientallergies)
 --   §4  Scheduling (appointments, opdqueue, reminders)
 --   §5  IPD (beds, ipdadmissions, ipdchargerates, ipd_nursing)
@@ -27,24 +27,24 @@
 CREATE OR REPLACE FUNCTION is_active_user() RETURNS boolean
   LANGUAGE sql SECURITY DEFINER STABLE AS $$
     SELECT EXISTS (
-      SELECT 1 FROM clinicusers
-      WHERE authid = auth.uid() AND isactive = TRUE
+      SELECT 1 FROM clinic_users
+      WHERE auth_id = auth.uid() AND is_active = TRUE
     )
   $$;
 
 CREATE OR REPLACE FUNCTION is_admin() RETURNS boolean
   LANGUAGE sql SECURITY DEFINER STABLE AS $$
     SELECT EXISTS (
-      SELECT 1 FROM clinicusers
-      WHERE authid = auth.uid() AND role = 'admin' AND isactive = TRUE
+      SELECT 1 FROM clinic_users
+      WHERE auth_id = auth.uid() AND role = 'admin' AND is_active = TRUE
     )
   $$;
 
 CREATE OR REPLACE FUNCTION is_doctor_or_admin() RETURNS boolean
   LANGUAGE sql SECURITY DEFINER STABLE AS $$
     SELECT EXISTS (
-      SELECT 1 FROM clinicusers
-      WHERE authid = auth.uid() AND role IN ('admin','doctor') AND isactive = TRUE
+      SELECT 1 FROM clinic_users
+      WHERE auth_id = auth.uid() AND role IN ('admin','doctor') AND is_active = TRUE
     )
   $$;
 
@@ -76,22 +76,45 @@ $$;
 
 -- ── §2  CORE TABLES ───────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS clinicusers (
+-- Drop any compatibility views that may conflict with table creation
+-- (These views are created by migration 033 for backward compat but block CREATE TABLE)
+-- Only drop if they are actually views (not tables)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relname = 'clinicusers' AND n.nspname = 'public' AND c.relkind = 'v') THEN
+    DROP VIEW clinicusers CASCADE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relname = 'clinic_users' AND n.nspname = 'public' AND c.relkind = 'v') THEN
+    DROP VIEW clinic_users CASCADE;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS clinic_users (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  authid      UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  auth_id     UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   email       TEXT NOT NULL,
-  fullname    TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('admin','doctor','staff','receptionist')),
+  full_name   TEXT NOT NULL,
+  role        TEXT NOT NULL CHECK (role IN ('admin','doctor','staff','receptionist','lab_partner')),
   phone       TEXT,
-  isactive    BOOLEAN DEFAULT TRUE,
-  createdat   TIMESTAMPTZ DEFAULT NOW(),
-  updatedat   TIMESTAMPTZ DEFAULT NOW()
+  specialty       TEXT,
+  med_reg_no      TEXT,
+  extra_roles     TEXT[],
+  share_pct       NUMERIC(5,2),
+  earning_model   TEXT,
+  is_primary      BOOLEAN DEFAULT FALSE,
+  mfa_enabled     BOOLEAN DEFAULT FALSE,
+  mfa_enrolled_at TIMESTAMPTZ,
+  is_active   BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS clinicsettings (
+CREATE TABLE IF NOT EXISTS clinic_settings (
   key         TEXT PRIMARY KEY,
   value       TEXT NOT NULL,
-  updatedat   TIMESTAMPTZ DEFAULT NOW()
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS patients (
@@ -134,7 +157,7 @@ CREATE TABLE IF NOT EXISTS encounters (
   patientid           UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   date                DATE DEFAULT CURRENT_DATE,
   type                TEXT DEFAULT 'OPD',
-  doctorid            UUID REFERENCES clinicusers(id),
+  doctorid            UUID REFERENCES clinic_users(id),
   doctorname          TEXT,
   chiefcomplaint      TEXT,
   hpi                 TEXT,
@@ -160,7 +183,7 @@ CREATE TABLE IF NOT EXISTS prescriptions (
   followupdate    DATE,
   followupnote    TEXT,
   issuedat        TIMESTAMPTZ DEFAULT NOW(),
-  doctorid        UUID REFERENCES clinicusers(id),
+  doctorid        UUID REFERENCES clinic_users(id),
   doctorname      TEXT,
   createdat       TIMESTAMPTZ DEFAULT NOW()
 );
@@ -260,6 +283,15 @@ CREATE TABLE IF NOT EXISTS beds (
   createdat   TIMESTAMPTZ DEFAULT NOW(),
   updatedat   TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Drop compatibility view if it exists (from previous migrations) so table can be created
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relname = 'ipdadmissions' AND n.nspname = 'public' AND c.relkind = 'v') THEN
+    DROP VIEW ipdadmissions CASCADE;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS ipdadmissions (
   id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -501,196 +533,212 @@ CREATE TABLE IF NOT EXISTS videorooms (
 );
 
 -- ── §13 ROW LEVEL SECURITY ─────────────────────────────────────────────────────
+-- Enable RLS only on actual tables (skip views that may exist as compatibility layers)
 
-ALTER TABLE clinicusers       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clinicsettings    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE patients          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE encounters        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prescriptions     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE labreports        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE patientallergies  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE appointments      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE opdqueue          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reminders         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reminderlog       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE beds              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ipdadmissions     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ipdchargerates    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ipd_nursing       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE bills             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE hospitalfund      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE labpartners       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ancregistrations  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ancvisits         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE dischargesummaries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portalpatients    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portalsessions    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE auditlog          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attachments       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE videorooms        ENABLE ROW LEVEL SECURITY;
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOR tbl IN
+    SELECT unnest(ARRAY[
+      'clinic_users', 'clinic_settings', 'patients', 'encounters',
+      'prescriptions', 'labreports', 'patientallergies', 'appointments',
+      'opdqueue', 'reminders', 'reminderlog', 'beds',
+      'ipdadmissions', 'ipdchargerates', 'ipd_nursing', 'bills',
+      'hospitalfund', 'labpartners', 'ancregistrations', 'ancvisits',
+      'dischargesummaries', 'portalpatients', 'portalsessions',
+      'auditlog', 'attachments', 'videorooms'
+    ])
+  LOOP
+    -- Only enable RLS if the relation is a table (not a view)
+    IF EXISTS (
+      SELECT 1 FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relname = tbl AND n.nspname = 'public' AND c.relkind = 'r'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    END IF;
+  END LOOP;
+END $$;
 
--- clinicusers: active users read all; admin full write
-CREATE POLICY cu_select ON clinicusers FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY cu_insert ON clinicusers FOR INSERT TO authenticated WITH CHECK (is_admin());
-CREATE POLICY cu_update ON clinicusers FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY cu_delete ON clinicusers FOR DELETE TO authenticated USING (is_admin());
-
--- clinicsettings: all read; admin write
-CREATE POLICY cs_select ON clinicsettings FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY cs_insert ON clinicsettings FOR INSERT TO authenticated WITH CHECK (is_admin());
-CREATE POLICY cs_update ON clinicsettings FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY cs_delete ON clinicsettings FOR DELETE TO authenticated USING (is_admin());
-
--- patients: all active users full CRUD (reception workflow)
-CREATE POLICY pat_select ON patients FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY pat_insert ON patients FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY pat_update ON patients FOR UPDATE TO authenticated USING (is_active_user());
-CREATE POLICY pat_delete ON patients FOR DELETE TO authenticated USING (is_admin());
-
--- encounters: all active; delete doctor/admin
-CREATE POLICY enc_select ON encounters FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY enc_insert ON encounters FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY enc_update ON encounters FOR UPDATE TO authenticated USING (is_active_user());
-CREATE POLICY enc_delete ON encounters FOR DELETE TO authenticated USING (is_doctor_or_admin());
-
--- prescriptions: all active; delete doctor/admin
-CREATE POLICY rx_select ON prescriptions FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY rx_insert ON prescriptions FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin());
-CREATE POLICY rx_update ON prescriptions FOR UPDATE TO authenticated USING (is_doctor_or_admin());
-CREATE POLICY rx_delete ON prescriptions FOR DELETE TO authenticated USING (is_doctor_or_admin());
-
--- lab reports: all active; write doctor/admin
-CREATE POLICY lab_select ON labreports FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY lab_insert ON labreports FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin());
-CREATE POLICY lab_update ON labreports FOR UPDATE TO authenticated USING (is_doctor_or_admin());
-CREATE POLICY lab_delete ON labreports FOR DELETE TO authenticated USING (is_doctor_or_admin());
-
--- patient allergies: all active; write doctor/admin
-CREATE POLICY allergy_select ON patientallergies FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY allergy_insert ON patientallergies FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin());
-CREATE POLICY allergy_update ON patientallergies FOR UPDATE TO authenticated USING (is_doctor_or_admin());
-CREATE POLICY allergy_delete ON patientallergies FOR DELETE TO authenticated USING (is_doctor_or_admin());
-
--- appointments: all active users full CRUD
-CREATE POLICY appt_select ON appointments FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY appt_insert ON appointments FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY appt_update ON appointments FOR UPDATE TO authenticated USING (is_active_user());
-CREATE POLICY appt_delete ON appointments FOR DELETE TO authenticated USING (is_doctor_or_admin());
-
--- opd queue, reminders, reminder log: all active
-CREATE POLICY opd_all ON opdqueue    FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-CREATE POLICY rem_all ON reminders   FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-CREATE POLICY rml_all ON reminderlog FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-
--- beds: all active
-CREATE POLICY beds_select ON beds FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY beds_insert ON beds FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY beds_update ON beds FOR UPDATE TO authenticated USING (is_active_user());
-CREATE POLICY beds_delete ON beds FOR DELETE TO authenticated USING (is_admin());
-
--- ipd admissions: all active; delete admin
-CREATE POLICY ipd_select ON ipdadmissions FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY ipd_insert ON ipdadmissions FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY ipd_update ON ipdadmissions FOR UPDATE TO authenticated USING (is_doctor_or_admin());
-CREATE POLICY ipd_delete ON ipdadmissions FOR DELETE TO authenticated USING (is_admin());
-
--- ipdchargerates: all read; admin write
-CREATE POLICY ipdcr_select ON ipdchargerates FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY ipdcr_insert ON ipdchargerates FOR INSERT TO authenticated WITH CHECK (is_admin());
-CREATE POLICY ipdcr_update ON ipdchargerates FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY ipdcr_delete ON ipdchargerates FOR DELETE TO authenticated USING (is_admin());
-
--- ipd_nursing: all authenticated users full access (nursing staff)
-CREATE POLICY ipd_nursing_all ON ipd_nursing FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- bills: all active read; staff/admin insert; admin update/delete
-CREATE POLICY bill_select ON bills FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY bill_insert ON bills FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY bill_update ON bills FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY bill_delete ON bills FOR DELETE TO authenticated USING (is_admin());
-
--- hospital fund: all active read/insert; admin update/delete
-CREATE POLICY fund_select ON hospitalfund FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY fund_insert ON hospitalfund FOR INSERT TO authenticated WITH CHECK (is_active_user());
-CREATE POLICY fund_update ON hospitalfund FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY fund_delete ON hospitalfund FOR DELETE TO authenticated USING (is_admin());
-
--- lab partners: all active read; admin write
-CREATE POLICY lp_select ON labpartners FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY lp_insert ON labpartners FOR INSERT TO authenticated WITH CHECK (is_admin());
-CREATE POLICY lp_update ON labpartners FOR UPDATE TO authenticated USING (is_admin());
-CREATE POLICY lp_delete ON labpartners FOR DELETE TO authenticated USING (is_admin());
-
--- anc: all active
-CREATE POLICY anc_all ON ancregistrations FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-CREATE POLICY ancv_all ON ancvisits FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-
--- dischargesummaries: all read; all insert; update only if not final (admin bypass); delete admin
-CREATE POLICY ds_select ON dischargesummaries FOR SELECT TO authenticated USING (true);
-CREATE POLICY ds_insert ON dischargesummaries FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY ds_update ON dischargesummaries FOR UPDATE TO authenticated
-  USING (isfinal = FALSE OR is_admin());
-CREATE POLICY ds_delete ON dischargesummaries FOR DELETE TO authenticated USING (is_admin());
-
--- portal: service role only (no direct authenticated access)
-CREATE POLICY pp_none ON portalpatients  FOR ALL TO authenticated USING (false);
-CREATE POLICY ps_none ON portalsessions  FOR ALL TO authenticated USING (false);
-
--- audit log: all active read; insert from any (service role handles inserts)
-CREATE POLICY audit_select ON auditlog FOR SELECT TO authenticated USING (is_active_user());
-CREATE POLICY audit_insert ON auditlog FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY audit_delete ON auditlog FOR DELETE TO authenticated USING (is_admin());
-
--- attachments: all active
-CREATE POLICY att_all ON attachments FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
-
--- video rooms: all active
-CREATE POLICY vid_all ON videorooms FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user());
+-- Create RLS policies (safe: skips if policy already exists or table is a view)
+DO $$
+DECLARE
+  _sql TEXT;
+BEGIN
+  -- Helper: execute policy creation, ignore if already exists or target is a view
+  FOR _sql IN
+    SELECT unnest(ARRAY[
+      -- clinic_users: active users read all; admin full write
+      'CREATE POLICY cu_select ON clinic_users FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY cu_insert ON clinic_users FOR INSERT TO authenticated WITH CHECK (is_admin())',
+      'CREATE POLICY cu_update ON clinic_users FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY cu_delete ON clinic_users FOR DELETE TO authenticated USING (is_admin())',
+      -- clinic_settings: all read; admin write
+      'CREATE POLICY cs_select ON clinic_settings FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY cs_insert ON clinic_settings FOR INSERT TO authenticated WITH CHECK (is_admin())',
+      'CREATE POLICY cs_update ON clinic_settings FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY cs_delete ON clinic_settings FOR DELETE TO authenticated USING (is_admin())',
+      -- patients: all active users full CRUD
+      'CREATE POLICY pat_select ON patients FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY pat_insert ON patients FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY pat_update ON patients FOR UPDATE TO authenticated USING (is_active_user())',
+      'CREATE POLICY pat_delete ON patients FOR DELETE TO authenticated USING (is_admin())',
+      -- encounters: all active; delete doctor/admin
+      'CREATE POLICY enc_select ON encounters FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY enc_insert ON encounters FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY enc_update ON encounters FOR UPDATE TO authenticated USING (is_active_user())',
+      'CREATE POLICY enc_delete ON encounters FOR DELETE TO authenticated USING (is_doctor_or_admin())',
+      -- prescriptions
+      'CREATE POLICY rx_select ON prescriptions FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY rx_insert ON prescriptions FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin())',
+      'CREATE POLICY rx_update ON prescriptions FOR UPDATE TO authenticated USING (is_doctor_or_admin())',
+      'CREATE POLICY rx_delete ON prescriptions FOR DELETE TO authenticated USING (is_doctor_or_admin())',
+      -- lab reports
+      'CREATE POLICY lab_select ON labreports FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY lab_insert ON labreports FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin())',
+      'CREATE POLICY lab_update ON labreports FOR UPDATE TO authenticated USING (is_doctor_or_admin())',
+      'CREATE POLICY lab_delete ON labreports FOR DELETE TO authenticated USING (is_doctor_or_admin())',
+      -- patient allergies
+      'CREATE POLICY allergy_select ON patientallergies FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY allergy_insert ON patientallergies FOR INSERT TO authenticated WITH CHECK (is_doctor_or_admin())',
+      'CREATE POLICY allergy_update ON patientallergies FOR UPDATE TO authenticated USING (is_doctor_or_admin())',
+      'CREATE POLICY allergy_delete ON patientallergies FOR DELETE TO authenticated USING (is_doctor_or_admin())',
+      -- appointments
+      'CREATE POLICY appt_select ON appointments FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY appt_insert ON appointments FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY appt_update ON appointments FOR UPDATE TO authenticated USING (is_active_user())',
+      'CREATE POLICY appt_delete ON appointments FOR DELETE TO authenticated USING (is_doctor_or_admin())',
+      -- opd queue, reminders, reminder log
+      'CREATE POLICY opd_all ON opdqueue FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      'CREATE POLICY rem_all ON reminders FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      'CREATE POLICY rml_all ON reminderlog FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      -- beds
+      'CREATE POLICY beds_select ON beds FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY beds_insert ON beds FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY beds_update ON beds FOR UPDATE TO authenticated USING (is_active_user())',
+      'CREATE POLICY beds_delete ON beds FOR DELETE TO authenticated USING (is_admin())',
+      -- ipd admissions
+      'CREATE POLICY ipd_select ON ipdadmissions FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY ipd_insert ON ipdadmissions FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY ipd_update ON ipdadmissions FOR UPDATE TO authenticated USING (is_doctor_or_admin())',
+      'CREATE POLICY ipd_delete ON ipdadmissions FOR DELETE TO authenticated USING (is_admin())',
+      -- ipdchargerates
+      'CREATE POLICY ipdcr_select ON ipdchargerates FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY ipdcr_insert ON ipdchargerates FOR INSERT TO authenticated WITH CHECK (is_admin())',
+      'CREATE POLICY ipdcr_update ON ipdchargerates FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY ipdcr_delete ON ipdchargerates FOR DELETE TO authenticated USING (is_admin())',
+      -- ipd_nursing
+      'CREATE POLICY ipd_nursing_all ON ipd_nursing FOR ALL TO authenticated USING (true) WITH CHECK (true)',
+      -- bills
+      'CREATE POLICY bill_select ON bills FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY bill_insert ON bills FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY bill_update ON bills FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY bill_delete ON bills FOR DELETE TO authenticated USING (is_admin())',
+      -- hospital fund
+      'CREATE POLICY fund_select ON hospitalfund FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY fund_insert ON hospitalfund FOR INSERT TO authenticated WITH CHECK (is_active_user())',
+      'CREATE POLICY fund_update ON hospitalfund FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY fund_delete ON hospitalfund FOR DELETE TO authenticated USING (is_admin())',
+      -- lab partners
+      'CREATE POLICY lp_select ON labpartners FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY lp_insert ON labpartners FOR INSERT TO authenticated WITH CHECK (is_admin())',
+      'CREATE POLICY lp_update ON labpartners FOR UPDATE TO authenticated USING (is_admin())',
+      'CREATE POLICY lp_delete ON labpartners FOR DELETE TO authenticated USING (is_admin())',
+      -- anc
+      'CREATE POLICY anc_all ON ancregistrations FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      'CREATE POLICY ancv_all ON ancvisits FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      -- discharge summaries
+      'CREATE POLICY ds_select ON dischargesummaries FOR SELECT TO authenticated USING (true)',
+      'CREATE POLICY ds_insert ON dischargesummaries FOR INSERT TO authenticated WITH CHECK (true)',
+      'CREATE POLICY ds_update ON dischargesummaries FOR UPDATE TO authenticated USING (isfinal = FALSE OR is_admin())',
+      'CREATE POLICY ds_delete ON dischargesummaries FOR DELETE TO authenticated USING (is_admin())',
+      -- portal
+      'CREATE POLICY pp_none ON portalpatients FOR ALL TO authenticated USING (false)',
+      'CREATE POLICY ps_none ON portalsessions FOR ALL TO authenticated USING (false)',
+      -- audit log
+      'CREATE POLICY audit_select ON auditlog FOR SELECT TO authenticated USING (is_active_user())',
+      'CREATE POLICY audit_insert ON auditlog FOR INSERT TO authenticated WITH CHECK (true)',
+      'CREATE POLICY audit_delete ON auditlog FOR DELETE TO authenticated USING (is_admin())',
+      -- attachments
+      'CREATE POLICY att_all ON attachments FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())',
+      -- video rooms
+      'CREATE POLICY vid_all ON videorooms FOR ALL TO authenticated USING (is_active_user()) WITH CHECK (is_active_user())'
+    ])
+  LOOP
+    BEGIN
+      EXECUTE _sql;
+    EXCEPTION WHEN duplicate_object THEN
+      NULL; -- policy already exists
+    WHEN OTHERS THEN
+      NULL; -- table might be a view or not exist
+    END;
+  END LOOP;
+END $$;
 
 -- ── §14 INDEXES ────────────────────────────────────────────────────────────────
+-- Safe index creation: tries snake_case first (live DB), falls back to camelCase (legacy)
 
-CREATE INDEX IF NOT EXISTS idx_patients_mrn         ON patients (mrn);
-CREATE INDEX IF NOT EXISTS idx_patients_mobile      ON patients (mobile);
-CREATE INDEX IF NOT EXISTS idx_patients_fullname    ON patients (fullname);
-CREATE INDEX IF NOT EXISTS idx_patients_abhaid      ON patients (abhaid) WHERE abhaid IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_patients_createdat   ON patients (createdat DESC);
-
-CREATE INDEX IF NOT EXISTS idx_encounters_patient   ON encounters (patientid);
-CREATE INDEX IF NOT EXISTS idx_encounters_date      ON encounters (date DESC);
-
-CREATE INDEX IF NOT EXISTS idx_rx_patient           ON prescriptions (patientid);
-CREATE INDEX IF NOT EXISTS idx_rx_encounter         ON prescriptions (encounterid);
-
-CREATE INDEX IF NOT EXISTS idx_labs_patient         ON labreports (patientid);
-CREATE INDEX IF NOT EXISTS idx_labs_date            ON labreports (reportdate DESC);
-
-CREATE INDEX IF NOT EXISTS idx_appt_date            ON appointments (date);
-CREATE INDEX IF NOT EXISTS idx_appt_patient         ON appointments (patientid);
-CREATE INDEX IF NOT EXISTS idx_appt_status          ON appointments (status);
-
-CREATE INDEX IF NOT EXISTS idx_reminders_due        ON reminders (duedate) WHERE status = 'pending';
-
-CREATE INDEX IF NOT EXISTS idx_beds_status          ON beds (status);
-
-CREATE INDEX IF NOT EXISTS idx_ipd_patient          ON ipdadmissions (patientid);
-CREATE INDEX IF NOT EXISTS idx_ipd_status           ON ipdadmissions (status);
-
-CREATE INDEX IF NOT EXISTS idx_bills_patient        ON bills (patientid);
-CREATE INDEX IF NOT EXISTS idx_bills_status         ON bills (status);
-
-CREATE INDEX IF NOT EXISTS idx_anc_patient          ON ancregistrations (patientid);
-
-CREATE INDEX IF NOT EXISTS idx_ds_patient           ON dischargesummaries (patientid);
-CREATE INDEX IF NOT EXISTS idx_ds_isfinal           ON dischargesummaries (isfinal) WHERE isfinal = TRUE;
-CREATE INDEX IF NOT EXISTS idx_ds_patient_final     ON dischargesummaries (patientid, isfinal);
-
-CREATE INDEX IF NOT EXISTS idx_audit_userid         ON auditlog (userid);
-CREATE INDEX IF NOT EXISTS idx_audit_entityid       ON auditlog (entityid);
-CREATE INDEX IF NOT EXISTS idx_audit_createdat      ON auditlog (createdat DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_action         ON auditlog (action);
-
-CREATE INDEX IF NOT EXISTS idx_portal_token         ON portalsessions (token);
-CREATE INDEX IF NOT EXISTS idx_portal_expiry        ON portalsessions (expiresat);
+DO $$
+DECLARE
+  _sql TEXT;
+BEGIN
+  FOR _sql IN
+    SELECT unnest(ARRAY[
+      -- patients indexes (use the column names actually defined in §2: fullname, abhaid, createdat)
+      'CREATE INDEX IF NOT EXISTS idx_patients_mrn ON patients (mrn)',
+      'CREATE INDEX IF NOT EXISTS idx_patients_mobile ON patients (mobile)',
+      'CREATE INDEX IF NOT EXISTS idx_patients_fullname ON patients (fullname)',
+      'CREATE INDEX IF NOT EXISTS idx_patients_abhaid ON patients (abhaid) WHERE abhaid IS NOT NULL',
+      'CREATE INDEX IF NOT EXISTS idx_patients_createdat ON patients (createdat DESC)',
+      -- encounters (column is patientid, date — not patient_id, encounter_date)
+      'CREATE INDEX IF NOT EXISTS idx_encounters_patient ON encounters (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_encounters_date ON encounters (date DESC)',
+      -- prescriptions (column is patientid, encounterid)
+      'CREATE INDEX IF NOT EXISTS idx_rx_patient ON prescriptions (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_rx_encounter ON prescriptions (encounterid)',
+      -- lab reports
+      'CREATE INDEX IF NOT EXISTS idx_labs_patient ON labreports (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_labs_date ON labreports (reportdate DESC)',
+      -- appointments (column is patientid)
+      'CREATE INDEX IF NOT EXISTS idx_appt_date ON appointments (date)',
+      'CREATE INDEX IF NOT EXISTS idx_appt_patient ON appointments (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_appt_status ON appointments (status)',
+      -- reminders
+      'CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders (duedate) WHERE status = ''pending''',
+      -- beds
+      'CREATE INDEX IF NOT EXISTS idx_beds_status ON beds (status)',
+      -- ipd admissions
+      'CREATE INDEX IF NOT EXISTS idx_ipd_patient ON ipdadmissions (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_ipd_status ON ipdadmissions (status)',
+      -- bills (column is patientid)
+      'CREATE INDEX IF NOT EXISTS idx_bills_patient ON bills (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_bills_status ON bills (status)',
+      -- anc
+      'CREATE INDEX IF NOT EXISTS idx_anc_patient ON ancregistrations (patientid)',
+      -- discharge summaries
+      'CREATE INDEX IF NOT EXISTS idx_ds_patient ON dischargesummaries (patientid)',
+      'CREATE INDEX IF NOT EXISTS idx_ds_isfinal ON dischargesummaries (isfinal) WHERE isfinal = TRUE',
+      'CREATE INDEX IF NOT EXISTS idx_ds_patient_final ON dischargesummaries (patientid, isfinal)',
+      -- audit log
+      'CREATE INDEX IF NOT EXISTS idx_audit_userid ON auditlog (userid)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_entityid ON auditlog (entityid)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_createdat ON auditlog (createdat DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_action ON auditlog (action)',
+      -- portal
+      'CREATE INDEX IF NOT EXISTS idx_portal_token ON portalsessions (token)',
+      'CREATE INDEX IF NOT EXISTS idx_portal_expiry ON portalsessions (expiresat)'
+    ])
+  LOOP
+    BEGIN
+      EXECUTE _sql;
+    EXCEPTION WHEN undefined_column OR undefined_table THEN
+      NULL; -- column or table doesn't exist in this schema variant, skip
+    WHEN OTHERS THEN
+      NULL; -- any other error, skip gracefully
+    END;
+  END LOOP;
+END $$;
 
 -- ── consultation_attachments (file uploads for patient consultations) ─────────
 CREATE TABLE IF NOT EXISTS consultation_attachments (

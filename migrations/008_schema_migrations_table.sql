@@ -62,6 +62,14 @@ BEGIN
 END $$;
 
 -- ════════════════════════════════════════════════════════════════
+-- Ensure all columns exist (table may have been created by an earlier migration without notes)
+-- ════════════════════════════════════════════════════════════════
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS applied_by TEXT;
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS success BOOLEAN DEFAULT TRUE;
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- ════════════════════════════════════════════════════════════════
 -- RECORD EXISTING MIGRATIONS (best-effort retroactive tracking)
 -- ════════════════════════════════════════════════════════════════
 -- Record migrations that we KNOW were applied based on existing schema

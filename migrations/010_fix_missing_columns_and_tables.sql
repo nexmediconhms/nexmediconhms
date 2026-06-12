@@ -145,17 +145,25 @@ BEGIN
   END IF;
 END $$;
 
--- Also fix 'hospitalfund' (no underscore) from v00 schema if it exists
+-- Also fix 'hospitalfund' (no underscore) from v00 schema if it exists.
+--
+-- BUG FIX: The previous version had a single outer guard on `submitted_by`
+-- and then unconditionally ran 5 ALTER TABLEs. If even one of the other
+-- columns (e.g. `category`) already existed — which happens when this
+-- migration is re-run, or when 000_canonical_schema_alignment.sql ran
+-- first and pre-created some columns — you got
+-- "column \"category\" of relation \"hospitalfund\" already exists".
+-- Each ADD must be guarded independently. Postgres ≥ 9.6 supports
+-- `ADD COLUMN IF NOT EXISTS`, so we just use that.
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'hospitalfund')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'hospitalfund' AND column_name = 'submitted_by')
-  THEN
-    ALTER TABLE hospitalfund ADD COLUMN submitted_by TEXT;
-    ALTER TABLE hospitalfund ADD COLUMN category TEXT;
-    ALTER TABLE hospitalfund ADD COLUMN status TEXT DEFAULT 'pending';
-    ALTER TABLE hospitalfund ADD COLUMN receipt_note TEXT;
-    ALTER TABLE hospitalfund ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='hospitalfund') THEN
+    ALTER TABLE public.hospitalfund ADD COLUMN IF NOT EXISTS submitted_by TEXT;
+    ALTER TABLE public.hospitalfund ADD COLUMN IF NOT EXISTS category     TEXT;
+    ALTER TABLE public.hospitalfund ADD COLUMN IF NOT EXISTS status       TEXT DEFAULT 'pending';
+    ALTER TABLE public.hospitalfund ADD COLUMN IF NOT EXISTS receipt_note TEXT;
+    ALTER TABLE public.hospitalfund ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ DEFAULT NOW();
   END IF;
 END $$;
 

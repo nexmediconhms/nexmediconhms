@@ -45,6 +45,16 @@
 
 BEGIN;
 
+-- Bail out entirely if ipd_charges doesn't exist (run 000_canonical_alignment first)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='ipd_charges') THEN
+    RAISE NOTICE 'ipd_charges table missing — skipping migration 018';
+    RETURN;
+  END IF;
+END $$;
+
 -- ─── ipd_charges ─────────────────────────────────────────────────────
 
 -- Add the columns the app expects, all nullable / with safe defaults so
@@ -61,32 +71,43 @@ ALTER TABLE IF EXISTS public.ipd_charges
 ALTER TABLE IF EXISTS public.ipd_charges
   ADD COLUMN IF NOT EXISTS created_by TEXT;
 
--- Back-fill: legacy rows had item_name (NOT NULL); the new code uses
--- description. Copy item_name into description so the UI shows the same
--- text for historical records.
-UPDATE public.ipd_charges
-   SET description = item_name
- WHERE description IS NULL
-   AND item_name   IS NOT NULL;
+-- Back-fills must run inside DO blocks that check for both columns existing
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='item_name')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='description') THEN
+    UPDATE public.ipd_charges
+       SET description = item_name
+     WHERE description IS NULL
+       AND item_name   IS NOT NULL;
+  END IF;
 
--- Back-fill: rate can be derived from (amount / quantity) for legacy rows
--- where it wasn't recorded. Only fills NULL/zero rate; non-zero existing
--- values are kept intact.
-UPDATE public.ipd_charges
-   SET rate = CASE
-                WHEN COALESCE(quantity, 0) > 0
-                THEN ROUND(amount / quantity, 2)
-                ELSE 0
-              END
- WHERE COALESCE(rate, 0) = 0
-   AND amount IS NOT NULL;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='quantity')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='amount')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='rate') THEN
+    UPDATE public.ipd_charges
+       SET rate = CASE
+                    WHEN COALESCE(quantity, 0) > 0
+                    THEN ROUND(amount / quantity, 2)
+                    ELSE 0
+                  END
+     WHERE COALESCE(rate, 0) = 0
+       AND amount IS NOT NULL;
+  END IF;
 
--- Back-fill: charge_date for legacy rows that didn't have one — use the
--- date portion of created_at as the best available proxy.
-UPDATE public.ipd_charges
-   SET charge_date = (created_at AT TIME ZONE 'Asia/Kolkata')::date
- WHERE charge_date IS NULL
-   AND created_at IS NOT NULL;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='created_at') THEN
+    UPDATE public.ipd_charges
+       SET charge_date = (created_at AT TIME ZONE 'Asia/Kolkata')::date
+     WHERE charge_date IS NULL
+       AND created_at IS NOT NULL;
+  END IF;
+END $$;
 
 -- Relax the legacy NOT NULL on item_name so future inserts that only
 -- populate description don't fail. We keep the column for backward
@@ -104,10 +125,7 @@ BEGIN
   END IF;
 END $$;
 
--- Sync trigger: keep item_name and description aligned for new inserts /
--- updates. The trigger copies whichever is present into the other column,
--- so legacy reports that read item_name and modern UIs that read
--- description both see consistent data.
+-- Sync trigger function (always created — only attached if table exists)
 CREATE OR REPLACE FUNCTION public.ipd_charges_sync_legacy_columns()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -121,15 +139,26 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_ipd_charges_sync_legacy_columns ON public.ipd_charges;
-CREATE TRIGGER trg_ipd_charges_sync_legacy_columns
-BEFORE INSERT OR UPDATE ON public.ipd_charges
-FOR EACH ROW EXECUTE FUNCTION public.ipd_charges_sync_legacy_columns();
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='ipd_charges') THEN
+    DROP TRIGGER IF EXISTS trg_ipd_charges_sync_legacy_columns ON public.ipd_charges;
+    CREATE TRIGGER trg_ipd_charges_sync_legacy_columns
+    BEFORE INSERT OR UPDATE ON public.ipd_charges
+    FOR EACH ROW EXECUTE FUNCTION public.ipd_charges_sync_legacy_columns();
 
--- Helpful index for the per-admission, per-day "is this charge already
--- posted?" lookup that the auto-add routine uses.
-CREATE INDEX IF NOT EXISTS idx_ipd_charges_admission_date
-  ON public.ipd_charges (admission_id, charge_date);
+    -- Helpful index for the per-admission, per-day "is this charge already
+    -- posted?" lookup that the auto-add routine uses.
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='admission_id')
+    AND EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='ipd_charges' AND column_name='charge_date') THEN
+      CREATE INDEX IF NOT EXISTS idx_ipd_charges_admission_date
+        ON public.ipd_charges (admission_id, charge_date);
+    END IF;
+  END IF;
+END $$;
 
 -- ─── ipd_charge_rates ────────────────────────────────────────────────
 
@@ -146,24 +175,45 @@ ALTER TABLE IF EXISTS public.ipd_charge_rates
 ALTER TABLE IF EXISTS public.ipd_charge_rates
   ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 
--- Back-fill: legacy column `name` -> new `description`
-UPDATE public.ipd_charge_rates
-   SET description = name
- WHERE description IS NULL
-   AND name        IS NOT NULL;
+-- Back-fills (wrapped in column-existence guards)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='ipd_charge_rates') THEN
+    RETURN;
+  END IF;
 
--- Back-fill: legacy column `amount` -> new `default_rate`
-UPDATE public.ipd_charge_rates
-   SET default_rate = amount
- WHERE default_rate IS NULL
-   AND amount       IS NOT NULL;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='name')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='description') THEN
+    UPDATE public.ipd_charge_rates
+       SET description = name
+     WHERE description IS NULL
+       AND name        IS NOT NULL;
+  END IF;
 
--- Back-fill: legacy column `unit` -> new `per_unit`
-UPDATE public.ipd_charge_rates
-   SET per_unit = unit
- WHERE (per_unit IS NULL OR per_unit = 'per day')
-   AND unit IS NOT NULL
-   AND unit <> '';
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='amount')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='default_rate') THEN
+    UPDATE public.ipd_charge_rates
+       SET default_rate = amount
+     WHERE default_rate IS NULL
+       AND amount       IS NOT NULL;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='unit')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_charge_rates' AND column_name='per_unit') THEN
+    UPDATE public.ipd_charge_rates
+       SET per_unit = unit
+     WHERE (per_unit IS NULL OR per_unit = 'per day')
+       AND unit IS NOT NULL
+       AND unit <> '';
+  END IF;
+END $$;
 
 -- Relax legacy NOT NULL on `name` so future inserts can use `description`
 -- alone.
@@ -201,10 +251,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_ipd_charge_rates_sync_legacy_columns ON public.ipd_charge_rates;
-CREATE TRIGGER trg_ipd_charge_rates_sync_legacy_columns
-BEFORE INSERT OR UPDATE ON public.ipd_charge_rates
-FOR EACH ROW EXECUTE FUNCTION public.ipd_charge_rates_sync_legacy_columns();
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='ipd_charge_rates') THEN
+    DROP TRIGGER IF EXISTS trg_ipd_charge_rates_sync_legacy_columns ON public.ipd_charge_rates;
+    CREATE TRIGGER trg_ipd_charge_rates_sync_legacy_columns
+    BEFORE INSERT OR UPDATE ON public.ipd_charge_rates
+    FOR EACH ROW EXECUTE FUNCTION public.ipd_charge_rates_sync_legacy_columns();
+  END IF;
+END $$;
 
 -- ─── Schema-cache invalidation ───────────────────────────────────────
 -- Nudge PostgREST to refresh its schema cache so the newly added columns

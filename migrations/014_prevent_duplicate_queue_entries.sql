@@ -20,13 +20,37 @@
 -- SAFE TO RUN MULTIPLE TIMES: Uses IF NOT EXISTS pattern.
 -- ============================================================
 
--- Unique index: one active queue entry per patient per day
--- Uses a partial index so 'done'/'cancelled' entries don't block re-queuing
-CREATE UNIQUE INDEX IF NOT EXISTS idx_opd_queue_patient_day_active
-  ON opd_queue (patient_id, queue_date)
-  WHERE status NOT IN ('done', 'completed', 'cancelled', 'skipped');
+-- Unique index: one active queue entry per patient per day.
+-- Apply to whichever queue table actually exists in this database
+-- (opd_queue from 000_canonical_alignment.sql, OR the v00 opdqueue legacy table).
+DO $$
+BEGIN
+  -- snake_case version
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='opd_queue'
+               AND column_name='patient_id')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='opd_queue'
+                   AND column_name='queue_date') THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_opd_queue_patient_day_active
+      ON public.opd_queue (patient_id, queue_date)
+      WHERE status NOT IN ('done', 'completed', 'cancelled', 'skipped');
+  END IF;
+
+  -- v00 legacy version (column names: patientid, date)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='opdqueue'
+               AND column_name='patientid')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='opdqueue'
+                   AND column_name='date') THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_opdqueue_patient_day_active
+      ON public.opdqueue (patientid, date)
+      WHERE status NOT IN ('done', 'completed', 'cancelled', 'skipped');
+  END IF;
+END $$;
 
 -- ============================================================
 -- DONE
 -- ============================================================
-SELECT 'Migration 014: Prevent duplicate queue entries — COMPLETE' AS result;   
+SELECT 'Migration 014: Prevent duplicate queue entries — COMPLETE' AS result;

@@ -65,13 +65,19 @@ CREATE TABLE IF NOT EXISTS public.clinic_settings (
 );
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §2: DETECT AND FIX LEGACY SCHEMA (rename camelCase columns to snake_case)
+-- §2: Migrate camelCase → snake_case ONLY if no snake_case version already exists.
+-- (Migration 037_post_v00_finalize maintains dual-named columns; this rename is
+--  ONLY applied when v00 has been run but no other alignment migration has.)
 -- ═══════════════════════════════════════════════════════════════════════════════
-
--- Fix bills table: rename legacy columns to snake_case if they exist
 DO $$
 BEGIN
-  -- createdat → created_at
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills') THEN
+    RETURN;
+  END IF;
+
+  -- For each legacy column: only RENAME if the snake_case sibling does NOT exist.
+  -- This preserves the dual-column convention when 000_canonical_alignment has run.
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='createdat')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='created_at')
   THEN
@@ -79,36 +85,28 @@ BEGIN
     RAISE NOTICE 'Renamed bills.createdat → created_at';
   END IF;
 
-  -- updatedat → updated_at
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='updatedat')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='updated_at')
   THEN
     ALTER TABLE public.bills RENAME COLUMN updatedat TO updated_at;
-    RAISE NOTICE 'Renamed bills.updatedat → updated_at';
   END IF;
 
-  -- patientid → patient_id
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='patientid')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='patient_id')
   THEN
     ALTER TABLE public.bills RENAME COLUMN patientid TO patient_id;
-    RAISE NOTICE 'Renamed bills.patientid → patient_id';
   END IF;
 
-  -- invoicenumber → invoice_number
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='invoicenumber')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='invoice_number')
   THEN
     ALTER TABLE public.bills RENAME COLUMN invoicenumber TO invoice_number;
-    RAISE NOTICE 'Renamed bills.invoicenumber → invoice_number';
   END IF;
 
-  -- paymentmode → payment_mode
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='paymentmode')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='payment_mode')
   THEN
     ALTER TABLE public.bills RENAME COLUMN paymentmode TO payment_mode;
-    RAISE NOTICE 'Renamed bills.paymentmode → payment_mode';
   END IF;
 END $$;
 

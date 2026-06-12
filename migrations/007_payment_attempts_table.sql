@@ -19,23 +19,89 @@
 
 BEGIN;
 
--- Create payment_attempts table
+-- Ensure schema_migrations exists (safe to re-run)
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id          SERIAL PRIMARY KEY,
+  version     TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  applied_at  TIMESTAMPTZ DEFAULT NOW(),
+  notes       TEXT
+);
+
+-- Skip rest if bills doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills') THEN
+    RAISE NOTICE 'bills table missing — skipping migration 007 payment_attempts setup';
+    RETURN;
+  END IF;
+END $$;
+
+-- Create payment_attempts table (FK to bills/patients/clinic_users only added
+-- if those tables exist — keeps the migration runnable on partial schemas).
 CREATE TABLE IF NOT EXISTS payment_attempts (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bill_id         UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-  patient_id      UUID REFERENCES patients(id),
+  bill_id         UUID NOT NULL,
+  patient_id      UUID,
   amount          NUMERIC(10, 2),
   status          TEXT NOT NULL CHECK (status IN ('initiated', 'pending', 'success', 'failed', 'timeout', 'cancelled', 'refunded')),
-  payment_method  TEXT,  -- 'razorpay', 'upi_direct', 'cash', 'card', 'manual_mark'
+  payment_method  TEXT,
   razorpay_payment_id  TEXT,
   razorpay_order_id    TEXT,
   failure_reason  TEXT,
-  marked_by       UUID REFERENCES clinicusers(id),
+  marked_by       UUID,
   marked_by_name  TEXT,
-  metadata        JSONB,  -- Additional data (UPI ref, bank response, etc.)
+  metadata        JSONB,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add FKs only if the referenced tables exist (defensive for fresh schemas)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='bills')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                     WHERE table_name='payment_attempts'
+                       AND constraint_name='payment_attempts_bill_id_fkey') THEN
+    BEGIN
+      ALTER TABLE payment_attempts
+        ADD CONSTRAINT payment_attempts_bill_id_fkey
+        FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipped FK payment_attempts→bills: %', SQLERRM;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='patients')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                     WHERE table_name='payment_attempts'
+                       AND constraint_name='payment_attempts_patient_id_fkey') THEN
+    BEGIN
+      ALTER TABLE payment_attempts
+        ADD CONSTRAINT payment_attempts_patient_id_fkey
+        FOREIGN KEY (patient_id) REFERENCES patients(id);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipped FK payment_attempts→patients: %', SQLERRM;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='clinic_users')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                     WHERE table_name='payment_attempts'
+                       AND constraint_name='payment_attempts_marked_by_fkey') THEN
+    BEGIN
+      ALTER TABLE payment_attempts
+        ADD CONSTRAINT payment_attempts_marked_by_fkey
+        FOREIGN KEY (marked_by) REFERENCES clinic_users(id);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipped FK payment_attempts→clinic_users: %', SQLERRM;
+    END;
+  END IF;
+END $$;
 
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_payment_attempts_bill
@@ -62,23 +128,24 @@ END $$;
 -- Enable RLS on payment_attempts (follows existing pattern)
 ALTER TABLE payment_attempts ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: All active clinic users can view payment attempts
-CREATE POLICY IF NOT EXISTS payment_attempts_select
-  ON payment_attempts FOR SELECT
-  TO authenticated
-  USING (is_active_user());
+-- RLS Policies (safe: skip if already exists)
+DO $$
+BEGIN
+  CREATE POLICY payment_attempts_select ON payment_attempts FOR SELECT TO authenticated USING (is_active_user());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- RLS Policy: Admin and staff can insert payment attempts
-CREATE POLICY IF NOT EXISTS payment_attempts_insert
-  ON payment_attempts FOR INSERT
-  TO authenticated
-  WITH CHECK (is_active_user());
+DO $$
+BEGIN
+  CREATE POLICY payment_attempts_insert ON payment_attempts FOR INSERT TO authenticated WITH CHECK (is_active_user());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- RLS Policy: Only admin can update/delete payment attempts
-CREATE POLICY IF NOT EXISTS payment_attempts_update
-  ON payment_attempts FOR UPDATE
-  TO authenticated
-  USING (is_admin());
+DO $$
+BEGIN
+  CREATE POLICY payment_attempts_update ON payment_attempts FOR UPDATE TO authenticated USING (is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Record this migration
 INSERT INTO schema_migrations (version, name, applied_at)

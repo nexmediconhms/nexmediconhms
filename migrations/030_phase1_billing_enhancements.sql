@@ -173,16 +173,17 @@ END $$;
 
 DO $$
 BEGIN
-  -- deposit_collected: total advance deposit amount collected
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='ipd_admissions' AND column_name='deposit_collected') THEN
-    ALTER TABLE public.ipd_admissions ADD COLUMN deposit_collected NUMERIC(12,2) DEFAULT 0;
-    RAISE NOTICE 'Added ipd_admissions.deposit_collected';
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='ipd_admissions') THEN
+    RAISE NOTICE '§6 skipped: ipd_admissions table missing';
+    RETURN;
   END IF;
 
-  -- billing_cleared: must be TRUE before discharge is allowed
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='ipd_admissions' AND column_name='deposit_collected') THEN
+    ALTER TABLE public.ipd_admissions ADD COLUMN deposit_collected NUMERIC(12,2) DEFAULT 0;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='ipd_admissions' AND column_name='billing_cleared') THEN
     ALTER TABLE public.ipd_admissions ADD COLUMN billing_cleared BOOLEAN DEFAULT FALSE;
-    RAISE NOTICE 'Added ipd_admissions.billing_cleared';
   END IF;
 END $$;
 
@@ -191,14 +192,17 @@ END $$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='insurance_claims' AND column_name='bill_id') THEN
-    ALTER TABLE public.insurance_claims ADD COLUMN bill_id UUID;
-    RAISE NOTICE 'Added insurance_claims.bill_id';
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='insurance_claims') THEN
+    RAISE NOTICE '§7 skipped: insurance_claims table missing';
+    RETURN;
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='insurance_claims' AND column_name='bill_id') THEN
+    ALTER TABLE public.insurance_claims ADD COLUMN bill_id UUID;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='insurance_claims' AND column_name='co_pay_amount') THEN
     ALTER TABLE public.insurance_claims ADD COLUMN co_pay_amount NUMERIC(12,2) DEFAULT 0;
-    RAISE NOTICE 'Added insurance_claims.co_pay_amount';
   END IF;
 END $$;
 

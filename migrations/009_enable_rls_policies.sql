@@ -36,21 +36,32 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
--- ── Step 2: Enable RLS on ALL tables ────────────────────────
+-- ── Step 2: Enable RLS on ALL tables (skip if table doesn't exist) ──
 
-ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE encounters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prescriptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE opdqueue ENABLE ROW LEVEL SECURITY;
-ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
-ALTER TABLE beds ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clinicusers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clinicsettings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE auditlog ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE hospitalfund ENABLE ROW LEVEL SECURITY;
-ALTER TABLE labpartners ENABLE ROW LEVEL SECURITY;
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOR tbl IN
+    SELECT unnest(ARRAY[
+      'patients','encounters','prescriptions','appointments',
+      'opdqueue','opd_queue','bills','beds',
+      'clinic_users','clinicusers','clinic_settings','auditlog','audit_log',
+      'reminders','hospitalfund','hospital_fund',
+      'labpartners','lab_partners'
+    ])
+  LOOP
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE c.relname = tbl AND n.nspname = 'public' AND c.relkind = 'r') THEN
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipped ENABLE RLS on %: %', tbl, SQLERRM;
+    END;
+  END LOOP;
+END $$;
 
 -- Enable on tables that may or may not exist (safe with DO block)
 DO $$
@@ -72,178 +83,84 @@ EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'Some optional tables not found — skipping RLS enable for them';
 END $$;
 
--- ── Step 3: Create RLS Policies ─────────────────────────────
--- Pattern: Active clinic users can SELECT all, but INSERT/UPDATE/DELETE
--- is role-restricted for sensitive operations.
+-- ── Step 3: Create RLS Policies (safely — only if target table exists) ──
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT * FROM (VALUES
+      -- (table, policy_name, command, predicate, with_check)
+      ('patients',       'patients_select',       'SELECT', 'is_active_user()',     NULL),
+      ('patients',       'patients_insert',       'INSERT', NULL,                   'is_active_user()'),
+      ('patients',       'patients_update',       'UPDATE', 'is_active_user()',     NULL),
+      ('patients',       'patients_delete',       'DELETE', 'is_admin()',           NULL),
+      ('encounters',     'encounters_select',     'SELECT', 'is_active_user()',     NULL),
+      ('encounters',     'encounters_insert',     'INSERT', NULL,                   'is_active_user()'),
+      ('encounters',     'encounters_update',     'UPDATE', 'is_doctor_or_admin()', NULL),
+      ('encounters',     'encounters_delete',     'DELETE', 'is_admin()',           NULL),
+      ('prescriptions',  'prescriptions_select',  'SELECT', 'is_active_user()',     NULL),
+      ('prescriptions',  'prescriptions_insert',  'INSERT', NULL,                   'is_doctor_or_admin()'),
+      ('prescriptions',  'prescriptions_update',  'UPDATE', 'is_doctor_or_admin()', NULL),
+      ('bills',          'bills_select',          'SELECT', 'is_active_user()',     NULL),
+      ('bills',          'bills_insert',          'INSERT', NULL,                   'is_active_user()'),
+      ('bills',          'bills_update',          'UPDATE', 'is_active_user()',     NULL),
+      ('bills',          'bills_delete',          'DELETE', 'is_admin()',           NULL),
+      ('appointments',   'appointments_select',   'SELECT', 'is_active_user()',     NULL),
+      ('appointments',   'appointments_insert',   'INSERT', NULL,                   'is_active_user()'),
+      ('appointments',   'appointments_update',   'UPDATE', 'is_active_user()',     NULL),
+      ('clinic_users',   'clinicusers_select',    'SELECT', 'is_active_user()',     NULL),
+      ('clinic_users',   'clinicusers_insert',    'INSERT', NULL,                   'is_admin()'),
+      ('clinic_users',   'clinicusers_update',    'UPDATE', 'is_admin()',           NULL),
+      ('clinic_settings','clinicsettings_select', 'SELECT', 'is_active_user()',     NULL),
+      ('clinic_settings','clinicsettings_upsert', 'INSERT', NULL,                   'is_admin()'),
+      ('clinic_settings','clinicsettings_update', 'UPDATE', 'is_admin()',           NULL),
+      ('auditlog',       'auditlog_select',       'SELECT', 'is_admin()',           NULL),
+      ('auditlog',       'auditlog_insert',       'INSERT', NULL,                   'is_active_user()'),
+      ('opdqueue',       'opdqueue_select',       'SELECT', 'is_active_user()',     NULL),
+      ('opdqueue',       'opdqueue_insert',       'INSERT', NULL,                   'is_active_user()'),
+      ('opdqueue',       'opdqueue_update',       'UPDATE', 'is_active_user()',     NULL),
+      ('opdqueue',       'opdqueue_delete',       'DELETE', 'is_active_user()',     NULL),
+      ('beds',           'beds_select',           'SELECT', 'is_active_user()',     NULL),
+      ('beds',           'beds_all',              'ALL',    'is_active_user()',     'is_active_user()'),
+      ('reminders',      'reminders_select',      'SELECT', 'is_active_user()',     NULL),
+      ('reminders',      'reminders_all',         'ALL',    'is_active_user()',     'is_active_user()'),
+      ('hospitalfund',   'hospitalfund_select',   'SELECT', 'is_active_user()',     NULL),
+      ('hospitalfund',   'hospitalfund_insert',   'INSERT', NULL,                   'is_active_user()'),
+      ('hospitalfund',   'hospitalfund_update',   'UPDATE', 'is_admin()',           NULL),
+      ('labpartners',    'labpartners_select',    'SELECT', 'is_active_user()',     NULL),
+      ('labpartners',    'labpartners_all',       'ALL',    'is_admin()',           'is_admin()')
+    ) AS x(tbl, policy_name, cmd, predicate, wcheck)
+  LOOP
+    BEGIN
+      -- Skip if the target table doesn't exist (handles either naming convention)
+      IF NOT EXISTS (SELECT 1 FROM pg_class c
+                     JOIN pg_namespace n ON n.oid = c.relnamespace
+                     WHERE c.relname = pol.tbl AND n.nspname = 'public' AND c.relkind = 'r') THEN
+        CONTINUE;
+      END IF;
 
--- ─── PATIENTS ───────────────────────────────────────────────
-DROP POLICY IF EXISTS patients_select ON patients;
-CREATE POLICY patients_select ON patients FOR SELECT TO authenticated
-  USING (is_active_user());
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', pol.policy_name, pol.tbl);
 
-DROP POLICY IF EXISTS patients_insert ON patients;
-CREATE POLICY patients_insert ON patients FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS patients_update ON patients;
-CREATE POLICY patients_update ON patients FOR UPDATE TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS patients_delete ON patients;
-CREATE POLICY patients_delete ON patients FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ─── ENCOUNTERS ─────────────────────────────────────────────
-DROP POLICY IF EXISTS encounters_select ON encounters;
-CREATE POLICY encounters_select ON encounters FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS encounters_insert ON encounters;
-CREATE POLICY encounters_insert ON encounters FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS encounters_update ON encounters;
-CREATE POLICY encounters_update ON encounters FOR UPDATE TO authenticated
-  USING (is_doctor_or_admin());
-
-DROP POLICY IF EXISTS encounters_delete ON encounters;
-CREATE POLICY encounters_delete ON encounters FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ─── PRESCRIPTIONS ──────────────────────────────────────────
-DROP POLICY IF EXISTS prescriptions_select ON prescriptions;
-CREATE POLICY prescriptions_select ON prescriptions FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS prescriptions_insert ON prescriptions;
-CREATE POLICY prescriptions_insert ON prescriptions FOR INSERT TO authenticated
-  WITH CHECK (is_doctor_or_admin());
-
-DROP POLICY IF EXISTS prescriptions_update ON prescriptions;
-CREATE POLICY prescriptions_update ON prescriptions FOR UPDATE TO authenticated
-  USING (is_doctor_or_admin());
-
--- ─── BILLS ──────────────────────────────────────────────────
-DROP POLICY IF EXISTS bills_select ON bills;
-CREATE POLICY bills_select ON bills FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS bills_insert ON bills;
-CREATE POLICY bills_insert ON bills FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS bills_update ON bills;
-CREATE POLICY bills_update ON bills FOR UPDATE TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS bills_delete ON bills;
-CREATE POLICY bills_delete ON bills FOR DELETE TO authenticated
-  USING (is_admin());
-
--- ─── APPOINTMENTS ───────────────────────────────────────────
-DROP POLICY IF EXISTS appointments_select ON appointments;
-CREATE POLICY appointments_select ON appointments FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS appointments_insert ON appointments;
-CREATE POLICY appointments_insert ON appointments FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS appointments_update ON appointments;
-CREATE POLICY appointments_update ON appointments FOR UPDATE TO authenticated
-  USING (is_active_user());
-
--- ─── CLINIC USERS (self + admin) ────────────────────────────
-DROP POLICY IF EXISTS clinicusers_select ON clinicusers;
-CREATE POLICY clinicusers_select ON clinicusers FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS clinicusers_insert ON clinicusers;
-CREATE POLICY clinicusers_insert ON clinicusers FOR INSERT TO authenticated
-  WITH CHECK (is_admin());
-
-DROP POLICY IF EXISTS clinicusers_update ON clinicusers;
-CREATE POLICY clinicusers_update ON clinicusers FOR UPDATE TO authenticated
-  USING (is_admin());
-
--- ─── CLINIC SETTINGS ────────────────────────────────────────
-DROP POLICY IF EXISTS clinicsettings_select ON clinicsettings;
-CREATE POLICY clinicsettings_select ON clinicsettings FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS clinicsettings_upsert ON clinicsettings;
-CREATE POLICY clinicsettings_upsert ON clinicsettings FOR INSERT TO authenticated
-  WITH CHECK (is_admin());
-
-DROP POLICY IF EXISTS clinicsettings_update ON clinicsettings;
-CREATE POLICY clinicsettings_update ON clinicsettings FOR UPDATE TO authenticated
-  USING (is_admin());
-
--- ─── AUDIT LOG (read by admin, insert by all active users) ──
-DROP POLICY IF EXISTS auditlog_select ON auditlog;
-CREATE POLICY auditlog_select ON auditlog FOR SELECT TO authenticated
-  USING (is_admin());
-
-DROP POLICY IF EXISTS auditlog_insert ON auditlog;
-CREATE POLICY auditlog_insert ON auditlog FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
--- ─── OPD QUEUE ──────────────────────────────────────────────
-DROP POLICY IF EXISTS opdqueue_select ON opdqueue;
-CREATE POLICY opdqueue_select ON opdqueue FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS opdqueue_insert ON opdqueue;
-CREATE POLICY opdqueue_insert ON opdqueue FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS opdqueue_update ON opdqueue;
-CREATE POLICY opdqueue_update ON opdqueue FOR UPDATE TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS opdqueue_delete ON opdqueue;
-CREATE POLICY opdqueue_delete ON opdqueue FOR DELETE TO authenticated
-  USING (is_active_user());
-
--- ─── BEDS ───────────────────────────────────────────────────
-DROP POLICY IF EXISTS beds_select ON beds;
-CREATE POLICY beds_select ON beds FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS beds_all ON beds;
-CREATE POLICY beds_all ON beds FOR ALL TO authenticated
-  USING (is_active_user());
-
--- ─── REMINDERS ──────────────────────────────────────────────
-DROP POLICY IF EXISTS reminders_select ON reminders;
-CREATE POLICY reminders_select ON reminders FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS reminders_all ON reminders;
-CREATE POLICY reminders_all ON reminders FOR ALL TO authenticated
-  USING (is_active_user());
-
--- ─── HOSPITAL FUND ──────────────────────────────────────────
-DROP POLICY IF EXISTS hospitalfund_select ON hospitalfund;
-CREATE POLICY hospitalfund_select ON hospitalfund FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS hospitalfund_insert ON hospitalfund;
-CREATE POLICY hospitalfund_insert ON hospitalfund FOR INSERT TO authenticated
-  WITH CHECK (is_active_user());
-
-DROP POLICY IF EXISTS hospitalfund_update ON hospitalfund;
-CREATE POLICY hospitalfund_update ON hospitalfund FOR UPDATE TO authenticated
-  USING (is_admin());
-
--- ─── LAB PARTNERS ───────────────────────────────────────────
-DROP POLICY IF EXISTS labpartners_select ON labpartners;
-CREATE POLICY labpartners_select ON labpartners FOR SELECT TO authenticated
-  USING (is_active_user());
-
-DROP POLICY IF EXISTS labpartners_all ON labpartners;
-CREATE POLICY labpartners_all ON labpartners FOR ALL TO authenticated
-  USING (is_admin());
+      IF pol.cmd = 'INSERT' THEN
+        EXECUTE format(
+          'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (%s)',
+          pol.policy_name, pol.tbl, pol.wcheck);
+      ELSIF pol.cmd = 'ALL' THEN
+        EXECUTE format(
+          'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (%s) WITH CHECK (%s)',
+          pol.policy_name, pol.tbl, pol.predicate, pol.wcheck);
+      ELSE
+        -- SELECT / UPDATE / DELETE use USING
+        EXECUTE format(
+          'CREATE POLICY %I ON public.%I FOR %s TO authenticated USING (%s)',
+          pol.policy_name, pol.tbl, pol.cmd, pol.predicate);
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipped policy % on %: %', pol.policy_name, pol.tbl, SQLERRM;
+    END;
+  END LOOP;
+END $$;
 
 -- ── Step 4: Verify RLS is enabled ───────────────────────────
 -- Run this query to verify:

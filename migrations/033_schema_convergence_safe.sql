@@ -7,6 +7,13 @@
 --     per-column generated trigger code (no dynamic SQL inside trigger)
 --   - verify_schema_completeness had dead code in CASE → simplified
 --   - Generated trigger names now properly length-truncated to 63 chars
+-- v3 (this revision):
+--   - Defensively recreates notify_insurance_on_patient_update() at the top
+--     so that ensure_dual_columns()'s UPDATE on patients (which fires that
+--     trigger) doesn't fail with "22P02 invalid input syntax for type
+--     boolean" on deployments where the older trigger function — with
+--     untyped COALESCE(NEW.mediclaim, '') — is still installed and
+--     mediclaim/cashless have been promoted to BOOLEAN.
 --
 -- HOW IT WORKS:
 --   For each (table, snake_col, camel_col) pair:
@@ -18,6 +25,60 @@
 --
 -- ZERO DATA LOSS. Re-runnable. No DROP TABLE / DROP COLUMN.
 -- ═══════════════════════════════════════════════════════════════════════
+
+-- ── Step 0: Heal any stale notify_insurance_on_patient_update() trigger ─
+--
+-- The original version in 010_billing_sequence_finance_sync.sql did
+--   COALESCE(NEW.mediclaim, '') != COALESCE(OLD.mediclaim, '')
+-- which fails with "22P02 invalid input syntax for type boolean: \"\""
+-- on DBs where mediclaim or cashless are BOOLEAN (some Supabase deploys,
+-- some early 017 variants). Because the trigger fires on every UPDATE
+-- patients (including the ones ensure_dual_columns() does later in this
+-- file), the whole 033 migration aborts.
+--
+-- We unconditionally CREATE OR REPLACE the function to the type-safe
+-- (cast-to-text) version before doing any UPDATE patients. CREATE OR
+-- REPLACE is a no-op if the function doesn't exist yet — the trigger
+-- in 010 will pick up the corrected body on its next run regardless.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='patients') THEN
+    EXECUTE $fn$
+      CREATE OR REPLACE FUNCTION public.notify_insurance_on_patient_update()
+      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $body$
+      BEGIN
+        IF (
+          COALESCE(NEW.mediclaim::text,       '') IS DISTINCT FROM COALESCE(OLD.mediclaim::text,       '') OR
+          COALESCE(NEW.cashless::text,        '') IS DISTINCT FROM COALESCE(OLD.cashless::text,        '') OR
+          COALESCE(NEW.policy_tpa_name::text, '') IS DISTINCT FROM COALESCE(OLD.policy_tpa_name::text, '') OR
+          COALESCE(NEW.insurance_name::text,  '') IS DISTINCT FROM COALESCE(OLD.insurance_name::text,  '') OR
+          COALESCE(NEW.insurance_id::text,    '') IS DISTINCT FROM COALESCE(OLD.insurance_id::text,    '')
+        ) THEN
+          PERFORM pg_notify('insurance_patient_update', json_build_object(
+            'patient_id',      NEW.id,
+            'patient_name',    NEW.full_name,
+            'mediclaim',       NEW.mediclaim::text,
+            'cashless',        NEW.cashless::text,
+            'policy_tpa_name', NEW.policy_tpa_name,
+            'event',           'patient_insurance_updated'
+          )::text);
+        END IF;
+        RETURN NEW;
+      END $body$;
+    $fn$;
+  END IF;
+EXCEPTION
+  -- If the function references columns that don't exist on the patients
+  -- table (e.g. on a fresh DB where policy_tpa_name isn't there yet),
+  -- the CREATE succeeds but the body will fail at trigger fire time.
+  -- That's tolerable: the only way the trigger fires is if it was
+  -- already created by 010, which means those columns *do* exist.
+  WHEN undefined_column THEN
+    RAISE NOTICE 'notify_insurance_on_patient_update: skipping rebuild — patient insurance columns missing';
+  WHEN undefined_function THEN
+    RAISE NOTICE 'notify_insurance_on_patient_update: skipping rebuild — function CREATE failed';
+END $$;
 
 -- Step 1: Convergence procedure that generates a per-pair trigger function.
 -- The generated function does NO dynamic SQL — it uses static column

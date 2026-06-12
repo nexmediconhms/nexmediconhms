@@ -63,9 +63,15 @@ CREATE TABLE IF NOT EXISTS public.clinic_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- §2: Rename legacy columns (THE CRITICAL FIX)
+-- §2: Rename legacy columns ONLY when no snake_case sibling exists
+-- (preserves the dual-column convention from migrations 000 + 037).
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills') THEN
+    RETURN;
+  END IF;
+
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='createdat')
      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='created_at')
   THEN ALTER TABLE public.bills RENAME COLUMN createdat TO created_at; END IF;

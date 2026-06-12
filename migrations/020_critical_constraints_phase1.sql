@@ -14,6 +14,22 @@
 -- ─────────────────────────────────────────────────────────────
 -- §1  PATIENT REGISTRATION — MRN & DUPLICATE PREVENTION
 -- ─────────────────────────────────────────────────────────────
+--
+-- NAMING NOTE:
+--   The codebase has two patient-table naming conventions. v00 created
+--   columns like `aadhaar`, `fullname`, `mobile`. Migration 000 adds
+--   the snake_case equivalents (`aadhaar_no`, `full_name`, …) — but on
+--   deployments where v00 didn't run (e.g. Supabase project initialized
+--   with a different schema, or 000 ran without v00), the v00-style
+--   columns may not exist at all. Every concrete column reference in
+--   this file's TOP-LEVEL DDL must be column-existence-guarded, otherwise
+--   we error out with "column does not exist" before reaching the rest
+--   of the migration.
+--
+--   PL/pgSQL FUNCTION BODIES (register_patient_atomic, etc.) below are
+--   stored as text and only parsed on first CALL, so they create
+--   successfully even when their referenced columns don't exist on the
+--   current DB — they simply fail at call-time on incompatible schemas.
 
 -- 1a. Ensure MRN is truly unique at DB level.
 --     The schema already has `mrn TEXT UNIQUE` in v00, but some
@@ -21,10 +37,12 @@
 --     This is idempotent — if the constraint exists, Postgres skips it.
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes
-    WHERE tablename = 'patients' AND indexname = 'patients_mrn_key'
-  ) THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='patients' AND column_name='mrn')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_indexes
+       WHERE tablename = 'patients' AND indexname = 'patients_mrn_key'
+     ) THEN
     -- Only add if the unique index doesn't exist
     BEGIN
       ALTER TABLE patients ADD CONSTRAINT patients_mrn_unique UNIQUE (mrn);
@@ -39,15 +57,38 @@ END $$;
 --     Two patients with the same mobile number is the #1 source of
 --     duplicate-patient billing fraud.  This enforces at DB level.
 --     Partial index: only enforce on non-null, non-empty mobile.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_patients_mobile_unique
-  ON patients (mobile)
-  WHERE mobile IS NOT NULL AND mobile != '';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='patients' AND column_name='mobile') THEN
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_patients_mobile_unique '
+            || 'ON public.patients (mobile) WHERE mobile IS NOT NULL AND mobile != ''''';
+  END IF;
+END $$;
 
--- 1c. Unique index on aadhaar (plaintext column) for deployments
---     that haven't yet migrated to encrypted aadhaar.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_patients_aadhaar_unique
-  ON patients (aadhaar)
-  WHERE aadhaar IS NOT NULL AND aadhaar != '';
+-- 1c. Unique index on the aadhaar column. Picks whichever name exists
+--     on this deployment: `aadhaar` (v00) or `aadhaar_no` (000/snake-case).
+--     Skips entirely if neither exists.
+DO $$
+DECLARE
+  v_col TEXT := NULL;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='patients' AND column_name='aadhaar') THEN
+    v_col := 'aadhaar';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='patients' AND column_name='aadhaar_no') THEN
+    v_col := 'aadhaar_no';
+  END IF;
+
+  IF v_col IS NOT NULL THEN
+    EXECUTE format(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_patients_aadhaar_unique '
+      || 'ON public.patients (%1$I) WHERE %1$I IS NOT NULL AND %1$I != ''''',
+      v_col
+    );
+  END IF;
+END $$;
 
 -- 1d. Atomic patient registration function.
 --     Prevents race condition where two concurrent registrations
@@ -157,27 +198,109 @@ $$;
 -- §2  OPD QUEUE — ATOMIC TOKEN ALLOCATION
 -- ─────────────────────────────────────────────────────────────
 
--- 2a. Unique constraint on (queuedate, queuenumber) if not exists.
---     Migration 014 may have added this, but ensure it's there.
+-- 2a. Unique constraint on (date, queuenumber) on whichever opd-queue
+--     table exists (`opdqueue` from v00, or `opd_queue` from 000/snake_case).
+--     Migration 014 may have added something equivalent.
 DO $$
+DECLARE
+  v_tbl   TEXT := NULL;
+  v_date  TEXT;
+  v_num   TEXT;
 BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='opdqueue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opdqueue';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='opd_queue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opd_queue';
+  END IF;
+
+  IF v_tbl IS NULL THEN RETURN; END IF;
+
+  -- Pick the right date column ('date' in v00, 'queue_date' in snake_case)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name=v_tbl AND column_name='date') THEN
+    v_date := 'date';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=v_tbl AND column_name='queue_date') THEN
+    v_date := 'queue_date';
+  ELSE
+    RETURN;
+  END IF;
+
+  -- Pick the right token-number column ('queuenumber' in v00, 'queue_number' or 'token_number' in snake_case)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name=v_tbl AND column_name='queuenumber') THEN
+    v_num := 'queuenumber';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=v_tbl AND column_name='queue_number') THEN
+    v_num := 'queue_number';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=v_tbl AND column_name='token_number') THEN
+    v_num := 'token_number';
+  ELSE
+    RETURN;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
-    WHERE tablename = 'opdqueue'
-    AND indexname = 'idx_opdqueue_date_number_unique'
+    WHERE schemaname='public' AND tablename = v_tbl
+      AND indexname = 'idx_opdqueue_date_number_unique'
   ) THEN
-    CREATE UNIQUE INDEX idx_opdqueue_date_number_unique
-      ON opdqueue (date, queuenumber);
+    BEGIN
+      EXECUTE format(
+        'CREATE UNIQUE INDEX idx_opdqueue_date_number_unique ON public.%I (%I, %I)',
+        v_tbl, v_date, v_num
+      );
+    EXCEPTION WHEN duplicate_table THEN
+      NULL;
+    END;
   END IF;
-EXCEPTION WHEN duplicate_table THEN
-  NULL;
 END $$;
 
 -- 2b. Unique constraint: one queue entry per patient per day.
 --     Prevents the same patient appearing twice in the queue.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_opdqueue_patient_date_unique
-  ON opdqueue (patientid, date)
-  WHERE status NOT IN ('cancelled');
+DO $$
+DECLARE
+  v_tbl   TEXT := NULL;
+  v_pid   TEXT;
+  v_date  TEXT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='opdqueue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opdqueue';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='opd_queue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opd_queue';
+  END IF;
+  IF v_tbl IS NULL THEN RETURN; END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name=v_tbl AND column_name='patientid') THEN
+    v_pid := 'patientid';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=v_tbl AND column_name='patient_id') THEN
+    v_pid := 'patient_id';
+  ELSE
+    RETURN;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name=v_tbl AND column_name='date') THEN
+    v_date := 'date';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=v_tbl AND column_name='queue_date') THEN
+    v_date := 'queue_date';
+  ELSE
+    RETURN;
+  END IF;
+
+  EXECUTE format(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_opdqueue_patient_date_unique '
+    || 'ON public.%I (%I, %I) WHERE status NOT IN (''cancelled'')',
+    v_tbl, v_pid, v_date
+  );
+END $$;
 
 -- 2c. Atomic queue token allocation function.
 --     Uses advisory lock to serialize token number generation.
@@ -245,16 +368,43 @@ $$;
 --     Prevents 'completed' vs 'done' mismatch that causes tokens
 --     to disappear from the queue display.
 DO $$
+DECLARE
+  v_tbl TEXT := NULL;
 BEGIN
-  ALTER TABLE opdqueue DROP CONSTRAINT IF EXISTS chk_opdqueue_status;
-  ALTER TABLE opdqueue ADD CONSTRAINT chk_opdqueue_status
-    CHECK (status IN ('waiting', 'vitals_done', 'in_progress', 'done', 'cancelled'));
-EXCEPTION WHEN check_violation THEN
-  -- Existing rows may have invalid status; update them first
-  UPDATE opdqueue SET status = 'done'
-    WHERE status NOT IN ('waiting', 'vitals_done', 'in_progress', 'done', 'cancelled');
-  ALTER TABLE opdqueue ADD CONSTRAINT chk_opdqueue_status
-    CHECK (status IN ('waiting', 'vitals_done', 'in_progress', 'done', 'cancelled'));
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='opdqueue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opdqueue';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='opd_queue' AND table_type='BASE TABLE') THEN
+    v_tbl := 'opd_queue';
+  END IF;
+  IF v_tbl IS NULL THEN RETURN; END IF;
+
+  -- 'status' column is in both naming conventions
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name=v_tbl AND column_name='status') THEN
+    RETURN;
+  END IF;
+
+  EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT IF EXISTS chk_opdqueue_status', v_tbl);
+  BEGIN
+    EXECUTE format(
+      'ALTER TABLE public.%I ADD CONSTRAINT chk_opdqueue_status '
+      || 'CHECK (status IN (''waiting'', ''vitals_done'', ''in_progress'', ''done'', ''cancelled''))',
+      v_tbl
+    );
+  EXCEPTION WHEN check_violation THEN
+    EXECUTE format(
+      'UPDATE public.%I SET status = ''done'' '
+      || 'WHERE status NOT IN (''waiting'', ''vitals_done'', ''in_progress'', ''done'', ''cancelled'')',
+      v_tbl
+    );
+    EXECUTE format(
+      'ALTER TABLE public.%I ADD CONSTRAINT chk_opdqueue_status '
+      || 'CHECK (status IN (''waiting'', ''vitals_done'', ''in_progress'', ''done'', ''cancelled''))',
+      v_tbl
+    );
+  END;
 END $$;
 
 
@@ -424,15 +574,26 @@ $$;
 -- ─────────────────────────────────────────────────────────────
 
 -- 4a. Add idempotency_key column to bills if not exists.
+--     Skip entirely if `bills` table doesn't exist on this deployment.
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills' AND table_type='BASE TABLE') THEN
+    RETURN;
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'bills' AND column_name = 'idempotencykey'
+    WHERE table_schema='public' AND table_name = 'bills' AND column_name = 'idempotencykey'
   ) THEN
-    ALTER TABLE bills ADD COLUMN idempotencykey TEXT;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_bills_idempotency
-      ON bills (idempotencykey) WHERE idempotencykey IS NOT NULL;
+    ALTER TABLE public.bills ADD COLUMN idempotencykey TEXT;
+  END IF;
+  -- Index can be created/skipped independently of the ADD COLUMN branch above.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name = 'bills' AND column_name = 'idempotencykey'
+  ) THEN
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_bills_idempotency '
+            || 'ON public.bills (idempotencykey) WHERE idempotencykey IS NOT NULL';
   END IF;
 END $$;
 
@@ -456,45 +617,91 @@ BEGIN
 END $$;
 
 -- 4c. CHECK constraint on bill status values.
+--     Skip if bills table or status column doesn't exist.
 DO $$
 BEGIN
-  ALTER TABLE bills DROP CONSTRAINT IF EXISTS chk_bills_status;
-  ALTER TABLE bills ADD CONSTRAINT chk_bills_status
-    CHECK (status IN ('unpaid', 'pending', 'partial', 'paid', 'refunded', 'waived', 'cancelled'));
-EXCEPTION WHEN check_violation THEN
-  -- Fix invalid status values first
-  UPDATE bills SET status = 'unpaid'
-    WHERE status NOT IN ('unpaid', 'pending', 'partial', 'paid', 'refunded', 'waived', 'cancelled');
-  ALTER TABLE bills ADD CONSTRAINT chk_bills_status
-    CHECK (status IN ('unpaid', 'pending', 'partial', 'paid', 'refunded', 'waived', 'cancelled'));
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills' AND table_type='BASE TABLE')
+  OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='bills' AND column_name='status') THEN
+    RETURN;
+  END IF;
+
+  EXECUTE 'ALTER TABLE public.bills DROP CONSTRAINT IF EXISTS chk_bills_status';
+  BEGIN
+    EXECUTE 'ALTER TABLE public.bills ADD CONSTRAINT chk_bills_status '
+            || 'CHECK (status IN (''unpaid'', ''pending'', ''partial'', ''paid'', ''refunded'', ''waived'', ''cancelled''))';
+  EXCEPTION WHEN check_violation THEN
+    EXECUTE 'UPDATE public.bills SET status = ''unpaid'' '
+            || 'WHERE status NOT IN (''unpaid'', ''pending'', ''partial'', ''paid'', ''refunded'', ''waived'', ''cancelled'')';
+    EXECUTE 'ALTER TABLE public.bills ADD CONSTRAINT chk_bills_status '
+            || 'CHECK (status IN (''unpaid'', ''pending'', ''partial'', ''paid'', ''refunded'', ''waived'', ''cancelled''))';
+  END;
 END $$;
 
 -- 4d. Add version column for optimistic locking on bills.
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills' AND table_type='BASE TABLE') THEN
+    RETURN;
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'bills' AND column_name = 'version'
+    WHERE table_schema='public' AND table_name='bills' AND column_name = 'version'
   ) THEN
-    ALTER TABLE bills ADD COLUMN version INTEGER DEFAULT 1;
+    ALTER TABLE public.bills ADD COLUMN version INTEGER DEFAULT 1;
   END IF;
 END $$;
 
 -- 4e. Trigger: auto-increment version on bill update (optimistic locking).
-CREATE OR REPLACE FUNCTION bills_increment_version()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+--
+-- The function uses `NEW.updatedat` (v00) or `NEW.updated_at` (snake_case)
+-- depending on which column the bills table has. We generate the function
+-- body dynamically so the right field is referenced (PL/pgSQL resolves
+-- NEW.<field> at runtime against the row TupleDesc and raises
+-- "record has no field" if absent).
+DO $$
+DECLARE
+  v_ts_col TEXT := NULL;
+  v_body   TEXT;
 BEGIN
-  NEW.version := COALESCE(OLD.version, 0) + 1;
-  NEW.updatedat := NOW();
-  RETURN NEW;
-END;
-$$;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills' AND table_type='BASE TABLE') THEN
+    RETURN;
+  END IF;
 
-DROP TRIGGER IF EXISTS trg_bills_version ON bills;
-CREATE TRIGGER trg_bills_version
-  BEFORE UPDATE ON bills
-  FOR EACH ROW
-  EXECUTE FUNCTION bills_increment_version();
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='bills' AND column_name='updatedat') THEN
+    v_ts_col := 'updatedat';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='bills' AND column_name='updated_at') THEN
+    v_ts_col := 'updated_at';
+  END IF;
+
+  -- `version` was just added by §4d above, but guard anyway.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='bills' AND column_name='version') THEN
+    RETURN;
+  END IF;
+
+  v_body :=
+    'BEGIN NEW.version := COALESCE(OLD.version, 0) + 1; '
+    || CASE WHEN v_ts_col IS NOT NULL
+            THEN format('NEW.%I := NOW(); ', v_ts_col)
+            ELSE ''
+       END
+    || 'RETURN NEW; END;';
+
+  EXECUTE
+    'CREATE OR REPLACE FUNCTION public.bills_increment_version() '
+    || 'RETURNS TRIGGER LANGUAGE plpgsql AS $body$ ' || v_body || ' $body$';
+
+  EXECUTE 'DROP TRIGGER IF EXISTS trg_bills_version ON public.bills';
+  EXECUTE 'CREATE TRIGGER trg_bills_version '
+          || 'BEFORE UPDATE ON public.bills '
+          || 'FOR EACH ROW EXECUTE FUNCTION public.bills_increment_version()';
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -506,28 +713,110 @@ CREATE TRIGGER trg_bills_version
 -- the new types (refund, discharge_override, role_change, etc.)
 -- Since they're TEXT columns, no schema change needed.
 -- But we add a comment for documentation:
-COMMENT ON FUNCTION insert_audit_entry IS
-  'Atomic audit-log insert with SHA-256 hash chain. '
-  'Accepts any action/entity_type string. '
-  'Critical actions that MUST be logged: '
-  'create/update/delete (all entities), '
-  'discharge (ipd_admission), '
-  'refund (bill), '
-  'role_change (user), '
-  'safety_override (drug_interaction/allergy_override), '
-  'admin_override (discharge), '
-  'login/logout (user).';
+-- COMMENT requires an exact function signature in modern Postgres,
+-- and fails outright if the function doesn't exist. Skip silently if
+-- v00 hasn't created insert_audit_entry yet.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'insert_audit_entry'
+  ) THEN
+    EXECUTE
+      'COMMENT ON FUNCTION public.insert_audit_entry IS '
+      || $c$'Atomic audit-log insert with SHA-256 hash chain. '
+            'Accepts any action/entity_type string. '
+            'Critical actions that MUST be logged: '
+            'create/update/delete (all entities), '
+            'discharge (ipd_admission), '
+            'refund (bill), '
+            'role_change (user), '
+            'safety_override (drug_interaction/allergy_override), '
+            'admin_override (discharge), '
+            'login/logout (user).'$c$;
+  END IF;
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────
 -- §6  INDEXES FOR PERFORMANCE
 -- ─────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_opdqueue_date_status ON opdqueue (date, status);
-CREATE INDEX IF NOT EXISTS idx_ipdadmissions_patient_status ON ipdadmissions (patientid, status);
-CREATE INDEX IF NOT EXISTS idx_bills_patient_status ON bills (patientid, status);
-CREATE INDEX IF NOT EXISTS idx_beds_status ON beds (status);
-CREATE INDEX IF NOT EXISTS idx_encounters_patient_date ON encounters (patientid, date);
+-- Indexes are gated by column-existence checks so missing v00 columns
+-- (or missing legacy tables on a snake_case-only DB) don't blow up.
+DO $$
+BEGIN
+  -- opdqueue (date, status)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='opdqueue' AND column_name='date')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='opdqueue' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opdqueue_date_status ON public.opdqueue (date, status)';
+  END IF;
+
+  -- opd_queue (queue_date, status) — snake_case sibling
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='opd_queue' AND column_name='queue_date')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='opd_queue' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_opd_queue_date_status ON public.opd_queue (queue_date, status)';
+  END IF;
+
+  -- ipdadmissions (patientid, status)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipdadmissions' AND column_name='patientid')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='ipdadmissions' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipdadmissions_patient_status ON public.ipdadmissions (patientid, status)';
+  END IF;
+
+  -- ipd_admissions (patient_id, status) — snake_case sibling
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='ipd_admissions' AND column_name='patient_id')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='ipd_admissions' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipd_admissions_patient_status ON public.ipd_admissions (patient_id, status)';
+  END IF;
+
+  -- bills (patientid, status) — v00
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='bills' AND column_name='patientid')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='bills' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_bills_patient_status ON public.bills (patientid, status)';
+  END IF;
+
+  -- bills (patient_id, status) — snake_case
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='bills' AND column_name='patient_id')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='bills' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_bills_patient_id_status ON public.bills (patient_id, status)';
+  END IF;
+
+  -- beds (status)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='beds' AND column_name='status') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_beds_status ON public.beds (status)';
+  END IF;
+
+  -- encounters (patientid, date) — v00
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='encounters' AND column_name='patientid')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='encounters' AND column_name='date') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_encounters_patient_date ON public.encounters (patientid, date)';
+  END IF;
+
+  -- encounters (patient_id, encounter_date) — snake_case
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='encounters' AND column_name='patient_id')
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='encounters' AND column_name='encounter_date') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_encounters_patient_encounter_date ON public.encounters (patient_id, encounter_date)';
+  END IF;
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────

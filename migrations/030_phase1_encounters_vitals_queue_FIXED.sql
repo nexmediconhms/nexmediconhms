@@ -323,6 +323,12 @@ CREATE TRIGGER trg_vitals_critical
 
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='opd_queue') THEN
+    RAISE NOTICE '§3 skipped: opd_queue table missing';
+    RETURN;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'opd_queue' AND column_name = 'encounter_id') THEN
     ALTER TABLE opd_queue ADD COLUMN encounter_id UUID;
   END IF;
@@ -349,8 +355,14 @@ BEGIN
   END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_opd_queue_encounter_id
-  ON opd_queue (encounter_id) WHERE encounter_id IS NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='opd_queue' AND column_name='encounter_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_opd_queue_encounter_id
+      ON opd_queue (encounter_id) WHERE encounter_id IS NOT NULL;
+  END IF;
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

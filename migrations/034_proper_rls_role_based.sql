@@ -20,22 +20,24 @@
 
 -- ─── Step 0: Pre-flight safety check ────────────────────────────────────
 -- Verify at least one admin exists. RLS without an admin = locked out.
+-- On a fresh database (no admin yet) this only emits a WARNING — the rest
+-- of the migration still installs the policies. Be sure to create an admin
+-- via Supabase auth + clinic_users INSERT before RLS takes effect.
 DO $$
 DECLARE
-  admin_count INTEGER;
+  admin_count INTEGER := 0;
   cu_table_exists BOOLEAN;
 BEGIN
-  -- Detect which name is the actual table (not view)
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
     WHERE table_schema='public' AND table_name IN ('clinic_users','clinicusers')
     AND table_type='BASE TABLE')
     INTO cu_table_exists;
 
   IF NOT cu_table_exists THEN
-    RAISE EXCEPTION 'PRE-FLIGHT FAILED: Neither clinic_users nor clinicusers table exists. Run earlier migrations first.';
+    RAISE WARNING 'PRE-FLIGHT: Neither clinic_users nor clinicusers exists. RLS policies will fail to install.';
+    RETURN;
   END IF;
 
-  -- Count admins (try both names)
   BEGIN
     EXECUTE 'SELECT COUNT(*) FROM public.clinic_users WHERE role = $1 AND COALESCE(is_active, true) = true'
       INTO admin_count USING 'admin';
@@ -49,10 +51,12 @@ BEGIN
   END;
 
   IF admin_count = 0 THEN
-    RAISE EXCEPTION 'PRE-FLIGHT FAILED: No active admin user found. Create at least one admin before applying RLS, or you will be locked out.';
+    RAISE WARNING 'PRE-FLIGHT: No active admin user found. After this migration runs, '
+                  'create an admin via Supabase Auth and INSERT INTO clinic_users '
+                  'BEFORE you log in via the app, otherwise everyone will be locked out.';
+  ELSE
+    RAISE NOTICE 'Pre-flight OK: % active admin user(s) found.', admin_count;
   END IF;
-
-  RAISE NOTICE 'Pre-flight OK: % active admin user(s) found.', admin_count;
 END $$;
 
 -- ─── Step 1: Helper functions ───────────────────────────────────────────

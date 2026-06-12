@@ -15,21 +15,22 @@
 -- §1 Lab Orders → Bill linkage
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='lab_orders') THEN
+    RAISE NOTICE '§1 skipped: lab_orders table missing';
+    RETURN;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='bill_id') THEN
     ALTER TABLE public.lab_orders ADD COLUMN bill_id UUID;
-    RAISE NOTICE 'Added lab_orders.bill_id';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='bill_item_id') THEN
     ALTER TABLE public.lab_orders ADD COLUMN bill_item_id TEXT;
-    RAISE NOTICE 'Added lab_orders.bill_item_id';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='billing_status') THEN
     ALTER TABLE public.lab_orders ADD COLUMN billing_status TEXT DEFAULT 'unbilled';
-    RAISE NOTICE 'Added lab_orders.billing_status';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='charge_amount') THEN
     ALTER TABLE public.lab_orders ADD COLUMN charge_amount NUMERIC(12,2) DEFAULT 0;
-    RAISE NOTICE 'Added lab_orders.charge_amount';
   END IF;
 END $$;
 
@@ -56,6 +57,10 @@ COMMENT ON TABLE public.billing_templates IS
 -- §3 Insurance Claims — settlement linkage
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='insurance_claims') THEN
+    RETURN;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='insurance_claims' AND column_name='settled_amount') THEN
     ALTER TABLE public.insurance_claims ADD COLUMN settled_amount NUMERIC(12,2) DEFAULT 0;
   END IF;
@@ -70,17 +75,32 @@ END $$;
 -- §4 Bills — credit note link
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='bills') THEN
+    RETURN;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bills' AND column_name='credit_note_id') THEN
     ALTER TABLE public.bills ADD COLUMN credit_note_id UUID;
   END IF;
 END $$;
 
--- §5 Indexes
-CREATE INDEX IF NOT EXISTS idx_lab_orders_bill         ON public.lab_orders(bill_id) WHERE bill_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_lab_orders_billing_status ON public.lab_orders(billing_status);
-CREATE INDEX IF NOT EXISTS idx_billing_templates_active ON public.billing_templates(is_active, category);
-CREATE INDEX IF NOT EXISTS idx_billing_templates_module ON public.billing_templates(module);
-CREATE INDEX IF NOT EXISTS idx_insurance_claims_bill    ON public.insurance_claims(bill_id) WHERE bill_id IS NOT NULL;
+-- §5 Indexes (safe — only created if column exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='bill_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_lab_orders_bill ON public.lab_orders(bill_id) WHERE bill_id IS NOT NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lab_orders' AND column_name='billing_status') THEN
+    CREATE INDEX IF NOT EXISTS idx_lab_orders_billing_status ON public.lab_orders(billing_status);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='billing_templates') THEN
+    CREATE INDEX IF NOT EXISTS idx_billing_templates_active ON public.billing_templates(is_active, category);
+    CREATE INDEX IF NOT EXISTS idx_billing_templates_module ON public.billing_templates(module);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='insurance_claims' AND column_name='bill_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_insurance_claims_bill ON public.insurance_claims(bill_id) WHERE bill_id IS NOT NULL;
+  END IF;
+END $$;
 
 -- §6 RLS
 ALTER TABLE public.billing_templates ENABLE ROW LEVEL SECURITY;

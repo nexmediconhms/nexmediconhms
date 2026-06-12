@@ -141,18 +141,21 @@ CREATE INDEX IF NOT EXISTS idx_portal_otp_token
 -- ═══════════════════════════════════════════════════════════════
 -- §2  LAB REPORTS — patient portal compatibility columns
 -- ═══════════════════════════════════════════════════════════════
--- The patient portal dashboard reads test_name, test_category,
--- result_text, result_data on lab_reports. The staff lab page
--- writes report_name and entries. We add the missing columns and
--- back-fill them so both flows work.
--- ───────────────────────────────────────────────────────────────
 
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_name      TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_category  TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_text    TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_data    JSONB;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS file_url       TEXT;
-ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS normal_range   TEXT;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='lab_reports') THEN
+    RAISE NOTICE '§2 skipped: lab_reports table does not exist (run 000_canonical_alignment.sql)';
+  ELSE
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_name      TEXT;
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS test_category  TEXT;
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_text    TEXT;
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS result_data    JSONB;
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS file_url       TEXT;
+    ALTER TABLE lab_reports ADD COLUMN IF NOT EXISTS normal_range   TEXT;
+  END IF;
+END $$;
 
 -- Back-fill test_name from report_name where missing
 DO $$
@@ -208,11 +211,17 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS alert_data   JSONB;
-ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS mrn          TEXT;
-ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS source       TEXT;
-ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS read_at      TIMESTAMPTZ;
-ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS patient_name TEXT;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='doctor_alerts') THEN
+    ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS alert_data   JSONB;
+    ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS mrn          TEXT;
+    ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS source       TEXT;
+    ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS read_at      TIMESTAMPTZ;
+    ALTER TABLE doctor_alerts ADD COLUMN IF NOT EXISTS patient_name TEXT;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_doctor_alerts_unread
     ON doctor_alerts (is_read, created_at DESC) WHERE is_read = FALSE;
@@ -220,17 +229,21 @@ CREATE INDEX IF NOT EXISTS idx_doctor_alerts_unread
 -- ═══════════════════════════════════════════════════════════════
 -- §4  OPD QUEUE — ensure token_number column exists
 -- ═══════════════════════════════════════════════════════════════
--- App code consistently uses token_number. Some legacy schemas
--- may have queue_number. We add token_number and back-fill from
--- queue_number if it exists.
--- ───────────────────────────────────────────────────────────────
 
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS token_number INTEGER;
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS queue_date DATE DEFAULT CURRENT_DATE;
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS encounter_id UUID;
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal';
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS called_at TIMESTAMPTZ;
-ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='opd_queue') THEN
+    RAISE NOTICE '§4 skipped: opd_queue table does not exist (run 000_canonical_alignment.sql)';
+  ELSE
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS token_number INTEGER;
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS queue_date DATE DEFAULT CURRENT_DATE;
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS encounter_id UUID;
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal';
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS called_at TIMESTAMPTZ;
+    ALTER TABLE opd_queue ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ;
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -280,36 +293,44 @@ ALTER TABLE patients ADD COLUMN IF NOT EXISTS cashless             TEXT DEFAULT 
 -- §6  DISCHARGE SUMMARIES — ensure all columns the app uses
 -- ═══════════════════════════════════════════════════════════════
 
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS final_diagnosis        TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS secondary_diagnosis    TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS clinical_summary       TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS investigations         TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS treatment_given        TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS condition_at_discharge TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS discharge_advice       TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS diet_advice            TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS medications_at_discharge TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS follow_up_date         DATE;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS follow_up_note         TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS is_final               BOOLEAN DEFAULT FALSE;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS version                INTEGER DEFAULT 1;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS signed_by              TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS signed_at              TIMESTAMPTZ;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS finalized_at           TIMESTAMPTZ;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_reason     TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_by         TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_at         TIMESTAMPTZ;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS reminder_sent_at       TIMESTAMPTZ;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS delivery_type          TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_sex               TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_weight            TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_birth_time        TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS apgar_score            TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS delivery_date          DATE;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS complications          TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS lactation_advice       TEXT;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS admission_date         DATE;
-ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS discharge_date         DATE DEFAULT CURRENT_DATE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='discharge_summaries') THEN
+    RAISE NOTICE '§6 skipped: discharge_summaries table does not exist';
+  ELSE
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS final_diagnosis        TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS secondary_diagnosis    TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS clinical_summary       TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS investigations         TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS treatment_given        TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS condition_at_discharge TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS discharge_advice       TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS diet_advice            TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS medications_at_discharge TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS follow_up_date         DATE;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS follow_up_note         TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS is_final               BOOLEAN DEFAULT FALSE;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS version                INTEGER DEFAULT 1;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS signed_by              TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS signed_at              TIMESTAMPTZ;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS finalized_at           TIMESTAMPTZ;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_reason     TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_by         TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS unfinalized_at         TIMESTAMPTZ;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS reminder_sent_at       TIMESTAMPTZ;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS delivery_type          TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_sex               TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_weight            TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS baby_birth_time        TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS apgar_score            TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS delivery_date          DATE;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS complications          TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS lactation_advice       TEXT;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS admission_date         DATE;
+    ALTER TABLE discharge_summaries ADD COLUMN IF NOT EXISTS discharge_date         DATE DEFAULT CURRENT_DATE;
+  END IF;
+END $$;
 
 -- Back-fill final_diagnosis from `diagnosis` column if it exists
 DO $$
@@ -323,7 +344,14 @@ BEGIN
   END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_ds_isfinal ON discharge_summaries (is_final) WHERE is_final = TRUE;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='discharge_summaries'
+               AND column_name='is_final') THEN
+    CREATE INDEX IF NOT EXISTS idx_ds_isfinal ON discharge_summaries (is_final) WHERE is_final = TRUE;
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════
 -- §7  CLINIC NOTIFICATIONS — used by Lab portal and discharge
@@ -411,14 +439,22 @@ CREATE TABLE IF NOT EXISTS insurance_claim_history (
 -- §10 RLS POLICIES — service role access on portal & notification tables
 -- ═══════════════════════════════════════════════════════════════
 
-ALTER TABLE portal_tokens          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portal_sessions        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portal_otp             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clinic_notifications   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE doctor_alerts          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cron_job_log           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE insurance_claims       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE insurance_claim_history ENABLE ROW LEVEL SECURITY;
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOR tbl IN
+    SELECT unnest(ARRAY[
+      'portal_tokens','portal_sessions','portal_otp','clinic_notifications',
+      'doctor_alerts','cron_job_log','insurance_claims','insurance_claim_history'
+    ])
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='public' AND table_name=tbl) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+    END IF;
+  END LOOP;
+END $$;
 
 -- Service role bypasses RLS by default in Supabase, but we add
 -- explicit policies for clarity and as belt-and-suspenders.
@@ -447,13 +483,32 @@ BEGIN
   END IF;
 END $$;
 
-GRANT ALL ON portal_tokens          TO service_role;
-GRANT ALL ON portal_sessions        TO service_role;
-GRANT ALL ON portal_otp             TO service_role;
-GRANT ALL ON clinic_notifications   TO service_role, authenticated;
-GRANT ALL ON doctor_alerts          TO service_role, authenticated;
-GRANT ALL ON cron_job_log           TO service_role;
-GRANT ALL ON insurance_claims       TO service_role, authenticated;
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOR tbl IN
+    SELECT unnest(ARRAY[
+      'portal_tokens','portal_sessions','portal_otp','cron_job_log'
+    ])
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='public' AND table_name=tbl) THEN
+      EXECUTE format('GRANT ALL ON public.%I TO service_role', tbl);
+    END IF;
+  END LOOP;
+
+  FOR tbl IN
+    SELECT unnest(ARRAY[
+      'clinic_notifications','doctor_alerts','insurance_claims'
+    ])
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='public' AND table_name=tbl) THEN
+      EXECUTE format('GRANT ALL ON public.%I TO service_role, authenticated', tbl);
+    END IF;
+  END LOOP;
+END $$;
 GRANT ALL ON insurance_claim_history TO service_role, authenticated;
 
 COMMIT;

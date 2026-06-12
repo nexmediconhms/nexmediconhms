@@ -37,51 +37,43 @@
 
 BEGIN;
 
--- ─── ipd_admissions — billing columns ───────────────────────────────
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='public' AND table_name='ipd_admissions') THEN
+    RAISE NOTICE 'ipd_admissions table missing — skipping migration 019';
+    RETURN;
+  END IF;
 
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS total_charges NUMERIC(12,2) DEFAULT 0;
+  -- ipd_admissions — billing columns
+  ALTER TABLE public.ipd_admissions ADD COLUMN IF NOT EXISTS total_charges NUMERIC(12,2) DEFAULT 0;
+  ALTER TABLE public.ipd_admissions ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) DEFAULT 0;
+  ALTER TABLE public.ipd_admissions ADD COLUMN IF NOT EXISTS net_bill NUMERIC(12,2) DEFAULT 0;
 
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) DEFAULT 0;
+  -- bill_status with check constraint — add column first, constraint guarded
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='ipd_admissions'
+                   AND column_name='bill_status') THEN
+    ALTER TABLE public.ipd_admissions ADD COLUMN bill_status TEXT
+      CHECK (bill_status IS NULL OR bill_status IN
+             ('pending','partial','paid','cancelled','waived'));
+  END IF;
 
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS net_bill NUMERIC(12,2) DEFAULT 0;
+  ALTER TABLE public.ipd_admissions ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+  ALTER TABLE public.ipd_admissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS bill_status TEXT
-  CHECK (bill_status IS NULL OR bill_status IN
-         ('pending','partial','paid','cancelled','waived'));
+  -- Comments (only meaningful if columns now exist)
+  EXECUTE 'COMMENT ON COLUMN public.ipd_admissions.total_charges IS ''Sum of all ipd_charges.amount for this admission. Written by IPD bill saveBill().''';
+  EXECUTE 'COMMENT ON COLUMN public.ipd_admissions.discount IS ''Lump-sum discount applied to total_charges. Always non-negative; UI clamps to <= total_charges.''';
+  EXECUTE 'COMMENT ON COLUMN public.ipd_admissions.net_bill IS ''total_charges - discount. This is the amount the patient owes for the IPD stay.''';
+  EXECUTE 'COMMENT ON COLUMN public.ipd_admissions.bill_status IS ''pending = not yet collected, partial = partially paid, paid = fully paid, cancelled = bill voided, waived = forgiven. NULL is treated as pending.''';
+  EXECUTE 'COMMENT ON COLUMN public.ipd_admissions.payment_mode IS ''cash | upi | card | mixed. Free-form for forward compatibility.''';
 
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS payment_mode TEXT;
-
--- ─── ipd_admissions — workflow columns the discharge route already
---     references but the legacy schema doesn't have ────────────────────
-ALTER TABLE IF EXISTS public.ipd_admissions
-  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
--- Comments document the contract for future readers.
-COMMENT ON COLUMN public.ipd_admissions.total_charges IS
-  'Sum of all ipd_charges.amount for this admission. Written by IPD bill saveBill().';
-
-COMMENT ON COLUMN public.ipd_admissions.discount IS
-  'Lump-sum discount applied to total_charges. Always non-negative; UI clamps to <= total_charges.';
-
-COMMENT ON COLUMN public.ipd_admissions.net_bill IS
-  'total_charges - discount.  This is the amount the patient owes for the IPD stay.';
-
-COMMENT ON COLUMN public.ipd_admissions.bill_status IS
-  'pending = not yet collected, partial = partially paid, paid = fully paid,
-   cancelled = bill voided, waived = forgiven.  NULL is treated as pending.';
-
-COMMENT ON COLUMN public.ipd_admissions.payment_mode IS
-  'cash | upi | card | mixed.  Free-form for forward compatibility.';
-
--- Helpful index for "all unpaid IPD bills" / dashboard queries.
-CREATE INDEX IF NOT EXISTS idx_ipd_admissions_bill_status
-  ON public.ipd_admissions (bill_status)
-  WHERE bill_status IS NOT NULL;
+  -- Helpful index for "all unpaid IPD bills" / dashboard queries.
+  CREATE INDEX IF NOT EXISTS idx_ipd_admissions_bill_status
+    ON public.ipd_admissions (bill_status)
+    WHERE bill_status IS NOT NULL;
+END $$;
 
 -- ─── Schema-cache invalidation ───────────────────────────────────────
 -- Nudge PostgREST to refresh its schema cache so the newly added columns

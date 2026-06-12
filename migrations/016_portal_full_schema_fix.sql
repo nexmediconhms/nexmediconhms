@@ -21,6 +21,26 @@
 
 BEGIN;
 
+-- Ensure parent tables exist (defensive). If you ran 000_canonical_alignment
+-- and 017 first these are already present; this guard is just for safety
+-- when 016 runs standalone against a fresh DB.
+CREATE TABLE IF NOT EXISTS public.portal_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id  UUID,
+  token       TEXT,
+  expires_at  TIMESTAMPTZ,
+  used        BOOLEAN DEFAULT FALSE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.portal_sessions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id  UUID,
+  token       TEXT UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ═══════════════════════════════════════════════════════════════
 -- §1  portal_tokens — add missing columns
 -- ═══════════════════════════════════════════════════════════════
@@ -28,8 +48,9 @@ BEGIN;
 ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS mrn        TEXT;
 ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS is_used    BOOLEAN DEFAULT FALSE;
 ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS used       BOOLEAN DEFAULT FALSE;
 
--- Back-fill is_used from the original `used` column
+-- Back-fill is_used from the original `used` column (column now guaranteed to exist)
 UPDATE portal_tokens SET is_used = COALESCE(used, FALSE) WHERE is_used IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_portal_tokens_mrn ON portal_tokens (mrn) WHERE mrn IS NOT NULL;
@@ -44,6 +65,7 @@ ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS mrn           TEXT;
 ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS mobile        TEXT;
 ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS is_active     BOOLEAN DEFAULT TRUE;
 ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS last_used     TIMESTAMPTZ;
+ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS token         TEXT;
 
 -- Back-fill session_token from existing token column
 UPDATE portal_sessions SET session_token = token WHERE session_token IS NULL AND token IS NOT NULL;
