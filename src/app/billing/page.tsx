@@ -1692,7 +1692,7 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
 
       {/* Title bar */}
       <div className="bg-gray-50 border-b border-gray-200 px-8 py-3 text-center">
-        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-widest">Payment Receipt</h2>
+        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-widest">{bill.status === 'paid' ? 'Payment Receipt' : 'Bill Invoice'}</h2>
       </div>
 
       {/* Patient + Receipt info */}
@@ -1747,23 +1747,37 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
             </div>
           )}
           <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-gray-800">
-            <span className="text-base font-bold text-gray-900">Net Amount Paid</span>
+            <span className="text-base font-bold text-gray-900">{bill.status === 'paid' ? 'Net Amount Paid' : 'Net Amount Due'}</span>
             <span className="text-lg font-bold font-mono text-gray-900">₹{Number(bill.net_amount).toLocaleString('en-IN')}</span>
           </div>
         </div>
 
         {/* Payment status badge */}
-        <div className="mt-5 flex justify-between items-center border border-green-200 rounded-xl px-5 py-3 bg-green-50">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
-              <CheckCircle className="w-4 h-4 text-green-600" />
+        {bill.status === 'paid' ? (
+          <div className="mt-5 flex justify-between items-center border border-green-200 rounded-xl px-5 py-3 bg-green-50">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              </div>
+              <span className="font-bold text-green-800 text-sm">Payment Received</span>
             </div>
-            <span className="font-bold text-green-800 text-sm">Payment Received</span>
+            <div className="text-sm text-gray-600">
+              Mode: <strong className="capitalize">{bill.payment_mode}</strong>
+            </div>
           </div>
-          <div className="text-sm text-gray-600">
-            Mode: <strong className="capitalize">{bill.payment_mode}</strong>
+        ) : (
+          <div className="mt-5 flex justify-between items-center border border-orange-200 rounded-xl px-5 py-3 bg-orange-50">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center">
+                <Clock className="w-4 h-4 text-orange-600" />
+              </div>
+              <span className="font-bold text-orange-800 text-sm">Payment Pending</span>
+            </div>
+            <div className="text-sm text-gray-600">
+              Mode: <strong className="capitalize">{bill.payment_mode || '-'}</strong>
+            </div>
           </div>
-        </div>
+        )}
 
         {bill.notes && !bill.notes.includes('[ADMIN MODIFIED]') && (
           <div className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">

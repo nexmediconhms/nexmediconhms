@@ -471,6 +471,31 @@ export default function DischargeWorkflowPage() {
     loadData();
   }, [loadData]);
 
+  // Re-fetch discharge summary when Confirm tab is activated
+  useEffect(() => {
+    if (activeTab === "confirm" && admission?.patient_id) {
+      (async () => {
+        const { data: ds } = await supabase
+          .from("discharge_summaries")
+          .select("*")
+          .eq("patient_id", admission.patient_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (ds) {
+          setDsForm((prev) => ({
+            ...prev,
+            final_diagnosis: ds.final_diagnosis || prev.final_diagnosis,
+            discharge_advice: ds.discharge_advice || prev.discharge_advice,
+            medications_at_discharge: ds.medications_at_discharge || prev.medications_at_discharge,
+            signed_by: ds.signed_by || prev.signed_by,
+          }));
+          if (ds.is_final || ds.final_diagnosis) setDsSaved(true);
+        }
+      })();
+    }
+  }, [activeTab, admission?.patient_id]);
+
   // ── Save Discharge Summary (Draft) ────────────────────────────────
   async function saveDischargeSummary(finalize = false) {
     if (!admission || !patient) return;
