@@ -366,6 +366,8 @@ export default function IPDNursingPage() {
     setVitals([])
     setIO([])
     setNotes([])
+    setNewVital(emptyVital())
+    setNewIO(emptyIO())
 
     // Cancellation flag — set to true in cleanup so in-flight .then()
     // callbacks for the *previous* bedId do not touch state.
@@ -954,27 +956,27 @@ export default function IPDNursingPage() {
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="label">Pulse (bpm)</label>
-                    <input className="input bg-white" type="number" placeholder="72"
+                    <input className="input bg-white" type="number" placeholder=""
                       value={newVital.pulse} onChange={e => setNewVital(p => ({ ...p, pulse: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">BP Systolic</label>
-                    <input className="input bg-white" type="number" placeholder="120"
+                    <input className="input bg-white" type="number" placeholder=""
                       value={newVital.bp_systolic} onChange={e => setNewVital(p => ({ ...p, bp_systolic: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">BP Diastolic</label>
-                    <input className="input bg-white" type="number" placeholder="80"
+                    <input className="input bg-white" type="number" placeholder=""
                       value={newVital.bp_diastolic} onChange={e => setNewVital(p => ({ ...p, bp_diastolic: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">Temperature (°C)</label>
-                    <input className="input bg-white" type="number" step="0.1" placeholder="98.6"
+                    <input className="input bg-white" type="number" step="0.1" placeholder=""
                       value={newVital.temperature} onChange={e => setNewVital(p => ({ ...p, temperature: e.target.value }))} />
                   </div>
                   <div>
                     <label className="label">SpO₂ (%)</label>
-                    <input className="input bg-white" type="number" placeholder="98"
+                    <input className="input bg-white" type="number" placeholder=""
                       value={newVital.spo2} onChange={e => setNewVital(p => ({ ...p, spo2: e.target.value }))} />
                   </div>
                   <div>

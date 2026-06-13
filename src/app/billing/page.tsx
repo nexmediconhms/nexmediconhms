@@ -5,7 +5,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { escapeLike, formatDate, getHospitalSettings } from '@/lib/utils'
-import { loadSettings, type HospitalSettings } from '@/lib/settings'
+import { loadSettings, resolveUpiId, type HospitalSettings } from '@/lib/settings'
 
 // ─── BUG #3 FIX ──────────────────────────────────────────────────────────────
 // Wire the previously-orphan GST module into the billing page. These imports
@@ -476,6 +476,34 @@ function BillingContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
+
+  
+  // ── Load IPD charges when coming from IPD billing page ──────────
+  useEffect(() => {
+    const source = searchParams.get('source')
+    const admissionId = searchParams.get('admissionId')
+    if (source === 'ipd' && admissionId && selPatient?.id && billItems.length === 0) {
+      (async () => {
+        try {
+          const { data: charges } = await supabase
+            .from('ipd_charges')
+            .select('*')
+            .eq('admission_id', admissionId)
+            .order('charge_date', { ascending: true })
+          if (charges && charges.length > 0) {
+            const items = charges.map((ch: any) => ({
+              label: ch.description || ch.category || 'IPD Charge',
+              amount: Number(ch.amount) || 0,
+            }))
+            setBillItems(items)
+          }
+        } catch (err) {
+          console.warn('Failed to load IPD charges:', err)
+        }
+      })()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selPatient])
 
   // ── Fee status check when patient is selected ──────────────────
   useEffect(() => {
@@ -1106,6 +1134,15 @@ function BillingContent() {
                 </button>
               ))}
             </div>
+            {payMode === 'upi' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4">
+                <label className="text-xs font-semibold text-blue-800 block mb-1">UPI ID for Receiving Payment</label>
+                <div className="font-mono text-sm text-blue-900 bg-white px-3 py-2 rounded border">
+                  {resolveUpiId('opd') || 'Not configured - Set in Settings'}
+                </div>
+                <p className="text-xs text-blue-600 mt-1">Patient will transfer to this UPI ID</p>
+              </div>
+            )}
             {(payMode === 'upi' || payMode === 'card') && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800 mb-4">
                 <strong>Setup required:</strong> Add your Razorpay Key ID to{' '}

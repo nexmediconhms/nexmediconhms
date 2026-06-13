@@ -21,6 +21,7 @@ import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getIndiaToday, getHospitalSettings } from '@/lib/utils'
+import { resolveUpiId } from '@/lib/settings'
 import { useAuth } from '@/lib/auth'
 import {
   ArrowLeft, Plus, Trash2, Save, Printer, IndianRupee,
@@ -187,7 +188,20 @@ export default function IPDBillingPage() {
   const [chargeRates, setChargeRates] = useState<ChargeRate[]>([])
   const [discount, setDiscount] = useState<number>(0)
   const [paymentMode, setPaymentMode] = useState<string>('cash')
+  const [upiId, setUpiId] = useState<string>('')
+  const [paymentRef, setPaymentRef] = useState<string>('')
+  const [billPaid, setBillPaid] = useState(false)
+  const [paying, setPaying] = useState(false)
   const [showAddCharge, setShowAddCharge] = useState(false)
+
+  useEffect(() => {
+    if (paymentMode === 'upi') {
+      const resolved = resolveUpiId('ipd')
+      setUpiId(resolved)
+    } else {
+      setUpiId('')
+    }
+  }, [paymentMode])
 
   // New charge form
   const [newCharge, setNewCharge] = useState<IPDCharge>({
@@ -594,6 +608,70 @@ export default function IPDBillingPage() {
   // ║    - doctor earnings                                           ║
   // ║    - the finance ledger                                        ║
   // ╚════════════════════════════════════════════════════════════════╝
+  ﻿  async function payBillNow() {
+    if (!admission?.id || !patient?.id) return
+    setPaying(true)
+    setError('')
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const { data: existingBill } = await supabase
+        .from('bills')
+        .select('id, bill_number, invoice_number, net_amount, status')
+        .eq('admission_id', admission.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (!existingBill) {
+        setError('No bill found. Please save the bill first before paying.')
+        setPaying(false)
+        return
+      }
+
+      if (existingBill.status === 'paid') {
+        setBillPaid(true)
+        setSuccess('This bill has already been paid.')
+        setPaying(false)
+        return
+      }
+
+      const payRes = await fetch('/api/billing/payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          bill_id: existingBill.id,
+          amount: netBill,
+          payment_mode: paymentMode,
+          reference: paymentRef || (paymentMode === 'upi' ? upiId : undefined),
+          notes: `IPD Bill Payment`,
+        }),
+      })
+
+      const payData = await payRes.json().catch(() => ({}))
+
+      if (!payRes.ok) {
+        setError(`Payment failed: ${payData?.error || payRes.statusText}`)
+        setPaying(false)
+        return
+      }
+
+      setBillPaid(true)
+      setSuccess('Payment received successfully! Bill has been marked as Paid.')
+      setTimeout(() => setSuccess(''), 8000)
+    } catch (e: any) {
+      setError(`Payment error: ${e?.message || 'Unknown error'}`)
+    } finally {
+      setPaying(false)
+    }
+  }
+
+
   async function saveBill() {
     if (!admission?.id) return
     setSaving(true)
@@ -1058,24 +1136,82 @@ export default function IPDBillingPage() {
                 </select>
               </div>
             </div>
+﻿            {paymentMode === 'upi' && (
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">UPI ID (Receiving)</label>
+                  <input className="input bg-blue-50 font-mono" value={upiId}
+                    onChange={e => setUpiId(e.target.value)}
+                    placeholder="yourname@upi" />
+                  <p className="text-xs text-gray-500 mt-1">Patient will pay to this UPI ID</p>
+                </div>
+                <div>
+                  <label className="label">Transaction Ref (optional)</label>
+                  <input className="input" value={paymentRef}
+                    onChange={e => setPaymentRef(e.target.value)}
+                    placeholder="UTR / Transaction ID" />
+                </div>
+              </div>
+            )}
+            {paymentMode === 'card' && (
+              <div className="mt-3">
+                <div>
+                  <label className="label">Card Ref (optional)</label>
+                  <input className="input" value={paymentRef}
+                    onChange={e => setPaymentRef(e.target.value)}
+                    placeholder="Auth code / Last 4 digits" />
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
-        {/* Payment Info Section - shown after bill saved */}
-        {success && admission && (
-          <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p5 no-print">
-            <h3 className="font-semibold text-blue-800 text-sm mb-2">Next Step: Collect Payment</h3>
+        {billPaid && (
+          <div className="mt-5 bg-green-50 border border-green-300 rounded-xl p-5 no-print">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <h3 className="font-semibold text-green-800 text-sm">Payment Completed</h3>
+            </div>
+            <p className="text-sm text-green-700">
+              Amount of {inr(netBill)} has been paid successfully. Bill status updated across all modules (IPD, Billing, Patient Profile, Reports).
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Link
+                href={`/ipd/discharge/${admission?.id}?tab=billing`}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 py-2 rounded-lg">
+                <IndianRupee className="w-3.5 h-3.5" /> Proceed to Discharge
+              </Link>
+              <Link
+                href={`/billing?patientId=${patient?.id}&patientName=${encodeURIComponent(patient?.full_name || '')}&mrn=${patient?.mrn || ''}&source=ipd&admissionId=${admission?.id}`}
+                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-4 py-2 rounded-lg border">
+                View in Billing Page
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {success && admission && !billPaid && (
+          <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p-5 no-print">
+            <h3 className="font-semibold text-blue-800 text-sm mb-2">Bill Saved — Pay Now or Later</h3>
             <p className="text-xs text-blue-700 mb-3">
-              Bill has been saved with status "Unpaid". To collect payment and proceed with discharge:
+              Bill saved with status &quot;Unpaid&quot;. You can pay now or collect later during discharge.
             </p>
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={payBillNow}
+                disabled={paying}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
+                {paying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <IndianRupee className="w-3.5 h-3.5" />}
+                {paying ? 'Processing...' : `Pay ${inr(netBill)} Now`}
+              </button>
               <Link
                 href={`/ipd/discharge/${admission.id}?tab=billing`}
                 className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg">
-                <IndianRupee className="w-3.5 h-3.5" /> Collect Payment (Discharge Workflow)
+                <IndianRupee className="w-3.5 h-3.5" /> Collect via Discharge
               </Link>
               <Link
-                href={`/billing?patientId=${patient?.id}&patientName=${encodeURIComponent(patient?.full_name || '')}&mrn=${patient?.mrn || ''}`}
+                href={`/billing?patientId=${patient?.id}&patientName=${encodeURIComponent(patient?.full_name || '')}&mrn=${patient?.mrn || ''}&source=ipd&admissionId=${admission?.id}`}
                 className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-4 py-2 rounded-lg border">
                 Open Billing Page
               </Link>
@@ -1083,7 +1219,6 @@ export default function IPDBillingPage() {
           </div>
         )}
 
-        {/* Print footer */}
         <div className="print-only mt-6 pt-4 border-t text-center text-xs text-gray-500">
           Generated: {new Date().toLocaleString('en-IN')} · NexMedicon HMS
         </div>
