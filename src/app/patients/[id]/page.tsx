@@ -258,9 +258,13 @@ export default function PatientDetailPage() {
     setSummaryState('loading')
     setSummaryError('')
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/patient-summary', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ patient, encounters, prescriptions, discharges }),
       })
       const data = await res.json()

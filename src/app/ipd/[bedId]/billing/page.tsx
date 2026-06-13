@@ -1061,6 +1061,28 @@ export default function IPDBillingPage() {
           </div>
         )}
 
+        {/* Payment Info Section - shown after bill saved */}
+        {success && admission && (
+          <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p5 no-print">
+            <h3 className="font-semibold text-blue-800 text-sm mb-2">Next Step: Collect Payment</h3>
+            <p className="text-xs text-blue-700 mb-3">
+              Bill has been saved with status "Unpaid". To collect payment and proceed with discharge:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/ipd/discharge/${admission.id}?tab=billing`}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg">
+                <IndianRupee className="w-3.5 h-3.5" /> Collect Payment (Discharge Workflow)
+              </Link>
+              <Link
+                href={`/billing?patientId=${patient?.id}&patientName=${encodeURIComponent(patient?.full_name || '')}&mrn=${patient?.mrn || ''}`}
+                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-4 py-2 rounded-lg border">
+                Open Billing Page
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Print footer */}
         <div className="print-only mt-6 pt-4 border-t text-center text-xs text-gray-500">
           Generated: {new Date().toLocaleString('en-IN')} · NexMedicon HMS

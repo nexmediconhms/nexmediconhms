@@ -28,7 +28,7 @@ const EMPTY: DSForm = {
   admission_date: '', discharge_date: getIndiaToday(),
   final_diagnosis: '', secondary_diagnosis: '',
   clinical_summary: '', investigations: '', treatment_given: '',
-  condition_at_discharge: 'Stable, afebrile, ambulant',
+  condition_at_discharge: '',
   discharge_advice: '', diet_advice: '', medications_at_discharge: '',
   follow_up_date: '', follow_up_note: '',
   delivery_type: '', baby_sex: '', baby_weight: '', apgar_score: '',
@@ -193,7 +193,8 @@ ENCOUNTERS:\n${encCtx}\nPRESCRIPTIONS:\n${rxCtx||'—'}
 Return ONLY valid JSON with keys: final_diagnosis, secondary_diagnosis, clinical_summary, investigations, treatment_given, condition_at_discharge, discharge_advice, diet_advice, medications_at_discharge, follow_up_note, lactation_advice, complications`
 
     try {
-      const res = await fetch('/api/discharge-ai', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt}) })
+      const { data: { session: aiSession } } = await supabase.auth.getSession()
+      const res = await fetch('/api/discharge-ai', { method:'POST', headers:{'Content-Type':'application/json', ...(aiSession?.access_token ? { Authorization: `Bearer ${aiSession.access_token}` } : {})}, body:JSON.stringify({prompt}) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'AI generation failed')
       setForm(prev => ({

@@ -43,7 +43,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle,
   Activity, Droplets, ClipboardList, BedDouble,
   Camera, FileText, Loader2, Sparkles, AlertCircle,
-  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw, Baby, Scissors
+  ChevronDown, ChevronUp, Eye, Stethoscope, RefreshCw, Baby, Scissors, Shield
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -847,6 +847,14 @@ export default function IPDNursingPage() {
               href={`/ipd/${bedId}/billing`}
               className="ml-2 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
               <IndianRupee className="w-3.5 h-3.5" /> IPD Bill
+            </Link>
+          )}
+          {/* Consent Forms button */}
+          {bed && patient && (
+            <Link
+              href={`/ipd/${bedId}/consent`}
+              className="ml-2 flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              <Shield className="w-3.5 h-3.5" /> Consent Forms
             </Link>
           )}
 

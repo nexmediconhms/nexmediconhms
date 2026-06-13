@@ -21,7 +21,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import InlineDischargeClearance from "@/components/ipd/InlineDischargeClearance";
@@ -174,7 +174,7 @@ const EMPTY_DS: DSForm = {
   clinical_summary: "",
   investigations: "",
   treatment_given: "",
-  condition_at_discharge: "Stable, afebrile, ambulant",
+  condition_at_discharge: "",
   discharge_advice: "",
   diet_advice: "",
   medications_at_discharge: "",
@@ -396,7 +396,7 @@ export default function DischargeWorkflowPage() {
           investigations: ds.investigations || "",
           treatment_given: ds.treatment_given || "",
           condition_at_discharge:
-            ds.condition_at_discharge || "Stable, afebrile, ambulant",
+            ds.condition_at_discharge || "",
           discharge_advice: ds.discharge_advice || "",
           diet_advice: ds.diet_advice || "",
           medications_at_discharge: ds.medications_at_discharge || "",
@@ -471,7 +471,7 @@ export default function DischargeWorkflowPage() {
     loadData();
   }, [loadData]);
 
-  // Re-fetch discharge summary when Confirm tab is activated
+  // Re-fetch discharge summary + doctor sign-off when Confirm tab is activated
   useEffect(() => {
     if (activeTab === "confirm" && admission?.patient_id) {
       (async () => {
@@ -482,19 +482,35 @@ export default function DischargeWorkflowPage() {
           .order("created_at", { ascending: false })
           .limit(1)
           .single();
+
+        // Also check discharge_signoffs for doctor sign-off
+        const { data: docSignoff } = await supabase
+          .from("discharge_signoffs")
+          .select("signed_by, signed_at")
+          .eq("admission_id", admission.id)
+          .eq("role", "doctor")
+          .eq("status", "approved")
+          .order("signed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const doctorSignedBy = docSignoff?.signed_by || '';
+
         if (ds) {
           setDsForm((prev) => ({
             ...prev,
             final_diagnosis: ds.final_diagnosis || prev.final_diagnosis,
             discharge_advice: ds.discharge_advice || prev.discharge_advice,
             medications_at_discharge: ds.medications_at_discharge || prev.medications_at_discharge,
-            signed_by: ds.signed_by || prev.signed_by,
+            signed_by: ds.signed_by || doctorSignedBy || prev.signed_by,
           }));
           if (ds.is_final || ds.final_diagnosis) setDsSaved(true);
+        } else if (doctorSignedBy) {
+          setDsForm((prev) => ({ ...prev, signed_by: doctorSignedBy }));
         }
       })();
     }
-  }, [activeTab, admission?.patient_id]);
+  }, [activeTab, admission?.patient_id, admission?.id]);
 
   // ── Save Discharge Summary (Draft) ────────────────────────────────
   async function saveDischargeSummary(finalize = false) {
@@ -571,9 +587,13 @@ export default function DischargeWorkflowPage() {
     if (!admission || !patient) return;
     setAiLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/discharge-ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ patientId: patient.id }),
       });
       if (res.ok) {
@@ -677,9 +697,13 @@ export default function DischargeWorkflowPage() {
 
     try {
       // Call the comprehensive discharge API
+      const { data: { session: dcSession } } = await supabase.auth.getSession();
       const res = await fetch("/api/ipd/discharge", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(dcSession?.access_token ? { Authorization: `Bearer ${dcSession.access_token}` } : {}),
+        },
         body: JSON.stringify({
           admission_id: admission.id,
           discharge_date: dsForm.discharge_date || getIndiaToday(),

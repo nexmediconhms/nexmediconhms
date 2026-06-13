@@ -187,18 +187,30 @@ export default function InlineDischargeClearance({
       }
       setItems([...results])
 
-      // 5. Consent check
+      // 5. Consent check - check both consent_records and consents tables
       try {
+        let totalConsents = 0;
         const { count: consentCount } = await supabase
           .from('consent_records')
           .select('id', { count: 'exact', head: true })
           .eq('ipd_admission_id', admissionId)
           .eq('status', 'signed')
+        totalConsents += (consentCount || 0);
 
-        if ((consentCount || 0) > 0) {
-          results[4] = { ...results[4], status: 'pass', message: `${consentCount} consent(s) signed` }
+        // Also check 'consents' table (alternate storage)
+        try {
+          const { count: c2 } = await supabase
+            .from('consents')
+            .select('id', { count: 'exact', head: true })
+            .eq('patient_id', patientId)
+            .eq('status', 'signed')
+          totalConsents += (c2 || 0);
+        } catch { /* consents table may not exist */ }
+
+        if (totalConsents > 0) {
+          results[4] = { ...results[4], status: 'pass', message: `${totalConsents} consent(s) signed` }
         } else {
-          results[4] = { ...results[4], status: 'warn', message: 'No signed consents found' }
+          results[4] = { ...results[4], status: 'warn', message: 'No signed consents found — go to IPD Chart → Consent Forms' }
         }
       } catch {
         results[4] = { ...results[4], status: 'pass', message: 'Consent check skipped (table not set up)' }

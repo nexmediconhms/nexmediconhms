@@ -161,6 +161,7 @@ export function buildReceiptHtml(bill: {
   id: string
   patient_name: string
   mrn?: string
+  invoice_number?: string
   items: any[]
   subtotal: number
   discount?: number
@@ -174,7 +175,7 @@ export function buildReceiptHtml(bill: {
   encounter_type?: string
 }): string {
   const items = Array.isArray(bill.items) ? bill.items : []
-  const receiptNo = bill.id.slice(-10).toUpperCase()
+  const receiptNo = bill.invoice_number || bill.id.slice(-10).toUpperCase()
   const billDate = new Date(bill.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
   const billTime = new Date(bill.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
   const discount = Number(bill.discount || 0)
@@ -184,7 +185,7 @@ export function buildReceiptHtml(bill: {
 
   let html = `<div class="info-grid">
     <div class="info-item"><span class="info-label">Patient: </span><span class="info-value">${bill.patient_name || ''}</span></div>
-    <div class="info-item"><span class="info-label">Receipt No: </span><span class="info-value font-mono">${receiptNo}</span></div>
+    <div class="info-item"><span class="info-label">Bill No: </span><span class="info-value font-mono">${receiptNo}</span></div>
     ${bill.mrn ? `<div class="info-item"><span class="info-label">MRN: </span><span class="info-value font-mono">${bill.mrn}</span></div>` : ''}
     <div class="info-item"><span class="info-label">Date: </span><span class="info-value">${billDate} ${billTime}</span></div>
     ${bill.encounter_type ? `<div class="info-item"><span class="info-label">Type: </span><span class="info-value">${bill.encounter_type}</span></div>` : ''}
@@ -223,12 +224,13 @@ export function buildIPDBillHtml(options: {
   bedNumber: string
   admissionDate: string
   daysAdmitted: number
+  billNumber?: string
   charges: { charge_date: string; category: string; description: string; quantity: number; rate: number; amount: number }[]
   subtotal: number
   discount: number
   netBill: number
 }): string {
-  const { patientName, mrn, bedNumber, admissionDate, daysAdmitted, charges, subtotal, discount, netBill } = options
+  const { patientName, mrn, bedNumber, admissionDate, daysAdmitted, charges, subtotal, discount, netBill, billNumber } = options
   const fmtDate = new Date(admissionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
   let html = `<div class="info-grid">
@@ -237,6 +239,7 @@ export function buildIPDBillHtml(options: {
     <div class="info-item"><span class="info-label">Bed: </span><span class="info-value">${bedNumber}</span></div>
     <div class="info-item"><span class="info-label">Admitted: </span><span class="info-value">${fmtDate}</span></div>
     <div class="info-item"><span class="info-label">Days: </span><span class="info-value">${daysAdmitted}</span></div>
+    ${billNumber ? `<div class="info-item"><span class="info-label">Bill No: </span><span class="info-value font-mono">${billNumber}</span></div>` : ''}
   </div>`
 
   html += `<table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="text-right">Qty</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr></thead><tbody>`

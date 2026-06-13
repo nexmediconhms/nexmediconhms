@@ -76,6 +76,7 @@ interface Bill {
   net_amount: number
   payment_mode: PayMode | null
   status: BillStatus
+  invoice_number?: string
   razorpay_payment_id?: string
   notes: string
   encounter_id?: string
@@ -600,8 +601,10 @@ function BillingContent() {
     }
     // ────────────────────────────────────────────────────────────────────────
 
+    const billNumber = `BILL-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase().slice(-4)}`
     const payload = {
       patient_id: selPatient.id,
+      invoice_number: billNumber,
       patient_name: selPatient.full_name,
       mrn: selPatient.mrn,
       items: billItems,
@@ -1608,7 +1611,7 @@ function BillingContent() {
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(bill.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{bill.patient_name}</div>
-                      <div className="text-xs text-gray-400">{bill.mrn}</div>
+                      <div className="text-xs text-gray-400">{bill.mrn} {bill.invoice_number && <span className="font-mono text-blue-600">• {bill.invoice_number}</span>}</div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
                       {Array.isArray(bill.items) ? bill.items.map((i: any) => i.label).join(', ') : '—'}
@@ -1667,7 +1670,7 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
   const billGstPercent = Number(bill.gst_percent || 0)
   const billGstAmount = Number(bill.gst_amount || 0)
   const showGst = billGstPercent > 0 && billGstAmount > 0
-  const receiptNo = bill.id.slice(-10).toUpperCase()
+  const receiptNo = bill.invoice_number || bill.id.slice(-10).toUpperCase()
   const billDate = new Date(bill.created_at).toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric'
   })
@@ -1703,7 +1706,7 @@ function ReceiptDoc({ bill, hs }: { bill: Bill; hs: any }) {
             <div className="text-sm"><span className="font-bold text-gray-800">MRN:</span> <span className="font-mono text-gray-600">{bill.mrn}</span></div>
           </div>
           <div className="text-right space-y-1">
-            <div className="text-sm"><span className="font-bold text-gray-800">Receipt No:</span> <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{receiptNo}</span></div>
+            <div className="text-sm"><span className="font-bold text-gray-800">Bill No:</span> <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{receiptNo}</span></div>
             <div className="text-sm"><span className="font-bold text-gray-800">Date:</span> <span className="text-gray-700">{billDate}</span></div>
           </div>
         </div>

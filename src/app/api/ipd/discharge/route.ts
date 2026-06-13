@@ -87,10 +87,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Discharge date cannot be in the future' }, { status: 400 })
       }
     }
-    // Validate condition_at_discharge against allowed values
-    const ALLOWED_CONDITIONS = ['Satisfactory', 'Stable', 'Fair', 'Improving', 'Poor', 'Critical', 'Against Medical Advice (LAMA)']
-    if (condition_at_discharge && !ALLOWED_CONDITIONS.includes(condition_at_discharge)) {
-      return NextResponse.json({ error: 'Invalid condition_at_discharge value' }, { status: 400 })
+    // Validate condition_at_discharge - accept any non-empty string
+    // Previously restricted to a fixed enum, but doctors need free-text input
+    if (condition_at_discharge && typeof condition_at_discharge !== 'string') {
+      return NextResponse.json({ error: 'condition_at_discharge must be a string' }, { status: 400 })
     }
     // ──────────────────────────────────────────────────────────────────
 
