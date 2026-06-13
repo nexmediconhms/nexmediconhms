@@ -18,6 +18,9 @@
  *   await notify.custom({ title, message, type, ... })
  */
 
+import { supabase } from '@/lib/supabase'
+
+
 type NotificationType = 'info' | 'lab_report' | 'discharge' | 'billing' | 'appointment' | 'insurance' | 'system'
 type Severity = 'normal' | 'high' | 'critical'
 
@@ -42,9 +45,20 @@ interface NotificationPayload {
  */
 async function sendNotification(payload: NotificationPayload): Promise<void> {
   try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+
+    if (!token) {
+      console.warn('[Notifications] No auth session - cannot send notification')
+      return
+    }
+
     await fetch('/api/notifications', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         ...payload,
         type: payload.type || 'info',
@@ -53,7 +67,6 @@ async function sendNotification(payload: NotificationPayload): Promise<void> {
       }),
     })
   } catch {
-    // Non-fatal — notification failure should never block user actions
     console.warn('[Notifications] Failed to send notification:', payload.title)
   }
 }

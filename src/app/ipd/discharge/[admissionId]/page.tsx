@@ -240,9 +240,17 @@ export default function DischargeWorkflowPage() {
   const router = useRouter();
   const { user, can, isAdmin } = useAuth();
   const admissionId = params.admissionId as string;
+  const searchParams = useSearchParams();
 
   // ── State ──────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && TAB_KEYS.includes(tabParam as any)) {
+      setActiveTab(tabParam as TabKey);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [discharging, setDischarging] = useState(false);

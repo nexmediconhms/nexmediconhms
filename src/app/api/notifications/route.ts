@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
         mrn: mrn || null,
         target_roles,
         metadata: metadata ? JSON.stringify(metadata) : null,
-        created_by: auth.fullName || auth.email,
+        
       })
       .select('id')
       .single()
@@ -151,8 +151,8 @@ export async function PATCH(req: NextRequest) {
         .from('clinic_notifications')
         .update({
           is_read: true,
-          read_by: auth.fullName || auth.email,
-          read_at: new Date().toISOString(),
+          
+          
         })
         .contains('target_roles', [role])
         .eq('is_read', false)
@@ -168,8 +168,8 @@ export async function PATCH(req: NextRequest) {
         .from('clinic_notifications')
         .update({
           is_read: true,
-          read_by: auth.fullName || auth.email,
-          read_at: new Date().toISOString(),
+          
+          
         })
         .in('id', ids)
 

@@ -75,10 +75,23 @@ export default function NotificationPanel() {
   const panelRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  async function getToken(): Promise<string | null> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      return session?.access_token || null
+    } catch {
+      return null
+    }
+  }
+
   const fetchNotifications = useCallback(async () => {
     if (!user) return
     try {
-      const res = await fetch(`/api/notifications?role=${user.role}&limit=30`)
+      const token = await getToken()
+      if (!token) return
+      const res = await fetch(`/api/notifications?role=${user.role}&limit=30`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
       if (res.ok) {
         const data = await res.json()
         setNotifications(data.notifications || [])
@@ -136,9 +149,10 @@ export default function NotificationPanel() {
   async function markRead(id: string) {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
     setUnreadCount(prev => Math.max(0, prev - 1))
-    await fetch('/api/notifications', {
+    const _tk = await getToken()
+    if (_tk) await fetch('/api/notifications', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_tk}` },
       body: JSON.stringify({ ids: [id], read_by: user?.full_name || user?.role }),
     })
   }
@@ -147,9 +161,10 @@ export default function NotificationPanel() {
   async function markAllRead() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
     setUnreadCount(0)
-    await fetch('/api/notifications', {
+    const _tk2 = await getToken()
+    if (_tk2) await fetch('/api/notifications', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_tk2}` },
       body: JSON.stringify({ mark_all: true, role: user?.role, read_by: user?.full_name }),
     })
   }
