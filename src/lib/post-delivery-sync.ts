@@ -135,7 +135,7 @@ export async function runPostDeliverySync(input: PostDeliverySyncInput): Promise
           time: '10:00',
           type: 'Follow-up',
           status: 'scheduled',
-          doctor: doctorName || '',
+          doctor: doctorName || null, doctor_name: doctorName || '',
           notes: `${fu.label}. ${fu.note}`,
         })
 
@@ -186,7 +186,7 @@ export async function runPostDeliverySync(input: PostDeliverySyncInput): Promise
           time: '10:00',
           type: 'Vaccination',
           status: 'scheduled',
-          doctor: doctorName || '',
+          doctor: doctorName || null, doctor_name: doctorName || '',
           notes: `${vax.name} — ${vax.note}. Baby DOB: ${deliveryDate}`,
         })
 
