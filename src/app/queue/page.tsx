@@ -639,7 +639,7 @@ function QueueContent() {
                           <CheckCircle className="w-3 h-3" /> Done
                         </button>
                         <Link
-                          href={`/billing?patientId=${entry.patient_id}&patientName=${encodeURIComponent(entry.patient_name || '')}&mrn=${entry.mrn || ''}&encounterType=OPD&view=new`}
+                          href={`/billing?patientId=${entry.patient_id}&patientName=${encodeURIComponent(entry.patient_name || '')}&mrn=${entry.mrn || ''}&encounterType=OPD&view=new&queueId=${entry.id}`}
                           onClick={() => updateStatus(entry, 'done')}
                           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                         >

@@ -180,6 +180,41 @@ export async function checkFeeStatus(
       }
     }
 
+    // Strategy 3b: Fallback - check bills with consultation items in items array
+    // Catches older bills where is_registration_fee was not set
+    if (!defaultStatus.feePaid) {
+      const todayFb = params.visitDate || new Date().toISOString().split('T')[0];
+
+      const { data: allTodayBills } = await supabase
+        .from('bills')
+        .select('id, items, net_amount, payment_mode, created_at, status')
+        .eq('patient_id', params.patientId)
+        .gte('created_at', `${todayFb}T00:00:00`)
+        .lte('created_at', `${todayFb}T23:59:59`)
+        .eq('status', 'paid')
+        .limit(10);
+
+      if (allTodayBills && allTodayBills.length > 0) {
+        const consultationBill = allTodayBills.find((bill: any) => {
+          if (!Array.isArray(bill.items)) return false;
+          return bill.items.some((item: any) => {
+            const label = (item.label || item.description || '').toLowerCase();
+            return CONSULTATION_SERVICE_CODES.some(
+              code => label.includes(code.toLowerCase())
+            );
+          });
+        });
+
+        if (consultationBill) {
+          defaultStatus.feePaid = true;
+          defaultStatus.feeAmount = consultationBill.net_amount;
+          defaultStatus.paymentMode = consultationBill.payment_mode;
+          defaultStatus.existingBillId = consultationBill.id;
+          defaultStatus.billExists = true;
+        }
+      }
+    }
+
     // If fee was paid upfront, billing page should only show additional services
     if (defaultStatus.feePaid) {
       defaultStatus.additionalServicesOnly = true;

@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
         ? `${type} payment — ${payment_method}${payment_ref ? ` (Ref: ${payment_ref})` : ''}`
         : `${type} — payment pending`,
       encounter_type: 'opd',
+      is_registration_fee: true,
     }
 
     console.log('[Registration Payment] Creating bill:', JSON.stringify({ patient_id, amount: amountNum, isPaid, method: payment_method }))

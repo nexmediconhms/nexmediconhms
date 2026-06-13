@@ -419,6 +419,8 @@ function BillingContent() {
   }, [searchParams])
 
   // Auto-add fee from encounter type URL param
+  // GUARD: Skip adding consultation fees if feeStatus already confirms paid.
+  // A separate useEffect below also removes items once feeStatus arrives (race fix).
   useEffect(() => {
     const encType = searchParams.get('encounterType')
     if (encType && billItems.length === 0) {
@@ -430,10 +432,36 @@ function BillingContent() {
         IPD: { label: 'IPD Admission (per day)', amount: Number(hs2.feeIPD) || 1500 },
         Emergency: { label: 'Emergency Consultation', amount: Number(hs2.feeEmergency) || 800 },
       }
-      if (feeMap[encType]) setBillItems([feeMap[encType]])
+      const preset = feeMap[encType]
+      if (preset) {
+        const isConsultationFee = CONSULTATION_SERVICE_CODES.some(
+          code => preset.label.toLowerCase().includes(code.toLowerCase())
+        )
+        if (isConsultationFee && feeStatus?.feePaid) {
+          // Fee already paid at registration - do NOT auto-add
+        } else {
+          setBillItems([preset])
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
+
+  // When feeStatus loads and confirms fee is already paid, remove any
+  // consultation fee items that were auto-added before the async check completed.
+  useEffect(() => {
+    if (feeStatus?.feePaid && billItems.length > 0) {
+      const filtered = billItems.filter(item =>
+        !CONSULTATION_SERVICE_CODES.some(
+          code => item.label.toLowerCase().includes(code.toLowerCase())
+        )
+      )
+      if (filtered.length !== billItems.length) {
+        setBillItems(filtered)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feeStatus?.feePaid])
 
   // Pre-fill patient from URL
   useEffect(() => {
@@ -490,6 +518,13 @@ function BillingContent() {
   }
 
   function addPreset(p: { label: string; amount: number }) {
+    // Block adding consultation fees if already paid at registration
+    if (feeStatus?.feePaid) {
+      const isConsultationFee = CONSULTATION_SERVICE_CODES.some(
+        code => p.label.toLowerCase().includes(code.toLowerCase())
+      )
+      if (isConsultationFee) return
+    }
     const amt = p.amount > 0 ? p.amount : Number(prompt(`Enter amount for "${p.label}":`) || 0)
     if (amt > 0) setBillItems(prev => [...prev, { label: p.label, amount: amt }])
   }
@@ -522,6 +557,23 @@ function BillingContent() {
 
   // ── Save bill ────────────────────────────────────────────────
   async function saveBill(razorpayId: string | null, mode: PayMode): Promise<Bill | null> {
+    // Double-billing guard: if fee was already paid, strip consultation items
+    if (feeStatus?.feePaid) {
+      const hasConsultationFee = billItems.some(item =>
+        CONSULTATION_SERVICE_CODES.some(code => item.label.toLowerCase().includes(code.toLowerCase()))
+      )
+      if (hasConsultationFee) {
+        const safeItems = billItems.filter(item =>
+          !CONSULTATION_SERVICE_CODES.some(code => item.label.toLowerCase().includes(code.toLowerCase()))
+        )
+        if (safeItems.length === 0) {
+          setPayError('No billable items. Consultation fee was already paid at registration.')
+          return null
+        }
+        setBillItems(safeItems)
+      }
+    }
+
     const hs2 = getHospitalSettings()
 
     // ─── BUG #1 FIX — Idempotency check ────────────────────────────────────
