@@ -25,6 +25,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import InlineDischargeClearance from "@/components/ipd/InlineDischargeClearance";
+import PaymentReceipt from "@/components/payment/PaymentReceipt";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { formatDate, getIndiaToday } from "@/lib/utils";
@@ -111,6 +112,7 @@ interface BillRecord {
   balance: number;
   status: string;
   bill_number?: string;
+  invoice_number?: string;
   bill_date?: string;
   bill_module?: string;
   admission_id?: string;
@@ -272,6 +274,8 @@ export default function DischargeWorkflowPage() {
   const [payMode, setPayMode] = useState("Cash");
   const [payRef, setPayRef] = useState("");
   const [payLoading, setPayLoading] = useState(false);
+  const [billGenerating, setBillGenerating] = useState(false);
+  const [showReceiptFor, setShowReceiptFor] = useState<{billId: string; invoiceNumber: string; amount: number; paymentMethod: string; paymentRef?: string} | null>(null);
 
   // ── Load all data ─────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -360,11 +364,19 @@ export default function DischargeWorkflowPage() {
       if (admBills.length > 0) {
         const billIds = admBills.map((b: any) => b.id);
         const { data: payData } = await supabase
-          .from("payments")
+          .from("bill_payments")
           .select("*")
           .in("bill_id", billIds)
           .order("created_at", { ascending: false });
-        setPayments(payData || []);
+        setPayments((payData || []).map((px: any) => ({
+          id: px.id,
+          bill_id: px.bill_id || px.billid,
+          amount: Number(px.amount) || 0,
+          payment_mode: px.payment_mode || px.paymentmode || "cash",
+          payment_date: px.created_at || px.payment_date,
+          reference_number: px.reference || px.reference_number,
+          notes: px.notes,
+        })));
       }
 
       // 9. Load nursing notes
@@ -622,47 +634,56 @@ export default function DischargeWorkflowPage() {
     if (!payAmount || Number(payAmount) <= 0) return;
     if (bills.length === 0) {
       setError(
-        "No bill found for this admission. Please generate a bill from IPD Billing first.",
+        "No bill found. Please generate a bill first using the button above.",
       );
       return;
     }
     setPayLoading(true);
     try {
-      const bill = bills[0]; // Primary bill
+      const bill = bills[0];
       const amt = Number(payAmount);
+      const { data: { session } } = await supabase.auth.getSession();
 
-      // Insert payment
-      const { error: payErr } = await supabase.from("payments").insert({
-        bill_id: bill.id,
-        amount: amt,
-        payment_mode: payMode,
-        payment_date: new Date().toISOString(),
-        reference_number: payRef || null,
+      const res = await fetch("/api/billing/payment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          billId: bill.id,
+          amount: amt,
+          paymentMode: payMode.toLowerCase(),
+          reference: payRef || undefined,
+          notes: `IPD discharge payment for admission ${admissionId}`,
+        }),
       });
-      if (payErr) throw payErr;
 
-      // Update bill paid amount
-      const newPaid = (bill.paid || 0) + amt;
-      const newBalance = (bill.total || 0) - newPaid;
-      const newStatus = newBalance <= 0 ? "paid" : "partial";
-
-      await supabase
-        .from("bills")
-        .update({
-          paid: newPaid,
-          balance: Math.max(0, newBalance),
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", bill.id);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Payment recording failed");
+      }
 
       setPayAmount("");
       setPayRef("");
-      setSuccessMsg(
-        `₹${amt.toLocaleString("en-IN")} payment recorded successfully!`,
-      );
-      setTimeout(() => setSuccessMsg(""), 3000);
-      loadData(); // Refresh
+
+      const isPaid = data.bill?.status === "paid";
+      if (isPaid) {
+        setShowReceiptFor({
+          billId: bill.id,
+          invoiceNumber: bill.bill_number || bill.invoice_number || data.bill?.invoice_number || "",
+          amount: amt,
+          paymentMethod: payMode.toLowerCase(),
+          paymentRef: payRef || undefined,
+        });
+        setSuccessMsg("Bill fully paid! Receipt generated below.");
+      } else {
+        setSuccessMsg(
+          `₹${amt.toLocaleString("en-IN")} payment recorded. Remaining: ₹${data.bill?.due || 0}`,
+        );
+      }
+      setTimeout(() => setSuccessMsg(""), 5000);
+      loadData();
     } catch (err: any) {
       setError(`Payment failed: ${err.message}`);
     } finally {
@@ -670,7 +691,59 @@ export default function DischargeWorkflowPage() {
     }
   }
 
-  // ── CONFIRM DISCHARGE ─────────────────────────────────────────────
+  async function generateFinalBill() {
+    if (!admission || !patient || ipdCharges.length === 0) {
+      setError("No IPD charges to bill. Add charges first.");
+      return;
+    }
+    setBillGenerating(true);
+    setError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const totalAmount = ipdCharges.reduce((sum, cx) => sum + (cx.amount || 0), 0);
+
+      const billItems = ipdCharges.map((cx) => ({
+        description: cx.description || cx.item_name || cx.category,
+        quantity: cx.quantity || 1,
+        rate: cx.unit_rate || cx.amount || 0,
+        amount: cx.amount || 0,
+      }));
+
+      const res = await fetch("/api/billing/generate-bill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          patient_id: patient.id,
+          patient_name: patient.full_name || admission.patient_name,
+          mrn: patient.mrn || admission.mrn,
+          module: "IPD",
+          admission_id: admissionId,
+          items: billItems,
+          total: totalAmount,
+          net_amount: totalAmount,
+          description: `IPD Bill - ${admission.patient_name} (Bed: ${admission.bed_number})`,
+          payment_mode: "pending",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Bill generation failed");
+      }
+
+      setSuccessMsg(`Bill ${data.invoice_number || ""} generated! Total: ₹${totalAmount.toLocaleString("en-IN")}`);
+      setTimeout(() => setSuccessMsg(""), 5000);
+      loadData();
+    } catch (err: any) {
+      setError(`Bill generation failed: ${err.message}`);
+    } finally {
+      setBillGenerating(false);
+    }
+  }
+
   async function confirmDischarge() {
     if (!admission) return;
     if (!dsSaved) {
@@ -1617,6 +1690,34 @@ export default function DischargeWorkflowPage() {
                   </div>
                 )}
 
+                
+                {/* Generate Bill Button - shown when charges exist but no bill yet */}
+                {ipdCharges.length > 0 && bills.length === 0 && !discharged && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-medium text-blue-800">Ready to Generate Bill</p>
+                        <p className="text-sm text-blue-600 mt-1">
+                          {ipdCharges.length} charge item(s) totalling ₹{totalCharges.toLocaleString("en-IN")}. Generate the final IPD bill to proceed with payment collection.
+                        </p>
+                        <button
+                          onClick={generateFinalBill}
+                          disabled={billGenerating}
+                          className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition-colors"
+                        >
+                          {billGenerating ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <FileText className="w-4 h-4" />
+                          )}
+                          Generate Final IPD Bill
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Payment History */}
                 {payments.length > 0 && (
                   <div>
@@ -1719,6 +1820,29 @@ export default function DischargeWorkflowPage() {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-700 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" /> All bills are fully
                     settled. No balance due.
+                  </div>
+                )}
+
+                {/* Receipt View - shown after full payment */}
+                {showReceiptFor && patient && (
+                  <div className="mt-4">
+                    <PaymentReceipt
+                      billId={showReceiptFor.billId}
+                      invoiceNumber={showReceiptFor.invoiceNumber}
+                      patientName={patient.full_name || admission?.patient_name || ""}
+                      patientId={patient.id}
+                      mrn={patient.mrn || admission?.mrn || ""}
+                      amount={showReceiptFor.amount}
+                      paymentMethod={showReceiptFor.paymentMethod}
+                      paymentRef={showReceiptFor.paymentRef}
+                      description="IPD Discharge Bill Payment"
+                    />
+                    <button
+                      onClick={() => setShowReceiptFor(null)}
+                      className="mt-3 text-sm text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Close Receipt
+                    </button>
                   </div>
                 )}
               </div>
