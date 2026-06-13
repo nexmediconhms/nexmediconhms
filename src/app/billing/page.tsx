@@ -25,7 +25,7 @@ import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
   CreditCard, Smartphone, Banknote, Plus, Trash2, X,
   ArrowLeft, Receipt, AlertCircle, Calculator, Mail,
-  MessageCircle, ChevronDown, ChevronUp, Calendar, RotateCcw,
+  MessageCircle, ChevronDown, ChevronUp, Calendar, RotateCcw, Eye,
 } from 'lucide-react'
 
 // ── Common fee presets ────────────────────────────────────────
@@ -808,21 +808,29 @@ function BillingContent() {
           <div className="no-print flex items-center gap-3 mb-5">
             <button onClick={() => { setView('list'); setSelectedBill(null); setCashSuccess(false) }}
               className="text-gray-400 hover:text-gray-700"><ArrowLeft className="w-5 h-5" /></button>
-            <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
+            <h1 className="text-xl font-bold text-gray-900">{selectedBill.status === 'paid' ? 'Payment Receipt' : 'Bill Details'}</h1>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => {
-                printDocument(buildReceiptHtml({...selectedBill, payment_mode: selectedBill.payment_mode || undefined}), {
-                  title: 'Payment Receipt',
-                  hospitalName: hs.hospitalName,
-                  address: hs.address,
-                  phone: hs.phone,
-                  doctorName: hs.doctorName,
-                  regNo: hs.regNo,
-                  gstin: hs.gstin,
-                })
-              }} className="btn-secondary flex items-center gap-2 text-xs">
-                <Printer className="w-3.5 h-3.5" /> Print
-              </button>
+              {selectedBill.status === 'paid' && (
+                <button onClick={() => {
+                  printDocument(buildReceiptHtml({...selectedBill, payment_mode: selectedBill.payment_mode || undefined}), {
+                    title: 'Payment Receipt',
+                    hospitalName: hs.hospitalName,
+                    address: hs.address,
+                    phone: hs.phone,
+                    doctorName: hs.doctorName,
+                    regNo: hs.regNo,
+                    gstin: hs.gstin,
+                  })
+                }} className="btn-secondary flex items-center gap-2 text-xs">
+                  <Printer className="w-3.5 h-3.5" /> Print Receipt
+                </button>
+              )}
+              {selectedBill.status !== 'paid' && (
+                <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg">
+                  <AlertCircle className="w-3.5 h-3.5 text-orange-600" />
+                  <span className="text-xs font-medium text-orange-700">Payment pending - receipt available after payment</span>
+                </div>
+              )}
               <Link href={`/patients/${selectedBill.patient_id}`} className="btn-secondary text-xs">Patient Record</Link>
               <button onClick={() => { resetForm(); setView('new') }} className="btn-primary text-xs">New Bill</button>
             </div>
@@ -1632,9 +1640,15 @@ function BillingContent() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs text-blue-600 flex items-center gap-1">
-                        <Printer className="w-3 h-3" /> Receipt
-                      </span>
+                      {bill.status === 'paid' ? (
+                        <span className="text-xs text-blue-600 flex items-center gap-1">
+                          <Printer className="w-3 h-3" /> Receipt
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> View
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

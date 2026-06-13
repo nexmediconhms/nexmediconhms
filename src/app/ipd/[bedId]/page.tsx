@@ -36,6 +36,7 @@ import ConsultationAttachments from '@/components/shared/ConsultationAttachments
 import DeliveryRecord from '@/components/ipd/DeliveryRecord'
 import DoctorRoundNotes from '@/components/ipd/DoctorRoundNotes'
 import SurgeryOTNotes from '@/components/ipd/SurgeryOTNotes'
+import DischargeSignoffWidget from '@/components/ipd/DischargeSignoffWidget'
 import { IndianRupee } from 'lucide-react'
 
 import {
