@@ -20,7 +20,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, getIndiaToday } from '@/lib/utils'
+import { formatDate, getIndiaToday, getHospitalSettings } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import {
   ArrowLeft, Plus, Trash2, Save, Printer, IndianRupee,
@@ -28,6 +28,7 @@ import {
   CheckCircle, Calculator, RefreshCw,
 } from 'lucide-react'
 import IPDPackageBilling from '@/components/ipd/IPDPackageBilling'
+import { printDocument, buildIPDBillHtml } from '@/lib/printUtils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -809,7 +810,26 @@ export default function IPDBillingPage() {
               {patient.full_name} · MRN: {patient.mrn} · Admitted: {admissionDate ? formatDate(admissionDate) : '—'} · <strong>{daysAdmitted} day{daysAdmitted !== 1 ? 's' : ''}</strong>
             </p>
           </div>
-          <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs no-print">
+          <button onClick={() => {
+            const hs = getHospitalSettings()
+            printDocument(buildIPDBillHtml({
+              patientName: patient?.full_name || '',
+              mrn: patient?.mrn || '',
+              bedNumber: bed?.bed_number || '',
+              admissionDate: admissionDate || '',
+              daysAdmitted,
+              charges: charges.map(cc => ({ charge_date: cc.charge_date, category: cc.category, description: cc.description, quantity: cc.quantity, rate: cc.rate, amount: cc.amount })),
+              subtotal: grandTotal,
+              discount,
+              netBill,
+            }), {
+              title: 'IPD Bill',
+              hospitalName: hs.hospitalName,
+              address: hs.address,
+              phone: hs.phone,
+              doctorName: hs.doctorName,
+            })
+          }} className="btn-secondary flex items-center gap-2 text-xs no-print">
             <Printer className="w-3.5 h-3.5" /> Print
           </button>
         </div>

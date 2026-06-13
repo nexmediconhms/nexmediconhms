@@ -15,6 +15,7 @@ import { audit, auditSafetyOverride } from '@/lib/audit'
 import type { Medication } from '@/types'
 import type { OCRResult } from '@/lib/ocr'
 import { Plus, Trash2, Printer, ArrowLeft, CheckCircle, Shield } from 'lucide-react'
+import { printDocument, buildPrescriptionHtml } from '@/lib/printUtils'
 import SmartMic from '@/components/shared/SmartMic'
 import { createFollowUp, handleVisitCompletion, syncAppointmentFromOPD } from '@/lib/services/appointmentService'
 
@@ -434,7 +435,26 @@ export default function PrescriptionPage() {
               </Link>
             )}
 
-            <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-xs">
+            <button onClick={() => {
+              const hs = getHospitalSettings()
+              printDocument(buildPrescriptionHtml({
+                patientName: (patient as any)?.full_name || '',
+                mrn: (patient as any)?.mrn || '',
+                date: new Date().toISOString(),
+                diagnosis: encounter?.diagnosis || undefined,
+                medications: meds.map(m => ({ drug: m.drug, dose: m.dose, route: m.route, frequency: m.frequency, duration: m.duration, instructions: m.instructions })),
+                labTests: reportsNeeded || undefined,
+                followUpDate: followUpDate || undefined,
+                advice: advice,
+              }), {
+                title: 'Prescription',
+                hospitalName: hs?.hospitalName,
+                address: hs?.address,
+                phone: hs?.phone,
+                doctorName: hs?.doctorName,
+                regNo: hs?.regNo,
+              })
+            }} className="btn-secondary flex items-center gap-2 text-xs">
               <Printer className="w-3.5 h-3.5" />
               Print
             </button>

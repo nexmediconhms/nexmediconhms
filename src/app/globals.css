@@ -61,18 +61,20 @@ body {
 @media print {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  body { background: white; font-size: 12px; }
+  body { background: white !important; font-size: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-container { padding: 0; margin: 0; }
-  /* Hide all navigation elements */
   aside, nav, header, footer { display: none !important; position: static !important; }
-  /* Remove left margin from sidebar */
   main { margin-left: 0 !important; width: 100% !important; padding-bottom: 0 !important; }
-  /* Hide bottom mobile nav */
   nav { display: none !important; }
-  /* Clean card borders for print */
-  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
-  /* Avoid page breaks inside cards */
-  .card, tr { page-break-inside: avoid; }
+  button:not(.print-show-btn), [role="button"]:not(.print-show-btn) { display: none !important; }
+  input[type="search"], input[type="text"], select { border: none !important; background: transparent !important; }
+  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+  .card, tr { page-break-inside: avoid; break-inside: avoid; }
+  [class*="bg-gradient"] { background: white !important; color: #1e293b !important; }
+  @page { margin: 12mm; size: A4; }
+  [style*="position: fixed"], [style*="position:fixed"] { position: static !important; }
+  [role="tooltip"], [role="dialog"] { display: none !important; }
+  a { color: #1e293b !important; text-decoration: none !important; }
 }
 .print-only { display: none; }
 

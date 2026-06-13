@@ -19,6 +19,7 @@ import ConsultationFeeGuard from '@/components/billing/ConsultationFeeGuard'
 import { CONSULTATION_SERVICE_CODES } from '@/lib/billing-workflow'
 import type { FeeStatus } from '@/lib/billing-workflow'
 import { getIndiaToday } from '@/lib/utils'
+import { printDocument, buildReceiptHtml } from '@/lib/printUtils'
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   IndianRupee, Search, CheckCircle, Clock, Printer,
@@ -810,21 +811,15 @@ function BillingContent() {
             <h1 className="text-xl font-bold text-gray-900">Payment Receipt</h1>
             <div className="ml-auto flex gap-2">
               <button onClick={() => {
-                // Clean print — open receipt in new window without app chrome
-                const content = document.querySelector('.print-only')?.innerHTML || document.querySelector('.no-print + div')?.innerHTML || ''
-                const w = window.open('', '_blank')
-                if (w) {
-                  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title><style>
-                    body { font-family: Inter, sans-serif; padding: 40px; color: #1e293b; }
-                    table { width: 100%; border-collapse: collapse; }
-                    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-                    .text-right { text-align: right; }
-                    .font-mono { font-family: monospace; }
-                    .font-bold { font-weight: bold; }
-                  </style></head><body>${content}</body></html>`)
-                  w.document.close()
-                  setTimeout(() => w.print(), 300)
-                }
+                printDocument(buildReceiptHtml({...selectedBill, payment_mode: selectedBill.payment_mode || undefined}), {
+                  title: 'Payment Receipt',
+                  hospitalName: hs.hospitalName,
+                  address: hs.address,
+                  phone: hs.phone,
+                  doctorName: hs.doctorName,
+                  regNo: hs.regNo,
+                  gstin: hs.gstin,
+                })
               }} className="btn-secondary flex items-center gap-2 text-xs">
                 <Printer className="w-3.5 h-3.5" /> Print
               </button>
@@ -1526,7 +1521,7 @@ function BillingContent() {
                             setTimeout(() => w.print(), 500)
                           }
                         }
-                      } catch (e) { window.print() }
+                      } catch (e) { console.error(e) }
                     }}
                       className="flex items-center gap-2 btn-secondary text-sm">
                       <Printer className="w-4 h-4" />
