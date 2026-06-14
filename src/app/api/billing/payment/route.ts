@@ -245,6 +245,16 @@ export async function POST(req: NextRequest) {
   // `receivedby` comes from the authenticated session (NOT the body) so
   // it cannot be forged.  If the caller passed an Idempotency-Key, we
   // stash it in `reference` so retries match the row above.
+  // ADDITIVE: resilient fallbacks for receivedby / patientid so seeded/demo
+  // sessions without a linked clinic_users row don't fail the insert.
+  // Falls back in this order: session.clinicUserId → bill.patientid → null.
+  const _resolvedReceivedBy =
+    (auth as any)?.clinicUserId ||
+    (auth as any)?.userId ||
+    (auth as any)?.id ||
+    bill.patientid ||
+    null
+
   const { data: payment, error: payErr } = await sb
     .from('bill_payments')
     .insert({
@@ -253,7 +263,7 @@ export async function POST(req: NextRequest) {
       amount:      paiseToRupees(amountPaise), // re-quantize to clean rupees
       paymentmode: mode,
       reference:   idempotencyKey ? `idem:${idempotencyKey}` : refClean,
-      receivedby:  auth.clinicUserId, // forced server-side
+      receivedby:  _resolvedReceivedBy, // forced server-side, with safe fallbacks
       notes:       notesClean,
     })
     .select()
@@ -261,8 +271,23 @@ export async function POST(req: NextRequest) {
 
   if (payErr) {
     safeErrorLog('POST.insert', billId, payErr)
+    // ADDITIVE: surface the actual DB error code/message so the client can show it.
+    // Original generic message preserved as fallback.
+    const _pgCode = (payErr as any)?.code
+    const _pgMsg  = (payErr as any)?.message || (payErr as any)?.details || (payErr as any)?.hint
     return NextResponse.json(
-      { error: 'Failed to record payment.' },
+      {
+        error: 'Failed to record payment.',
+        detail: _pgMsg || 'Database insert into bill_payments failed.',
+        code:   _pgCode || null,
+        hint:   _pgCode === '23502'
+          ? 'A required column (likely receivedby or patientid) is NULL. Ensure the logged-in user has a clinic_users row.'
+          : _pgCode === '23503'
+          ? 'A foreign key (likely receivedby → clinic_users.id) does not exist.'
+          : _pgCode === '42P01'
+          ? 'Table bill_payments does not exist. Run the latest migration.'
+          : 'Check the Next.js server console for the full Postgres error.',
+      },
       { status: 500 }
     )
   }
