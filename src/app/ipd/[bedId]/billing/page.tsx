@@ -608,7 +608,7 @@ export default function IPDBillingPage() {
   // ║    - doctor earnings                                           ║
   // ║    - the finance ledger                                        ║
   // ╚════════════════════════════════════════════════════════════════╝
-  ﻿  async function payBillNow() {
+  async function payBillNow() {
     if (!admission?.id || !patient?.id) return
     setPaying(true)
     setError('')
@@ -617,6 +617,7 @@ export default function IPDBillingPage() {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
+      // 1) Strict lookup by admission_id.
       let { data: existingBill } = await supabase
         .from('bills')
         .select('id, bill_number, invoice_number, net_amount, status')
@@ -625,10 +626,10 @@ export default function IPDBillingPage() {
         .limit(1)
         .maybeSingle()
 
-      // ADDITIVE FALLBACK: on installs where bills has no admission_id column
-      // (it is stripped at insert time), the strict lookup above returns nothing
-      // even though the bill exists. Fall back to this patient's most recent bill.
-      // Tries both column namings so it works regardless of schema variant.
+      // 2) FALLBACK: on installs where bills has no admission_id column (it is
+      //    stripped at insert time), the strict lookup returns nothing even
+      //    though the bill exists. Fall back to this patient's most recent bill,
+      //    trying both column namings so it works on any schema variant.
       if (!existingBill && patient?.id) {
         for (const col of ['patient_id', 'patientid'] as const) {
           const { data: fb, error: fbErr } = await supabase
@@ -662,9 +663,11 @@ export default function IPDBillingPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          bill_id: existingBill.id,
+          billId: existingBill.id,        // route reads billId
+          bill_id: existingBill.id,       // and bill_id — send both, safe either way
           amount: netBill,
-          payment_mode: paymentMode,
+          paymentMode: paymentMode,       // route reads paymentMode
+          payment_mode: paymentMode,      // and payment_mode
           reference: paymentRef || (paymentMode === 'upi' ? upiId : undefined),
           notes: `IPD Bill Payment`,
         }),
@@ -687,7 +690,6 @@ export default function IPDBillingPage() {
       setPaying(false)
     }
   }
-
 
   async function saveBill() {
     if (!admission?.id) return

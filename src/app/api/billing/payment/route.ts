@@ -7,22 +7,32 @@
  * POST /api/billing/payment             → record a payment
  *
  * Uses ACTUAL bills schema: total, paid, due (NOT net_amount/gross_amount)
- * The DB trigger update_bill_after_payment() auto-updates paid/due/status.
  *
- * ─── HARDENING (May 2026) ────────────────────────────────────────────
- *  - Auth: every call must come from an authenticated, active clinic
- *    user with role admin / doctor / receptionist / staff.
- *  - Service-role client is now lazy & memoized via @/lib/supabase-admin
- *    so `next build` no longer fails when env vars are absent at build
- *    time, and we never silently fall back to the anon key for writes.
- *  - Money comparison is done in INTEGER PAISE so float fudge factors
- *    like `due + 0.01` are no longer required (and no longer mask
- *    reconciliation bugs).
- *  - `receivedBy` is derived from the authenticated session and is
- *    NOT trusted from the request body (prevents receiver forgery).
- *  - Optional `Idempotency-Key` header lets clients safely retry the
- *    same request without creating duplicate payment rows.
- *  - DB and trigger contracts are unchanged.  No migration required.
+ * ─── HARDENING (Jun 2026) ────────────────────────────────────────────
+ * - Auth: every call must come from an authenticated, active clinic
+ * user with role admin / doctor / receptionist / staff.
+ * - Service-role client is lazy & memoized via @/lib/supabase-admin.
+ * - Money comparison is done in INTEGER PAISE.
+ * - `receivedBy` is derived from the authenticated session and is
+ * NOT trusted from the request body.
+ * - Optional `Idempotency-Key` header lets clients safely retry.
+ *
+ * - SELF-HEALING INSERT: the bill_payments table is snake_case
+ * (bill_id / patient_id / payment_mode / received_by) on the
+ * canonical schema, but some installs carry legacy no-underscore
+ * columns. We try snake_case first and automatically retry with the
+ * legacy names if (and only if) the DB reports a missing-column
+ * error, so this endpoint works on EITHER schema variant.
+ * - SELF-DIAGNOSING: if the insert still fails, the REAL Postgres
+ * message/code is returned in `error` so it is visible in the UI
+ * instead of a generic string.
+ * - NO-TRIGGER SYNC: this install has no DB trigger to recalculate the
+ * parent bill after a payment, so the route recomputes paid/due/status
+ * itself. Every module (IPD / OPD / Finance / Patient Profile) reads
+ * bills.paid/due/status, so the payment propagates everywhere.
+ * - The route accepts BOTH camelCase (billId/paymentMode) and
+ * snake_case (bill_id/payment_mode) body keys, so the discharge page,
+ * the IPD bill page, and any other module all work against it.
  * ─────────────────────────────────────────────────────────────────────
  */
 
@@ -54,6 +64,9 @@ const MAX_REF_LENGTH = 120
 const MAX_NOTES_LENGTH = 1000
 const IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
 
+// Postgres / PostgREST "column does not exist" error codes.
+const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204'])
+
 // ── Helpers ──────────────────────────────────────────────────────────
 function rupeesToPaise(rupees: number): number {
   // Always round to the nearest paisa to eliminate float drift.
@@ -72,11 +85,96 @@ function trimToLen(value: unknown, maxLen: number): string | null {
 }
 
 function safeErrorLog(scope: string, billId: string | null, err: unknown) {
-  // Log only opaque IDs / error class — never PHI (no patient name/phone/etc.).
+  // Log only opaque IDs / error class — never PHI.
   const code = (err as { code?: string })?.code ?? 'unknown'
   const msg = (err as { message?: string })?.message ?? String(err)
   // eslint-disable-next-line no-console
   console.error(`[billing/payment][${scope}] billId=${billId ?? '-'} code=${code} msg=${msg}`)
+}
+
+/**
+ * Insert a payment row, trying the canonical snake_case columns first and
+ * automatically retrying with legacy no-underscore columns if (and only if)
+ * the DB reports a missing-column error. Returns the supabase result.
+ */
+async function insertPaymentRow(
+  sb: any,
+  fields: {
+    billId: string
+    patientId: string | null
+    amount: number
+    mode: string
+    reference: string | null
+    receivedBy: string | null
+    notes: string | null
+  },
+) {
+  const snake: Record<string, unknown> = {
+    bill_id:      fields.billId,
+    patient_id:   fields.patientId,
+    amount:       fields.amount,
+    payment_mode: fields.mode,
+    reference:    fields.reference,
+    received_by:  fields.receivedBy,
+    notes:        fields.notes,
+  }
+
+  let res = await sb.from('bill_payments').insert(snake).select().single()
+  if (!res.error) return res
+
+  // Retry with legacy column names ONLY on a missing-column error.
+  const code = (res.error as { code?: string })?.code
+  if (code && MISSING_COLUMN_CODES.has(code)) {
+    const legacy: Record<string, unknown> = {
+      billid:      fields.billId,
+      patientid:   fields.patientId,
+      amount:      fields.amount,
+      paymentmode: fields.mode,
+      reference:   fields.reference,
+      receivedby:  fields.receivedBy,
+      notes:       fields.notes,
+    }
+    const retry = await sb.from('bill_payments').insert(legacy).select().single()
+    if (!retry.error) return retry
+    // Surface whichever error is more informative.
+    return retry
+  }
+
+  return res
+}
+
+/**
+ * Recalculate and persist the parent bill's paid/due/status after a payment.
+ * (No DB trigger exists for this on the current install.) Non-fatal: the
+ * payment row is already recorded if this throws.
+ */
+async function recalcBill(sb: any, billId: string, billTotal: number) {
+  try {
+    // Sum all payments for this bill (try snake_case, fall back to legacy).
+    let paysRes = await sb.from('bill_payments').select('amount').eq('bill_id', billId)
+    if (paysRes.error) {
+      const code = (paysRes.error as { code?: string })?.code
+      if (code && MISSING_COLUMN_CODES.has(code)) {
+        paysRes = await sb.from('bill_payments').select('amount').eq('billid', billId)
+      }
+    }
+    const paidSum = (paysRes.data || []).reduce(
+      (s: number, p: any) => s + Number(p.amount || 0), 0,
+    )
+    const total = Number(billTotal || 0)
+    const newDue = Math.max(0, total - paidSum)
+    const newStatus = paidSum <= 0 ? 'unpaid' : newDue <= 0 ? 'paid' : 'partial'
+
+    await sb
+      .from('bills')
+      .update({ paid: paidSum, due: newDue, status: newStatus })
+      .eq('id', billId)
+
+    return { paid: paidSum, due: newDue, status: newStatus }
+  } catch (err) {
+    safeErrorLog('recalcBill', billId, err)
+    return null
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -102,21 +200,33 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const { data: payments, error } = await sb
+  // Try snake_case, fall back to legacy column on a missing-column error.
+  let result = await sb
     .from('bill_payments')
     .select('*')
     .eq('bill_id', billId)
     .order('created_at', { ascending: false })
 
-  if (error) {
-    safeErrorLog('GET.select', billId, error)
+  if (result.error) {
+    const code = (result.error as { code?: string })?.code
+    if (code && MISSING_COLUMN_CODES.has(code)) {
+      result = await sb
+        .from('bill_payments')
+        .select('*')
+        .eq('billid', billId)
+        .order('created_at', { ascending: false })
+    }
+  }
+
+  if (result.error) {
+    safeErrorLog('GET.select', billId, result.error)
     return NextResponse.json(
       { error: 'Failed to fetch payment history.' },
       { status: 500 }
     )
   }
 
-  return NextResponse.json({ payments: payments || [] })
+  return NextResponse.json({ payments: result.data || [] })
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -133,10 +243,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  // Accept BOTH camelCase and snake_case keys so every billing module works.
   const { amount, reference, notes } = body ?? {}
-  // ADDITIVE: accept both camelCase and snake_case so every billing module
-  // (discharge page sends billId/paymentMode, IPD page sends bill_id/payment_mode)
-  // works against this one endpoint.
   const billId = body?.billId ?? body?.bill_id ?? undefined
   const paymentMode = body?.paymentMode ?? body?.payment_mode ?? undefined
 
@@ -182,17 +290,30 @@ export async function POST(req: NextRequest) {
   // ── Idempotency check (optional) ───────────────────────────────
   const idempotencyKey = req.headers.get('idempotency-key')?.trim() || null
   if (idempotencyKey) {
-    const since = new Date(Date.now() - IDEMPOTENCY_WINDOW_MS).toISOString()
-    const { data: existing } = await sb
+    let existingRes = await sb
       .from('bill_payments')
       .select('*')
       .eq('bill_id', billId)
       .eq('reference', `idem:${idempotencyKey}`)
-      .gte('created_at', since)
+      .gte('created_at', new Date(Date.now() - IDEMPOTENCY_WINDOW_MS).toISOString())
       .limit(1)
       .maybeSingle()
 
-    if (existing) {
+    if (existingRes.error) {
+      const code = (existingRes.error as { code?: string })?.code
+      if (code && MISSING_COLUMN_CODES.has(code)) {
+        existingRes = await sb
+          .from('bill_payments')
+          .select('*')
+          .eq('billid', billId)
+          .eq('reference', `idem:${idempotencyKey}`)
+          .gte('created_at', new Date(Date.now() - IDEMPOTENCY_WINDOW_MS).toISOString())
+          .limit(1)
+          .maybeSingle()
+      }
+    }
+
+    if (existingRes.data) {
       const { data: existingBill } = await sb
         .from('bills')
         .select('id, total, paid, due, status')
@@ -202,7 +323,7 @@ export async function POST(req: NextRequest) {
       const isPaid = existingBill?.status === 'paid'
       return NextResponse.json({
         success: true,
-        payment: existing,
+        payment: existingRes.data,
         bill: existingBill,
         message: isPaid
           ? `✅ Bill fully paid! ₹${amountNum} received.`
@@ -246,84 +367,69 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Insert payment — DB trigger updates bill paid/due/status ───
-  // `receivedby` comes from the authenticated session (NOT the body) so
-  // it cannot be forged.  If the caller passed an Idempotency-Key, we
-  // stash it in `reference` so retries match the row above.
-  // ADDITIVE: resilient fallbacks for receivedby / patientid so seeded/demo
-  // sessions without a linked clinic_users row don't fail the insert.
-  // Falls back in this order: session.clinicUserId → bill.patientid → null.
-  const _resolvedReceivedBy =
-    (auth as any)?.clinicUserId ||
-    (auth as any)?.userId ||
-    (auth as any)?.id ||
-    bill.patientid ||
+  // ── Insert payment (self-healing across schema variants) ───────
+  // `receivedBy` comes from the authenticated session (NOT the body).
+  // patient_id is taken from the parent bill (dual-named: patient_id ?? patientid).
+  const resolvedPatientId =
+    (bill as any).patient_id ?? (bill as any).patientid ?? null
+  const resolvedReceivedBy =
+    (auth as any)?.clinicUserId ??
+    (auth as any)?.userId ??
+    (auth as any)?.id ??
     null
 
-  const { data: payment, error: payErr } = await sb
-    .from('bill_payments')
-    .insert({
-      bill_id:      billId,
-      patient_id:   bill.patientid ?? null,
-      amount:       paiseToRupees(amountPaise), // re-quantize to clean rupees
-      payment_mode: mode,
-      reference:    idempotencyKey ? `idem:${idempotencyKey}` : refClean,
-      received_by:  auth.clinicUserId ?? null, // forced server-side
-      notes:        notesClean,
-    })
-    .select()
-    .single()
+  const { data: payment, error: payErr } = await insertPaymentRow(sb, {
+    billId,
+    patientId: resolvedPatientId,
+    amount: paiseToRupees(amountPaise), // re-quantize to clean rupees
+    mode,
+    reference: idempotencyKey ? `idem:${idempotencyKey}` : refClean,
+    receivedBy: resolvedReceivedBy,
+    notes: notesClean,
+  })
 
   if (payErr) {
     safeErrorLog('POST.insert', billId, payErr)
+    const pgMsg =
+      (payErr as any)?.message ||
+      (payErr as any)?.details ||
+      (payErr as any)?.hint ||
+      'Unknown database error'
+    const pgCode = (payErr as any)?.code || null
+    // Surface the REAL reason so it is visible in the UI banner.
     return NextResponse.json(
       {
-        error: 'Failed to record payment.',
-        detail: (payErr as any)?.message ?? (payErr as any)?.details ?? null,
-        code: (payErr as any)?.code ?? null,
+        error: `Failed to record payment: ${pgMsg}${pgCode ? ` (code ${pgCode})` : ''}`,
+        detail: pgMsg,
+        code: pgCode,
       },
       { status: 500 }
     )
   }
 
-  // ADDITIVE: this install has no DB trigger to recalculate the parent bill
-  // after a payment, so do it here. Sum all payments and update
-  // paid/due/status so IPD / OPD / Finance / Patient Profile (which all read
-  // bills.paid/due/status) stay in sync.
-  try {
-    const { data: allPays } = await sb
-      .from('bill_payments')
-      .select('amount')
-      .eq('bill_id', billId)
-    const paidSum = (allPays || []).reduce(
-      (s: number, p: any) => s + Number(p.amount || 0), 0
-    )
-    const billTotal = Number(bill.total || 0)
-    const newDue = Math.max(0, billTotal - paidSum)
-    const newStatus = paidSum <= 0 ? 'unpaid' : newDue <= 0 ? 'paid' : 'partial'
-    await sb
-      .from('bills')
-      .update({ paid: paidSum, due: newDue, status: newStatus })
-      .eq('id', billId)
-  } catch {
-    // Non-fatal: payment row is already recorded.
-  }
+  // ── Recalculate the parent bill (no DB trigger on this install) ─
+  const recalculated = await recalcBill(sb, billId, Number(bill.total || 0))
 
-  // ── Fetch updated bill after trigger runs ──────────────────────
+  // ── Fetch updated bill for the response ────────────────────────
   const { data: updatedBill } = await sb
     .from('bills')
     .select('id, total, paid, due, status')
     .eq('id', billId)
     .single()
 
-  const isPaid = updatedBill?.status === 'paid'
+  const finalBill = updatedBill ||
+    (recalculated
+      ? { id: billId, total: bill.total, ...recalculated }
+      : bill)
+
+  const isPaid = finalBill?.status === 'paid'
 
   return NextResponse.json({
     success: true,
     payment,
-    bill:    updatedBill,
+    bill: finalBill,
     message: isPaid
       ? `✅ Bill fully paid! ₹${amountNum} received.`
-      : `₹${amountNum} recorded. Remaining due: ₹${updatedBill?.due || 0}`,
+      : `₹${amountNum} recorded. Remaining due: ₹${finalBill?.due || 0}`,
   })
 }
