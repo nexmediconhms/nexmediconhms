@@ -617,13 +617,30 @@ export default function IPDBillingPage() {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
-      const { data: existingBill } = await supabase
+      let { data: existingBill } = await supabase
         .from('bills')
         .select('id, bill_number, invoice_number, net_amount, status')
         .eq('admission_id', admission.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
+
+      // ADDITIVE FALLBACK: on installs where bills has no admission_id column
+      // (it is stripped at insert time), the strict lookup above returns nothing
+      // even though the bill exists. Fall back to this patient's most recent bill.
+      // Tries both column namings so it works regardless of schema variant.
+      if (!existingBill && patient?.id) {
+        for (const col of ['patient_id', 'patientid'] as const) {
+          const { data: fb, error: fbErr } = await supabase
+            .from('bills')
+            .select('id, bill_number, invoice_number, net_amount, status')
+            .eq(col, patient.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (!fbErr && fb) { existingBill = fb; break }
+        }
+      }
 
       if (!existingBill) {
         setError('No bill found. Please save the bill first before paying.')

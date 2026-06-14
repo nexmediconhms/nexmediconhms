@@ -133,7 +133,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { billId, amount, paymentMode, reference, notes } = body ?? {}
+  const { amount, reference, notes } = body ?? {}
+  // ADDITIVE: accept both camelCase and snake_case so every billing module
+  // (discharge page sends billId/paymentMode, IPD page sends bill_id/payment_mode)
+  // works against this one endpoint.
+  const billId = body?.billId ?? body?.bill_id ?? undefined
+  const paymentMode = body?.paymentMode ?? body?.payment_mode ?? undefined
 
   // ── Validation ─────────────────────────────────────────────────
   if (!billId || typeof billId !== 'string') {
@@ -258,38 +263,50 @@ export async function POST(req: NextRequest) {
   const { data: payment, error: payErr } = await sb
     .from('bill_payments')
     .insert({
-      billid:      billId,
-      patientid:   bill.patientid,
-      amount:      paiseToRupees(amountPaise), // re-quantize to clean rupees
-      paymentmode: mode,
-      reference:   idempotencyKey ? `idem:${idempotencyKey}` : refClean,
-      receivedby:  _resolvedReceivedBy, // forced server-side, with safe fallbacks
-      notes:       notesClean,
+      bill_id:      billId,
+      patient_id:   bill.patientid ?? null,
+      amount:       paiseToRupees(amountPaise), // re-quantize to clean rupees
+      payment_mode: mode,
+      reference:    idempotencyKey ? `idem:${idempotencyKey}` : refClean,
+      received_by:  auth.clinicUserId ?? null, // forced server-side
+      notes:        notesClean,
     })
     .select()
     .single()
 
   if (payErr) {
     safeErrorLog('POST.insert', billId, payErr)
-    // ADDITIVE: surface the actual DB error code/message so the client can show it.
-    // Original generic message preserved as fallback.
-    const _pgCode = (payErr as any)?.code
-    const _pgMsg  = (payErr as any)?.message || (payErr as any)?.details || (payErr as any)?.hint
     return NextResponse.json(
       {
         error: 'Failed to record payment.',
-        detail: _pgMsg || 'Database insert into bill_payments failed.',
-        code:   _pgCode || null,
-        hint:   _pgCode === '23502'
-          ? 'A required column (likely receivedby or patientid) is NULL. Ensure the logged-in user has a clinic_users row.'
-          : _pgCode === '23503'
-          ? 'A foreign key (likely receivedby → clinic_users.id) does not exist.'
-          : _pgCode === '42P01'
-          ? 'Table bill_payments does not exist. Run the latest migration.'
-          : 'Check the Next.js server console for the full Postgres error.',
+        detail: (payErr as any)?.message ?? (payErr as any)?.details ?? null,
+        code: (payErr as any)?.code ?? null,
       },
       { status: 500 }
     )
+  }
+
+  // ADDITIVE: this install has no DB trigger to recalculate the parent bill
+  // after a payment, so do it here. Sum all payments and update
+  // paid/due/status so IPD / OPD / Finance / Patient Profile (which all read
+  // bills.paid/due/status) stay in sync.
+  try {
+    const { data: allPays } = await sb
+      .from('bill_payments')
+      .select('amount')
+      .eq('bill_id', billId)
+    const paidSum = (allPays || []).reduce(
+      (s: number, p: any) => s + Number(p.amount || 0), 0
+    )
+    const billTotal = Number(bill.total || 0)
+    const newDue = Math.max(0, billTotal - paidSum)
+    const newStatus = paidSum <= 0 ? 'unpaid' : newDue <= 0 ? 'paid' : 'partial'
+    await sb
+      .from('bills')
+      .update({ paid: paidSum, due: newDue, status: newStatus })
+      .eq('id', billId)
+  } catch {
+    // Non-fatal: payment row is already recorded.
   }
 
   // ── Fetch updated bill after trigger runs ──────────────────────
