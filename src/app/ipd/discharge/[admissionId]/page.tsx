@@ -90,6 +90,8 @@ interface IPDAdmission {
   chief_complaint?: string;
   insurance_details?: string;
   status: string;
+  net_bill?: number;     // Added to fix compilation error
+  discount?: number;     // Added to fix compilation error
 }
 
 interface LabOrder {
@@ -752,6 +754,123 @@ export default function DischargeWorkflowPage() {
     }
   }
 
+  // ── IPD-DISCHARGE-PAY-1: bridge for the empty-ipd_charges case ──────
+  //
+  // When the IPD billing page was saved (admission.net_bill > 0) but the
+  // `ipd_charges` rows are missing (legacy admissions, partial sync, or
+  // a failed schema migration), the user has no way to collect the IPD
+  // bill from the discharge page because the existing "Generate Final
+  // IPD Bill" button is gated on `ipdCharges.length > 0`.
+  //
+  // This helper generates a single-line IPD bill straight from the
+  // admission summary and immediately records the payment, mirroring
+  // exactly what saveBill() + payBillNow() do on the IPD billing page.
+  async function payIpdAdmissionBill() {
+    if (!admission || !patient) return;
+    const amt = Number(payAmount);
+    const netBill = Number(admission.net_bill || 0);
+    if (!amt || amt <= 0) {
+      setError("Enter an amount to collect.");
+      return;
+    }
+    if (amt > netBill) {
+      setError(`Amount cannot exceed the saved IPD net bill of ₹${netBill.toLocaleString("en-IN")}.`);
+      return;
+    }
+    setPayLoading(true);
+    setError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Step 1 — ensure a `bills` row exists for this admission.  We reuse
+      // the same idempotency key the IPD billing page uses so a repeated
+      // click returns the existing bill instead of creating duplicates.
+      let bill: any = bills[0];
+      if (!bill) {
+        const billRes = await fetch("/api/billing/generate-bill", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            module: "IPD",
+            patient_id: patient.id,
+            patient_name: patient.full_name || admission.patient_name,
+            mrn: patient.mrn || admission.mrn,
+            items: [{
+              label: `IPD admission stay — Bed ${admission.bed_number || ""}`.trim(),
+              description: `IPD admission stay — Bed ${admission.bed_number || ""}`.trim(),
+              quantity: 1,
+              rate: netBill,
+              amount: netBill,
+            }],
+            subtotal: netBill,
+            discount: Number(admission.discount || 0),
+            gst_percent: 0,
+            net_amount: netBill,
+            total: netBill,
+            payment_mode: payMode.toLowerCase(),
+            status: "unpaid",
+            admission_id: admission.id,
+            notes: `IPD admission stay (generated from discharge page)`,
+            idempotency_key: `ipd-admission-${admission.id}`,
+          }),
+        });
+        const billData = await billRes.json().catch(() => ({}));
+        if (!billRes.ok) {
+          throw new Error(billData?.error || "Failed to create IPD bill");
+        }
+        bill = billData?.bill || billData;
+      }
+
+      // Step 2 — record the payment against the just-created bill.
+      const payRes = await fetch("/api/billing/payment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          billId: bill.id,
+          amount: amt,
+          paymentMode: payMode.toLowerCase(),
+          reference: payRef || undefined,
+          notes: `IPD discharge payment for admission ${admissionId}`,
+        }),
+      });
+      const payData = await payRes.json().catch(() => ({}));
+      if (!payRes.ok) {
+        throw new Error(payData?.error || "Payment recording failed");
+      }
+
+      setPayAmount("");
+      setPayRef("");
+      const isPaid = payData?.bill?.status === "paid" || amt >= netBill;
+      if (isPaid) {
+        setShowReceiptFor({
+          billId: bill.id,
+          invoiceNumber: bill.bill_number || bill.invoice_number || payData?.bill?.invoice_number || "",
+          amount: amt,
+          paymentMethod: payMode.toLowerCase(),
+          paymentRef: payRef || undefined,
+        });
+        setSuccessMsg("IPD bill fully paid! Receipt generated below.");
+      } else {
+        setSuccessMsg(
+          `₹${amt.toLocaleString("en-IN")} payment recorded. Remaining: ₹${(netBill - amt).toLocaleString("en-IN")}`,
+        );
+      }
+      setTimeout(() => setSuccessMsg(""), 5000);
+      loadData();
+    } catch (err: any) {
+      setError(`Payment failed: ${err.message}`);
+    } finally {
+      setPayLoading(false);
+    }
+  }
+
   async function confirmDischarge() {
     if (!admission) return;
     if (!dsSaved) {
@@ -892,9 +1011,24 @@ export default function DischargeWorkflowPage() {
 
   // ── Computed values ───────────────────────────────────────────────
   const totalCharges = ipdCharges.reduce((sum, c) => sum + (c.amount || 0), 0);
-  const totalBilled = bills.reduce((sum, b) => sum + (b.total || 0), 0);
-  const totalPaid = bills.reduce((sum, b) => sum + (b.paid || 0), 0);
-  const totalBalance = bills.reduce((sum, b) => sum + (b.balance || 0), 0);
+  // Bills table column names vary across migrations: legacy bills had
+  // `total`/`paid`/`balance`; the canonical /api/billing/generate-bill
+  // schema uses `net_amount`/`paid_amount`/`due`. Read both shapes so the
+  // discharge billing tab keeps working regardless of which migration ran.
+  const _billTotal   = (b: any) => Number(b.total       ?? b.net_amount  ?? b.subtotal ?? 0) || 0;
+  const _billPaid    = (b: any) => Number(b.paid        ?? b.paid_amount ?? b.amount_paid ?? 0) || 0;
+  const _billBalance = (b: any) => {
+    if (b.balance != null) return Number(b.balance) || 0;
+    if (b.due     != null) return Number(b.due)     || 0;
+    const t = _billTotal(b);
+    const p = _billPaid(b);
+    // Treat explicit status="paid" as zero balance even if the columns are missing.
+    if (String(b.status || '').toLowerCase() === 'paid') return 0;
+    return Math.max(0, t - p);
+  };
+  const totalBilled  = bills.reduce((sum, b) => sum + _billTotal(b),   0);
+  const totalPaid    = bills.reduce((sum, b) => sum + _billPaid(b),    0);
+  const totalBalance = bills.reduce((sum, b) => sum + _billBalance(b), 0);
   const pendingLabs = labOrders.filter(
     (l) => l.status !== "completed" && l.status !== "cancelled",
   );
@@ -1698,6 +1832,99 @@ export default function DischargeWorkflowPage() {
                   </div>
                 )}
 
+                {/* ═══ IPD-DISCHARGE-PAY-1: Direct payment from admission summary ═══ */}
+                {/* Shown when the IPD billing page already saved a net_bill on
+                    the admission but no `ipd_charges`/`bills` rows are visible
+                    yet on the discharge side.  This unblocks the "Collect via
+                    Discharge" flow without requiring the user to bounce back
+                    to the IPD billing page. */}
+                {!discharged
+                  && Number(admission?.net_bill || 0) > 0
+                  && bills.length === 0
+                  && (totalBalance <= 0) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <IndianRupee className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-amber-900">
+                          IPD Bill Ready for Collection — ₹{Number(admission?.net_bill || 0).toLocaleString("en-IN")}
+                        </p>
+                        <p className="text-xs text-amber-800 mt-1">
+                          A bill totalling{" "}
+                          <strong>₹{Number(admission?.net_bill || 0).toLocaleString("en-IN")}</strong>{" "}
+                          was saved on this admission from the IPD billing
+                          page. Collect the payment below — the bill record
+                          will be generated automatically and synced with
+                          accounts.
+                        </p>
+                        <div className="flex flex-wrap gap-3 items-end mt-3">
+                          <div>
+                            <label className="text-xs text-gray-600 block mb-1">
+                              Amount (₹)
+                            </label>
+                            <input
+                              type="number"
+                              value={payAmount}
+                              onChange={(e) => setPayAmount(e.target.value)}
+                              placeholder={`Max: ${Number(admission?.net_bill || 0)}`}
+                              className="input-field w-32"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-600 block mb-1">
+                              Mode
+                            </label>
+                            <select
+                              value={payMode}
+                              onChange={(e) => setPayMode(e.target.value)}
+                              className="input-field w-32"
+                            >
+                              <option>Cash</option>
+                              <option>UPI</option>
+                              <option>Card</option>
+                              <option>NEFT</option>
+                              <option>Insurance</option>
+                              <option>Cheque</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-600 block mb-1">
+                              Reference #
+                            </label>
+                            <input
+                              type="text"
+                              value={payRef}
+                              onChange={(e) => setPayRef(e.target.value)}
+                              placeholder="Optional"
+                              className="input-field w-36"
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (!payAmount) {
+                                setPayAmount(String(Number(admission?.net_bill || 0)));
+                                setTimeout(() => payIpdAdmissionBill(), 0);
+                                return;
+                              }
+                              payIpdAdmissionBill();
+                            }}
+                            disabled={payLoading}
+                            className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition-colors"
+                          >
+                            {payLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4" />
+                            )}
+                            {payAmount
+                              ? `Collect ₹${Number(payAmount).toLocaleString("en-IN")}`
+                              : `Collect Full ₹${Number(admission?.net_bill || 0).toLocaleString("en-IN")}`}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Generate Bill Button - shown when charges exist but no bill yet */}
                 {ipdCharges.length > 0 && bills.length === 0 && !discharged && (
