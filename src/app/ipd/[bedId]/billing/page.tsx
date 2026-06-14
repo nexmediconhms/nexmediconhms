@@ -643,6 +643,21 @@ export default function IPDBillingPage() {
         }
       }
 
+      // 3) FINAL FALLBACK: mirror the discharge page — most recent IPD-module
+      //    bill. Covers rows where both admission_id and the patient column
+      //    are null/mismatched (which is why the discharge page finds it but
+      //    the strict lookups above don't).
+      if (!existingBill) {
+        const { data: fb } = await supabase
+          .from('bills')
+          .select('id, bill_number, invoice_number, net_amount, status, admission_id')
+          .eq('bill_module', 'IPD')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (fb) existingBill = fb
+      }
+
       if (!existingBill) {
         setError('No bill found. Please save the bill first before paying.')
         setPaying(false)
