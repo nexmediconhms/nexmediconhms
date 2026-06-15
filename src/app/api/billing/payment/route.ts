@@ -238,6 +238,15 @@ export async function POST(req: NextRequest) {
   const { amount, reference, notes } = body ?? {}
   const billId = body?.billId ?? body?.bill_id ?? undefined
   const paymentMode = body?.paymentMode ?? body?.payment_mode ?? undefined
+  // Optional: the caller's CURRENT bill total (e.g. after charges were added
+  // post bill-generation). Used to re-sync the bill server-side (service role,
+  // RLS-proof) so charge updates after a bill is created are collectible by
+  // ANY role — not only admins who can update `bills` from the client.
+  const expectedTotalRaw = body?.netAmount ?? body?.expectedTotal ?? body?.net_amount
+  const expectedTotal =
+    expectedTotalRaw === undefined || expectedTotalRaw === null
+      ? null
+      : Number(expectedTotalRaw)
 
   if (!billId || typeof billId !== 'string') {
     return NextResponse.json({ error: 'billId is required' }, { status: 400 })
@@ -327,8 +336,38 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── EDGE: charge update after bill generation ──────────────────
+  // If the caller passes a CURRENT total (expectedTotal/netAmount) that is
+  // greater than what's stored on the bill — because charges were added after
+  // the bill was first generated — bump the bill's total/net_amount and
+  // recompute `due` here, using the service-role client (bypasses RLS, so it
+  // works for receptionists/staff, not just admins). Never lowers a total and
+  // never touches a fully-paid bill (guarded above), so existing behaviour is
+  // preserved. The post-insert recalcBill() still has the final say on
+  // paid/due/status.
+  let effectiveDue = Number(bill.due || 0)
+  if (expectedTotal !== null && Number.isFinite(expectedTotal) && expectedTotal > 0) {
+    const storedTotal = Number(bill.total || 0)
+    const paidSoFar = Number(bill.paid || 0)
+    if (expectedTotal > storedTotal) {
+      const newDue = Math.max(0, expectedTotal - paidSoFar)
+      const sync: Record<string, unknown> = {
+        total: expectedTotal,
+        net_amount: expectedTotal,
+        due: newDue,
+        status: paidSoFar <= 0 ? 'unpaid' : (newDue <= 0 ? 'paid' : 'partial'),
+      }
+      const { error: syncErr } = await sb.from('bills').update(sync).eq('id', billId)
+      if (syncErr) {
+        // net_amount may not exist on this install — retry with total/due only.
+        await sb.from('bills').update({ total: expectedTotal, due: newDue }).eq('id', billId)
+      }
+      effectiveDue = newDue
+    }
+  }
+
   // ── Integer-paise comparison ───────────────────────────────────
-  const duePaise = rupeesToPaise(Number(bill.due || 0))
+  const duePaise = rupeesToPaise(effectiveDue)
   const amountPaise = rupeesToPaise(amountNum)
   if (amountPaise > duePaise) {
     return NextResponse.json(
@@ -372,7 +411,13 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Recalculate parent bill (no DB trigger) ────────────────────
-  const recalculated = await recalcBill(sb, billId, Number(bill.total || 0))
+  // Use the synced total when charges were updated post bill-generation,
+  // otherwise the stored bill total. This keeps paid/due/status correct.
+  const effectiveTotal =
+    expectedTotal !== null && Number.isFinite(expectedTotal) && expectedTotal > Number(bill.total || 0)
+      ? expectedTotal
+      : Number(bill.total || 0)
+  const recalculated = await recalcBill(sb, billId, effectiveTotal)
 
   const { data: updatedBill } = await sb
     .from('bills').select('id, total, paid, due, status').eq('id', billId).single()
