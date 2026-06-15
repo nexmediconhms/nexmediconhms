@@ -100,6 +100,23 @@ function daysSince(dateStr: string) {
   return Math.max(0, days) // Never show negative days
 }
 
+// Resolve a discharged admission's discharge date defensively (schema uses
+// discharge_date, with a legacy `dischargedate` variant on some installs;
+// falls back to updated_at) and decide whether it's within the "recently
+// discharged" window (<= 14 days, covering the 7–14 day ask).
+function dischargeRecency(adm: IPDAdmission): { dateStr: string | null; days: number | null; isRecent: boolean } {
+  const raw =
+    (adm as any).discharge_date ??
+    (adm as any).dischargedate ??
+    adm.updated_at ??
+    null
+  if (!raw) return { dateStr: null, days: null, isRecent: false }
+  const t = new Date(raw).getTime()
+  if (isNaN(t)) return { dateStr: null, days: null, isRecent: false }
+  const days = Math.max(0, Math.floor((Date.now() - t) / 86400000))
+  return { dateStr: typeof raw === 'string' ? raw.slice(0, 10) : String(raw), days, isRecent: days <= 14 }
+}
+
 // ── Main Component ─────────────────────────────────────────────
 
 export default function IPDPageWrapper() {
@@ -114,9 +131,12 @@ function IPDPageContent() {
   const { user, can } = useAuth()
   const searchParams = useSearchParams()
   const [admissions, setAdmissions] = useState<IPDAdmission[]>([])
+  // Discharged admissions for the "Discharged Patients" tab (loaded alongside
+  // the active census so the tab count is available immediately).
+  const [discharged, setDischarged] = useState<IPDAdmission[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [view, setView] = useState<'census' | 'admit' | 'chart'>('census')
+  const [view, setView] = useState<'census' | 'discharged' | 'admit' | 'chart'>('census')
   const [selectedAdmission, setSelectedAdmission] = useState<IPDAdmission | null>(null)
 
   // Auto-switch to admit view when arriving with patientId in URL
@@ -137,6 +157,19 @@ function IPDPageContent() {
       .eq('status', 'active')
       .order('admission_date', { ascending: false })
     setAdmissions((data || []) as IPDAdmission[])
+
+    // Also load discharged admissions for the "Discharged Patients" tab.
+    // Ordered by updated_at (always present) to avoid a schema-cache error on
+    // installs where discharge_date isn't in the cache; recency for the
+    // "Recently discharged" badge is computed defensively in DischargedView.
+    const { data: dc } = await supabase
+      .from('ipd_admissions')
+      .select('*')
+      .eq('status', 'discharged')
+      .order('updated_at', { ascending: false })
+      .limit(300)
+    setDischarged((dc || []) as IPDAdmission[])
+
     setLoading(false)
   }
 
@@ -146,6 +179,14 @@ function IPDPageContent() {
       || a.mrn.toLowerCase().includes(q)
       || a.bed_number.toLowerCase().includes(q)
       || a.ward.toLowerCase().includes(q)
+  })
+
+  const filteredDischarged = discharged.filter(a => {
+    const q = query.toLowerCase()
+    return !q || a.patient_name.toLowerCase().includes(q)
+      || a.mrn.toLowerCase().includes(q)
+      || (a.bed_number || '').toLowerCase().includes(q)
+      || (a.ward || '').toLowerCase().includes(q)
   })
 
   function openChart(adm: IPDAdmission) {
@@ -185,6 +226,7 @@ function IPDPageContent() {
         <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
           {[
             { key: 'census', label: 'IPD Census', icon: Users },
+            { key: 'discharged', label: `Discharged Patients${discharged.length ? ` (${discharged.length})` : ''}`, icon: LogOut },
             { key: 'admit', label: 'New Admission', icon: UserPlus },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key}
@@ -206,6 +248,16 @@ function IPDPageContent() {
             onOpenChart={openChart}
             onDischarge={loadAdmissions}
             canManage={can('encounters.edit')}
+          />
+        )}
+
+        {/* Discharged Patients View */}
+        {view === 'discharged' && (
+          <DischargedView
+            admissions={filteredDischarged}
+            loading={loading}
+            query={query}
+            setQuery={setQuery}
           />
         )}
 
@@ -398,6 +450,126 @@ function CensusView({
           onClose={() => setDischargeAdmission(null)}
           onDischarged={() => { setDischargeAdmission(null); onDischarge() }}
         />
+      )}
+    </>
+  )
+}
+
+// ── Discharged Patients Table ──────────────────────────────────
+// Read-only list of past admissions (status = 'discharged'). Mirrors the
+// census layout, flags admissions discharged within the last 14 days with a
+// "RECENT" badge, and links to the discharge summary/bill and patient profile.
+function DischargedView({
+  admissions, loading, query, setQuery
+}: {
+  admissions: IPDAdmission[]
+  loading: boolean
+  query: string
+  setQuery: (q: string) => void
+}) {
+  const recentCount = admissions.filter(a => dischargeRecency(a).isRecent).length
+
+  return (
+    <>
+      <div className="card p-4 mb-5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input className="input pl-9 bg-gray-50"
+            placeholder="Search discharged patient name, MRN, bed number, ward…"
+            value={query} onChange={e => setQuery(e.target.value)} />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-48">
+          <div className="w-8 h-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : admissions.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <LogOut className="w-12 h-12 mx-auto mb-3 opacity-20" />
+          <p className="font-medium">No discharged patients</p>
+          <p className="text-sm mt-1">Discharged admissions will appear here</p>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">
+              Discharged Patients
+              <span className="ml-2 text-sm font-normal text-gray-400">({admissions.length})</span>
+            </h2>
+            {recentCount > 0 && (
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                <Clock className="w-3 h-3" /> {recentCount} recently discharged
+              </span>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  {['Patient', 'Bed / Ward', 'Admitted', 'Discharged', 'Stay', 'Doctor', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {admissions.map(adm => {
+                  const rec = dischargeRecency(adm)
+                  const stayDays = rec.dateStr && adm.admission_date
+                    ? Math.max(0, Math.floor((new Date(rec.dateStr).getTime() - new Date(adm.admission_date).getTime()) / 86400000) + 1)
+                    : null
+                  return (
+                    <tr key={adm.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Link href={`/patients/${adm.patient_id}`}
+                            className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                            {adm.patient_name}
+                          </Link>
+                          {rec.isRecent && (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+                              RECENT
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400">{adm.mrn} · {adm.age}y · {adm.gender}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-gray-700">{adm.bed_number || '—'}</div>
+                        <div className="text-xs text-gray-400">{adm.ward || ''}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{adm.admission_date ? formatDate(adm.admission_date) : '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-700">
+                        {rec.dateStr ? formatDate(rec.dateStr) : '—'}
+                        {rec.days !== null && <div className="text-gray-400">{rec.days === 0 ? 'today' : `${rec.days}d ago`}</div>}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-700">{stayDays !== null ? `${stayDays}d` : '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px]">
+                        <div className="font-medium">{adm.admitting_doctor}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <Link
+                            href={`/ipd/discharge/${adm.id}`}
+                            className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                            title="Open discharge workflow / summary & bill">
+                            <FileText className="w-3 h-3" /> Summary
+                          </Link>
+                          <Link
+                            href={`/patients/${adm.patient_id}`}
+                            className="text-xs py-1 px-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+                            title="Open patient profile">
+                            Profile
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </>
   )
