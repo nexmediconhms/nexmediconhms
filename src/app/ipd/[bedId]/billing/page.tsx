@@ -5,14 +5,14 @@
  * IPD Structured Indoor Billing
  *
  * Features:
- *   - Charge categories: Bed, Nursing, Doctor Visit, Surgical, OT, Procedure, Medicine, Investigation, Other
- *   - Auto-calculates admission duration (days)
- *   - Per-day charges with quantity × rate = amount
- *   - Category-wise subtotals + grand total
- *   - Discount + net bill
- *   - Payment mode selection
- *   - Save charges to ipd_charges table
- *   - Print-friendly receipt
+ * - Charge categories: Bed, Nursing, Doctor Visit, Surgical, OT, Procedure, Medicine, Investigation, Other
+ * - Auto-calculates admission duration (days)
+ * - Per-day charges with quantity × rate = amount
+ * - Category-wise subtotals + grand total
+ * - Discount + net bill
+ * - Payment mode selection
+ * - Save charges to ipd_charges table
+ * - Print-friendly receipt
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -76,33 +76,6 @@ const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
 // ─────────────────────────────────────────────────────────────────────
 // Schema-resilient helpers — fix for "Could not find the 'charge_date'
 // column of 'ipd_charges' in the schema cache".
-//
-// CONTEXT
-//   The original ipd_charges schema (migrations/archive/fix-all-permissions.sql)
-//   was created before the structured IPD billing UI existed. It used:
-//       (item_name, category, amount, quantity, notes, created_at)
-//   The current UI writes columns the legacy schema doesn't have:
-//       (charge_date, description, rate, created_by)
-//   On a Supabase project that hasn't run migrations/018_align_ipd_charges_schema.sql
-//   any insert from the UI fails with the PostgREST schema-cache error.
-//
-// WHAT THESE HELPERS DO
-//   - isSchemaCacheError(err): detects the PGRST204-class error so we can
-//     branch on it instead of treating it as a generic write failure.
-//   - mapChargeRowToUI(row): coalesces (description ?? item_name),
-//     (rate ?? amount/quantity) and (charge_date ?? created_at::date) so
-//     historical legacy rows render correctly in the modern UI.
-//   - mapRateRowToUI(row): same idea for ipd_charge_rates — coalesces
-//     name → description, amount → default_rate, unit → per_unit.
-//   - toLegacyChargeRow(row): converts a modern insert payload into the
-//     subset of columns the legacy schema accepts, so a fallback insert
-//     succeeds even when the migration hasn't been run. We preserve as
-//     much information as the legacy schema can hold (description goes
-//     into item_name; rate is derived back from amount/quantity).
-//
-// AFTER THE MIGRATION RUNS
-//   The modern insert succeeds on the first attempt and the fallback
-//   path is never exercised — these helpers become a quiet safety net.
 // ─────────────────────────────────────────────────────────────────────
 
 function isSchemaCacheError(err: any): boolean {
@@ -192,6 +165,7 @@ export default function IPDBillingPage() {
   const [paymentRef, setPaymentRef] = useState<string>('')
   const [billPaid, setBillPaid] = useState(false)
   const [paying, setPaying] = useState(false)
+  const [savedBillId, setSavedBillId] = useState<string | null>(null)
   const [showAddCharge, setShowAddCharge] = useState(false)
 
   useEffect(() => {
@@ -247,12 +221,6 @@ export default function IPDBillingPage() {
 
       // Load existing charges for this admission
       if (adm?.id) {
-        // Schema-resilient read: if the modern `charge_date` column doesn't
-        // exist on this Supabase project (pre-migration-018), the order()
-        // call below would fail with a schema-cache error. We try the
-        // modern ordering first and fall back to created_at — both paths
-        // map their results through mapChargeRowToUI() which coalesces
-        // legacy column names (item_name / amount-derived rate).
         let existingCharges: any[] | null = null
         const modernRead = await supabase
           .from('ipd_charges')
@@ -262,11 +230,9 @@ export default function IPDBillingPage() {
           .order('created_at', { ascending: true })
 
         if (modernRead.error && isSchemaCacheError(modernRead.error)) {
-          // Legacy schema: no charge_date column. Order by created_at only.
           console.warn(
             '[IPD billing] ipd_charges.charge_date not found in schema cache; ' +
-            'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
-            'in your Supabase SQL Editor to fix this permanently.',
+            'reading legacy schema.',
           )
           const legacyRead = await supabase
             .from('ipd_charges')
@@ -288,12 +254,7 @@ export default function IPDBillingPage() {
       }
     }
 
-    // Load charge rate templates — schema-resilient read.
-    // Pre-migration-018 the `sort_order` column doesn't exist either, so
-    // .order('sort_order') fails and rates silently come back empty —
-    // that's why "Auto-Add" was falling through to the hardcoded ₹800
-    // default. We try the modern ordering first and fall back to a sort
-    // by category/name on legacy schemas.
+    // Load charge rate templates
     {
       const modernRates = await supabase
         .from('ipd_charge_rates')
@@ -302,11 +263,7 @@ export default function IPDBillingPage() {
         .order('sort_order')
 
       if (modernRates.error && isSchemaCacheError(modernRates.error)) {
-        console.warn(
-          '[IPD billing] ipd_charge_rates.sort_order not found in schema cache; ' +
-          'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
-          'to align the rates table.',
-        )
+        console.warn('[IPD billing] ipd_charge_rates.sort_order not found in schema cache;')
         const legacyRates = await supabase
           .from('ipd_charge_rates')
           .select('*')
@@ -358,7 +315,6 @@ export default function IPDBillingPage() {
   function updateNewChargeField(field: keyof IPDCharge, value: any) {
     setNewCharge(prev => {
       const updated = { ...prev, [field]: value }
-      // Auto-calculate amount
       if (field === 'quantity' || field === 'rate') {
         updated.amount = (Number(updated.quantity) || 0) * (Number(updated.rate) || 0)
       }
@@ -385,11 +341,6 @@ export default function IPDBillingPage() {
       created_by: user?.full_name || null,
     }
 
-    // Schema-resilient insert: try the modern shape first; on schema-cache
-    // error fall back to the legacy column subset (item_name in place of
-    // description, no charge_date / rate / created_by). The legacy fallback
-    // preserves the most clinically important data — admission link,
-    // patient, line item, amount and quantity.
     let data: any = null
     let err: any = null
     {
@@ -399,11 +350,6 @@ export default function IPDBillingPage() {
         .select()
         .single()
       if (modern.error && isSchemaCacheError(modern.error)) {
-        console.warn(
-          '[IPD billing] modern ipd_charges insert failed (schema cache); ' +
-          'retrying with legacy column names. Apply migration 018 to remove ' +
-          'this fallback path.',
-        )
         const legacy = await supabase
           .from('ipd_charges')
           .insert(toLegacyChargeRow(chargeToSave))
@@ -419,17 +365,12 @@ export default function IPDBillingPage() {
 
     if (err) { setError(`Failed to add charge: ${err.message}`); return }
 
-    // Map the freshly inserted row through the same coalescer used on read,
-    // so the UI gets a consistent shape regardless of which schema actually
-    // stored the row.
     const uiRow = mapChargeRowToUI(data)
-    // Auto-add helpers store charge_date / rate from the input even when
-    // the legacy schema didn't persist them, so UI staleness can't drift.
     if (!uiRow.charge_date) uiRow.charge_date = chargeToSave.charge_date
     if (!uiRow.rate) uiRow.rate = chargeToSave.rate
     setCharges(prev => [...prev, uiRow])
+    setSavedBillId(null)
 
-    // Reset form
     setNewCharge({
       charge_date: getIndiaToday(),
       category: 'bed',
@@ -454,7 +395,6 @@ export default function IPDBillingPage() {
       date.setDate(date.getDate() + d)
       const dateStr = date.toISOString().split('T')[0]
 
-      // Check if bed charge already exists for this date
       const bedExists = charges.some(c => c.category === 'bed' && c.charge_date === dateStr)
       if (!bedExists) {
         newCharges.push({
@@ -468,7 +408,6 @@ export default function IPDBillingPage() {
         })
       }
 
-      // Same for nursing
       const nursingExists = charges.some(c => c.category === 'nursing' && c.charge_date === dateStr)
       if (!nursingExists) {
         newCharges.push({
@@ -498,15 +437,6 @@ export default function IPDBillingPage() {
       created_by: user?.full_name || null,
     }))
 
-    // Schema-resilient bulk insert. Same dual-schema strategy as
-    // addCharge() above: try the modern column set first; on schema-cache
-    // error fall back to the legacy subset. The button that triggers this
-    // function is the one the user reported as broken with
-    //   "Could not find the 'charge_date' column of 'ipd_charges' in
-    //    the schema cache"
-    // — this fallback fixes that case immediately even before the admin
-    // applies migration 018. After the migration the modern path
-    // succeeds first-try and the fallback never fires.
     let data: any[] | null = null
     let err: any = null
     {
@@ -515,11 +445,6 @@ export default function IPDBillingPage() {
         .insert(insertData)
         .select()
       if (modern.error && isSchemaCacheError(modern.error)) {
-        console.warn(
-          '[IPD billing] auto-add modern insert hit schema-cache error; ' +
-          'retrying with legacy column subset. Apply ' +
-          'migrations/018_align_ipd_charges_schema.sql to remove this fallback.',
-        )
         const legacy = await supabase
           .from('ipd_charges')
           .insert(insertData.map(toLegacyChargeRow))
@@ -534,10 +459,6 @@ export default function IPDBillingPage() {
 
     if (err) { setError(`Failed: ${err.message}`); return }
 
-    // Map results through the coalescer; preserve charge_date / rate from
-    // our input when the legacy schema didn't persist them, so the just-
-    // added rows display correctly even though the DB doesn't (yet) have
-    // those columns.
     const inserted = (data || []).map((c: any, i: number) => {
       const ui = mapChargeRowToUI(c)
       if (!ui.charge_date) ui.charge_date = insertData[i]?.charge_date ?? ''
@@ -546,6 +467,7 @@ export default function IPDBillingPage() {
       return ui
     })
     setCharges(prev => [...prev, ...inserted])
+    setSavedBillId(null)
 
     setSuccess(`Added ${newCharges.length} charges (bed + nursing for ${daysAdmitted} days)`)
     setTimeout(() => setSuccess(''), 3000)
@@ -557,58 +479,49 @@ export default function IPDBillingPage() {
     const { error: err } = await supabase.from('ipd_charges').delete().eq('id', id)
     if (err) { setError(err.message); return }
     setCharges(prev => prev.filter((_, i) => i !== index))
+    setSavedBillId(null)
   }
 
-  // ── Save bill summary to admission ────────────────────────
-  //
-  // SCHEMA-RESILIENCE FIX (June 2026)
-  // ─────────────────────────────────
-  // Reported error:
-  //     Save failed: Could not find the 'bill_status' column of
-  //     'ipd_admissions' in the schema cache
-  //
-  // Root cause: the early ipd_admissions schema didn't carry the
-  // billing-summary columns (total_charges, discount, net_bill,
-  // bill_status, payment_mode); they were added later when the
-  // structured IPD billing UI was introduced.  Supabase projects that
-  // haven't run migrations/019_align_ipd_admissions_bill_columns.sql
-  // reject the entire UPDATE because PostgREST can't find any of
-  // those columns in its schema cache.
-  //
-  // Resolution (paired with migration 019, but works independently):
-  //   1. Try the modern UPDATE first — full payload.
-  //   2. On a schema-cache error (PGRST204 / 42703 / "could not find /
-  //      does not exist") retry with a *progressively narrower*
-  //      payload, dropping the unknown column on each pass.  The most
-  //      important field (bill_status, used everywhere downstream) is
-  //      preserved as long as possible.
-  //
-  // ╔════════════════════════════════════════════════════════════════╗
-  // ║  ADDITIONAL FIX — IPD-NEW-1 (June 2026)                       ║
-  // ║                                                                ║
-  // ║  Pre-fix saveBill() ONLY updated ipd_admissions and never      ║
-  // ║  inserted a row in the `bills` table.  Every other module of  ║
-  // ║  the system (CA reports, daily closing, finance ledger,       ║
-  // ║  doctor earnings, refund flow) reads from `bills` — so IPD    ║
-  // ║  revenue was invisible to all of them.                         ║
-  // ║                                                                ║
-  // ║  We now ALSO upsert a corresponding bills row via the          ║
-  // ║  /api/billing/generate-bill endpoint.  The endpoint already    ║
-  // ║  knows how to:                                                 ║
-  // ║    - allocate a sequential IPD invoice number                  ║
-  // ║    - cross-check totals server-side                            ║
-  // ║    - sync to hospital_fund                                     ║
-  // ║  All we have to do is hand it the items + admission_id, with  ║
-  // ║  an idempotency_key keyed on the admission so repeated saves  ║
-  // ║  return the existing bill instead of creating duplicates.      ║
-  // ║                                                                ║
-  // ║  This makes IPD admissions visible to:                         ║
-  // ║    - daily revenue reports (bills.paid_at)                     ║
-  // ║    - the refund flow (refunds need a bills.id)                 ║
-  // ║    - doctor earnings                                           ║
-  // ║    - the finance ledger                                        ║
-  // ╚════════════════════════════════════════════════════════════════╝
-  async function payBillNow() {
+  // ── Save/Pay Bill Operations ──────────────────────────────
+  
+  //  FIXED: Moved utility outside the block scope and assigned as arrow variable
+  const resolveExistingBill = async (): Promise<any | null> => {
+    let { data: hit } = await supabase
+      .from('bills')
+      .select('id, bill_number, invoice_number, net_amount, status')
+      .eq('admission_id', admission.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!hit && patient?.id) {
+      for (const col of ['patient_id', 'patientid'] as const) {
+        const { data: fb, error: fbErr } = await supabase
+          .from('bills')
+          .select('id, bill_number, invoice_number, net_amount, status')
+          .eq(col, patient.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!fbErr && fb) { hit = fb; break }
+      }
+    }
+
+    if (!hit) {
+      const { data: fb } = await supabase
+        .from('bills')
+        .select('id, bill_number, invoice_number, net_amount, status, admission_id')
+        .eq('bill_module', 'IPD')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (fb) hit = fb
+    }
+
+    return hit || null
+  }
+
+  async function payBillNow(): Promise<void> {
     if (!admission?.id || !patient?.id) return
     setPaying(true)
     setError('')
@@ -617,54 +530,24 @@ export default function IPDBillingPage() {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
-      // 1) Strict lookup by admission_id.
-      let { data: existingBill } = await supabase
-        .from('bills')
-        .select('id, bill_number, invoice_number, net_amount, status')
-        .eq('admission_id', admission.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      let bill: any = savedBillId ? { id: savedBillId, status: 'unpaid' } : await resolveExistingBill()
 
-      // 2) FALLBACK: on installs where bills has no admission_id column (it is
-      //    stripped at insert time), the strict lookup returns nothing even
-      //    though the bill exists. Fall back to this patient's most recent bill,
-      //    trying both column namings so it works on any schema variant.
-      if (!existingBill && patient?.id) {
-        for (const col of ['patient_id', 'patientid'] as const) {
-          const { data: fb, error: fbErr } = await supabase
-            .from('bills')
-            .select('id, bill_number, invoice_number, net_amount, status')
-            .eq(col, patient.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (!fbErr && fb) { existingBill = fb; break }
+      if (!bill?.id) {
+        const createdId = await saveBill()
+        if (createdId) {
+          bill = { id: createdId, status: 'unpaid' }
+        } else {
+          bill = await resolveExistingBill()
         }
       }
 
-      // 3) FINAL FALLBACK: mirror the discharge page — most recent IPD-module
-      //    bill. Covers rows where both admission_id and the patient column
-      //    are null/mismatched (which is why the discharge page finds it but
-      //    the strict lookups above don't).
-      if (!existingBill) {
-        const { data: fb } = await supabase
-          .from('bills')
-          .select('id, bill_number, invoice_number, net_amount, status, admission_id')
-          .eq('bill_module', 'IPD')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (fb) existingBill = fb
-      }
-
-      if (!existingBill) {
-        setError('No bill found. Please save the bill first before paying.')
+      if (!bill?.id) {
+        setError('Could not create or find a bill to pay. Please click "Save Bill" and try again.')
         setPaying(false)
         return
       }
 
-      if (existingBill.status === 'paid') {
+      if (bill.status === 'paid') {
         setBillPaid(true)
         setSuccess('This bill has already been paid.')
         setPaying(false)
@@ -678,11 +561,11 @@ export default function IPDBillingPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          billId: existingBill.id,        // route reads billId
-          bill_id: existingBill.id,       // and bill_id — send both, safe either way
+          billId: bill.id,
+          bill_id: bill.id,
           amount: netBill,
-          paymentMode: paymentMode,       // route reads paymentMode
-          payment_mode: paymentMode,      // and payment_mode
+          paymentMode: paymentMode,
+          payment_mode: paymentMode,
           reference: paymentRef || (paymentMode === 'upi' ? upiId : undefined),
           notes: `IPD Bill Payment`,
         }),
@@ -706,12 +589,11 @@ export default function IPDBillingPage() {
     }
   }
 
-  async function saveBill() {
-    if (!admission?.id) return
+  async function saveBill(): Promise<string | null> {
+    if (!admission?.id) return null
     setSaving(true)
     setError('')
 
-    // Compose the canonical (modern) payload once.
     const fullPayload: Record<string, any> = {
       total_charges: grandTotal,
       discount,
@@ -720,9 +602,8 @@ export default function IPDBillingPage() {
       payment_mode: paymentMode,
     }
 
-    // Helper: detect "column not found in schema cache" errors so we
-    // can narrow the payload and retry rather than failing outright.
-    function isSchemaCacheUpdateError(e: any): boolean {
+    //  FIXED: Converted nested functions to variable-assigned arrow expressions
+    const isSchemaCacheUpdateError = (e: any): boolean => {
       if (!e) return false
       const code = String(e.code || '')
       const msg  = String(e.message || '').toLowerCase()
@@ -735,13 +616,8 @@ export default function IPDBillingPage() {
       )
     }
 
-    // Extract the offending column name from the supabase error message
-    // so we can drop just that column from the next attempt.
-    function unknownColumnFrom(e: any): string | null {
+    const unknownColumnFrom = (e: any): string | null => {
       const msg = String(e?.message || '')
-      // Match the most common shapes reported by PostgREST + PG:
-      //   Could not find the 'X' column of 'Y' in the schema cache
-      //   column "X" of relation "Y" does not exist
       let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
       if (m) return m[1]
       m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
@@ -751,9 +627,6 @@ export default function IPDBillingPage() {
       return null
     }
 
-    // Try the update with progressively narrower payloads, removing
-    // unknown columns one at a time. Bounded to 6 attempts so a
-    // pathological loop can't run away.
     let payload = { ...fullPayload }
     let lastErr: any = null
     let droppedCols: string[] = []
@@ -773,42 +646,22 @@ export default function IPDBillingPage() {
       if (!isSchemaCacheUpdateError(err)) break
 
       const offending = unknownColumnFrom(err)
-      if (!offending || !(offending in payload)) {
-        // We can't tell which column to drop — bail out.
-        break
-      }
+      if (!offending || !(offending in payload)) break
 
-      console.warn(
-        `[IPD billing saveBill] '${offending}' not in ipd_admissions schema cache; ` +
-        `retrying without that column.  Apply migration 019 to remove this fallback.`,
-      )
       droppedCols.push(offending)
       const { [offending as keyof typeof payload]: _drop, ...rest } = payload
       payload = rest
-      // If we've dropped every billing column, give up — there's
-      // nothing useful left to write through this path.
       if (Object.keys(payload).length === 0) break
     }
 
     if (lastErr) {
       setSaving(false)
       setError(`Save failed: ${lastErr.message}`)
-      return
+      return null
     }
 
-    // ── IPD-NEW-1 fix: also create / upsert the corresponding bills row ──
-    //
-    // This is the change that makes IPD admissions visible to the rest
-    // of the financial system (CA reports, finance ledger, refund
-    // flow, doctor earnings).  The /api/billing/generate-bill endpoint
-    // is the canonical entry point for bills creation; we hand it the
-    // admission's charges and let it do the heavy lifting.
-    //
-    // Idempotency: we key the request by `ipd-admission-{id}` so a
-    // repeated saveBill() click returns the existing bill instead of
-    // creating duplicates.  The endpoint already supports this via the
-    // `idempotency_key` body field.
     let billsSyncOk = true
+    let createdBillId: string | null = null
     try {
       const items = charges.map(c => ({
         label: c.description || c.category,
@@ -833,7 +686,7 @@ export default function IPDBillingPage() {
           items,
           subtotal,
           discount,
-          gst_percent: 0, // IPD bills typically not GST-applicable for medical services
+          gst_percent: 0,
           net_amount: netBill,
           payment_mode: paymentMode,
           status: 'unpaid',
@@ -846,44 +699,36 @@ export default function IPDBillingPage() {
       if (!billRes.ok) {
         const errBody = await billRes.json().catch(() => ({}))
         billsSyncOk = false
-        console.warn(
-          '[IPD billing saveBill] /api/billing/generate-bill failed; the IPD ' +
-          'admission summary was saved but the bill row in `bills` was NOT ' +
-          'created.  CA reports, refunds, and doctor earnings will not see ' +
-          'this admission until the bill is created via Billing → IPD → ' +
-          `Generate.  Detail: ${errBody?.error || billRes.statusText}`,
-        )
+      } else {
+        const okBody = await billRes.json().catch(() => ({}))
+        createdBillId =
+          okBody?.bill?.id ??
+          okBody?.id ??
+          okBody?.billId ??
+          okBody?.bill_id ??
+          okBody?.data?.id ??
+          okBody?.data?.bill?.id ??
+          null
+        if (createdBillId) setSavedBillId(createdBillId)
       }
     } catch (e: any) {
       billsSyncOk = false
-      console.warn(
-        '[IPD billing saveBill] generate-bill API call failed (non-fatal): ' +
-        (e?.message || e),
-      )
     }
 
     setSaving(false)
 
     if (droppedCols.length > 0 && billsSyncOk) {
-      setSuccess(
-        `Bill saved (partial — schema is missing column${droppedCols.length > 1 ? 's' : ''} ` +
-        `${droppedCols.join(', ')}; run migration 019 for full support).`,
-      )
+      setSuccess(`Bill saved partially (missing column ${droppedCols.join(', ')}).`)
     } else if (!billsSyncOk) {
-      // Save partially succeeded but the bills-table sync didn't —
-      // surface a clear warning so reception knows to re-generate.
-      setError(
-        'Bill summary saved on the admission, but creating the formal bill ' +
-        'in the billing system failed.  Please go to Billing → New IPD Bill ' +
-        'and generate it manually so revenue reports stay in sync.',
-      )
+      setError('Bill summary saved on admission, but creating financial document failed. Re-sync from billing.')
     } else {
       setSuccess('Bill saved successfully!')
     }
     setTimeout(() => { setSuccess('') }, 6000)
+
+    return createdBillId
   }
 
-  // ── Loading ────────────────────────────────────────────────
   if (loading) {
     return (
       <AppShell>
@@ -904,7 +749,6 @@ export default function IPDBillingPage() {
       </AppShell>
     )
   }
-
 
   return (
     <AppShell>
@@ -1011,7 +855,6 @@ export default function IPDBillingPage() {
           <div className="card p-5 mb-5 border-l-4 border-indigo-400 no-print">
             <h3 className="font-semibold text-gray-800 mb-3">Add Charge</h3>
 
-            {/* Quick presets from charge rates */}
             {chargeRates.length > 0 && (
               <div className="mb-4">
                 <label className="label">Quick Select (click to auto-fill)</label>
@@ -1134,7 +977,6 @@ export default function IPDBillingPage() {
                     </tr>
                   )
                 })}
-                {/* Totals row */}
                 <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
                   <td colSpan={5} className="px-3 py-3 text-right text-xs text-gray-600 uppercase">Grand Total</td>
                   <td className="px-3 py-3 font-mono text-lg text-gray-900">{inr(grandTotal)}</td>
@@ -1170,7 +1012,7 @@ export default function IPDBillingPage() {
                 </select>
               </div>
             </div>
-﻿            {paymentMode === 'upi' && (
+            {paymentMode === 'upi' && (
               <div className="mt-3 grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">UPI ID (Receiving)</label>
@@ -1197,7 +1039,6 @@ export default function IPDBillingPage() {
                 </div>
               </div>
             )}
-
           </div>
         )}
 
@@ -1225,11 +1066,11 @@ export default function IPDBillingPage() {
           </div>
         )}
 
-        {success && admission && !billPaid && (
+        {admission && charges.length > 0 && !billPaid && (
           <div className="mt-5 bg-blue-50 border border-blue-200 rounded-xl p-5 no-print">
-            <h3 className="font-semibold text-blue-800 text-sm mb-2">Bill Saved — Pay Now or Later</h3>
+            <h3 className="font-semibold text-blue-800 text-sm mb-2">Pay Now or Collect Later</h3>
             <p className="text-xs text-blue-700 mb-3">
-              Bill saved with status &quot;Unpaid&quot;. You can pay now or collect later during discharge.
+              Pay the net bill now, or collect later during discharge. The bill is saved automatically when you pay.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
