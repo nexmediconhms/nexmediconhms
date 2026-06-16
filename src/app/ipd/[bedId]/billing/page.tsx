@@ -233,7 +233,9 @@ export default function IPDBillingPage() {
 
         if (modernRead.error && isSchemaCacheError(modernRead.error)) {
           console.warn(
-            '[IPD billing] ipd_charges.charge_date not found in schema cache; reading legacy schema.',
+            '[IPD billing] ipd_charges.charge_date not found in schema cache; ' +
+            'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
+            'in your Supabase SQL Editor to fix this permanently.',
           )
           const legacyRead = await supabase
             .from('ipd_charges')
@@ -249,6 +251,7 @@ export default function IPDBillingPage() {
           setCharges(existingCharges.map(mapChargeRowToUI))
         }
 
+        // Load discount from admission
         setDiscount(Number(adm.discount) || 0)
         setPaymentMode(adm.payment_mode || 'cash')
 
@@ -256,7 +259,7 @@ export default function IPDBillingPage() {
       }
     }
 
-    // Load charge rate templates
+    // Load charge rate templates — schema-resilient read.
     {
       const modernRates = await supabase
         .from('ipd_charge_rates')
@@ -266,7 +269,9 @@ export default function IPDBillingPage() {
 
       if (modernRates.error && isSchemaCacheError(modernRates.error)) {
         console.warn(
-          '[IPD billing] ipd_charge_rates.sort_order not found in schema cache; reading legacy schema.',
+          '[IPD billing] ipd_charge_rates.sort_order not found in schema cache; ' +
+          'reading legacy schema. Run migrations/018_align_ipd_charges_schema.sql ' +
+          'to align the rates table.',
         )
         const legacyRates = await supabase
           .from('ipd_charge_rates')
@@ -315,6 +320,7 @@ export default function IPDBillingPage() {
     count: charges.filter(c => c.category === cat.key).length,
   })).filter(c => c.total > 0)
 
+  // Per-day average
   const perDayCharge = daysAdmitted > 0 ? Math.round(grandTotal / daysAdmitted) : 0
 
   // ── Add charge ─────────────────────────────────────────────
@@ -366,6 +372,11 @@ export default function IPDBillingPage() {
         .select()
         .single()
       if (modern.error && isSchemaCacheError(modern.error)) {
+        console.warn(
+          '[IPD billing] modern ipd_charges insert failed (schema cache); ' +
+          'retrying with legacy column names. Apply migration 018 to remove ' +
+          'this fallback path.',
+        )
         const legacy = await supabase
           .from('ipd_charges')
           .insert(toLegacyChargeRow(chargeToSave))
@@ -385,6 +396,7 @@ export default function IPDBillingPage() {
     if (!uiRow.charge_date) uiRow.charge_date = chargeToSave.charge_date
     if (!uiRow.rate) uiRow.rate = chargeToSave.rate
     setCharges(prev => [...prev, uiRow])
+
     setSavedBillId(null)
 
     setNewCharge({
@@ -461,6 +473,11 @@ export default function IPDBillingPage() {
         .insert(insertData)
         .select()
       if (modern.error && isSchemaCacheError(modern.error)) {
+        console.warn(
+          '[IPD billing] auto-add modern insert hit schema-cache error; ' +
+          'retrying with legacy column subset. Apply ' +
+          'migrations/018_align_ipd_charges_schema.sql to remove this fallback.',
+        )
         const legacy = await supabase
           .from('ipd_charges')
           .insert(insertData.map(toLegacyChargeRow))
@@ -483,6 +500,7 @@ export default function IPDBillingPage() {
       return ui
     })
     setCharges(prev => [...prev, ...inserted])
+
     setSavedBillId(null)
 
     setSuccess(`Added ${newCharges.length} charges (bed + nursing for ${daysAdmitted} days)`)
@@ -498,7 +516,7 @@ export default function IPDBillingPage() {
     setSavedBillId(null)
   }
 
-  // ── Bill paid-status tracking helpers ───────────────────
+  // ── IPD-NEW-3: bill paid-status tracking ───────────────────
   async function findAdmissionBill(admissionId: string, patientId: string | null): Promise<any | null> {
     let { data: hit } = await supabase
       .from('bills')
@@ -550,207 +568,7 @@ export default function IPDBillingPage() {
     }
   }
 
-  // ── Save bill summary to admission ────────────────────────
-  async function saveBill(): Promise<string | null> {
-    if (!admission?.id) return null
-    setSaving(true)
-    setError('')
-
-    const fullPayload: Record<string, any> = {
-      total_charges: grandTotal,
-      discount,
-      net_bill: netBill,
-      bill_status: 'pending',
-      payment_mode: paymentMode,
-    }
-
-    function isSchemaCacheUpdateError(e: any): boolean {
-      if (!e) return false
-      const code = String(e.code || '')
-      const msg  = String(e.message || '').toLowerCase()
-      return (
-        code === 'PGRST204' ||
-        code === '42703' ||
-        msg.includes('schema cache') ||
-        (msg.includes('column') &&
-         (msg.includes('does not exist') || msg.includes('not found')))
-      )
-    }
-
-    function unknownColumnFrom(e: any): string | null {
-      const msg = String(e?.message || '')
-      let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
-      if (m) return m[1]
-      m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
-      if (m) return m[1]
-      m = msg.match(/the\s+['"]?([a-z_][a-z0-9_]*)['"]?\s+column/i)
-      if (m) return m[1]
-      return null
-    }
-
-    let payload = { ...fullPayload }
-    let lastErr: any = null
-    let droppedCols: string[] = []
-
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const { error: err } = await supabase
-        .from('ipd_admissions')
-        .update(payload)
-        .eq('id', admission.id)
-
-      if (!err) {
-        lastErr = null
-        break
-      }
-
-      lastErr = err
-      if (!isSchemaCacheUpdateError(err)) break
-
-      const offending = unknownColumnFrom(err)
-      if (!offending || !(offending in payload)) break
-
-      droppedCols.push(offending)
-      const { [offending as keyof typeof payload]: _drop, ...rest } = payload
-      payload = rest
-      if (Object.keys(payload).length === 0) break
-    }
-
-    if (lastErr) {
-      setSaving(false)
-      setError(`Save failed: ${lastErr.message}`)
-      return null
-    }
-
-    let billsSyncOk = true
-    let createdBillId: string | null = null
-    try {
-      const items = charges.map(c => ({
-        label: c.description || c.category,
-        amount: c.amount,
-        quantity: c.quantity,
-      }))
-      const subtotal = charges.reduce((s, c) => s + c.amount, 0)
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-
-      const billRes = await fetch('/api/billing/generate-bill', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          module: 'IPD',
-          patient_id: patient.id,
-          patient_name: patient.full_name,
-          mrn: patient.mrn,
-          items,
-          subtotal,
-          discount,
-          gst_percent: 0,
-          net_amount: netBill,
-          payment_mode: paymentMode,
-          status: 'unpaid',
-          admission_id: admission.id,
-          notes: `IPD admission stay`,
-          idempotency_key: `ipd-admission-${admission.id}`,
-        }),
-      })
-
-      if (!billRes.ok) {
-        const errBody = await billRes.json().catch(() => ({}))
-        billsSyncOk = false
-        console.warn(`[IPD billing saveBill] generate-bill failed: ${errBody?.error || billRes.statusText}`)
-      } else {
-        const okBody = await billRes.json().catch(() => ({}))
-        createdBillId =
-          okBody?.bill?.id ??
-          okBody?.id ??
-          okBody?.billId ??
-          okBody?.bill_id ??
-          okBody?.data?.id ??
-          okBody?.data?.bill?.id ??
-          null
-        if (createdBillId) {
-          setSavedBillId(createdBillId)
-          setBillDbId(createdBillId)
-          try {
-            const { data: cur } = await supabase
-              .from('bills')
-              .select('*')
-              .eq('id', createdBillId)
-              .maybeSingle()
-            const paidAmt = Number(cur?.paid || 0)
-            const newDue = Math.max(0, netBill - paidAmt)
-            await supabase
-              .from('bills')
-              .update({
-                total: netBill,
-                net_amount: netBill,
-                due: newDue,
-                status: paidAmt <= 0 ? 'unpaid' : (newDue <= 0 ? 'paid' : 'partial'),
-              })
-              .eq('id', createdBillId)
-            setPaidSoFar(paidAmt)
-          } catch { /* non-fatal */ }
-        }
-      }
-    } catch (e: any) {
-      billsSyncOk = false
-    }
-
-    setSaving(false)
-
-    if (droppedCols.length > 0 && billsSyncOk) {
-      setSuccess(`Bill saved (partial — missing columns: ${droppedCols.join(', ')}).`)
-    } else if (!billsSyncOk) {
-      setError('Bill summary saved on admission, but creating the formal bill row failed.')
-    } else {
-      setSuccess('Bill saved successfully!')
-    }
-    setTimeout(() => { setSuccess('') }, 6000)
-
-    return createdBillId
-  }
-
-  // ── Pay bill workflow ──────────────────────────────────────
-  // FIXED: Lifted out of the `try` block to avoid ES5 strict-mode function errors.
-  const resolveExistingBill = async () => {
-    let { data: hit } = await supabase
-      .from('bills')
-      .select('id, bill_number, invoice_number, net_amount, status')
-      .eq('admission_id', admission.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!hit && patient?.id) {
-      for (const col of ['patient_id', 'patientid'] as const) {
-        const { data: fb, error: fbErr } = await supabase
-          .from('bills')
-          .select('id, bill_number, invoice_number, net_amount, status')
-          .eq(col, patient.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (!fbErr && fb) { hit = fb; break }
-      }
-    }
-
-    if (!hit) {
-      const { data: fb } = await supabase
-        .from('bills')
-        .select('id, bill_number, invoice_number, net_amount, status, admission_id')
-        .eq('bill_module', 'IPD')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (fb) hit = fb
-    }
-
-    return hit || null
-  }
-
+  // ── Pay Bill Now ───────────────────────────────────────────
   async function payBillNow(): Promise<void> {
     if (!admission?.id || !patient?.id) return
     setPaying(true)
@@ -759,6 +577,43 @@ export default function IPDBillingPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
+
+      // Converted to an arrow function expression to comply with ES5 strict-mode rules inside blocks
+      const resolveExistingBill = async (): Promise<any | null> => {
+        let { data: hit } = await supabase
+          .from('bills')
+          .select('id, bill_number, invoice_number, net_amount, status')
+          .eq('admission_id', admission.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (!hit && patient?.id) {
+          for (const col of ['patient_id', 'patientid'] as const) {
+            const { data: fb, error: fbErr } = await supabase
+              .from('bills')
+              .select('id, bill_number, invoice_number, net_amount, status')
+              .eq(col, patient.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (!fbErr && fb) { hit = fb; break }
+          }
+        }
+
+        if (!hit) {
+          const { data: fb } = await supabase
+            .from('bills')
+            .select('id, bill_number, invoice_number, net_amount, status, admission_id')
+            .eq('bill_module', 'IPD')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (fb) hit = fb
+        }
+
+        return hit || null
+      }
 
       let bill: any = savedBillId ? { id: savedBillId, status: 'unpaid' } : await resolveExistingBill()
 
@@ -847,6 +702,187 @@ export default function IPDBillingPage() {
     }
   }
 
+  // ── Save bill summary to admission ────────────────────────
+  async function saveBill(): Promise<string | null> {
+    if (!admission?.id) return null
+    setSaving(true)
+    setError('')
+
+    const fullPayload: Record<string, any> = {
+      total_charges: grandTotal,
+      discount,
+      net_bill: netBill,
+      bill_status: 'pending',
+      payment_mode: paymentMode,
+    }
+
+    // Converted to arrow function expressions to fulfill ES5 strict-mode scope definitions
+    const isSchemaCacheUpdateError = (e: any): boolean => {
+      if (!e) return false
+      const code = String(e.code || '')
+      const msg  = String(e.message || '').toLowerCase()
+      return (
+        code === 'PGRST204' ||
+        code === '42703' ||
+        msg.includes('schema cache') ||
+        (msg.includes('column') &&
+         (msg.includes('does not exist') || msg.includes('not found')))
+      )
+    }
+
+    const unknownColumnFrom = (e: any): string | null => {
+      const msg = String(e?.message || '')
+      let m = msg.match(/['"]([a-z_][a-z0-9_]*)['"][^'\"]*column/i)
+      if (m) return m[1]
+      m = msg.match(/column\s+['"]?([a-z_][a-z0-9_]*)['"]?/i)
+      if (m) return m[1]
+      m = msg.match(/the\s+['"]?([a-z_][a-z0-9_]*)['"]?\s+column/i)
+      if (m) return m[1]
+      return null
+    }
+
+    let payload = { ...fullPayload }
+    let lastErr: any = null
+    let droppedCols: string[] = []
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error: err } = await supabase
+        .from('ipd_admissions')
+        .update(payload)
+        .eq('id', admission.id)
+
+      if (!err) {
+        lastErr = null
+        break
+      }
+
+      lastErr = err
+      if (!isSchemaCacheUpdateError(err)) break
+
+      const offending = unknownColumnFrom(err)
+      if (!offending || !(offending in payload)) {
+        break
+      }
+
+      console.warn(
+        `[IPD billing saveBill] '${offending}' not in ipd_admissions schema cache; ` +
+        `retrying without that column. Apply migration 019 to remove this fallback.`,
+      )
+      droppedCols.push(offending)
+      const { [offending as keyof typeof payload]: _drop, ...rest } = payload
+      payload = rest
+      if (Object.keys(payload).length === 0) break
+    }
+
+    if (lastErr) {
+      setSaving(false)
+      setError(`Save failed: ${lastErr.message}`)
+      return null
+    }
+
+    let billsSyncOk = true
+    let createdBillId: string | null = null
+    try {
+      const items = charges.map(c => ({
+        label: c.description || c.category,
+        amount: c.amount,
+        quantity: c.quantity,
+      }))
+      const subtotal = charges.reduce((s, c) => s + c.amount, 0)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const billRes = await fetch('/api/billing/generate-bill', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          module: 'IPD',
+          patient_id: patient.id,
+          patient_name: patient.full_name,
+          mrn: patient.mrn,
+          items,
+          subtotal,
+          discount,
+          gst_percent: 0,
+          net_amount: netBill,
+          payment_mode: paymentMode,
+          status: 'unpaid',
+          admission_id: admission.id,
+          notes: `IPD admission stay`,
+          idempotency_key: `ipd-admission-${admission.id}`,
+        }),
+      })
+
+      if (!billRes.ok) {
+        const errBody = await billRes.json().catch(() => ({}))
+        billsSyncOk = false
+        console.warn(
+          '[IPD billing saveBill] /api/billing/generate-bill failed; details: ' + 
+          (errBody?.error || billRes.statusText)
+        )
+      } else {
+        const okBody = await billRes.json().catch(() => ({}))
+        createdBillId =
+          okBody?.bill?.id ??
+          okBody?.id ??
+          okBody?.billId ??
+          okBody?.bill_id ??
+          okBody?.data?.id ??
+          okBody?.data?.bill?.id ??
+          null
+        if (createdBillId) {
+          setSavedBillId(createdBillId)
+          setBillDbId(createdBillId)
+          try {
+            const { data: cur } = await supabase
+              .from('bills')
+              .select('*')
+              .eq('id', createdBillId)
+              .maybeSingle()
+            const paidAmt = Number(cur?.paid || 0)
+            const newDue = Math.max(0, netBill - paidAmt)
+            await supabase
+              .from('bills')
+              .update({
+                total: netBill,
+                net_amount: netBill,
+                due: newDue,
+                status: paidAmt <= 0 ? 'unpaid' : (newDue <= 0 ? 'paid' : 'partial'),
+              })
+              .eq('id', createdBillId)
+            setPaidSoFar(paidAmt)
+          } catch { /* non-fatal */ }
+        }
+      }
+    } catch (e: any) {
+      billsSyncOk = false
+      console.warn('[IPD billing saveBill] generate-bill API call failed: ' + (e?.message || e))
+    }
+
+    setSaving(false)
+
+    if (droppedCols.length > 0 && billsSyncOk) {
+      setSuccess(
+        `Bill saved (partial — schema is missing column${droppedCols.length > 1 ? 's' : ''} ` +
+        `${droppedCols.join(', ')}; run migration 019 for full support).`,
+      )
+    } else if (!billsSyncOk) {
+      setError(
+        'Bill summary saved on the admission, but creating the formal bill ' +
+        'in the billing system failed. Please go to Billing → New IPD Bill ' +
+        'and generate it manually so revenue reports stay in sync.',
+      )
+    } else {
+      setSuccess('Bill saved successfully!')
+    }
+    setTimeout(() => { setSuccess('') }, 6000)
+
+    return createdBillId
+  }
+
   // ── Print / download the IPD bill ──────────────────────────
   function printBill() {
     const hs = getHospitalSettings()
@@ -869,6 +905,7 @@ export default function IPDBillingPage() {
     })
   }
 
+  // ── Loading ────────────────────────────────────────────────
   if (loading) {
     return (
       <AppShell>
@@ -976,6 +1013,7 @@ export default function IPDBillingPage() {
           <div className="card p-5 mb-5 border-l-4 border-indigo-400 no-print">
             <h3 className="font-semibold text-gray-800 mb-3">Add Charge</h3>
 
+            {/* Quick presets from charge rates */}
             {chargeRates.length > 0 && (
               <div className="mb-4">
                 <label className="label">Quick Select (click to auto-fill)</label>
@@ -1098,6 +1136,7 @@ export default function IPDBillingPage() {
                     </tr>
                   )
                 })}
+                {/* Totals row */}
                 <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
                   <td colSpan={5} className="px-3 py-3 text-right text-xs text-gray-600 uppercase">Grand Total</td>
                   <td className="px-3 py-3 font-mono text-lg text-gray-900">{inr(grandTotal)}</td>
@@ -1160,6 +1199,7 @@ export default function IPDBillingPage() {
                 </div>
               </div>
             )}
+
           </div>
         )}
 
@@ -1170,7 +1210,10 @@ export default function IPDBillingPage() {
               <h3 className="font-semibold text-green-800 text-sm">Bill Fully Paid</h3>
             </div>
             <p className="text-sm text-green-700">
-              {inr(paidSoFar > 0 ? paidSoFar : netBill)} has been collected for this admission. The bill is marked <strong>Paid</strong> and that status is shared across all modules.
+              {inr(paidSoFar > 0 ? paidSoFar : netBill)} has been collected for this admission. The bill is marked <strong>Paid</strong> and that status is shared across all modules (IPD, Billing &amp; Finance, Patient Profile, Reports).
+            </p>
+            <p className="text-xs text-green-600 mt-1">
+              Add more services above to bill any additional charges — a new outstanding balance will appear here to collect.
             </p>
             <div className="flex flex-wrap gap-2 mt-3">
               <Link
