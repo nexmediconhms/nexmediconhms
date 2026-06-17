@@ -100,6 +100,16 @@ function daysSince(dateStr: string) {
   return Math.max(0, days) // Never show negative days
 }
 
+// Combine a yyyy-mm-dd date and an HH:MM time into an ISO timestamp, used to
+// backdate a nursing entry to when the observation was actually taken. Falls
+// back to "now" if either part is missing/invalid so a save never breaks.
+function combineDateTime(dateStr?: string, timeStr?: string): string {
+  if (!dateStr) return new Date().toISOString()
+  const t = timeStr && /^\d{1,2}:\d{2}/.test(timeStr) ? timeStr : '00:00'
+  const d = new Date(`${dateStr}T${t}:00`)
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+}
+
 // Resolve a discharged admission's discharge date defensively (schema uses
 // discharge_date, with a legacy `dischargedate` variant on some installs;
 // falls back to updated_at) and decide whether it's within the "recently
@@ -578,6 +588,8 @@ function DischargedView({
 // ── Admit Form ─────────────────────────────────────────────────
 
 function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () => void; onCancel: () => void; prefillPatientId?: string }) {
+  const { user } = useAuth()
+  const depositCollectedBy = user?.full_name || 'Admin'
   const [patientQuery, setPatientQuery] = useState('')
   const [patientResults, setPatientResults] = useState<any[]>([])
   const [selectedPatient, setSelectedPatient] = useState<any>(null)
@@ -601,6 +613,11 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
     relative_name: '',
     relative_contact: '',
     relative_relation: '',
+    // Advance / deposit collected at admission (optional). Stored in
+    // patient_deposits and adjusted against the final bill at discharge.
+    deposit_amount: '',
+    deposit_mode: 'cash',
+    deposit_ref: '',
   })
 
   // Load available beds and doctors
@@ -826,10 +843,40 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
       return
     }
 
-    // Bed is now ours. Insert the admission record.
-    const { error } = await supabase.from('ipd_admissions').insert(payload)
+    // Bed is now ours. Insert the admission record (return its id so we can
+    // link any advance/deposit collected at admission).
+    const { data: insertedAdmission, error } = await supabase
+      .from('ipd_admissions').insert(payload).select('id').single()
 
     if (!error) {
+      // ── Advance / deposit collected at admission (optional) ──────────
+      // Recorded in patient_deposits (status 'collected'); the discharge /
+      // partial-payment flow adjusts it FIFO against the final bill. We also
+      // stamp ipd_admissions.deposit_collected for quick reference. Both are
+      // best-effort and never block a successful admission.
+      const depositAmt = Number(form.deposit_amount) || 0
+      if (depositAmt > 0 && insertedAdmission?.id) {
+        try {
+          await supabase.from('patient_deposits').insert({
+            patient_id: selectedPatient.id,
+            admission_id: insertedAdmission.id,
+            amount: depositAmt,
+            payment_mode: form.deposit_mode || 'cash',
+            payment_ref: form.deposit_ref || null,
+            status: 'collected',
+            collected_by: depositCollectedBy,
+            notes: 'Advance collected at IPD admission',
+          })
+        } catch (depErr) {
+          console.warn('[IPD admit] deposit insert failed (non-fatal):', depErr)
+        }
+        try {
+          await supabase.from('ipd_admissions')
+            .update({ deposit_collected: depositAmt })
+            .eq('id', insertedAdmission.id)
+        } catch { /* column may not exist on older schema — non-fatal */ }
+      }
+
       // Send notification for IPD admission
       try {
         const { default: notify } = await import('@/lib/notifications')
@@ -1070,6 +1117,45 @@ function AdmitForm({ onSuccess, onCancel, prefillPatientId }: { onSuccess: () =>
           </div>
         </div>
 
+        {/* Advance / Deposit (optional) */}
+        <div className="card p-5">
+          <h3 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
+            <IndianRupee className="w-4 h-4 text-emerald-500" /> Advance / Deposit
+            <span className="text-xs text-gray-400 font-normal">(optional — adjusted against the final bill at discharge)</span>
+          </h3>
+          <p className="text-xs text-gray-400 mb-3">
+            Collect an advance now if applicable. It is recorded as a deposit and automatically offset against this admission&apos;s bill.
+          </p>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="label">Deposit Amount (₹)</label>
+              <input className="input" type="number" min="0" step="1" placeholder="e.g. 5000"
+                value={form.deposit_amount}
+                onChange={e => setField('deposit_amount', e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Payment Mode</label>
+              <select className="input" value={form.deposit_mode}
+                onChange={e => setField('deposit_mode', e.target.value)}>
+                {['cash', 'upi', 'card', 'cheque', 'bank_transfer'].map(m => (
+                  <option key={m} value={m}>{m.replace('_', ' ').toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Reference (optional)</label>
+              <input className="input" placeholder="UTR / Txn / Cheque no."
+                value={form.deposit_ref}
+                onChange={e => setField('deposit_ref', e.target.value)} />
+            </div>
+          </div>
+          {Number(form.deposit_amount) > 0 && (
+            <p className="text-xs text-emerald-600 mt-2">
+              ✓ ₹{Number(form.deposit_amount).toLocaleString('en-IN')} will be recorded as an advance deposit for this admission.
+            </p>
+          )}
+        </div>
+
         {/* Actions */}
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} className="btn-secondary">Cancel</button>
@@ -1109,9 +1195,18 @@ function NursingChart({ admission, onBack, currentUserName }: {
   const [addType, setAddType] = useState<NursingEntry['entry_type']>('vital')
   const [saving, setSaving] = useState(false)
   const [openSection, setOpenSection] = useState<string>('vitals')
+  // ── Backdating support ──────────────────────────────────────────
+  // Nurses often record vitals/I-O on paper and enter them later, so each
+  // entry form carries a DATE (default today) alongside the TIME, and the
+  // chosen date+time is stored as the entry's effective timestamp (created_at)
+  // — no new DB column needed. Existing entries can also be re-timed inline.
+  const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
+  const [editTimeDate, setEditTimeDate] = useState('')
+  const [editTimeTime, setEditTimeTime] = useState('')
 
   // Vital form
   const [vitalForm, setVitalForm] = useState({
+    recorded_date: getIndiaToday(),
     recorded_time: new Date().toTimeString().slice(0, 5),
     pulse: '', bp_systolic: '', bp_diastolic: '',
     temperature: '', spo2: '', rr: '', weight: '', vital_note: '',
@@ -1119,6 +1214,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
 
   // I/O form
   const [ioForm, setIoForm] = useState({
+    recorded_date: getIndiaToday(),
     recorded_time: new Date().toTimeString().slice(0, 5),
     io_type: 'Input' as 'Input' | 'Output',
     io_label: '',
@@ -1127,6 +1223,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
 
   // Note / medication form
   const [noteForm, setNoteForm] = useState({
+    recorded_date: getIndiaToday(),
     recorded_time: new Date().toTimeString().slice(0, 5),
     entry_type: 'note' as NursingEntry['entry_type'],
     note_text: '',
@@ -1170,13 +1267,17 @@ function NursingChart({ admission, onBack, currentUserName }: {
 
   async function saveVital() {
     setSaving(true)
+    // recorded_date is a UI-only field; the chosen date+time is stored as the
+    // entry's effective timestamp (created_at) so no DB column is needed.
+    const { recorded_date, ...vitalRest } = vitalForm
     const vitalPayload = {
       ipd_admission_id: admission.id,
       patient_id: admission.patient_id,
       entry_type: 'vital',
       nurse_name: currentUserName,
-      ...vitalForm,
+      ...vitalRest,
       recorded_time: vitalForm.recorded_time,
+      created_at: combineDateTime(recorded_date, vitalForm.recorded_time),
     }
     let { error } = await supabase.from('ipd_nursing').insert(vitalPayload)
     if (error && (error.message?.includes('schema cache') || error.message?.includes('column'))) {
@@ -1185,7 +1286,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       error = retry.error
     }
     if (!error) {
-      setVitalForm({ recorded_time: new Date().toTimeString().slice(0, 5), pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', rr: '', weight: '', vital_note: '' })
+      setVitalForm({ recorded_date: getIndiaToday(), recorded_time: new Date().toTimeString().slice(0, 5), pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', rr: '', weight: '', vital_note: '' })
       await loadEntries()
     }
     setSaving(false)
@@ -1199,6 +1300,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       entry_type: 'io',
       nurse_name: currentUserName,
       recorded_time: ioForm.recorded_time,
+      created_at: combineDateTime(ioForm.recorded_date, ioForm.recorded_time),
       io_type: ioForm.io_type,
       io_label: ioForm.io_label,
       io_amount_ml: parseFloat(ioForm.io_amount_ml) || 0,
@@ -1210,7 +1312,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       error = retry.error
     }
     if (!error) {
-      setIoForm({ recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
+      setIoForm({ recorded_date: getIndiaToday(), recorded_time: new Date().toTimeString().slice(0, 5), io_type: 'Input', io_label: '', io_amount_ml: '' })
       await loadEntries()
     }
     setSaving(false)
@@ -1224,6 +1326,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
       entry_type: noteForm.entry_type,
       nurse_name: currentUserName,
       recorded_time: noteForm.recorded_time,
+      created_at: combineDateTime(noteForm.recorded_date, noteForm.recorded_time),
       note_text: noteForm.note_text,
     }
     if (noteForm.entry_type === 'medication') {
@@ -1239,10 +1342,35 @@ function NursingChart({ admission, onBack, currentUserName }: {
       error = retry.error
     }
     if (!error) {
-      setNoteForm({ recorded_time: new Date().toTimeString().slice(0, 5), entry_type: 'note', note_text: '', medication_name: '', medication_dose: '', medication_route: 'IV', medication_given_by: currentUserName })
+      setNoteForm({ recorded_date: getIndiaToday(), recorded_time: new Date().toTimeString().slice(0, 5), entry_type: 'note', note_text: '', medication_name: '', medication_dose: '', medication_route: 'IV', medication_given_by: currentUserName })
       await loadEntries()
     }
     setSaving(false)
+  }
+
+  // Update the effective date/time of an existing entry (created_at +
+  // recorded_time). Lets a nurse correct a back-entered observation's timing.
+  async function saveEntryTime(id: string) {
+    if (!editTimeDate) { setEditingTimeId(null); return }
+    setSaving(true)
+    const newCreatedAt = combineDateTime(editTimeDate, editTimeTime)
+    const { error } = await supabase
+      .from('ipd_nursing')
+      .update({ created_at: newCreatedAt, recorded_time: editTimeTime || null })
+      .eq('id', id)
+    if (!error) {
+      setEditingTimeId(null)
+      setEditTimeDate('')
+      setEditTimeTime('')
+      await loadEntries()
+    }
+    setSaving(false)
+  }
+
+  function beginEditTime(e: NursingEntry) {
+    setEditingTimeId(e.id)
+    setEditTimeDate((e.created_at ? new Date(e.created_at) : new Date()).toISOString().slice(0, 10))
+    setEditTimeTime(e.recorded_time || (e.created_at ? new Date(e.created_at).toTimeString().slice(0, 5) : ''))
   }
 
   // I/O balance
@@ -1308,6 +1436,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {addType === 'vital' && (
           <div>
             <div className="grid grid-cols-4 gap-3 mb-3">
+              <div><label className="label">Date</label><input className="input" type="date" value={vitalForm.recorded_date} onChange={e => setVitalForm(p => ({ ...p, recorded_date: e.target.value }))} /></div>
               <div><label className="label">Time</label><input className="input" type="time" value={vitalForm.recorded_time} onChange={e => setVitalForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
               <div><label className="label">Pulse (bpm)</label><input className="input" type="number" placeholder="72" value={vitalForm.pulse} onChange={e => setVitalForm(p => ({ ...p, pulse: e.target.value }))} /></div>
               <div><label className="label">BP Systolic</label><input className="input" type="number" placeholder="120" value={vitalForm.bp_systolic} onChange={e => setVitalForm(p => ({ ...p, bp_systolic: e.target.value }))} /></div>
@@ -1331,6 +1460,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {/* I/O form */}
         {addType === 'io' && (
           <div className="grid grid-cols-4 gap-3 items-end">
+            <div><label className="label">Date</label><input className="input" type="date" value={ioForm.recorded_date} onChange={e => setIoForm(p => ({ ...p, recorded_date: e.target.value }))} /></div>
             <div><label className="label">Time</label><input className="input" type="time" value={ioForm.recorded_time} onChange={e => setIoForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
             <div>
               <label className="label">Type</label>
@@ -1360,6 +1490,7 @@ function NursingChart({ admission, onBack, currentUserName }: {
         {(addType === 'note' || addType === 'medication') && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Date</label><input className="input" type="date" value={noteForm.recorded_date} onChange={e => setNoteForm(p => ({ ...p, recorded_date: e.target.value }))} /></div>
               <div><label className="label">Time</label><input className="input" type="time" value={noteForm.recorded_time} onChange={e => setNoteForm(p => ({ ...p, recorded_time: e.target.value }))} /></div>
               <div>
                 <label className="label">Entry Type</label>
@@ -1448,9 +1579,28 @@ function NursingChart({ admission, onBack, currentUserName }: {
               <tbody>
                 {entries.map(e => (
                   <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-gray-500">
-                      {e.recorded_time}
-                      <div className="text-gray-300">{new Date(e.created_at).toLocaleDateString('en-IN')}</div>
+                    <td className="px-4 py-2 font-mono text-gray-500 align-top">
+                      {editingTimeId === e.id ? (
+                        <div className="flex flex-col gap-1">
+                          <input type="date" className="border border-gray-300 rounded px-1 py-0.5 text-xs"
+                            value={editTimeDate} onChange={ev => setEditTimeDate(ev.target.value)} />
+                          <input type="time" className="border border-gray-300 rounded px-1 py-0.5 text-xs"
+                            value={editTimeTime} onChange={ev => setEditTimeTime(ev.target.value)} />
+                          <div className="flex gap-2">
+                            <button onClick={() => saveEntryTime(e.id)} disabled={saving}
+                              className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded disabled:opacity-50">Save</button>
+                            <button onClick={() => { setEditingTimeId(null); setEditTimeDate(''); setEditTimeTime('') }}
+                              className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          {e.recorded_time}
+                          <div className="text-gray-300">{new Date(e.created_at).toLocaleDateString('en-IN')}</div>
+                          <button onClick={() => beginEditTime(e)}
+                            className="mt-0.5 text-[10px] text-blue-500 hover:text-blue-700 underline no-print">Edit time</button>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize

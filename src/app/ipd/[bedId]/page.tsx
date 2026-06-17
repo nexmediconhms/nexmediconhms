@@ -29,7 +29,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime, getIndiaToday } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import SmartMic from '@/components/shared/SmartMic'
 import ConsultationAttachments from '@/components/shared/ConsultationAttachments'
@@ -55,6 +55,7 @@ import {
 // belongs to instead of seeing "14:30" repeating ambiguously.
 interface VitalEntry {
   time: string
+  date?: string
   pulse: string
   bp_systolic: string
   bp_diastolic: string
@@ -66,6 +67,7 @@ interface VitalEntry {
 
 interface IOEntry {
   time: string
+  date?: string
   type: 'intake' | 'output'
   item: string
   amount: string
@@ -239,13 +241,27 @@ async function loadIPDFromSupabase(bedId: string) {
 
 const emptyVital = (): VitalEntry => ({
   time: new Date().toTimeString().slice(0, 5),
+  date: getIndiaToday(),
   pulse: '', bp_systolic: '', bp_diastolic: '', temperature: '', spo2: '', note: ''
 })
 
 const emptyIO = (): IOEntry => ({
   time: new Date().toTimeString().slice(0, 5),
+  date: getIndiaToday(),
   type: 'intake', item: '', amount: ''
 })
+
+// Combine a yyyy-mm-dd date + HH:MM time into an ISO timestamp so a nurse can
+// record an observation at the time it was actually taken (back-entry from a
+// paper chart). Falls back to "now" if either part is missing/invalid, so a
+// save never breaks.
+function combineDateTime(dateStr?: string, timeStr?: string): string {
+  const fallback = new Date().toISOString()
+  if (!dateStr) return fallback
+  const t = timeStr && /^\d{1,2}:\d{2}/.test(timeStr) ? timeStr : '00:00'
+  const d = new Date(`${dateStr}T${t}:00`)
+  return isNaN(d.getTime()) ? fallback : d.toISOString()
+}
 
 // ── AI OCR call ────────────────────────────────────────────────
 async function callOCRAutofill(file: File): Promise<{ fields: any; confidence: number; error?: string }> {
@@ -620,9 +636,12 @@ export default function IPDNursingPage() {
     // (auto-casts the ISO). The pre-fix code sent "05:44 pm" which Postgres
     // cannot parse as a timestamp, producing
     //   "invalid input syntax for type timestamp with time zone: '05:44 pm'"
-    const nowIso = new Date().toISOString()
-    const displayTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    const entry = { ...newVital, time: displayTime, created_at: nowIso }
+    // Record at the date/time the nurse chose (back-entry supported), not
+    // necessarily "now". Stored as a full ISO timestamp in BOTH recorded_time
+    // and created_at so the calendar date is preserved on reload.
+    const chosenIso = combineDateTime(newVital.date, newVital.time)
+    const displayTime = new Date(chosenIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    const entry = { ...newVital, time: displayTime, created_at: chosenIso }
     const updated = [entry, ...vitals]
     setVitals(updated)
     setNewVital(emptyVital())
@@ -630,7 +649,8 @@ export default function IPDNursingPage() {
 
     const rawPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'vital',
-      recorded_time: nowIso, pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
+      recorded_time: chosenIso, created_at: chosenIso,
+      pulse: entry.pulse || null, bp_systolic: entry.bp_systolic || null,
       bp_diastolic: entry.bp_diastolic || null, temperature: entry.temperature || null,
       spo2: entry.spo2 || null, vital_note: entry.note || null,
     }
@@ -666,9 +686,10 @@ export default function IPDNursingPage() {
     if (!newIO.item || !newIO.amount) return
 
     // v8 FIX: ISO timestamp for DB, 12-hour clock for display (see addVital).
-    const nowIso = new Date().toISOString()
-    const displayTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    const entry = { ...newIO, time: displayTime, created_at: nowIso }
+    // Record at the chosen date/time (back-entry supported); see addVital.
+    const chosenIso = combineDateTime(newIO.date, newIO.time)
+    const displayTime = new Date(chosenIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    const entry = { ...newIO, time: displayTime, created_at: chosenIso }
     const updated = [entry, ...io]
     setIO(updated)
     setNewIO(emptyIO())
@@ -676,7 +697,8 @@ export default function IPDNursingPage() {
 
     const rawPayload = {
       bed_id: bedId, patient_id: patient?.id || null, entry_type: 'io',
-      recorded_time: nowIso, io_type: entry.type === 'output' ? 'Output' : 'Intake',
+      recorded_time: chosenIso, created_at: chosenIso,
+      io_type: entry.type === 'output' ? 'Output' : 'Intake',
       io_label: entry.item, io_amount_ml: parseFloat(entry.amount) || null,
     }
     const schema = await detectIpdNursingSchema()
@@ -953,6 +975,20 @@ export default function IPDNursingPage() {
                     </span>
                   )}
                 </h3>
+                {/* When was this observation taken — lets a nurse back-enter
+                    from a paper chart at the actual date/time. Defaults to now. */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="label">Date</label>
+                    <input className="input bg-white" type="date"
+                      value={newVital.date || ''} onChange={e => setNewVital(p => ({ ...p, date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Time</label>
+                    <input className="input bg-white" type="time"
+                      value={newVital.time || ''} onChange={e => setNewVital(p => ({ ...p, time: e.target.value }))} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="label">Pulse (bpm)</label>
@@ -1046,6 +1082,19 @@ export default function IPDNursingPage() {
             <div>
               <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-5">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Record Intake / Output</h3>
+                {/* Back-entry date/time — defaults to now. */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="label">Date</label>
+                    <input className="input bg-white" type="date"
+                      value={newIO.date || ''} onChange={e => setNewIO(p => ({ ...p, date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Time</label>
+                    <input className="input bg-white" type="time"
+                      value={newIO.time || ''} onChange={e => setNewIO(p => ({ ...p, time: e.target.value }))} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-4 gap-3 mb-3">
                   <div>
                     <label className="label">Type</label>
